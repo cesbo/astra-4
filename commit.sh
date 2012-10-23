@@ -37,7 +37,12 @@ if [ $# -ne 0 ] ; then
     FLIST="$* version.h"
 fi
 
-hg commit -m "$MSG" $FLIST
-git commit -am "$MSG" $FLIST
+if [ -n "$FLIST" ] ; then
+    hg commit -m "$MSG" $FLIST
+    git commit -m "$MSG" $FLIST
+else
+    hg commit -m "$MSG"
+    git commit -am "$MSG"
+fi
 
 cd $CDIR
