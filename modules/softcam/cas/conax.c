@@ -33,7 +33,7 @@ struct cas_data_s
 
     uint8_t parity;
 
-    uint8_t *sa;
+    list_t *prov_list;
 };
 
 /* cas api */
@@ -63,9 +63,18 @@ static const uint8_t * conax_check_em(cas_data_t *cas
         // EMM
         default:
         {
-            if(!memcmp(&payload[6], &cas->sa[4], 4)) // shared
-                return payload;
-            else if(!memcmp(&payload[6], &CAS2CAM(cas).ua[4], 4)) // unique
+            const uint8_t *emm_id = &payload[6];
+            list_t *i = cas->prov_list;
+            while(i)
+            {
+                // 3 - skip ident
+                // 4 - skip 0
+                uint8_t *prov = list_get_data(i) + 3 + 4;
+                if(!memcmp(emm_id, prov, 4)) // shared
+                    return payload;
+                i = list_get_next(i);
+            }
+            if(!memcmp(emm_id, &CAS2CAM(cas).ua[4], 4)) // unique
                 return payload;
             break;
         }
@@ -91,12 +100,8 @@ static int conax_check_keys(cas_data_t *cas, const uint8_t *keys)
 
 static uint16_t conax_check_desc(cas_data_t *cas, const uint8_t *desc)
 {
-    if(!cas->sa)
-    {
-        list_t *i = list_get_first(CAS2CAM(cas).prov_list);
-        uint8_t *prov = list_get_data(i);
-        cas->sa = &prov[3];
-    }
+    if(!cas->prov_list)
+        cas->prov_list = list_get_first(CAS2CAM(cas).prov_list);
 
     return CA_DESC_PID(desc);
 }

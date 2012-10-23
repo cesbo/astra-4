@@ -409,7 +409,8 @@ static int newcamd_send_cmd(module_data_t *mod, newcamd_cmd_t cmd)
 
 int newcamd_recv_msg(module_data_t *mod, list_t **q_item)
 {
-    newcamd_timeout_unset(mod);
+    if(mod->status != NEWCAMD_READY)
+        newcamd_timeout_unset(mod);
 
     uint8_t *buffer = mod->buffer;
     buffer[NEWCAMD_HEADER_SIZE] = 0x00;
@@ -472,6 +473,8 @@ int newcamd_recv_msg(module_data_t *mod, list_t **q_item)
             log_warning(LOG_MSG("packet with id %d is not found [type:0x%02X]")
                         , msg_id, msg_type);
         }
+        else
+            newcamd_timeout_unset(mod);
         *q_item = i;
     }
 

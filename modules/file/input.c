@@ -25,7 +25,6 @@ struct module_data_s
 
     thread_t *thread;
     stream_t *thread_stream;
-    int state;
 
     int fd;
 
@@ -258,7 +257,9 @@ static int method_detach(module_data_t *mod)
     return 0;
 }
 
-/* required */static void module_init(module_data_t *mod)
+/* required */
+
+static void module_init(module_data_t *mod)
 {
     log_debug(LOG_MSG("init"));
 

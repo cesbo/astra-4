@@ -216,14 +216,14 @@ int cam_callback(module_data_t *mod, list_t *q_item)
     mod->__cam_module.queue.current
         = list_get_next(mod->__cam_module.queue.current);
 
+    __remove_item(mod, q_item);
+
     if(mod->__cam_module.queue.current)
     { // send next packet
         packet = list_get_data(mod->__cam_module.queue.current);
         packet->status = 1;
         cam_module_send_em(mod);
     }
-
-    __remove_item(mod, q_item);
 
     return ret;
 }

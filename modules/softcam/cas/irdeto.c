@@ -55,7 +55,7 @@ struct cas_data_s
 
 static int irdeto_check_caid(uint16_t caid)
 {
-    return ((caid & 0xFF00) == 0x0600);
+    return (((caid & 0xFF00) == 0x0600) || (caid == 1702));
 }
 
 inline static uint16_t irdeto_ecm_chid(const uint8_t *payload)
