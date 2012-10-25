@@ -21,18 +21,13 @@
 #include "../version.h"
 #define __VSTR(_x) #_x
 #define _VSTR(_x) __VSTR(_x)
-#define _VRELEASE "v." _VSTR(ASTRA_VERSION)
-#if ASTRA_VERSION_DEV > 0
-#   define _VDEV " dev:" _VSTR(ASTRA_VERSION_DEV)
-#else
-#   define _VDEV
-#endif
-#if defined(DEBUG)
+#define _VERSION "v." _VSTR(ASTRA_VERSION) "." _VSTR(ASTRA_VERSION_DEV)
+#ifdef DEBUG
 #   define _VDEBUG " debug"
 #else
 #   define _VDEBUG
 #endif
-#define ASTRA_VERSION_STR _VRELEASE _VDEV _VDEBUG
+#define ASTRA_VERSION_STR _VERSION _VDEBUG
 
 #ifdef _WIN32
 #   if defined(ASTRA_CORE)
