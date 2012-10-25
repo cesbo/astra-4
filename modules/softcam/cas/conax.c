@@ -69,7 +69,7 @@ static const uint8_t * conax_check_em(cas_data_t *cas
             {
                 // 3 - skip ident
                 // 4 - skip 0
-                uint8_t *prov = list_get_data(i) + 3 + 4;
+                uint8_t *prov = &((uint8_t *)list_get_data(i))[3 + 4];
                 if(!memcmp(emm_id, prov, 4)) // shared
                     return payload;
                 i = list_get_next(i);

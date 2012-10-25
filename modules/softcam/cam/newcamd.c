@@ -26,8 +26,6 @@
 
 #define LOG_MSG(_msg) "[newcamd %s] " _msg, mod->config.name
 
-#define NEWCAMD_TIMEOUT (5 * 1000)
-
 #define NEWCAMD_HEADER_SIZE 12
 #define NEWCAMD_MSG_SIZE 400
 #define MAX_PROV_COUNT 16
@@ -55,6 +53,7 @@ struct module_data_s
         char *pass;
         char *key;
         char *cas_data;
+        int timeout;
     } config;
 
     char _name[32];
@@ -309,7 +308,7 @@ static void newcamd_timeout_set(module_data_t *mod)
     if(mod->timeout_timer)
         return;
     mod->timeout_timer
-        = timer_attach(NEWCAMD_TIMEOUT, timeout_timer_callback, mod);
+        = timer_attach(mod->config.timeout, timeout_timer_callback, mod);
 }
 
 static void newcamd_timeout_unset(module_data_t *mod)
@@ -760,6 +759,10 @@ static void module_init(module_data_t *mod)
                  , "%s:%d", mod->config.host, mod->config.port);
         mod->config.name = mod->_name;
     }
+    if(!mod->config.timeout)
+        mod->config.timeout = 5 * 1000;
+    else
+        mod->config.timeout *= 1000;
 
     log_debug(LOG_MSG("init"));
 
@@ -802,6 +805,7 @@ MODULE_OPTIONS()
     OPTION_STRING("key", config.key, config_check_key)
     OPTION_NUMBER("disable_emm", __cam_module.disable_emm, NULL)
     OPTION_STRING("cas_data", config.cas_data, config_check_cas_data)
+    OPTION_NUMBER("timeout", config.timeout, NULL)
 };
 
 MODULE_METHODS_EMPTY();

@@ -81,6 +81,14 @@ int main(int argc, const char *argv[])
 
     // astra
     luaL_newlib(L, astra_api);
+
+#ifdef DEBUG
+    lua_pushboolean(L, 1);
+#else
+    lua_pushboolean(L, 0);
+#endif
+    lua_setfield(L, -2, "debug");
+
     lua_setglobal(L, "astra");
 
     for(int i = 0; astra_mods[i]; i++)
