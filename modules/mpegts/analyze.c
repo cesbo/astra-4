@@ -254,7 +254,7 @@ void rate_timer_callback(void *arg)
         // analyze cc errors
         if(item->cc_error)
         {
-            if(item->cc_error > (pcount / 50))
+            if(item->cc_error > (pcount / 5))
                 cc_error = 1;
             item->total_cc_error += item->cc_error;
             item->cc_error = 0;
@@ -499,7 +499,7 @@ static void module_destroy(module_data_t *mod)
 
 MODULE_OPTIONS()
 {
-    OPTION_STRING("name", config.name, NULL)
+    OPTION_STRING("name", config.name, 1, NULL)
 };
 
 MODULE_METHODS()

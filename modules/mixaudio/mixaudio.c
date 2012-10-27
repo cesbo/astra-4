@@ -328,9 +328,7 @@ static void module_init(module_data_t *mod)
 
     stream_ts_init(mod, callback_send_ts, NULL, NULL, NULL, NULL);
 
-    if(!mod->config.direction)
-        mod->direction = MIXAUDIO_DIRECTION_LL;
-    else if(!strcasecmp(mod->config.direction, "LL"))
+    if(!strcasecmp(mod->config.direction, "LL"))
         mod->direction = MIXAUDIO_DIRECTION_LL;
     else if(!strcasecmp(mod->config.direction, "RR"))
         mod->direction = MIXAUDIO_DIRECTION_RR;
@@ -387,8 +385,8 @@ static void module_destroy(module_data_t *mod)
 
 MODULE_OPTIONS()
 {
-    OPTION_NUMBER("pid", config.pid, NULL)
-    OPTION_STRING("direction", config.direction, NULL)
+    OPTION_NUMBER("pid"      , config.pid      , 1, 0)
+    OPTION_STRING("direction", config.direction, 0, "LL")
 };
 
 MODULE_METHODS()

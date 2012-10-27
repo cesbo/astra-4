@@ -281,8 +281,8 @@ static void module_destroy(module_data_t *mod)
 
 MODULE_OPTIONS()
 {
-    OPTION_STRING("filename", config.filename, NULL)
-    OPTION_NUMBER("loop", config.loop, NULL)
+    OPTION_STRING("filename", config.filename, 1, NULL)
+    OPTION_NUMBER("loop"    , config.loop    , 0, 0)
 };
 
 MODULE_METHODS()

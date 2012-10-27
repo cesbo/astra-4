@@ -458,11 +458,11 @@ static void module_destroy(module_data_t *mod)
 
 MODULE_OPTIONS()
 {
-    OPTION_NUMBER("fd", sock, NULL)
-    OPTION_STRING("addr", config.addr, NULL)
-    OPTION_NUMBER("port", config.port, NULL)
-    OPTION_CUSTOM("server", NULL)
-    OPTION_CUSTOM("callback", NULL)
+    OPTION_NUMBER("fd"      , sock       , 1, 0)
+    OPTION_STRING("addr"    , config.addr, 1, NULL)
+    OPTION_NUMBER("port"    , config.port, 1, 0)
+    OPTION_CUSTOM("server"  , NULL       , 1)
+    OPTION_CUSTOM("callback", NULL       , 1)
 };
 
 MODULE_METHODS()

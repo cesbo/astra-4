@@ -114,21 +114,35 @@ struct module_option_s
     value_type_t type;
     const char *name;
     size_t offset;
+    int is_required;
+    int default_number;
+    const char *default_string;
     int (*check)(module_data_t *); // return 0 on error, otherwise return 1
 };
 
 #define MODULE_OPTIONS()                                                    \
     static const module_option_t __module_options[] =
-#define _OPTION(_type, _name, _offset, _func)                               \
-    { _type, _name, offsetof(module_data_t, _offset), _func },
-#define OPTION_NUMBER(_name, _offset, _func)                                \
-    _OPTION(VALUE_NUMBER, _name, _offset, _func)
-#define OPTION_STRING(_name, _offset, _func)                                \
-    _OPTION(VALUE_STRING, _name, _offset, _func)
-#define OPTION_CUSTOM(_name, _func)                                         \
-    { VALUE_NONE, _name, 0, _func },
+
+#define _OPTION(_type, _name, _offset, _is_req, _def_n, _def_s)             \
+    {                                                                       \
+        .type = _type,                                                      \
+        .name = _name,                                                      \
+        .offset = offsetof(module_data_t, _offset),                         \
+        .is_required = _is_req,                                             \
+        .default_number = _def_n,                                           \
+        .default_string = _def_s,                                           \
+        .check = NULL                                                       \
+    },
+
+
+#define OPTION_NUMBER(_name, _offset, _is_req, _def_n)                      \
+    _OPTION(VALUE_NUMBER, _name, _offset, _is_req, _def_n, NULL)
+#define OPTION_STRING(_name, _offset, _is_req, _def_s)                      \
+    _OPTION(VALUE_STRING, _name, _offset, _is_req, 0, _def_s)
+#define OPTION_CUSTOM(_name, _check, _is_req)                               \
+    { VALUE_NONE, _name, 0, _is_req, 0, NULL, _check },
 #define MODULE_OPTIONS_EMPTY()                                              \
-    MODULE_OPTIONS() {{ VALUE_NONE, NULL, 0, NULL }}
+    MODULE_OPTIONS() {{ VALUE_NONE, NULL, 0, 0, 0, NULL, NULL }}
 
 typedef struct
 {
@@ -152,12 +166,17 @@ typedef struct
         mod->__name = __module_name;                                        \
         lua_getmetatable(L, 1);                                             \
         lua_setmetatable(L, -2);                                            \
-        if(lua_type(L, 2) == LUA_TTABLE && __module_options[0].name)        \
+        if(__module_options[0].name)                                        \
         {                                                                   \
-            module_set_options(mod, __module_options                        \
-                               , ARRAY_SIZE(__module_options));             \
-            lua_pushvalue(L, 2);                                            \
-            mod->__idx_options = luaL_ref(L, LUA_REGISTRYINDEX);            \
+            if(lua_type(L, 2) == LUA_TTABLE                                 \
+               && module_set_options(mod, __module_options                  \
+                                     , ARRAY_SIZE(__module_options)))       \
+            {                                                               \
+                lua_pushvalue(L, 2);                                        \
+                mod->__idx_options = luaL_ref(L, LUA_REGISTRYINDEX);        \
+            }                                                               \
+            else                                                            \
+                luaL_error(L, "[core] failed to set options");              \
         }                                                                   \
         module_init(mod);                                                   \
         return 1;                                                           \
@@ -218,8 +237,8 @@ typedef struct
         return 1;                                                           \
     }
 
-ASTRA_API void module_set_options(module_data_t *
-                                  , const module_option_t *, size_t);
+ASTRA_API int module_set_options(module_data_t *
+                                 , const module_option_t *, int);
 
 #endif /* ! WITHOUT_MODULES */
 

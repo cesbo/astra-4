@@ -664,11 +664,11 @@ static int config_check_cam(module_data_t *mod)
 
 MODULE_OPTIONS()
 {
-    OPTION_STRING("name", config.name, NULL)
-    OPTION_CUSTOM("cam", config_check_cam)
-    OPTION_NUMBER("real_pnr", config.real_pnr, NULL)
-    OPTION_NUMBER("ecm_pid", config.ecm_pid, NULL)
-    OPTION_NUMBER("fake", config.fake, NULL)
+    OPTION_STRING("name"    , config.name       , 1, NULL)
+    OPTION_CUSTOM("cam"     , config_check_cam  , 1)
+    OPTION_NUMBER("real_pnr", config.real_pnr   , 0, 0)
+    OPTION_NUMBER("ecm_pid" , config.ecm_pid    , 0, 0)
+    OPTION_NUMBER("fake"    , config.fake       , 0, 0)
 };
 
 MODULE_METHODS()

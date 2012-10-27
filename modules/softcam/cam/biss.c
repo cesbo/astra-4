@@ -46,10 +46,6 @@ static void interface_send_em(module_data_t *mod)
 
 static void module_init(module_data_t *mod)
 {
-    static char __empty_name[] = "";
-    if(!mod->config.name)
-        mod->config.name = __empty_name;
-
 #ifdef DEBUG
     log_debug(LOG_MSG("init"));
 #endif
@@ -74,8 +70,8 @@ static void module_destroy(module_data_t *mod)
 
 MODULE_OPTIONS()
 {
-    OPTION_STRING("name", config.name, NULL)
-    OPTION_STRING("cas_data", config.cas_data, NULL)
+    OPTION_STRING("name"    , config.name    , 0, "")
+    OPTION_STRING("cas_data", config.cas_data, 0, NULL)
 };
 
 MODULE_METHODS_EMPTY();

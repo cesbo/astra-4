@@ -51,6 +51,9 @@ static void module_init(module_data_t *mod)
 {
     log_debug(LOG_MSG("init"));
 
+    if(mod->config.cas_data)
+        cam_set_cas_data(mod, mod->config.cas_data);
+
     CAM_INTERFACE();
 }
 
@@ -62,16 +65,10 @@ static void module_destroy(module_data_t *mod)
     decrypt_module_cam_status(mod, -1);
 }
 
-static int config_check_cas_data(module_data_t *mod)
-{
-    cam_set_cas_data(mod, mod->config.cas_data);
-    return 1;
-}
-
 MODULE_OPTIONS()
 {
-    OPTION_STRING("name", config.name, NULL)
-    OPTION_STRING("cas_data", config.cas_data, config_check_cas_data)
+    OPTION_STRING("name"    , config.name       , 1, NULL)
+    OPTION_STRING("cas_data", config.cas_data   , 0, NULL)
 };
 
 MODULE_METHODS_EMPTY();

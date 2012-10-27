@@ -86,8 +86,8 @@ static void module_destroy(module_data_t *mod)
 
 MODULE_OPTIONS()
 {
-    OPTION_NUMBER("interval", config.interval, NULL)
-    OPTION_CUSTOM("callback", NULL)
+    OPTION_NUMBER("interval", config.interval, 1, 0)
+    OPTION_CUSTOM("callback", NULL           , 1)
 };
 
 MODULE_METHODS()

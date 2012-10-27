@@ -131,8 +131,8 @@ static void module_destroy(module_data_t *mod)
 
 MODULE_OPTIONS()
 {
-    OPTION_STRING("filename", config.filename, NULL)
-    OPTION_NUMBER("m2ts", config.m2ts, NULL)
+    OPTION_STRING("filename", config.filename, 1, NULL)
+    OPTION_NUMBER("m2ts"    , config.m2ts    , 0, 0)
 };
 
 MODULE_METHODS()

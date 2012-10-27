@@ -24,7 +24,6 @@ struct module_data_s
 };
 
 static const char __callback[] = "callback";
-static const char __default_addr[] = "0.0.0.0";
 
 /* callbacks */
 
@@ -101,21 +100,11 @@ static int method_port(module_data_t *mod)
 
 static void module_init(module_data_t *mod)
 {
-    if(!mod->config.addr)
-        mod->config.addr = __default_addr;
-
 #ifdef LOG_DEBUG
     log_debug(LOG_MSG("init"));
 #endif
 
     lua_State *L = LUA_STATE(mod);
-
-    // options table
-    lua_rawgeti(L, LUA_REGISTRYINDEX, mod->__idx_options);
-    lua_getfield(L, -1, __callback);
-    if(lua_isnil(L, -1))
-        luaL_error(L, LOG_MSG("callback required"));
-    lua_pop(L, 2); // callback + options
 
     // store self in registry
     lua_pushvalue(L, -1);
@@ -140,9 +129,9 @@ static void module_destroy(module_data_t *mod)
 
 MODULE_OPTIONS()
 {
-    OPTION_STRING("addr", config.addr, NULL)
-    OPTION_NUMBER("port", config.port, NULL)
-    OPTION_CUSTOM("callback", NULL)
+    OPTION_STRING("addr"    , config.addr, 0, "0.0.0.0")
+    OPTION_NUMBER("port"    , config.port, 0, 0)
+    OPTION_CUSTOM("callback", NULL       , 1)
 };
 
 MODULE_METHODS()

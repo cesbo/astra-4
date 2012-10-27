@@ -8,98 +8,92 @@
 
 #ifndef WITHOUT_MODULES
 
-#define LOG_MSG(_msg) "[core/module] " _msg
-
 struct module_data_s
 {
     MODULE_BASE();
 };
 
-static int _module_set_option(module_data_t *mod
-                              , const module_option_t *opt
-                              , const char *val)
+int module_set_options(module_data_t *mod
+                       , const module_option_t *opts, int count)
 {
-    char *dst = (char *)mod + opt->offset;
-    switch(opt->type)
-    {
-        case VALUE_NUMBER:
-            *(int *)dst = atoi(val);
-            break;
-        case VALUE_STRING:
-            *(char **)dst = (char *)val;
-            break;
-        case VALUE_NONE:
-            break;
-        default:
-            return 0;
-    }
-    return (opt->check) ? opt->check(mod) : 1;
-}
-
-void module_set_options(module_data_t *mod
-                        , const module_option_t *opts, size_t count)
-{
-    static const char *_set_option_msg = "failed to set option \"%s=%s\" "
-                                         "in the module \"%s\"";
-
     lua_State *L = LUA_STATE(mod);
-    for(lua_pushnil(L); lua_next(L, 2); lua_pop(L, 1))
+    for(int i = 0; i < count; ++i)
     {
-        if(lua_isnumber(L, -2))
-            continue;
+        const module_option_t *opt = &opts[i];
 
-        const char *var = lua_tostring(L, -2);
-        if(var[0] == '_')
-            continue;
-
-        const module_option_t *opt = NULL;
-        for(size_t i = 0; i < count; ++i)
+        lua_getfield(L, 2, opt->name);
+        int type = lua_type(L, -1);
+        if(type == LUA_TNIL)
         {
-            opt = &opts[i];
-            if(opt->name && !strcmp(opt->name, var))
-                break;
-            opt = NULL;
-        }
-
-        const int type = lua_type(L, -1);
-        if(!opt)
-        {
-#if 0
-            if(type != LUA_TNIL)
+            if(opt->is_required)
             {
-                log_warning("[core/module] option %s is not found in module %s"
-                            , var, mod->__name);
+                log_error("[%s] option \"%s\" is required"
+                          , mod->__name, opt->name);
+                lua_pop(L, 1);
+                return 0;
             }
-#endif
-            continue;
-        }
 
-        if(opt->type == VALUE_NONE)
-        {
-            if(!_module_set_option(mod, opt, NULL))
-                luaL_error(L, _set_option_msg, var, "", mod->__name);
-        }
-        else if(type == LUA_TTABLE)
-        {
-            for(lua_pushnil(L); lua_next(L, -2); lua_pop(L, 1))
+            char *dst = (char *)mod + opt->offset;
+            switch(opt->type)
             {
-                const char *val = lua_tostring(L, -1);
-                if(!_module_set_option(mod, opt, val))
-                    luaL_error(L, _set_option_msg, var, val, mod->__name);
+                case VALUE_NUMBER:
+                    *(int *)dst = opt->default_number;
+                    break;
+                case VALUE_STRING:
+                    *(const char **)dst = opt->default_string;
+                    break;
+                case VALUE_NONE:
+                    break;
             }
         }
         else
         {
-            const char *val;
-            if(type == LUA_TBOOLEAN)
-                val = ( lua_toboolean(L, -1) ) ? "1" : "0";
-            else
-                val = lua_tostring(L, -1);
-
-            if(!_module_set_option(mod, opt, val))
-                luaL_error(L, _set_option_msg, var, val, mod->__name);
+            char *dst = (char *)mod + opt->offset;
+            switch(opt->type)
+            {
+                case VALUE_NUMBER:
+                {
+                    if(type == LUA_TNUMBER)
+                        *(int *)dst = lua_tonumber(L, -1);
+                    else if(type == LUA_TBOOLEAN)
+                        *(int *)dst = lua_toboolean(L, -1);
+                    else
+                    {
+                        log_error("[%s] for option \"%s\" "
+                                  "number or boolean is required"
+                                  , mod->__name, opt->name);
+                        lua_pop(L, 1);
+                        return 0;
+                    }
+                    break;
+                }
+                case VALUE_STRING:
+                {
+                    if(type != LUA_TSTRING)
+                    {
+                        log_error("[%s] for option \"%s\" string is required"
+                                  , mod->__name, opt->name);
+                        lua_pop(L, 1);
+                        return 0;
+                    }
+                    *(const char **)dst = lua_tostring(L, -1);
+                    break;
+                }
+                case VALUE_NONE:
+                {
+                    if(opt->check && !opt->check(mod))
+                    {
+                        lua_pop(L, 1);
+                        return 0;
+                    }
+                    break;
+                }
+            }
         }
+        lua_pop(L, 1); // field
     }
+
+    return 1;
 }
 
 #endif /* ! WITHOUT_MODULES */

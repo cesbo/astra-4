@@ -367,19 +367,6 @@ static void module_destroy(module_data_t *mod)
 
 /* config_check */
 
-static int config_check_pid(module_data_t *mod)
-{
-    if(mod->config.pid >= MAX_PID)
-    {
-        log_error(LOG_MSG("pid value must be less then %d"), MAX_PID);
-        return 0;
-    }
-
-    log_warning(LOG_MSG("option pid is not yet ready"));
-
-    return 1;
-}
-
 static int config_check_filter(module_data_t *mod)
 {
     lua_State *L = LUA_STATE(mod);
@@ -424,12 +411,11 @@ static int config_check_map(module_data_t *mod)
 
 MODULE_OPTIONS()
 {
-    OPTION_STRING("name", config.name, NULL)
-    OPTION_NUMBER("pid", config.pid, config_check_pid)
-    OPTION_NUMBER("pnr", config.pnr, NULL)
-    OPTION_NUMBER("sdt", config.sdt, NULL)
-    OPTION_CUSTOM("filter", config_check_filter)
-    OPTION_CUSTOM("map", config_check_map)
+    OPTION_STRING("name"  , config.name        , 1, NULL)
+    OPTION_NUMBER("pnr"   , config.pnr         , 0, 0)
+    OPTION_NUMBER("sdt"   , config.sdt         , 0, 0)
+    OPTION_CUSTOM("filter", config_check_filter, 0)
+    OPTION_CUSTOM("map"   , config_check_map   , 0)
 };
 
 MODULE_METHODS()

@@ -124,12 +124,12 @@ static void module_destroy(module_data_t *mod)
 
 MODULE_OPTIONS()
 {
-    OPTION_STRING("addr", config.addr, NULL)
-    OPTION_NUMBER("port", config.port, NULL)
-    OPTION_NUMBER("ttl", config.ttl, NULL)
-    OPTION_STRING("localaddr", config.local, NULL)
-    OPTION_NUMBER("socket_size", config.socket_size, NULL)
-    OPTION_NUMBER("rtp", config.rtp, NULL)
+    OPTION_STRING("addr"       , config.addr       , 1, NULL)
+    OPTION_NUMBER("port"       , config.port       , 0, 1234)
+    OPTION_NUMBER("ttl"        , config.ttl        , 0, 0)
+    OPTION_STRING("localaddr"  , config.local      , 0, NULL)
+    OPTION_NUMBER("socket_size", config.socket_size, 0, 0)
+    OPTION_NUMBER("rtp"        , config.rtp        , 0, 0)
 };
 
 MODULE_METHODS_EMPTY();

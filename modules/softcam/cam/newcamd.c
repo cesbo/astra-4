@@ -56,7 +56,6 @@ struct module_data_s
         int timeout;
     } config;
 
-    char _name[32];
     char password_md5[36];
 
     int sock;
@@ -721,22 +720,6 @@ static void newcamd_disconnect(module_data_t *mod)
     decrypt_module_cam_status(mod, 0);
 }
 
-/* config_check */
-
-static int config_check_key(module_data_t *mod)
-{
-    if(strlen(mod->config.key) == 28)
-        return 1;
-    log_error(LOG_MSG("key length must be equal 28"));
-    return 0;
-}
-
-static int config_check_cas_data(module_data_t *mod)
-{
-    cam_set_cas_data(mod, mod->config.cas_data);
-    return 1;
-}
-
 /* softcam callbacks */
 
 static void interface_send_em(module_data_t *mod)
@@ -753,18 +736,11 @@ static void interface_send_em(module_data_t *mod)
 
 static void module_init(module_data_t *mod)
 {
-    if(!mod->config.name)
-    {
-        snprintf(mod->_name, sizeof(mod->_name)
-                 , "%s:%d", mod->config.host, mod->config.port);
-        mod->config.name = mod->_name;
-    }
-    if(!mod->config.timeout)
-        mod->config.timeout = 5 * 1000;
-    else
-        mod->config.timeout *= 1000;
-
     log_debug(LOG_MSG("init"));
+
+    mod->config.timeout *= 1000;
+    if(mod->config.cas_data)
+        cam_set_cas_data(mod, mod->config.cas_data);
 
     CAM_INTERFACE();
 
@@ -797,15 +773,15 @@ static void module_destroy(module_data_t *mod)
 
 MODULE_OPTIONS()
 {
-    OPTION_STRING("name", config.name, NULL)
-    OPTION_STRING("host", config.host, NULL)
-    OPTION_NUMBER("port", config.port, NULL)
-    OPTION_STRING("user", config.user, NULL)
-    OPTION_STRING("pass", config.pass, NULL)
-    OPTION_STRING("key", config.key, config_check_key)
-    OPTION_NUMBER("disable_emm", __cam_module.disable_emm, NULL)
-    OPTION_STRING("cas_data", config.cas_data, config_check_cas_data)
-    OPTION_NUMBER("timeout", config.timeout, NULL)
+    OPTION_STRING("name"       , config.name             , 1, NULL)
+    OPTION_STRING("host"       , config.host             , 1, NULL)
+    OPTION_NUMBER("port"       , config.port             , 1, 0)
+    OPTION_STRING("user"       , config.user             , 1, NULL)
+    OPTION_STRING("pass"       , config.pass             , 1, NULL)
+    OPTION_STRING("key"        , config.key              , 1, NULL)
+    OPTION_NUMBER("disable_emm", __cam_module.disable_emm, 0, 0)
+    OPTION_STRING("cas_data"   , config.cas_data         , 0, NULL)
+    OPTION_NUMBER("timeout"    , config.timeout          , 0, 5)
 };
 
 MODULE_METHODS_EMPTY();

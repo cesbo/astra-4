@@ -770,6 +770,92 @@ static void module_init(module_data_t *mod)
 {
     log_debug(LOG_MSG("init"));
 
+    /* set dvb type */
+    if(mod->config._type[0] == 's' || mod->config._type[0] == 'S')
+    {
+        if(mod->config._type[1] == '2')
+            mod->config.type = DVB_TYPE_S2;
+        else
+            mod->config.type = DVB_TYPE_S;
+
+        /* set TP */
+        int is_tp_ok = 0;
+        do
+        {
+            char *conf = mod->config._tp;
+            // set frequency
+            mod->config.tp.freq = atoi(conf) * 1000;
+            for(; *conf && *conf != ':'; ++conf)
+                ;
+            if(!*conf)
+                break;
+            ++conf;
+            // set polarization
+            char pol = *conf;
+            if(pol > 'Z')
+                pol -= ('z' - 'Z'); // Upper Case
+            // V - vertical/right // H - horizontal/left
+            mod->config.tp.pol = (pol == 'V' || pol == 'R') ? TP_POL_V : TP_POL_H;
+            for(; *conf && *conf != ':'; ++conf)
+                ;
+            if(!*conf)
+                break;
+            ++conf;
+            // set symbol-rate
+            mod->config.tp.srate = atoi(conf) * 1000;
+            is_tp_ok = 1;
+        } while(0);
+        if(!is_tp_ok)
+        {
+            log_error(LOG_MSG("failed to set transponder \"%s\"")
+                      , mod->config._tp);
+            return;
+        }
+
+        /* set LNB */
+        int is_lnb_ok = 0;
+        do
+        {
+            char *conf = mod->config._lnb;
+            // set lof1 (low)
+            mod->config.lnb.lof1 = atoi(conf) * 1000;
+            for(; *conf && *conf != ':'; ++conf)
+                ;
+            if(!*conf)
+            {
+                if(mod->config.lnb.lof1)
+                {
+                    mod->config.lnb.lof2 = mod->config.lnb.lof1;
+                    mod->config.lnb.slof = mod->config.lnb.lof1;
+                    is_lnb_ok = 1;
+                }
+                break;
+            }
+            ++conf;
+            // set lof2 (high)
+            mod->config.lnb.lof2 = atoi(conf) * 1000;
+            for(; *conf && *conf != ':'; ++conf)
+                ;
+            if(!*conf)
+                break;
+            ++conf;
+            // set slof (switch)
+            mod->config.lnb.slof = atoi(conf) * 1000;
+            is_lnb_ok = 1;
+        } while(0);
+        if(!is_lnb_ok)
+        {
+            log_error(LOG_MSG("failed to set LNB \"%s\"")
+                      , mod->config._lnb);
+            return;
+        }
+    }
+    else
+    {
+        log_error(LOG_MSG("unknown DVB type \"%s\""), mod->config._type);
+        return;
+    }
+
     /* protocols */
     stream_ts_init(mod, NULL, NULL, NULL
                    , callback_join_pid, callback_leave_pid);
@@ -825,86 +911,17 @@ static void module_destroy(module_data_t *mod)
     dvr_close(mod);
 }
 
-/* config_check */
-
-static int config_check_type(module_data_t *mod)
-{
-    if(mod->config._type[0] == 's' || mod->config._type[0] == 'S')
-    {
-        if(mod->config._type[1] == '\0')
-            mod->config.type = DVB_TYPE_S;
-        else if(mod->config._type[1] == '2')
-            mod->config.type = DVB_TYPE_S2;
-        else
-            return 0;
-        return 1;
-    }
-
-    return 0;
-}
-
-static int config_check_lnb(module_data_t *mod)
-{
-    char *conf = mod->config._lnb;
-
-    // set lof1 (low)
-    mod->config.lnb.lof1 = atoi(conf) * 1000;
-    for(; *conf && *conf != ':'; ++conf)
-        ;
-    if(!*conf)
-        return 0;
-    ++conf;
-    // set lof2 (high)
-    mod->config.lnb.lof2 = atoi(conf) * 1000;
-    for(; *conf && *conf != ':'; ++conf)
-        ;
-    if(!*conf)
-        return 0;
-    ++conf;
-    // set slof (switch)
-    mod->config.lnb.slof = atoi(conf) * 1000;
-
-    return 1;
-}
-
-static int config_check_tp(module_data_t *mod) {
-    char *conf = mod->config._tp;
-
-    // set frequency
-    mod->config.tp.freq = atoi(conf) * 1000;
-    for(; *conf && *conf != ':'; ++conf)
-        ;
-    if(!*conf)
-        return 0;
-    ++conf;
-    // set polarization
-    char pol = *conf;
-    if(pol > 'Z')
-        pol -= ('z' - 'Z'); // Upper Case
-    // V - vertical/right // H - horizontal/left
-    mod->config.tp.pol = (pol == 'V' || pol == 'R') ? TP_POL_V : TP_POL_H;
-    for(; *conf && *conf != ':'; ++conf)
-        ;
-    if(!*conf)
-        return 0;
-    ++conf;
-    // set symbol-rate
-    mod->config.tp.srate = atoi(conf) * 1000;
-
-    return 1;
-}
-
 MODULE_OPTIONS()
 {
-    OPTION_NUMBER("adapter", config.adapter, NULL)
-    OPTION_NUMBER("device", config.device, NULL)
-    OPTION_NUMBER("diseqc", config.diseqc, NULL)
-    OPTION_STRING("type", config._type, config_check_type)
-    OPTION_NUMBER("lnb_sharing", config.lnb_sharing, NULL)
-    OPTION_STRING("lnb", config._lnb, config_check_lnb)
-    OPTION_STRING("tp", config._tp, config_check_tp)
-    OPTION_NUMBER("budget", config.budget, NULL)
-    OPTION_NUMBER("buffer_size", config.buffer_size, NULL)
+    OPTION_NUMBER("adapter"    , config.adapter    , 1, 0)
+    OPTION_NUMBER("device"     , config.device     , 0, 0)
+    OPTION_NUMBER("diseqc"     , config.diseqc     , 0, 0)
+    OPTION_STRING("type"       , config._type      , 1, NULL)
+    OPTION_NUMBER("lnb_sharing", config.lnb_sharing, 0, 0)
+    OPTION_STRING("lnb"        , config._lnb       , 0, NULL)
+    OPTION_STRING("tp"         , config._tp        , 0, NULL)
+    OPTION_NUMBER("budget"     , config.budget     , 0, 0)
+    OPTION_NUMBER("buffer_size", config.buffer_size, 0, 0)
 };
 
 MODULE_METHODS()

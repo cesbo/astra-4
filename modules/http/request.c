@@ -569,19 +569,9 @@ static void module_init(module_data_t *mod)
 
     lua_State *L = LUA_STATE(mod);
 
-    // options table
-    lua_rawgeti(L, LUA_REGISTRYINDEX, mod->__idx_options);
-    lua_getfield(L, -1, "callback");
-    if(lua_isnil(L, -1))
-        luaL_error(L, "[http_request] callback required");
-    lua_pop(L, 2); // callback + options
-
     // store self in registry
     lua_pushvalue(L, -1);
     mod->idx_self = luaL_ref(L, LUA_REGISTRYINDEX);
-
-    if(!mod->config.port)
-        mod->config.port = 80;
 
     mod->sock = socket_open(SOCKET_CONNECT
                             , mod->config.host, mod->config.port);
@@ -606,14 +596,14 @@ static void module_destroy(module_data_t *mod)
 
 MODULE_OPTIONS()
 {
-    OPTION_CUSTOM("method", NULL)
-    OPTION_CUSTOM("uri", NULL)
-    OPTION_CUSTOM("version", NULL)
-    OPTION_CUSTOM("headers", NULL)
-    OPTION_CUSTOM("content", NULL)
-    OPTION_CUSTOM("callback", NULL)
-    OPTION_STRING("host", config.host, NULL)
-    OPTION_NUMBER("port", config.port, NULL)
+    OPTION_CUSTOM("method"  , NULL       , 0)
+    OPTION_CUSTOM("uri"     , NULL       , 0)
+    OPTION_CUSTOM("version" , NULL       , 0)
+    OPTION_CUSTOM("headers" , NULL       , 0)
+    OPTION_CUSTOM("content" , NULL       , 0)
+    OPTION_CUSTOM("callback", NULL       , 1)
+    OPTION_STRING("host"    , config.host, 1, NULL)
+    OPTION_NUMBER("port"    , config.port, 0, 80)
 };
 
 MODULE_METHODS()
