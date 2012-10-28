@@ -35,15 +35,112 @@
 
 typedef enum
 {
-    DVB_TYPE_S = 1,
-    DVB_TYPE_S2 = 2,
+    DVB_TYPE_S,
+    DVB_TYPE_S2,
+    DVB_TYPE_T,
+    DVB_TYPE_C,
 } dvb_type_t;
 
 typedef enum
 {
-    TP_POL_H = 1, // H, L
-    TP_POL_V = 2, // V, R
+    TP_POL_H, // H, L
+    TP_POL_V, // V, R
 } tp_pol_t;
+
+typedef struct
+{
+    const char *name;
+    int value;
+} fe_value_t;
+
+static fe_value_t polarization_list[] =
+{
+    { "H", TP_POL_H },
+    { "L", TP_POL_H },
+    { "V", TP_POL_V },
+    { "R", TP_POL_V },
+};
+
+static fe_value_t modulation_list[] =
+{
+    { "QPSK", QPSK },
+    { "QAM16", QAM_16 },
+    { "QAM32", QAM_32 },
+    { "QAM64", QAM_64 },
+    { "QAM128", QAM_128 },
+    { "QAM256", QAM_256 },
+    { "AUTO", QAM_AUTO },
+    { "VSB8", VSB_8 },
+    { "VSB16", VSB_16 },
+#if DVB_API_VERSION >= 5
+    { "PSK8", PSK_8 },
+    { "APSK16", APSK_16 },
+    { "APSK32", APSK_32 },
+    { "DQPSK", DQPSK },
+#endif
+};
+
+static fe_value_t fec_list[] =
+{
+    { "NONE", FEC_NONE },
+    { "1/2", FEC_1_2 },
+    { "2/3", FEC_2_3 },
+    { "3/4", FEC_3_4 },
+    { "4/5", FEC_4_5 },
+    { "5/6", FEC_5_6 },
+    { "6/7", FEC_6_7 },
+    { "7/8", FEC_7_8 },
+    { "8/9", FEC_8_9 },
+    { "AUTO", FEC_AUTO },
+#if DVB_API_VERSION >= 5
+    { "3/5", FEC_3_5 },
+    { "9/10", FEC_9_10 },
+#endif
+};
+
+static fe_value_t rolloff_list[] =
+{
+    { "35", ROLLOFF_35 },
+    { "20", ROLLOFF_20 },
+    { "25", ROLLOFF_25 },
+    { "AUTO", ROLLOFF_AUTO },
+};
+
+static fe_value_t bandwidth_list[] =
+{
+    { "8MHZ", BANDWIDTH_8_MHZ },
+    { "7MHZ", BANDWIDTH_7_MHZ },
+    { "6MHZ", BANDWIDTH_6_MHZ },
+    { "AUTO", BANDWIDTH_AUTO }
+};
+
+static fe_value_t guardinterval_list[] =
+{
+    { "1/32", GUARD_INTERVAL_1_32 },
+    { "1/16", GUARD_INTERVAL_1_16 },
+    { "1/8", GUARD_INTERVAL_1_8 },
+    { "1/4", GUARD_INTERVAL_1_4 },
+    { "AUTO", GUARD_INTERVAL_AUTO },
+};
+
+static fe_value_t transmitmode_list[] =
+{
+    { "2K", TRANSMISSION_MODE_2K },
+    { "8K", TRANSMISSION_MODE_8K },
+    { "AUTO", TRANSMISSION_MODE_AUTO },
+#if DVB_API_VERSION >= 5
+    { "4K", TRANSMISSION_MODE_4K },
+#endif
+};
+
+static fe_value_t hierarchy_list[] =
+{
+    { "NONE", HIERARCHY_NONE },
+    { "1", HIERARCHY_1 },
+    { "2", HIERARCHY_2 },
+    { "4", HIERARCHY_4 },
+    { "AUTO", HIERARCHY_AUTO }
+};
 
 enum
 {
@@ -61,12 +158,17 @@ struct module_data_s
     {
         int adapter;
         int device;
-        int diseqc;
 
-        char *_type; // s, s2
+        char *_type;
         dvb_type_t type;
 
-        int lnb_sharing;
+        int budget;
+        int buffer_size; // dvr ring buffer
+
+        int frequency;
+
+        /* dvb-s, dvb-s2 */
+        int diseqc;
 
         char *_lnb;
         struct
@@ -75,17 +177,35 @@ struct module_data_s
             int lof2;
             int slof;
         } lnb;
+        int lnb_sharing;
 
         char *_tp;
-        struct
-        {
-            int freq;
-            tp_pol_t pol;
-            int srate;
-        } tp; // transponder
+        char *_polarization;
+        tp_pol_t polarization;
 
-        int budget;
-        int buffer_size; // dvr ring buffer
+        int symbolrate;
+
+        char *_fec;
+        fe_code_rate_t fec;
+
+        char *_rolloff;
+        fe_rolloff_t rolloff;
+
+        /* dvb-t */
+        char *_modulation;
+        fe_modulation_t modulation;
+
+        char *_bandwidth;
+        fe_bandwidth_t bandwidth;
+
+        char *_guardinterval;
+        fe_guard_interval_t guardinterval;
+
+        char *_transmitmode;
+        fe_transmit_mode_t transmitmode;
+
+        char *_hierarchy;
+        fe_hierarchy_t hierarchy;
     } config;
 
     /* frontend */
@@ -98,6 +218,7 @@ struct module_data_s
     struct
     {
         const char *error_message;
+        int error_code;
 
         fe_status_t fe;
         int lock;
@@ -132,6 +253,15 @@ struct module_data_s
 };
 
 /* frontend */
+
+/*
+ * ooooooooo   o88    oooooooo8 ooooooooooo              oooooooo8
+ *  888    88o oooo  888         888    88   ooooooooo o888     88
+ *  888    888  888   888oooooo  888ooo8   888    888  888
+ *  888    888  888          888 888    oo 888    888  888o     oo
+ * o888ooo88   o888o o88oooo888 o888ooo8888  88ooo888   888oooo88
+ *                                                888o
+ */
 
 /* in thread function */
 static int diseqc_setup(module_data_t *mod
@@ -189,96 +319,19 @@ static int diseqc_setup(module_data_t *mod
     return 1;
 } /* diseqc_setup */
 
-/* in thread function */
-static int frontend_tune_s(module_data_t *mod
-                           , int freq, int voltage, int tone)
+
+/*
+ * ooooooooo  ooooo  oooo oooooooooo           oooooooo8
+ *  888    88o 888    88   888    888         888
+ *  888    888  888  88    888oooo88 ooooooooo 888oooooo
+ *  888    888   88888     888    888                 888
+ * o888ooo88      888     o888ooo888          o88oooo888
+ *
+ */
+
+static int frontend_tune_s(module_data_t *mod)
 {
-    struct dvb_frontend_parameters feparams;
-
-    memset(&feparams, 0, sizeof(feparams));
-    feparams.frequency = freq;
-    feparams.inversion = INVERSION_AUTO;
-    feparams.u.qpsk.symbol_rate = mod->config.tp.srate;
-    feparams.u.qpsk.fec_inner = FEC_AUTO;
-
-    if(!mod->config.diseqc)
-    {
-        if(ioctl(mod->fe_fd, FE_SET_TONE, tone) != 0)
-        {
-            mod->status.error_message = "FE_SET_TONE";
-            return 0;
-        }
-
-        if(ioctl(mod->fe_fd, FE_SET_VOLTAGE, voltage) != 0)
-        {
-            mod->status.error_message = "FE_SET_VOLTAGE";
-            return 0;
-        }
-    }
-
-    if(ioctl(mod->fe_fd, FE_SET_FRONTEND, &feparams) != 0)
-    {
-        mod->status.error_message = "FE_SET_FRONTEND";
-        return 0;
-    }
-
-    return 1;
-} /* frontend_tune_s */
-
-/* in thread function */
-static int frontend_tune_s2(module_data_t *mod
-                            , int freq, int voltage, int tone)
-{
-
-    /* clear */
-    struct dtv_properties cmdseq;
-    int fec = FEC_AUTO;
-
-    struct dtv_property cmd_clear[] =
-    {
-        { .cmd = DTV_CLEAR }
-    };
-    cmdseq.num = 1;
-    cmdseq.props = cmd_clear;
-
-    if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
-    {
-        mod->status.error_message = "FE_SET_PROPERTY clear";
-        return 0;
-    }
-
-    /* tune */
-    struct dtv_property cmd_tune[] =
-    {
-        { .cmd = DTV_DELIVERY_SYSTEM,   .u.data = SYS_DVBS2             },
-        { .cmd = DTV_FREQUENCY,         .u.data = freq                  },
-        { .cmd = DTV_SYMBOL_RATE,       .u.data = mod->config.tp.srate  },
-        { .cmd = DTV_INNER_FEC,         .u.data = fec                   },
-        { .cmd = DTV_INVERSION,         .u.data = INVERSION_AUTO        },
-        { .cmd = DTV_VOLTAGE,           .u.data = voltage               },
-        { .cmd = DTV_TONE,              .u.data = tone                  },
-        { .cmd = DTV_TUNE                                               }
-    };
-    cmdseq.num = ARRAY_SIZE(cmd_tune);
-    cmdseq.props = cmd_tune;
-
-    struct dvb_frontend_event ev;
-    while(ioctl(mod->fe_fd, FE_GET_EVENT, &ev) != -1)
-        ;
-
-    if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
-    {
-        mod->status.error_message = "FE_SET_PROPERTY tune";
-        return 0;
-    }
-
-    return 1;
-} /* frontend_tune_s2 */
-
-/* in thread function */
-static void frontend_tune(module_data_t *mod)
-{
-    int freq = mod->config.tp.freq;
+    int freq = mod->config.frequency;
 
     int hiband = (mod->config.lnb.slof && mod->config.lnb.lof2
                   && freq > mod->config.lnb.slof);
@@ -296,46 +349,213 @@ static void frontend_tune(module_data_t *mod)
     int tone = SEC_TONE_OFF;
     if(!mod->config.lnb_sharing)
     {
-        voltage = (mod->config.tp.pol == TP_POL_V)
+        voltage = (mod->config.polarization == TP_POL_V)
                 ? SEC_VOLTAGE_13 : SEC_VOLTAGE_18;
         if(hiband)
             tone = SEC_TONE_ON;
     }
 
+    if(mod->config.diseqc && !diseqc_setup(mod, hiband, freq, voltage, tone))
+        return 0;
+
+    if(mod->config.type == DVB_TYPE_S)
+    {
+        struct dvb_frontend_parameters feparams;
+
+        memset(&feparams, 0, sizeof(feparams));
+        feparams.frequency = freq;
+        feparams.inversion = INVERSION_AUTO;
+        feparams.u.qpsk.symbol_rate = mod->config.symbolrate;
+        feparams.u.qpsk.fec_inner = mod->config.fec;
+
+        if(!mod->config.diseqc)
+        {
+            if(ioctl(mod->fe_fd, FE_SET_TONE, tone) != 0)
+            {
+                mod->status.error_message = "FE_SET_TONE";
+                return 0;
+            }
+
+            if(ioctl(mod->fe_fd, FE_SET_VOLTAGE, voltage) != 0)
+            {
+                mod->status.error_message = "FE_SET_VOLTAGE";
+                return 0;
+            }
+        }
+
+        if(ioctl(mod->fe_fd, FE_SET_FRONTEND, &feparams) != 0)
+        {
+            mod->status.error_message = "FE_SET_FRONTEND";
+            return 0;
+        }
+    }
+    else
+    {
+#if DVB_API_VERSION >= 5
+        /* clear */
+        struct dtv_properties cmdseq;
+
+        struct dtv_property cmd_clear[] =
+        {
+            { .cmd = DTV_CLEAR }
+        };
+        cmdseq.num = 1;
+        cmdseq.props = cmd_clear;
+
+        if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
+        {
+            mod->status.error_message = "FE_SET_PROPERTY clear";
+            return 0;
+        }
+
+        /* tune */
+        struct dtv_property cmd_tune[] =
+        {
+            { .cmd = DTV_DELIVERY_SYSTEM,   .u.data = SYS_DVBS2             },
+            { .cmd = DTV_FREQUENCY,         .u.data = freq                  },
+            { .cmd = DTV_SYMBOL_RATE,       .u.data = mod->config.symbolrate},
+            { .cmd = DTV_INNER_FEC,         .u.data = mod->config.fec       },
+            { .cmd = DTV_INVERSION,         .u.data = INVERSION_AUTO        },
+            { .cmd = DTV_VOLTAGE,           .u.data = voltage               },
+            { .cmd = DTV_MODULATION,        .u.data = mod->config.modulation},
+            { .cmd = DTV_ROLLOFF,           .u.data = mod->config.rolloff   },
+            { .cmd = DTV_TONE,              .u.data = tone                  },
+            { .cmd = DTV_TUNE                                               }
+        };
+        cmdseq.num = ARRAY_SIZE(cmd_tune);
+        cmdseq.props = cmd_tune;
+
+        struct dvb_frontend_event ev;
+        while(ioctl(mod->fe_fd, FE_GET_EVENT, &ev) != -1)
+            ;
+
+        if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
+        {
+            mod->status.error_message = "FE_SET_PROPERTY tune";
+            return 0;
+        }
+#else
+#       warning "DVB-S2 is disabled. Update driver"
+        return 0;
+#endif
+    }
+
+    return 1;
+}
+
+/*
+ * ooooooooo  ooooo  oooo oooooooooo       ooooooooooo
+ *  888    88o 888    88   888    888      88  888  88
+ *  888    888  888  88    888oooo88 ooooooooo 888
+ *  888    888   88888     888    888          888
+ * o888ooo88      888     o888ooo888          o888o
+ *
+ */
+
+static int frontend_tune_t(module_data_t *mod)
+{
+    struct dvb_frontend_parameters feparams;
+
+    memset(&feparams, 0, sizeof(feparams));
+    feparams.frequency = mod->config.frequency;
+    feparams.inversion = INVERSION_AUTO;
+
+    feparams.u.ofdm.code_rate_HP = FEC_AUTO;
+    feparams.u.ofdm.code_rate_LP = FEC_AUTO;
+
+    feparams.u.ofdm.bandwidth = mod->config.bandwidth;
+    feparams.u.ofdm.constellation = mod->config.modulation;
+    feparams.u.ofdm.transmission_mode = mod->config.transmitmode;
+    feparams.u.ofdm.guard_interval = mod->config.guardinterval;
+    feparams.u.ofdm.hierarchy_information = mod->config.hierarchy;
+
+    if(ioctl(mod->fe_fd, FE_SET_FRONTEND, &feparams) != 0)
+    {
+        mod->status.error_message = "FE_SET_FRONTEND";
+        return 0;
+    }
+
+    return 1;
+} /* frontend_tune_t */
+
+/*
+ * ooooooooo  ooooo  oooo oooooooooo             oooooooo8
+ *  888    88o 888    88   888    888          o888     88
+ *  888    888  888  88    888oooo88 ooooooooo 888
+ *  888    888   88888     888    888          888o     oo
+ * o888ooo88      888     o888ooo888            888oooo88
+ *
+ */
+
+static int frontend_tune_c(module_data_t *mod)
+{
+    struct dvb_frontend_parameters feparams;
+
+    memset(&feparams, 0, sizeof(feparams));
+    feparams.frequency = mod->config.frequency;
+    feparams.inversion = INVERSION_AUTO;
+    feparams.u.qam.symbol_rate = mod->config.symbolrate;
+    feparams.u.qam.modulation = mod->config.modulation;
+    feparams.u.qam.fec_inner = mod->config.fec;
+
+    if(ioctl(mod->fe_fd, FE_SET_FRONTEND, &feparams) != 0)
+    {
+        mod->status.error_message = "FE_SET_FRONTEND";
+        return 0;
+    }
+
+    return 1;
+} /* frontend_tune_c */
+
+/*
+ * ooooooooooo ooooo  oooo oooo   oooo ooooooooooo
+ * 88  888  88  888    88   8888o  88   888    88
+ *     888      888    88   88 888o88   888ooo8
+ *     888      888    88   88   8888   888    oo
+ *    o888o      888oo88   o88o    88  o888ooo8888
+ *
+ */
+
+/* in thread function */
+static void frontend_tune(module_data_t *mod)
+{
     int ret = 0;
     do
     {
-
-        if(mod->config.diseqc)
-        {
-            ret = diseqc_setup(mod, hiband, freq, voltage, tone);
-            if(!ret)
-                break;
-        }
-
         switch(mod->config.type)
         {
             case DVB_TYPE_S:
-                ret = frontend_tune_s(mod, freq, voltage, tone);
-                break;
             case DVB_TYPE_S2:
-                ret = frontend_tune_s2(mod, freq, voltage, tone);
+                ret = frontend_tune_s(mod);
+                break;
+            case DVB_TYPE_T:
+                ret = frontend_tune_t(mod);
+                break;
+            case DVB_TYPE_C:
+                ret = frontend_tune_c(mod);
                 break;
             default:
                 mod->status.error_message = "unknown dvb type";
-                ret = 0;
                 break;
         }
-
-        return;
     } while(0);
 
     if(!ret)
     {
-        int message = MESSAGE_ERROR;
-        stream_send(mod->thread_stream, &message, sizeof(message));
+        mod->status.error_code = errno;
+        static const int message = MESSAGE_ERROR;
+        stream_send(mod->thread_stream, (void *)&message, sizeof(message));
     }
 } /* frontend_tune */
+
+/*
+ *  oooooooo8 ooooooooooo   o   ooooooooooo ooooo  oooo oooooooo8
+ * 888        88  888  88  888  88  888  88  888    88 888
+ *  888oooooo     888     8  88     888      888    88  888oooooo
+ *         888    888    8oooo88    888      888    88         888
+ * o88oooo888    o888o o88o  o888o o888o      888oo88  o88oooo888
+ *
+ */
 
 /* in thread function */
 static void frontend_status(module_data_t *mod)
@@ -343,9 +563,9 @@ static void frontend_status(module_data_t *mod)
     if(ioctl(mod->fe_fd, FE_READ_STATUS, &mod->status.fe) != 0)
     {
         mod->status.error_message = "FE_READ_STATUS";
-        // send message to main thread
-        int message = MESSAGE_ERROR;
-        stream_send(mod->thread_stream, &message, sizeof(message));
+        mod->status.error_code = errno;
+        static const int message = MESSAGE_ERROR;
+        stream_send(mod->thread_stream, (void *)&message, sizeof(message));
         return;
     }
 
@@ -364,24 +584,32 @@ static void frontend_status(module_data_t *mod)
     mod->status.snr = (snr * 100) / 0xffff;
 
     // send message to main thread
-    int message;
     if(!mod->status.lock)
     {
         // retune
         frontend_tune(mod);
-        message = MESSAGE_RETUNE;
-        stream_send(mod->thread_stream, &message, sizeof(message));
+        static const int message = MESSAGE_RETUNE;
+        stream_send(mod->thread_stream, (void *)&message, sizeof(message));
         sleep(RETUNE_INTERVAL - STATUS_INTERVAL);
     }
     else
     {
         if(!mod->is_lock)
         {
-            message = MESSAGE_LOCK;
-            stream_send(mod->thread_stream, &message, sizeof(message));
+            static const int message = MESSAGE_LOCK;
+            stream_send(mod->thread_stream, (void *)&message, sizeof(message));
         }
     }
 } /* frontend status */
+
+/*
+ * ooooooooooo ooooo ooooo oooooooooo  ooooooooooo      o      ooooooooo
+ * 88  888  88  888   888   888    888  888    88      888      888    88o
+ *     888      888ooo888   888oooo88   888ooo8       8  88     888    888
+ *     888      888   888   888  88o    888    oo    8oooo88    888    888
+ *    o888o    o888o o888o o888o  88o8 o888ooo8888 o88o  o888o o888ooo88
+ *
+ */
 
 static void frontend_thread(void *arg)
 {
@@ -426,7 +654,8 @@ static void frontend_thread_stream(void *arg)
         case MESSAGE_ERROR:
         {
             log_error(LOG_MSG("%s failed [%s]")
-                      , mod->status.error_message, strerror(errno));
+                      , mod->status.error_message
+                      , strerror(mod->status.error_code));
             mod->is_lock = 0;
             break;
         }
@@ -445,6 +674,15 @@ static void frontend_thread_stream(void *arg)
             break;
     }
 }
+
+/*
+ * ooooooooooo ooooooooooo
+ *  888    88   888    88
+ *  888ooo8     888ooo8
+ *  888         888    oo
+ * o888o       o888ooo8888
+ *
+ */
 
 static int frontend_open(module_data_t *mod)
 {
@@ -467,7 +705,7 @@ static int frontend_open(module_data_t *mod)
 
     switch(feinfo.type)
     {
-        case FE_QPSK:
+        case FE_QPSK:   // DVB-S
         {
             if(mod->config.type == DVB_TYPE_S2
                && !(feinfo.caps & FE_CAN_2G_MODULATION))
@@ -477,11 +715,13 @@ static int frontend_open(module_data_t *mod)
             }
             break;
         }
+        case FE_OFDM:   // DVB-T
+            break;
+        case FE_QAM:    // DVB-C
+            break;
         default:
-        {
             log_error(LOG_MSG("unknown card type"));
             return 0;
-        }
     }
 
     mod->thread_stream = stream_init(frontend_thread_stream, mod);
@@ -499,7 +739,14 @@ static void frontend_close(module_data_t *mod)
         close(mod->fe_fd);
 } /* frontend_close */
 
-/* dvr */
+/*
+ * ooooooooo  ooooo  oooo oooooooooo
+ *  888    88o 888    88   888    888
+ *  888    888  888  88    888oooo88
+ *  888    888   88888     888  88o
+ * o888ooo88      888     o888o  88o8
+ *
+ */
 
 static int dvr_open(module_data_t *);
 
@@ -607,7 +854,14 @@ static int dvr_open(module_data_t *mod)
     return 1;
 }
 
-/* demux */
+/*
+ * ooooooooo  ooooooooooo oooo     oooo ooooo  oooo ooooo  oooo
+ *  888    88o 888    88   8888o   888   888    88    888  88
+ *  888    888 888ooo8     88 888o8 88   888    88      888
+ *  888    888 888    oo   88  888  88   888    88     88 888
+ * o888ooo88  o888ooo8888 o88o  8  o88o   888oo88   o88o  o888o
+ *
+ */
 
 static void demux_join_pid(module_data_t *mod, uint16_t pid)
 {
@@ -705,7 +959,14 @@ static void demux_bounce(module_data_t *mod)
     }
 } /* demux_bounce */
 
-/* stream_ts callbacks */
+/*
+ * oooo     oooo  ooooooo  ooooooooo  ooooo  oooo ooooo       ooooooooooo
+ *  8888o   888 o888   888o 888    88o 888    88   888         888    88
+ *  88 888o8 88 888     888 888    888 888    88   888         888ooo8
+ *  88  888  88 888o   o888 888    888 888    88   888      o  888    oo
+ * o88o  8  o88o  88ooo88  o888ooo88    888oo88   o888ooooo88 o888ooo8888
+ *
+ */
 
 static void callback_join_pid(module_data_t *mod
                               , module_data_t *child
@@ -766,46 +1027,136 @@ static int method_event(module_data_t *mod)
 
 /* public */
 
+static int config_check(module_data_t *mod, const char *value_str
+                        , fe_value_t *list, const int list_size
+                        , const char *opt_name, int *value)
+{
+    if(!value_str)
+    {
+        log_error(LOG_MSG("option %s is nil"), opt_name);
+        return 0;
+    }
+
+    for(int i = 0; i < list_size; ++i)
+    {
+        if(!strcasecmp(list[i].name, value_str))
+        {
+            *value = list[i].value;
+            return 1;
+        }
+    }
+    log_error(LOG_MSG("unknown %s type \"%s\""), opt_name, value_str);
+    return 0;
+}
+#define CONFIG_CHECK_X(_type)                                               \
+    config_check(mod, mod->config._##_type                                  \
+                 , _type##_list, ARRAY_SIZE(_type##_list)                   \
+                 , #_type, (int *)&mod->config._type)
+
+static int dvbs_parse_tp(module_data_t *mod)
+{
+    char *conf = mod->config._tp;
+    if(!conf)
+        return 1;
+
+    // set frequency
+    mod->config.frequency = atoi(conf) * 1000;
+    for(; *conf && *conf != ':'; ++conf)
+        ;
+    if(!*conf)
+        return 0;
+    ++conf;
+    // set polarization
+    char pol = *conf;
+    if(pol > 'Z')
+        pol -= ('z' - 'Z'); // Upper Case
+    // V - vertical/right // H - horizontal/left
+    mod->config.polarization = (pol == 'V' || pol == 'R')
+                             ? TP_POL_V
+                             : TP_POL_H;
+    for(; *conf && *conf != ':'; ++conf)
+        ;
+    if(!*conf)
+        return 0;
+    ++conf;
+    // set symbol-rate
+    mod->config.symbolrate = atoi(conf) * 1000;
+
+    return 1;
+}
+
+static int dvbs_parse_lnb(module_data_t *mod)
+{
+    char *conf = mod->config._lnb;
+    if(!conf)
+        return 1;
+
+    // set lof1 (low)
+    mod->config.lnb.lof1 = atoi(conf) * 1000;
+    for(; *conf && *conf != ':'; ++conf)
+        ;
+    if(!*conf)
+    {
+        if(mod->config.lnb.lof1)
+        {
+            mod->config.lnb.lof2 = mod->config.lnb.lof1;
+            mod->config.lnb.slof = mod->config.lnb.lof1;
+        }
+        return 1;
+    }
+    ++conf;
+    // set lof2 (high)
+    mod->config.lnb.lof2 = atoi(conf) * 1000;
+    for(; *conf && *conf != ':'; ++conf)
+        ;
+    if(!*conf)
+        return 0;
+    ++conf;
+    // set slof (switch)
+    mod->config.lnb.slof = atoi(conf) * 1000;
+
+    return 1;
+}
+
 static void module_init(module_data_t *mod)
 {
     log_debug(LOG_MSG("init"));
 
+    /* protocols */
+    stream_ts_init(mod, NULL, NULL, NULL
+                   , callback_join_pid, callback_leave_pid);
+
     /* set dvb type */
-    if(mod->config._type[0] == 's' || mod->config._type[0] == 'S')
+    char std_type = mod->config._type[0];
+    if(std_type >= 'a')
+        std_type -= ('a' - 'A');
+    char std_version = mod->config._type[1];
+
+    if(std_type == 'S')
     {
-        if(mod->config._type[1] == '2')
+        if(std_version == '2')
+        {
+#if (DVB_API_VERSION >= 5)
             mod->config.type = DVB_TYPE_S2;
+#else
+            log_error(LOG_MSG("DVB-S2 is disabled. Update driver"));
+            return;
+#endif
+        }
         else
             mod->config.type = DVB_TYPE_S;
 
+        CONFIG_CHECK_X(polarization);
+
+        if(!CONFIG_CHECK_X(modulation))
+            return;
+        if(!CONFIG_CHECK_X(fec))
+            return;
+        if(!CONFIG_CHECK_X(rolloff))
+            return;
+
         /* set TP */
-        int is_tp_ok = 0;
-        do
-        {
-            char *conf = mod->config._tp;
-            // set frequency
-            mod->config.tp.freq = atoi(conf) * 1000;
-            for(; *conf && *conf != ':'; ++conf)
-                ;
-            if(!*conf)
-                break;
-            ++conf;
-            // set polarization
-            char pol = *conf;
-            if(pol > 'Z')
-                pol -= ('z' - 'Z'); // Upper Case
-            // V - vertical/right // H - horizontal/left
-            mod->config.tp.pol = (pol == 'V' || pol == 'R') ? TP_POL_V : TP_POL_H;
-            for(; *conf && *conf != ':'; ++conf)
-                ;
-            if(!*conf)
-                break;
-            ++conf;
-            // set symbol-rate
-            mod->config.tp.srate = atoi(conf) * 1000;
-            is_tp_ok = 1;
-        } while(0);
-        if(!is_tp_ok)
+        if(mod->config._tp && !dvbs_parse_tp(mod))
         {
             log_error(LOG_MSG("failed to set transponder \"%s\"")
                       , mod->config._tp);
@@ -813,55 +1164,60 @@ static void module_init(module_data_t *mod)
         }
 
         /* set LNB */
-        int is_lnb_ok = 0;
-        do
-        {
-            char *conf = mod->config._lnb;
-            // set lof1 (low)
-            mod->config.lnb.lof1 = atoi(conf) * 1000;
-            for(; *conf && *conf != ':'; ++conf)
-                ;
-            if(!*conf)
-            {
-                if(mod->config.lnb.lof1)
-                {
-                    mod->config.lnb.lof2 = mod->config.lnb.lof1;
-                    mod->config.lnb.slof = mod->config.lnb.lof1;
-                    is_lnb_ok = 1;
-                }
-                break;
-            }
-            ++conf;
-            // set lof2 (high)
-            mod->config.lnb.lof2 = atoi(conf) * 1000;
-            for(; *conf && *conf != ':'; ++conf)
-                ;
-            if(!*conf)
-                break;
-            ++conf;
-            // set slof (switch)
-            mod->config.lnb.slof = atoi(conf) * 1000;
-            is_lnb_ok = 1;
-        } while(0);
-        if(!is_lnb_ok)
+        if(mod->config._lnb && !dvbs_parse_lnb(mod))
         {
             log_error(LOG_MSG("failed to set LNB \"%s\"")
                       , mod->config._lnb);
             return;
         }
+
+        if(mod->config._tp && mod->config._lnb)
+            frontend_open(mod);
+    }
+    else if(std_type == 'T')
+    {
+        mod->config.type = DVB_TYPE_T;
+
+        if(!CONFIG_CHECK_X(modulation))
+            return;
+        if(!CONFIG_CHECK_X(bandwidth))
+            return;
+        if(!CONFIG_CHECK_X(guardinterval))
+            return;
+        if(!CONFIG_CHECK_X(transmitmode))
+            return;
+        if(!CONFIG_CHECK_X(hierarchy))
+            return;
+
+        if(!mod->config.frequency)
+        {
+            log_error(LOG_MSG("frequency required"));
+            return;
+        }
+
+        mod->config.frequency *= 1000000;
+
+        frontend_open(mod);
+    }
+    else if(std_type == 'C')
+    {
+        mod->config.type = DVB_TYPE_C;
+
+        if(!CONFIG_CHECK_X(modulation))
+            return;
+        if(!CONFIG_CHECK_X(fec))
+            return;
+
+        mod->config.frequency *= 1000000;
+        mod->config.symbolrate *= 1000;
+
+        frontend_open(mod);
     }
     else
     {
         log_error(LOG_MSG("unknown DVB type \"%s\""), mod->config._type);
         return;
     }
-
-    /* protocols */
-    stream_ts_init(mod, NULL, NULL, NULL
-                   , callback_join_pid, callback_leave_pid);
-
-    if(mod->config._tp)
-        frontend_open(mod);
 
     dvr_open(mod);
 
@@ -913,15 +1269,29 @@ static void module_destroy(module_data_t *mod)
 
 MODULE_OPTIONS()
 {
-    OPTION_NUMBER("adapter"    , config.adapter    , 1, 0)
-    OPTION_NUMBER("device"     , config.device     , 0, 0)
-    OPTION_NUMBER("diseqc"     , config.diseqc     , 0, 0)
-    OPTION_STRING("type"       , config._type      , 1, NULL)
-    OPTION_NUMBER("lnb_sharing", config.lnb_sharing, 0, 0)
-    OPTION_STRING("lnb"        , config._lnb       , 0, NULL)
-    OPTION_STRING("tp"         , config._tp        , 0, NULL)
-    OPTION_NUMBER("budget"     , config.budget     , 0, 0)
-    OPTION_NUMBER("buffer_size", config.buffer_size, 0, 0)
+    OPTION_STRING("type"         , config._type         , 1, NULL)
+    OPTION_NUMBER("adapter"      , config.adapter       , 1, 0)
+    OPTION_NUMBER("device"       , config.device        , 0, 0)
+
+    OPTION_NUMBER("budget"       , config.budget        , 0, 0)
+    OPTION_NUMBER("buffer_size"  , config.buffer_size   , 0, 0)
+
+    OPTION_STRING("modulation"   , config._modulation   , 0, "AUTO")
+
+    OPTION_NUMBER("diseqc"       , config.diseqc        , 0, 0)
+    OPTION_NUMBER("lnb_sharing"  , config.lnb_sharing   , 0, 0)
+    OPTION_STRING("lnb"          , config._lnb          , 0, NULL)
+    OPTION_STRING("tp"           , config._tp           , 0, NULL)
+    OPTION_STRING("fec"          , config._fec          , 0, "AUTO")
+    OPTION_STRING("rolloff"      , config._rolloff      , 0, "35")
+    OPTION_STRING("polarization" , config._polarization , 0, NULL)
+    OPTION_NUMBER("symbolrate"   , config.symbolrate    , 0, 0)
+
+    OPTION_NUMBER("frequency"    , config.frequency     , 0, 0) /* MHz */
+    OPTION_STRING("bandwidth"    , config._bandwidth    , 0, "AUTO")
+    OPTION_STRING("guardinterval", config._guardinterval, 0, "AUTO")
+    OPTION_STRING("transmitmode" , config._transmitmode , 0, "AUTO")
+    OPTION_STRING("hierarchy"    , config._hierarchy    , 0, "AUTO")
 };
 
 MODULE_METHODS()
