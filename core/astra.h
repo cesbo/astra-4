@@ -123,13 +123,12 @@ typedef struct
         mod->__name = __module_name;                                        \
         lua_getmetatable(L, 1);                                             \
         lua_setmetatable(L, -2);                                            \
-        module_configure(mod);                                              \
+        module_initialize(mod);                                             \
         if(lua_type(L, 2) == LUA_TTABLE)                                    \
         {                                                                   \
             lua_pushvalue(L, 2);                                            \
             mod->__idx_options = luaL_ref(L, LUA_REGISTRYINDEX);            \
         }                                                                   \
-        module_initialize(mod);                                             \
         return 1;                                                           \
     }                                                                       \
     static int __module_delete(lua_State *L)                                \

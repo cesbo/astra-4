@@ -466,13 +466,10 @@ static int method_event(module_data_t *mod)
 
 /* required */
 
-static void module_configure(module_data_t *mod)
-{
-    module_set_string(mod, "name", 1, NULL, &mod->config.name);
-}
-
 static void module_initialize(module_data_t *mod)
 {
+    module_set_string(mod, "name", 1, NULL, &mod->config.name);
+
     stream_ts_init(mod, callback_send_ts, NULL, NULL, NULL, NULL);
 
     mod->rate_timer = timer_attach(UPDATING_INTERVAL, rate_timer_callback, mod);

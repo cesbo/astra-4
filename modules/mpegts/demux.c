@@ -71,11 +71,6 @@ static int method_detach(module_data_t *mod)
 
 /* required */
 
-static void module_configure(module_data_t *mod)
-{
-    return;
-}
-
 static void module_initialize(module_data_t *mod)
 {
     stream_ts_init(mod, callback_send_ts

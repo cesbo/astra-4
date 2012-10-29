@@ -420,21 +420,17 @@ static int method_send(module_data_t *mod)
 
 /* required */
 
-static void module_configure(module_data_t *mod)
+static void module_initialize(module_data_t *mod)
 {
     /*
      * OPTIONS:
      *   fd, addr, port
      *   server, callback
      */
-
     module_set_number(mod, "fd", 1, 0, &mod->sock);
     module_set_string(mod, "addr", 1, NULL, &mod->config.addr);
     module_set_number(mod, "port", 1, 0, &mod->config.port);
-}
 
-static void module_initialize(module_data_t *mod)
-{
     stream_ts_init(mod, callback_send_ts, callback_on_attach
                    , NULL, NULL, NULL);
 

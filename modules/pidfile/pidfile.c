@@ -25,11 +25,6 @@ static const char __self_field[] = "self";
 
 /* required */
 
-static void module_configure(module_data_t *mod)
-{
-    return;
-}
-
 static void module_initialize(module_data_t *mod)
 {
     lua_State *L = LUA_STATE(mod);

@@ -259,13 +259,10 @@ static int method_detach(module_data_t *mod)
 
 /* required */
 
-static void module_configure(module_data_t *mod)
-{
-    module_set_string(mod, "filename", 1, NULL, &mod->config.filename);
-}
-
 static void module_initialize(module_data_t *mod)
 {
+    module_set_string(mod, "filename", 1, NULL, &mod->config.filename);
+
     stream_ts_init(mod, NULL, NULL, NULL, NULL, NULL);
 
     mod->thread_stream = stream_init(thread_callback, mod);

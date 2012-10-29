@@ -98,14 +98,11 @@ static int method_status(module_data_t *mod)
 
 /* required */
 
-static void module_configure(module_data_t *mod)
+static void module_initialize(module_data_t *mod)
 {
     module_set_string(mod, "filename", 1, NULL, &mod->config.filename);
     module_set_number(mod, "m2ts", 0, 0, &mod->config.m2ts);
-}
 
-static void module_initialize(module_data_t *mod)
-{
     if(mod->config.m2ts)
         stream_ts_init(mod, callback_send_ts_192, NULL, NULL, NULL, NULL);
     else

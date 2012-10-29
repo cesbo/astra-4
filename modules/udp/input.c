@@ -81,6 +81,8 @@ static void module_configure(module_data_t *mod)
 
 static void module_initialize(module_data_t *mod)
 {
+    module_configure(mod);
+
     /* protocols */
     stream_ts_init(mod, NULL, NULL, NULL, NULL, NULL);
 

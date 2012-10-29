@@ -91,6 +91,8 @@ static void module_configure(module_data_t *mod)
 
 static void module_initialize(module_data_t *mod)
 {
+    module_configure(mod);
+
     stream_ts_init(mod, callback_send_ts, NULL, NULL, NULL, NULL);
 
     if(mod->config.rtp)
