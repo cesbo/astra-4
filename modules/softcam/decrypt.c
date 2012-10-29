@@ -33,7 +33,7 @@ struct module_data_s
 
     struct
     {
-        char *name;
+        const char *name;
         int real_pnr;
         int ecm_pid;
         int fake;
@@ -600,10 +600,32 @@ static int method_cam(module_data_t *mod)
 
 /* required */
 
-static void module_init(module_data_t *mod)
+static void module_configure(module_data_t *mod)
 {
-    log_debug(LOG_MSG("init"));
+    /*
+     * OPTIONS:
+     *   name, cam,
+     *   real_pnr, ecm_pid, fake
+     */
 
+    module_set_string(mod, "name", 1, NULL, &mod->config.name);
+
+    lua_State *L = LUA_STATE(mod);
+    lua_getfield(L, 2, "cam");
+    if(lua_type(L, -1) != LUA_TUSERDATA)
+    {
+        log_error(LOG_MSG("option \"cam\" required cam module instance"));
+        abort();
+    }
+    mod->cam_mod = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+
+    module_set_number(mod, "real_pnr", 0, 0, &mod->config.real_pnr);
+    module_set_number(mod, "ecm_pid", 0, 0, &mod->config.ecm_pid);
+    module_set_number(mod, "fake", 0, 0, &mod->config.fake);
+}
+static void module_initialize(module_data_t *mod)
+{
     stream_ts_init(mod, callback_send_ts
                    , callback_on_attach, callback_on_detach
                    , callback_join_pid, callback_leave_pid);
@@ -633,8 +655,6 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    log_debug(LOG_MSG("destroy"));
-
     stream_ts_destroy(mod);
     module_event_destroy(mod);
 
@@ -652,24 +672,6 @@ static void module_destroy(module_data_t *mod)
 }
 
 /* config_check */
-
-static int config_check_cam(module_data_t *mod)
-{
-    lua_State *L = LUA_STATE(mod);
-    const int val = lua_gettop(L);
-    luaL_checktype(L, val, LUA_TUSERDATA);
-    mod->cam_mod = lua_touserdata(L, val);
-    return 1;
-}
-
-MODULE_OPTIONS()
-{
-    OPTION_STRING("name"    , config.name       , 1, NULL)
-    OPTION_CUSTOM("cam"     , config_check_cam  , 1)
-    OPTION_NUMBER("real_pnr", config.real_pnr   , 0, 0)
-    OPTION_NUMBER("ecm_pid" , config.ecm_pid    , 0, 0)
-    OPTION_NUMBER("fake"    , config.fake       , 0, 0)
-};
 
 MODULE_METHODS()
 {

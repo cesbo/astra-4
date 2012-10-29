@@ -25,7 +25,12 @@ static const char __self_field[] = "self";
 
 /* required */
 
-static void module_init(module_data_t *mod)
+static void module_configure(module_data_t *mod)
+{
+    return;
+}
+
+static void module_initialize(module_data_t *mod)
 {
     lua_State *L = LUA_STATE(mod);
     const int value = 2;
@@ -87,7 +92,6 @@ static void module_destroy(module_data_t *mod)
         unlink(mod->filename);
 }
 
-MODULE_OPTIONS_EMPTY();
 MODULE_METHODS_EMPTY();
 
 MODULE(pidfile)

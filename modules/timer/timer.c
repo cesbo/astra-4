@@ -55,40 +55,45 @@ static int method_close(module_data_t *mod)
 
 /* required */
 
-static void module_init(module_data_t *mod)
+static void module_configure(module_data_t *mod)
 {
-    log_debug(LOG_MSG("init"));
+    /*
+    OPTION_NUMBER("interval", config.interval, 1, 0)
+    OPTION_CUSTOM("callback", NULL           , 1)
+    */
+    module_set_number(mod, "interval", 1, 0, &mod->config.interval);
+    if(mod->config.interval <= 0)
+    {
+        log_error(LOG_MSG("option \"interval\" must be greater than 0"));
+        abort();
+    }
 
+    lua_State *L = LUA_STATE(mod);
+    lua_getfield(L, 2, "callback");
+    if(lua_type(L, -1) != LUA_TFUNCTION)
+    {
+        log_error(LOG_MSG("option \"callback\" must be a function"));
+        abort();
+    }
+    luaL_checktype(L, -1, LUA_TFUNCTION);
+    mod->idx_cb = luaL_ref(L, LUA_REGISTRYINDEX);
+
+}
+static void module_initialize(module_data_t *mod)
+{
     lua_State *L = LUA_STATE(mod);
 
     lua_pushvalue(L, -1);
     mod->idx_self = luaL_ref(L, LUA_REGISTRYINDEX);
 
-    lua_getfield(L, 2, "callback");
-    luaL_checktype(L, -1, LUA_TFUNCTION);
-    mod->idx_cb = luaL_ref(L, LUA_REGISTRYINDEX);
-
-    if(!mod->config.interval)
-    {
-        log_error(LOG_MSG("interval must be greater than 0"));
-        return;
-    }
-
-    mod->timer = timer_attach(mod->config.interval * 1000, timer_callback, mod);
+    mod->timer = timer_attach(mod->config.interval * 1000
+                              , timer_callback, mod);
 }
 
 static void module_destroy(module_data_t *mod)
 {
-    log_debug(LOG_MSG("destroy"));
-
     method_close(mod);
 }
-
-MODULE_OPTIONS()
-{
-    OPTION_NUMBER("interval", config.interval, 1, 0)
-    OPTION_CUSTOM("callback", NULL           , 1)
-};
 
 MODULE_METHODS()
 {

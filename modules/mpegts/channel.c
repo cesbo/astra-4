@@ -15,8 +15,7 @@ struct module_data_s
 
     struct
     {
-        char *name;
-        int pid; // temporary
+        const char *name;
         int pnr;
         int sdt;
     } config;
@@ -325,10 +324,57 @@ static int method_detach(module_data_t *mod)
 
 /* required */
 
-static void module_init(module_data_t *mod)
+static void module_configure(module_data_t *mod)
 {
-    log_debug(LOG_MSG("init"));
+    /*
+     * OPTIONS:
+     *   name, pnr, sdt, filter, map
+     */
 
+     module_set_string(mod, "name", 1, NULL, &mod->config.name);
+     module_set_number(mod, "pnr", 0, 0, &mod->config.pnr);
+     module_set_number(mod, "sdt", 0, 0, &mod->config.sdt);
+
+    lua_State *L = LUA_STATE(mod);
+
+    lua_getfield(L, 2, "filter");
+    if(lua_type(L, -1) == LUA_TTABLE)
+    {
+        const int filter = lua_gettop(L);
+        for(lua_pushnil(L); lua_next(L, filter); lua_pop(L, 1))
+        {
+            const int pid = lua_tonumber(L, -1);
+            if(pid < MAX_PID && !mod->pid_map[pid])
+            {
+                mod->pid_map[pid] = pid;
+                mod->pid_order = list_append(mod->pid_order
+                                             , (void *)(intptr_t)pid);
+            }
+        }
+        mod->filter = 1;
+    }
+    lua_pop(L, 1); // filter
+
+    lua_getfield(L, 2, "map");
+    if(lua_type(L, -1) == LUA_TTABLE)
+    {
+        const int map = lua_gettop(L);
+        for(lua_pushnil(L); lua_next(L, map); )
+        {
+            const int pid = lua_tonumber(L, -1);
+            lua_pop(L, 1);
+            if(!lua_next(L, map))
+                break;
+            const int custom_pid = lua_tonumber(L, -1);
+            lua_pop(L, 1);
+            if(pid < MAX_PID && custom_pid < MAX_PID)
+                mod->pid_map[pid] = custom_pid;
+        }
+    }
+    lua_pop(L, 1); // map
+}
+static void module_initialize(module_data_t *mod)
+{
     stream_ts_init(mod, callback_send_ts
                    , callback_on_attach, callback_on_detach
                    , callback_join_pid, callback_leave_pid);
@@ -346,8 +392,6 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    log_debug(LOG_MSG("destroy"));
-
     stream_ts_destroy(mod);
 
     if(mod->pat_pmt_timer)
@@ -364,59 +408,6 @@ static void module_destroy(module_data_t *mod)
 
     mpegts_stream_destroy(mod->stream);
 }
-
-/* config_check */
-
-static int config_check_filter(module_data_t *mod)
-{
-    lua_State *L = LUA_STATE(mod);
-    const int val = lua_gettop(L);
-    luaL_checktype(L, val, LUA_TTABLE);
-
-    for(lua_pushnil(L); lua_next(L, val); lua_pop(L, 1))
-    {
-        const int pid = lua_tonumber(L, -1);
-        if(pid < MAX_PID && !mod->pid_map[pid])
-        {
-            mod->pid_map[pid] = pid;
-            mod->pid_order = list_append(mod->pid_order, (void *)(intptr_t)pid);
-        }
-    }
-
-    mod->filter = 1;
-
-    return 1;
-}
-
-static int config_check_map(module_data_t *mod)
-{
-    lua_State *L = LUA_STATE(mod);
-    const int val = lua_gettop(L);
-    luaL_checktype(L, val, LUA_TTABLE);
-
-    for(lua_pushnil(L); lua_next(L, val); )
-    {
-        const int pid = lua_tonumber(L, -1);
-        lua_pop(L, 1);
-        if(!lua_next(L, val))
-            break;
-        const int custom_pid = lua_tonumber(L, -1);
-        lua_pop(L, 1);
-        if(pid < MAX_PID && custom_pid < MAX_PID)
-            mod->pid_map[pid] = custom_pid;
-    }
-
-    return 1;
-}
-
-MODULE_OPTIONS()
-{
-    OPTION_STRING("name"  , config.name        , 1, NULL)
-    OPTION_NUMBER("pnr"   , config.pnr         , 0, 0)
-    OPTION_NUMBER("sdt"   , config.sdt         , 0, 0)
-    OPTION_CUSTOM("filter", config_check_filter, 0)
-    OPTION_CUSTOM("map"   , config_check_map   , 0)
-};
 
 MODULE_METHODS()
 {

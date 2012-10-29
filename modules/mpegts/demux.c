@@ -71,10 +71,13 @@ static int method_detach(module_data_t *mod)
 
 /* required */
 
-static void module_init(module_data_t *mod)
+static void module_configure(module_data_t *mod)
 {
-    log_debug(LOG_MSG("init"));
+    return;
+}
 
+static void module_initialize(module_data_t *mod)
+{
     stream_ts_init(mod, callback_send_ts
                    , callback_on_attach, callback_on_detach
                    , callback_join_pid, callback_leave_pid);
@@ -82,12 +85,8 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    log_debug(LOG_MSG("destroy"));
-
     stream_ts_destroy(mod);
 }
-
-MODULE_OPTIONS_EMPTY();
 
 MODULE_METHODS()
 {

@@ -95,54 +95,11 @@ typedef void (*interface_t)(module_data_t *, ...);
 #define MODULE_BASE()                                                       \
     lua_State *__L;                                                         \
     const char *__name;                                                     \
-    int __idx_self;                                                         \
     int __idx_options;                                                      \
     interface_t __interface[16];                                            \
     struct { ASTRA_PROTOCOLS } __protocols
 
 #define LUA_STATE(_mod) _mod->__L
-
-typedef enum
-{
-    VALUE_NONE        = 0,
-    VALUE_NUMBER      = 1,
-    VALUE_STRING      = 2,
-} value_type_t;
-
-struct module_option_s
-{
-    value_type_t type;
-    const char *name;
-    size_t offset;
-    int is_required;
-    int default_number;
-    const char *default_string;
-    int (*check)(module_data_t *); // return 0 on error, otherwise return 1
-};
-
-#define MODULE_OPTIONS()                                                    \
-    static const module_option_t __module_options[] =
-
-#define _OPTION(_type, _name, _offset, _is_req, _def_n, _def_s)             \
-    {                                                                       \
-        .type = _type,                                                      \
-        .name = _name,                                                      \
-        .offset = offsetof(module_data_t, _offset),                         \
-        .is_required = _is_req,                                             \
-        .default_number = _def_n,                                           \
-        .default_string = _def_s,                                           \
-        .check = NULL                                                       \
-    },
-
-
-#define OPTION_NUMBER(_name, _offset, _is_req, _def_n)                      \
-    _OPTION(VALUE_NUMBER, _name, _offset, _is_req, _def_n, NULL)
-#define OPTION_STRING(_name, _offset, _is_req, _def_s)                      \
-    _OPTION(VALUE_STRING, _name, _offset, _is_req, 0, _def_s)
-#define OPTION_CUSTOM(_name, _check, _is_req)                               \
-    { VALUE_NONE, _name, 0, _is_req, 0, NULL, _check },
-#define MODULE_OPTIONS_EMPTY()                                              \
-    MODULE_OPTIONS() {{ VALUE_NONE, NULL, 0, 0, 0, NULL, NULL }}
 
 typedef struct
 {
@@ -166,19 +123,13 @@ typedef struct
         mod->__name = __module_name;                                        \
         lua_getmetatable(L, 1);                                             \
         lua_setmetatable(L, -2);                                            \
-        if(__module_options[0].name)                                        \
+        module_configure(mod);                                              \
+        if(lua_type(L, 2) == LUA_TTABLE)                                    \
         {                                                                   \
-            if(lua_type(L, 2) == LUA_TTABLE                                 \
-               && module_set_options(mod, __module_options                  \
-                                     , ARRAY_SIZE(__module_options)))       \
-            {                                                               \
-                lua_pushvalue(L, 2);                                        \
-                mod->__idx_options = luaL_ref(L, LUA_REGISTRYINDEX);        \
-            }                                                               \
-            else                                                            \
-                luaL_error(L, "[core] failed to set options");              \
+            lua_pushvalue(L, 2);                                            \
+            mod->__idx_options = luaL_ref(L, LUA_REGISTRYINDEX);            \
         }                                                                   \
-        module_init(mod);                                                   \
+        module_initialize(mod);                                             \
         return 1;                                                           \
     }                                                                       \
     static int __module_delete(lua_State *L)                                \
@@ -237,8 +188,10 @@ typedef struct
         return 1;                                                           \
     }
 
-ASTRA_API int module_set_options(module_data_t *
-                                 , const module_option_t *, int);
+ASTRA_API int module_set_number(module_data_t *, const char *, int
+                                , int, int *);
+ASTRA_API int module_set_string(module_data_t *, const char *, int
+                                , const char *, const char **);
 
 #endif /* ! WITHOUT_MODULES */
 

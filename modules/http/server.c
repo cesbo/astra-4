@@ -98,12 +98,28 @@ static int method_port(module_data_t *mod)
 
 /* required */
 
-static void module_init(module_data_t *mod)
+static void module_configure(module_data_t *mod)
 {
-#ifdef LOG_DEBUG
-    log_debug(LOG_MSG("init"));
-#endif
+    /*
+     * OPTIONS:
+     *   addr, port, callback
+     */
 
+    module_set_string(mod, "addr", 0, "0.0.0.0", &mod->config.addr);
+    module_set_number(mod, "port", 0, 80, &mod->config.port);
+
+    lua_State *L = LUA_STATE(mod);
+    lua_getfield(L, 2, "callback");
+    if(lua_type(L, -1) != LUA_TFUNCTION)
+    {
+        log_error(LOG_MSG("option \"callback\" is required"));
+        abort();
+    }
+    lua_pop(L, 1);
+}
+
+static void module_initialize(module_data_t *mod)
+{
     lua_State *L = LUA_STATE(mod);
 
     // store self in registry
@@ -120,19 +136,8 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-#ifdef LOG_DEBUG
-    log_debug(LOG_MSG("destroy"));
-#endif
-
     method_close(mod);
 }
-
-MODULE_OPTIONS()
-{
-    OPTION_STRING("addr"    , config.addr, 0, "0.0.0.0")
-    OPTION_NUMBER("port"    , config.port, 0, 0)
-    OPTION_CUSTOM("callback", NULL       , 1)
-};
 
 MODULE_METHODS()
 {

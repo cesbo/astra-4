@@ -46,13 +46,12 @@ struct module_data_s
 
     struct
     {
-        char *name;
-        char *host;
+        const char *name;
+        const char *host;
         int port;
-        char *user;
-        char *pass;
-        char *key;
-        char *cas_data;
+        const char *user;
+        const char *pass;
+        uint8_t key[14];
         int timeout;
     } config;
 
@@ -102,8 +101,7 @@ static void triple_des_set_key(module_data_t *mod
                                , size_t key_size)
 {
     uint8_t tmp_key[14];
-    // parse des key
-    str_to_hex(mod->config.key, tmp_key, sizeof(tmp_key));
+    memcpy(tmp_key, mod->config.key, sizeof(tmp_key));
 
     // set key
     for(size_t i = 0; i < key_size; ++i)
@@ -734,14 +732,37 @@ static void interface_send_em(module_data_t *mod)
 
 /* required */
 
-static void module_init(module_data_t *mod)
+static void module_configure(module_data_t *mod)
 {
-    log_debug(LOG_MSG("init"));
+    /*
+     * OPTIONS:
+     *   name, host, port, user, pass, key,
+     *   disable_emm, cas_data, timeout
+     */
 
+    module_set_string(mod, "name", 1, NULL, &mod->config.name);
+    module_set_string(mod, "host", 1, NULL, &mod->config.host);
+    module_set_number(mod, "port", 1, 0, &mod->config.port);
+    module_set_string(mod, "user", 1, NULL, &mod->config.user);
+    module_set_string(mod, "pass", 1, NULL, &mod->config.pass);
+
+    const char *key = NULL;
+    module_set_string(mod, "key", 1, NULL, &key);
+    str_to_hex(key, mod->config.key, sizeof(mod->config.key));
+
+    module_set_number(mod, "disable_emm", 0, 0
+                      , &mod->__cam_module.disable_emm);
+
+    const char *cas_data = NULL;
+    if(module_set_string(mod, "cas_data", 0, NULL, &cas_data))
+        cam_set_cas_data(mod, cas_data);
+
+    module_set_number(mod, "timeout", 0, 5, &mod->config.timeout);
     mod->config.timeout *= 1000;
-    if(mod->config.cas_data)
-        cam_set_cas_data(mod, mod->config.cas_data);
+}
 
+static void module_initialize(module_data_t *mod)
+{
     CAM_INTERFACE();
 
     newcamd_connect(mod);
@@ -749,8 +770,6 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    log_debug(LOG_MSG("destroy"));
-
     newcamd_timeout_unset(mod);
 
     if(mod->sock)
@@ -770,19 +789,6 @@ static void module_destroy(module_data_t *mod)
     if(mod->prov_buffer)
         free(mod->prov_buffer);
 }
-
-MODULE_OPTIONS()
-{
-    OPTION_STRING("name"       , config.name             , 1, NULL)
-    OPTION_STRING("host"       , config.host             , 1, NULL)
-    OPTION_NUMBER("port"       , config.port             , 1, 0)
-    OPTION_STRING("user"       , config.user             , 1, NULL)
-    OPTION_STRING("pass"       , config.pass             , 1, NULL)
-    OPTION_STRING("key"        , config.key              , 1, NULL)
-    OPTION_NUMBER("disable_emm", __cam_module.disable_emm, 0, 0)
-    OPTION_STRING("cas_data"   , config.cas_data         , 0, NULL)
-    OPTION_NUMBER("timeout"    , config.timeout          , 0, 5)
-};
 
 MODULE_METHODS_EMPTY();
 

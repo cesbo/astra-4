@@ -19,8 +19,8 @@ struct module_data_s
 
     struct
     {
-        char *filename;
-        int loop;
+        const char *filename;
+        // int loop;
     } config;
 
     thread_t *thread;
@@ -259,10 +259,13 @@ static int method_detach(module_data_t *mod)
 
 /* required */
 
-static void module_init(module_data_t *mod)
+static void module_configure(module_data_t *mod)
 {
-    log_debug(LOG_MSG("init"));
+    module_set_string(mod, "filename", 1, NULL, &mod->config.filename);
+}
 
+static void module_initialize(module_data_t *mod)
+{
     stream_ts_init(mod, NULL, NULL, NULL, NULL, NULL);
 
     mod->thread_stream = stream_init(thread_callback, mod);
@@ -275,15 +278,7 @@ static void module_destroy(module_data_t *mod)
     stream_destroy(mod->thread_stream);
 
     stream_ts_destroy(mod);
-
-    log_debug(LOG_MSG("destroy"));
 }
-
-MODULE_OPTIONS()
-{
-    OPTION_STRING("filename", config.filename, 1, NULL)
-    OPTION_NUMBER("loop"    , config.loop    , 0, 0)
-};
 
 MODULE_METHODS()
 {

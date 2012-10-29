@@ -28,8 +28,7 @@ struct module_data_s
 
     struct
     {
-        char *name;
-        char *cas_data;
+        const char *name;
     } config;
 };
 
@@ -44,15 +43,18 @@ static void interface_send_em(module_data_t *mod)
 
 /* required */
 
-static void module_init(module_data_t *mod)
+static void module_configure(module_data_t *mod)
 {
-#ifdef DEBUG
-    log_debug(LOG_MSG("init"));
-#endif
+    module_set_string(mod, "name", 0, "", &mod->config.name);
 
+    const char *cas_data = NULL;
+    module_set_string(mod, "cas_data", 1, NULL, &cas_data);
+    cam_set_cas_data(mod, cas_data);
+}
+static void module_initialize(module_data_t *mod)
+{
     CAM_INTERFACE();
 
-    cam_set_cas_data(mod, mod->config.cas_data);
     mod->__cam_module.caid = 0x2600;
     mod->__cam_module.disable_emm = 1;
     mod->__cam_module.is_ready = 1;
@@ -60,19 +62,9 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-#ifdef DEBUG
-    log_debug(LOG_MSG("destroy"));
-#endif
-
     cam_queue_flush(mod);
     decrypt_module_cam_status(mod, -1);
 }
-
-MODULE_OPTIONS()
-{
-    OPTION_STRING("name"    , config.name    , 0, "")
-    OPTION_STRING("cas_data", config.cas_data, 0, NULL)
-};
 
 MODULE_METHODS_EMPTY();
 

@@ -19,7 +19,7 @@ struct module_data_s
 
     struct
     {
-        char *host;
+        const char *host;
         int port;
     } config;
 
@@ -561,12 +561,29 @@ static int method_send(module_data_t *mod)
 
 /* required */
 
-static void module_init(module_data_t *mod)
+static void module_configure(module_data_t *mod)
 {
-#ifdef DEBUG
-    log_debug(LOG_MSG("init"));
-#endif
+    /*
+     * OPTIONS:
+     *   host, port, callback,
+     *   method, uri, version, headers, content
+     */
 
+    module_set_string(mod, "host", 1, NULL, &mod->config.host);
+    module_set_number(mod, "port", 0, 80, &mod->config.port);
+
+    lua_State *L = LUA_STATE(mod);
+    lua_getfield(L, 2, "callback");
+    if(lua_type(L, -1) != LUA_TFUNCTION)
+    {
+        log_error(LOG_MSG("option \"callback\" is required"));
+        abort();
+    }
+    lua_pop(L, 1);
+}
+
+static void module_initialize(module_data_t *mod)
+{
     lua_State *L = LUA_STATE(mod);
 
     // store self in registry
@@ -587,24 +604,8 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-#ifdef DEBUG
-    log_debug(LOG_MSG("destroy"));
-#endif
-
     method_close(mod);
 }
-
-MODULE_OPTIONS()
-{
-    OPTION_CUSTOM("method"  , NULL       , 0)
-    OPTION_CUSTOM("uri"     , NULL       , 0)
-    OPTION_CUSTOM("version" , NULL       , 0)
-    OPTION_CUSTOM("headers" , NULL       , 0)
-    OPTION_CUSTOM("content" , NULL       , 0)
-    OPTION_CUSTOM("callback", NULL       , 1)
-    OPTION_STRING("host"    , config.host, 1, NULL)
-    OPTION_NUMBER("port"    , config.port, 0, 80)
-};
 
 MODULE_METHODS()
 {

@@ -24,7 +24,7 @@ struct module_data_s
 
     struct
     {
-        char *filename;
+        const char *filename;
         int m2ts;
     } config;
 
@@ -98,17 +98,19 @@ static int method_status(module_data_t *mod)
 
 /* required */
 
-static void module_init(module_data_t *mod)
+static void module_configure(module_data_t *mod)
 {
-    log_debug(LOG_MSG("init"));
+    module_set_string(mod, "filename", 1, NULL, &mod->config.filename);
+    module_set_number(mod, "m2ts", 0, 0, &mod->config.m2ts);
+}
 
+static void module_initialize(module_data_t *mod)
+{
     if(mod->config.m2ts)
         stream_ts_init(mod, callback_send_ts_192, NULL, NULL, NULL, NULL);
     else
         stream_ts_init(mod, callback_send_ts_188, NULL, NULL, NULL, NULL);
 
-    if(!mod->config.filename)
-        return;
     mod->fd = open(mod->config.filename, O_CREAT | O_APPEND | O_RDWR
 #ifndef _WIN32
                    , S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
@@ -121,19 +123,11 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    log_debug(LOG_MSG("destroy"));
-
     stream_ts_destroy(mod);
 
     if(mod->fd > 0)
         close(mod->fd);
 }
-
-MODULE_OPTIONS()
-{
-    OPTION_STRING("filename", config.filename, 1, NULL)
-    OPTION_NUMBER("m2ts"    , config.m2ts    , 0, 0)
-};
 
 MODULE_METHODS()
 {

@@ -53,6 +53,14 @@ typedef struct
     int value;
 } fe_value_t;
 
+static fe_value_t dvb_type_list[] =
+{
+    { "S", DVB_TYPE_S },
+    { "S2", DVB_TYPE_S2 },
+    { "T", DVB_TYPE_T },
+    { "C", DVB_TYPE_C },
+};
+
 static fe_value_t polarization_list[] =
 {
     { "H", TP_POL_H },
@@ -156,55 +164,30 @@ struct module_data_s
 
     struct
     {
+        dvb_type_t type;
+
         int adapter;
         int device;
-
-        char *_type;
-        dvb_type_t type;
+        int diseqc;
 
         int budget;
         int buffer_size; // dvr ring buffer
 
         int frequency;
-
-        /* dvb-s, dvb-s2 */
-        int diseqc;
-
-        char *_lnb;
-        struct
-        {
-            int lof1;
-            int lof2;
-            int slof;
-        } lnb;
-        int lnb_sharing;
-
-        char *_tp;
-        char *_polarization;
         tp_pol_t polarization;
-
         int symbolrate;
 
-        char *_fec;
-        fe_code_rate_t fec;
+        int lof1;
+        int lof2;
+        int slof;
+        int lnb_sharing;
 
-        char *_rolloff;
-        fe_rolloff_t rolloff;
-
-        /* dvb-t */
-        char *_modulation;
         fe_modulation_t modulation;
-
-        char *_bandwidth;
+        fe_code_rate_t fec;
+        fe_rolloff_t rolloff;
         fe_bandwidth_t bandwidth;
-
-        char *_guardinterval;
         fe_guard_interval_t guardinterval;
-
-        char *_transmitmode;
         fe_transmit_mode_t transmitmode;
-
-        char *_hierarchy;
         fe_hierarchy_t hierarchy;
     } config;
 
@@ -333,16 +316,16 @@ static int frontend_tune_s(module_data_t *mod)
 {
     int freq = mod->config.frequency;
 
-    int hiband = (mod->config.lnb.slof && mod->config.lnb.lof2
-                  && freq > mod->config.lnb.slof);
+    int hiband = (mod->config.slof && mod->config.lof2
+                  && freq > mod->config.slof);
     if(hiband)
-        freq = freq - mod->config.lnb.lof2;
+        freq = freq - mod->config.lof2;
     else
     {
-        if(freq < mod->config.lnb.lof1)
-            freq = mod->config.lnb.lof1 - freq;
+        if(freq < mod->config.lof1)
+            freq = mod->config.lof1 - freq;
         else
-            freq = freq - mod->config.lnb.lof1;
+            freq = freq - mod->config.lof1;
     }
 
     int voltage = SEC_VOLTAGE_OFF;
@@ -1027,197 +1010,202 @@ static int method_event(module_data_t *mod)
 
 /* public */
 
-static int config_check(module_data_t *mod, const char *value_str
-                        , fe_value_t *list, const int list_size
-                        , const char *opt_name, int *value)
+static void fe_option_set(module_data_t *mod, const char *name
+                          , int is_required, const char *def
+                          , fe_value_t *list, const int list_size
+                          , int *value)
 {
-    if(!value_str)
-    {
-        log_error(LOG_MSG("option %s is nil"), opt_name);
-        return 0;
-    }
+    const char *tmp_value = NULL;
+    module_set_string(mod, name, is_required, def, &tmp_value);
 
     for(int i = 0; i < list_size; ++i)
     {
-        if(!strcasecmp(list[i].name, value_str))
+        if(!strcasecmp(list[i].name, tmp_value))
         {
             *value = list[i].value;
-            return 1;
+            return;
         }
     }
-    log_error(LOG_MSG("unknown %s type \"%s\""), opt_name, value_str);
-    return 0;
-}
-#define CONFIG_CHECK_X(_type)                                               \
-    config_check(mod, mod->config._##_type                                  \
-                 , _type##_list, ARRAY_SIZE(_type##_list)                   \
-                 , #_type, (int *)&mod->config._type)
 
-static int dvbs_parse_tp(module_data_t *mod)
-{
-    char *conf = mod->config._tp;
-    if(!conf)
-        return 1;
-
-    // set frequency
-    mod->config.frequency = atoi(conf) * 1000;
-    for(; *conf && *conf != ':'; ++conf)
-        ;
-    if(!*conf)
-        return 0;
-    ++conf;
-    // set polarization
-    char pol = *conf;
-    if(pol > 'Z')
-        pol -= ('z' - 'Z'); // Upper Case
-    // V - vertical/right // H - horizontal/left
-    mod->config.polarization = (pol == 'V' || pol == 'R')
-                             ? TP_POL_V
-                             : TP_POL_H;
-    for(; *conf && *conf != ':'; ++conf)
-        ;
-    if(!*conf)
-        return 0;
-    ++conf;
-    // set symbol-rate
-    mod->config.symbolrate = atoi(conf) * 1000;
-
-    return 1;
+    log_error(LOG_MSG("unknown %s type \"%s\""), name, tmp_value);
+    abort();
 }
 
-static int dvbs_parse_lnb(module_data_t *mod)
+static void module_configure(module_data_t *mod)
 {
-    char *conf = mod->config._lnb;
-    if(!conf)
-        return 1;
+    const char *tmp_value = NULL;
 
-    // set lof1 (low)
-    mod->config.lnb.lof1 = atoi(conf) * 1000;
-    for(; *conf && *conf != ':'; ++conf)
-        ;
-    if(!*conf)
+    fe_option_set(mod, "type", 1, NULL
+                  , dvb_type_list, ARRAY_SIZE(dvb_type_list)
+                  , (int *)&mod->config.type);
+
+    module_set_number(mod, "adapter", 1, 0, &mod->config.adapter);
+    module_set_number(mod, "device", 0, 0, &mod->config.device);
+
+    module_set_number(mod, "budget", 0, 0, &mod->config.budget);
+    module_set_number(mod, "buffer_size", 0, 0, &mod->config.buffer_size);
+
+    fe_option_set(mod, "modulation", 0, "AUTO"
+                  , modulation_list, ARRAY_SIZE(modulation_list)
+                  , (int *)&mod->config.modulation);
+
+    if(mod->config.type == DVB_TYPE_S2 || mod->config.type == DVB_TYPE_S)
     {
-        if(mod->config.lnb.lof1)
+        if(module_set_string(mod, "tp", 0, NULL, &tmp_value))
         {
-            mod->config.lnb.lof2 = mod->config.lnb.lof1;
-            mod->config.lnb.slof = mod->config.lnb.lof1;
+            do
+            {
+                const char *conf = tmp_value;
+                // set frequency
+                mod->config.frequency = atoi(conf) * 1000;
+                for(; *conf && *conf != ':'; ++conf)
+                    ;
+                if(!*conf)
+                    break;
+                ++conf;
+                // set polarization
+                char pol = *conf;
+                if(pol > 'Z')
+                    pol -= ('z' - 'Z'); // Upper Case
+                // V - vertical/right // H - horizontal/left
+                mod->config.polarization = (pol == 'V' || pol == 'R')
+                                         ? TP_POL_V
+                                         : TP_POL_H;
+                for(; *conf && *conf != ':'; ++conf)
+                    ;
+                if(!*conf)
+                    break;
+                ++conf;
+                // set symbol-rate
+                mod->config.symbolrate = atoi(conf) * 1000;
+            } while(0);
+            if(!mod->config.symbolrate)
+            {
+                log_error(LOG_MSG("failed to parse tp option \"%s\"")
+                          , tmp_value);
+                abort();
+            }
         }
-        return 1;
+        else
+        {
+            module_set_number(mod, "frequency", 1, 0, &mod->config.frequency);
+            if(!mod->config.frequency)
+                return;
+            mod->config.frequency *= 1000;
+            fe_option_set(mod, "polarization", 1, NULL
+                          , polarization_list, ARRAY_SIZE(polarization_list)
+                          , (int *)&mod->config.polarization);
+            module_set_number(mod, "symbolrate", 1, 0
+                              , &mod->config.symbolrate);
+            mod->config.symbolrate *= 1000;
+        }
+
+        if(module_set_string(mod, "lnb", 0, NULL, &tmp_value))
+        {
+            do
+            {
+                const char *conf = tmp_value;
+                // set lof1 (low)
+                mod->config.lof1 = atoi(conf) * 1000;
+                for(; *conf && *conf != ':'; ++conf)
+                    ;
+                if(!*conf)
+                {
+                    if(mod->config.lof1)
+                    {
+                        mod->config.lof2 = mod->config.lof1;
+                        mod->config.slof = mod->config.lof1;
+                    }
+                    break;
+                }
+                ++conf;
+                // set lof2 (high)
+                mod->config.lof2 = atoi(conf) * 1000;
+                for(; *conf && *conf != ':'; ++conf)
+                    ;
+                if(!*conf)
+                    break;
+                ++conf;
+                // set slof (switch)
+                mod->config.slof = atoi(conf) * 1000;
+            } while(0);
+            if(!mod->config.slof)
+            {
+                log_error(LOG_MSG("failed to parse lnb option \"%s\"")
+                          , tmp_value);
+                abort();
+            }
+        }
+        else
+        {
+            module_set_number(mod, "lof1", 1, 0, &mod->config.lof1);
+            module_set_number(mod, "slof", 0, mod->config.lof1
+                              , &mod->config.lof2);
+            module_set_number(mod, "slof", 0, mod->config.lof1
+                              , &mod->config.slof);
+            mod->config.lof1 *= 1000;
+            mod->config.lof2 *= 1000;
+            mod->config.slof *= 1000;
+        }
+        module_set_number(mod, "lnb_sharing", 0, 0, &mod->config.lnb_sharing);
+
+        module_set_number(mod, "diseqc", 0, 0, &mod->config.diseqc);
+
+        if(mod->config.type == DVB_TYPE_S2)
+        {
+            fe_option_set(mod, "rolloff", 0, "35"
+                          , rolloff_list, ARRAY_SIZE(rolloff_list)
+                          , (int *)&mod->config.rolloff);
+        }
+        fe_option_set(mod, "fec", 0, "AUTO"
+                      , fec_list, ARRAY_SIZE(fec_list)
+                      , (int *)&mod->config.fec);
     }
-    ++conf;
-    // set lof2 (high)
-    mod->config.lnb.lof2 = atoi(conf) * 1000;
-    for(; *conf && *conf != ':'; ++conf)
-        ;
-    if(!*conf)
-        return 0;
-    ++conf;
-    // set slof (switch)
-    mod->config.lnb.slof = atoi(conf) * 1000;
+    else if(mod->config.type == DVB_TYPE_T)
+    {
+        module_set_number(mod, "frequency", 0, 0, &mod->config.frequency);
+        if(!mod->config.frequency)
+            return;
+        mod->config.frequency *= 1000000;
 
-    return 1;
-}
+        fe_option_set(mod, "bandwidth", 0, "AUTO"
+                      , bandwidth_list, ARRAY_SIZE(bandwidth_list)
+                      , (int *)&mod->config.bandwidth);
+        fe_option_set(mod, "guardinterval", 0, "AUTO"
+                      , guardinterval_list, ARRAY_SIZE(guardinterval_list)
+                      , (int *)&mod->config.guardinterval);
+        fe_option_set(mod, "transmitmode", 0, "AUTO"
+                      , transmitmode_list, ARRAY_SIZE(transmitmode_list)
+                      , (int *)&mod->config.transmitmode);
+        fe_option_set(mod, "hierarchy", 0, "AUTO"
+                      , hierarchy_list, ARRAY_SIZE(hierarchy_list)
+                      , (int *)&mod->config.hierarchy);
+    }
+    else if(mod->config.type == DVB_TYPE_C)
+    {
+        module_set_number(mod, "frequency", 1, 0, &mod->config.frequency);
+        mod->config.frequency *= 1000000;
+        module_set_number(mod, "symbolrate", 1, 0, &mod->config.symbolrate);
+        mod->config.symbolrate *= 1000;
+        fe_option_set(mod, "fec", 0, "AUTO"
+                      , fec_list, ARRAY_SIZE(fec_list)
+                      , (int *)&mod->config.fec);
+    }
+    else
+    {
+        log_error(LOG_MSG("unimplemented dvb-type"));
+        abort();
+    }
+} /* module_configure */
 
-static void module_init(module_data_t *mod)
+static void module_initialize(module_data_t *mod)
 {
-    log_debug(LOG_MSG("init"));
-
     /* protocols */
     stream_ts_init(mod, NULL, NULL, NULL
                    , callback_join_pid, callback_leave_pid);
 
-    /* set dvb type */
-    char std_type = mod->config._type[0];
-    if(std_type >= 'a')
-        std_type -= ('a' - 'A');
-    char std_version = mod->config._type[1];
-
-    if(std_type == 'S')
-    {
-        if(std_version == '2')
-        {
-#if (DVB_API_VERSION >= 5)
-            mod->config.type = DVB_TYPE_S2;
-#else
-            log_error(LOG_MSG("DVB-S2 is disabled. Update driver"));
-            return;
-#endif
-        }
-        else
-            mod->config.type = DVB_TYPE_S;
-
-        CONFIG_CHECK_X(polarization);
-
-        if(!CONFIG_CHECK_X(modulation))
-            return;
-        if(!CONFIG_CHECK_X(fec))
-            return;
-        if(!CONFIG_CHECK_X(rolloff))
-            return;
-
-        /* set TP */
-        if(mod->config._tp && !dvbs_parse_tp(mod))
-        {
-            log_error(LOG_MSG("failed to set transponder \"%s\"")
-                      , mod->config._tp);
-            return;
-        }
-
-        /* set LNB */
-        if(mod->config._lnb && !dvbs_parse_lnb(mod))
-        {
-            log_error(LOG_MSG("failed to set LNB \"%s\"")
-                      , mod->config._lnb);
-            return;
-        }
-
-        if(mod->config._tp && mod->config._lnb)
-            frontend_open(mod);
-    }
-    else if(std_type == 'T')
-    {
-        mod->config.type = DVB_TYPE_T;
-
-        if(!CONFIG_CHECK_X(modulation))
-            return;
-        if(!CONFIG_CHECK_X(bandwidth))
-            return;
-        if(!CONFIG_CHECK_X(guardinterval))
-            return;
-        if(!CONFIG_CHECK_X(transmitmode))
-            return;
-        if(!CONFIG_CHECK_X(hierarchy))
-            return;
-
-        if(!mod->config.frequency)
-        {
-            log_error(LOG_MSG("frequency required"));
-            return;
-        }
-
-        mod->config.frequency *= 1000000;
-
+    if(mod->config.frequency)
         frontend_open(mod);
-    }
-    else if(std_type == 'C')
-    {
-        mod->config.type = DVB_TYPE_C;
-
-        if(!CONFIG_CHECK_X(modulation))
-            return;
-        if(!CONFIG_CHECK_X(fec))
-            return;
-
-        mod->config.frequency *= 1000000;
-        mod->config.symbolrate *= 1000;
-
-        frontend_open(mod);
-    }
-    else
-    {
-        log_error(LOG_MSG("unknown DVB type \"%s\""), mod->config._type);
-        return;
-    }
 
     dvr_open(mod);
 
@@ -1241,15 +1229,13 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    log_debug(LOG_MSG("destroy"));
-
     /* protocols */
     stream_ts_destroy(mod);
     module_event_destroy(mod);
 
     timer_detach(mod->stat_timer);
 
-    if(mod->config._tp)
+    if(mod->config.frequency)
         frontend_close(mod);
 
     if(mod->config.budget)
@@ -1266,33 +1252,6 @@ static void module_destroy(module_data_t *mod)
 
     dvr_close(mod);
 }
-
-MODULE_OPTIONS()
-{
-    OPTION_STRING("type"         , config._type         , 1, NULL)
-    OPTION_NUMBER("adapter"      , config.adapter       , 1, 0)
-    OPTION_NUMBER("device"       , config.device        , 0, 0)
-
-    OPTION_NUMBER("budget"       , config.budget        , 0, 0)
-    OPTION_NUMBER("buffer_size"  , config.buffer_size   , 0, 0)
-
-    OPTION_STRING("modulation"   , config._modulation   , 0, "AUTO")
-
-    OPTION_NUMBER("diseqc"       , config.diseqc        , 0, 0)
-    OPTION_NUMBER("lnb_sharing"  , config.lnb_sharing   , 0, 0)
-    OPTION_STRING("lnb"          , config._lnb          , 0, NULL)
-    OPTION_STRING("tp"           , config._tp           , 0, NULL)
-    OPTION_STRING("fec"          , config._fec          , 0, "AUTO")
-    OPTION_STRING("rolloff"      , config._rolloff      , 0, "35")
-    OPTION_STRING("polarization" , config._polarization , 0, NULL)
-    OPTION_NUMBER("symbolrate"   , config.symbolrate    , 0, 0)
-
-    OPTION_NUMBER("frequency"    , config.frequency     , 0, 0) /* MHz */
-    OPTION_STRING("bandwidth"    , config._bandwidth    , 0, "AUTO")
-    OPTION_STRING("guardinterval", config._guardinterval, 0, "AUTO")
-    OPTION_STRING("transmitmode" , config._transmitmode , 0, "AUTO")
-    OPTION_STRING("hierarchy"    , config._hierarchy    , 0, "AUTO")
-};
 
 MODULE_METHODS()
 {

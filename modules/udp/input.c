@@ -17,9 +17,9 @@ struct module_data_s
 
     struct
     {
-        char *addr;
+        const char *addr;
         int port;
-        char *local;
+        const char *localaddr;
         int socket_size;
         int rtp;
     } config;
@@ -70,10 +70,17 @@ static int method_detach(module_data_t *mod)
 
 /* required */
 
-static void module_init(module_data_t *mod)
+static void module_configure(module_data_t *mod)
 {
-    log_debug(LOG_MSG("init"));
+    module_set_string(mod, "addr", 1, NULL, &mod->config.addr);
+    module_set_number(mod, "port", 0, 1234, &mod->config.port);
+    module_set_string(mod, "localaddr", 0, NULL, &mod->config.localaddr);
+    module_set_number(mod, "socket_size", 0, 0, &mod->config.socket_size);
+    module_set_number(mod, "rtp", 0, 0, &mod->config.rtp);
+}
 
+static void module_initialize(module_data_t *mod)
+{
     /* protocols */
     stream_ts_init(mod, NULL, NULL, NULL, NULL, NULL);
 
@@ -87,13 +94,11 @@ static void module_init(module_data_t *mod)
     if(mod->config.socket_size > 0)
         socket_set_buffer(mod->sock, mod->config.socket_size, 0);
     event_attach(mod->sock, udp_input_callback, mod, EVENT_READ);
-    socket_multicast_join(mod->sock, mod->config.addr, mod->config.local);
+    socket_multicast_join(mod->sock, mod->config.addr, mod->config.localaddr);
 }
 
 static void module_destroy(module_data_t *mod)
 {
-    log_debug(LOG_MSG("destroy"));
-
     /* protocols */
     stream_ts_destroy(mod);
 
@@ -104,15 +109,6 @@ static void module_destroy(module_data_t *mod)
         socket_close(mod->sock);
     }
 }
-
-MODULE_OPTIONS()
-{
-    OPTION_STRING("addr"       , config.addr       , 1, NULL)
-    OPTION_NUMBER("port"       , config.port       , 0, 1234)
-    OPTION_STRING("localaddr"  , config.local      , 0, NULL)
-    OPTION_NUMBER("socket_size", config.socket_size, 0, 0)
-    OPTION_NUMBER("rtp"        , config.rtp        , 0, 0)
-};
 
 MODULE_METHODS()
 {

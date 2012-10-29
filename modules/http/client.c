@@ -18,7 +18,7 @@ struct module_data_s
 
     struct
     {
-        char *addr;
+        const char *addr;
         int port;
     } config;
 
@@ -420,12 +420,21 @@ static int method_send(module_data_t *mod)
 
 /* required */
 
-static void module_init(module_data_t *mod)
+static void module_configure(module_data_t *mod)
 {
-#ifdef LOG_DEBUG
-    log_debug(LOG_MSG("init"));
-#endif
+    /*
+     * OPTIONS:
+     *   fd, addr, port
+     *   server, callback
+     */
 
+    module_set_number(mod, "fd", 1, 0, &mod->sock);
+    module_set_string(mod, "addr", 1, NULL, &mod->config.addr);
+    module_set_number(mod, "port", 1, 0, &mod->config.port);
+}
+
+static void module_initialize(module_data_t *mod)
+{
     stream_ts_init(mod, callback_send_ts, callback_on_attach
                    , NULL, NULL, NULL);
 
@@ -441,10 +450,6 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-#ifdef LOG_DEBUG
-    log_debug(LOG_MSG("destroy"));
-#endif
-
     stream_ts_destroy(mod);
 
     if(mod->ts_buffer)
@@ -455,15 +460,6 @@ static void module_destroy(module_data_t *mod)
 
     method_close(mod);
 }
-
-MODULE_OPTIONS()
-{
-    OPTION_NUMBER("fd"      , sock       , 1, 0)
-    OPTION_STRING("addr"    , config.addr, 1, NULL)
-    OPTION_NUMBER("port"    , config.port, 1, 0)
-    OPTION_CUSTOM("server"  , NULL       , 1)
-    OPTION_CUSTOM("callback", NULL       , 1)
-};
 
 MODULE_METHODS()
 {

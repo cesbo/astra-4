@@ -35,7 +35,7 @@ struct module_data_s
 
     struct
     {
-        char *name;
+        const char *name;
     } config;
 
     int stream_reload;
@@ -466,10 +466,13 @@ static int method_event(module_data_t *mod)
 
 /* required */
 
-static void module_init(module_data_t *mod)
+static void module_configure(module_data_t *mod)
 {
-    log_debug(LOG_MSG("init"));
+    module_set_string(mod, "name", 1, NULL, &mod->config.name);
+}
 
+static void module_initialize(module_data_t *mod)
+{
     stream_ts_init(mod, callback_send_ts, NULL, NULL, NULL, NULL);
 
     mod->rate_timer = timer_attach(UPDATING_INTERVAL, rate_timer_callback, mod);
@@ -487,8 +490,6 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    log_debug(LOG_MSG("destroy"));
-
     stream_ts_destroy(mod);
     module_event_destroy(mod);
 
@@ -496,11 +497,6 @@ static void module_destroy(module_data_t *mod)
 
     mpegts_stream_destroy(mod->stream);
 }
-
-MODULE_OPTIONS()
-{
-    OPTION_STRING("name", config.name, 1, NULL)
-};
 
 MODULE_METHODS()
 {

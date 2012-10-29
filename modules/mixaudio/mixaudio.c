@@ -322,10 +322,14 @@ static int method_detach(module_data_t *mod)
 
 /* required */
 
-static void module_init(module_data_t *mod)
+static void module_configure(module_data_t *mod)
 {
-    log_debug(LOG_MSG("init"));
+    module_set_number(mod, "pid", 1, 0, &mod->config.pid);
+    module_set_string(mod, "direction", 0, "LL", &mod->config.direction);
+}
 
+static void module_initialize(module_data_t *mod)
+{
     stream_ts_init(mod, callback_send_ts, NULL, NULL, NULL, NULL);
 
     if(!strcasecmp(mod->config.direction, "LL"))
@@ -365,8 +369,6 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    log_debug(LOG_MSG("destroy"));
-
     stream_ts_destroy(mod);
 
     if(mod->ctx_encode)
@@ -382,12 +384,6 @@ static void module_destroy(module_data_t *mod)
     if(mod->pes_o)
         mpegts_pes_destroy(mod->pes_o);
 }
-
-MODULE_OPTIONS()
-{
-    OPTION_NUMBER("pid"      , config.pid      , 1, 0)
-    OPTION_STRING("direction", config.direction, 0, "LL")
-};
 
 MODULE_METHODS()
 {
