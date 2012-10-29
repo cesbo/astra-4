@@ -272,7 +272,7 @@ static void newcamd_drop_packet(module_data_t *mod)
 }
 
 static void newcamd_connect(void *);
-static void newcamd_disconnect(module_data_t *);
+static void newcamd_disconnect(module_data_t *, int);
 
 static void timeout_timer_callback(void *arg)
 {
@@ -296,7 +296,7 @@ static void timeout_timer_callback(void *arg)
             break;
     }
 
-    newcamd_disconnect(mod);
+    newcamd_disconnect(mod, 0);
     newcamd_connect(mod);
 }
 
@@ -640,7 +640,7 @@ static void newcamd_read_cb(void *arg, int event)
     if(event == EVENT_ERROR)
     {
         log_error(LOG_MSG("failed to read from socket [%s]"), strerror(errno));
-        newcamd_disconnect(mod);
+        newcamd_disconnect(mod, 0);
         newcamd_timeout_set(mod);
         return;
     }
@@ -676,7 +676,7 @@ static void newcamd_write_cb(void *arg, int event)
     if(event == EVENT_ERROR)
     {
         log_error(LOG_MSG("socket not ready [%s]"), strerror(errno));
-        newcamd_disconnect(mod);
+        newcamd_disconnect(mod, 0);
         newcamd_timeout_set(mod);
         return;
     }
@@ -702,7 +702,7 @@ static void newcamd_connect(void *arg)
     event_attach(mod->sock, newcamd_write_cb, mod, EVENT_WRITE);
 }
 
-static void newcamd_disconnect(module_data_t *mod)
+static void newcamd_disconnect(module_data_t *mod, int status)
 {
     newcamd_timeout_unset(mod);
 
@@ -715,7 +715,12 @@ static void newcamd_disconnect(module_data_t *mod)
     mod->status = NEWCAMD_UNKNOWN;
 
     cam_queue_flush(mod);
-    decrypt_module_cam_status(mod, 0);
+    decrypt_module_cam_status(mod, status);
+
+    list_t *i = mod->__cam_module.prov_list;
+    while(i)
+        i = list_delete(i, NULL);
+    mod->__cam_module.prov_list = NULL;
 }
 
 /* softcam callbacks */
@@ -772,21 +777,7 @@ static void module_initialize(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    newcamd_timeout_unset(mod);
-
-    if(mod->sock)
-    {
-        event_detach(mod->sock);
-        socket_close(mod->sock);
-    }
-
-    cam_queue_flush(mod);
-    decrypt_module_cam_status(mod, -1);
-
-    list_t *i = mod->__cam_module.prov_list;
-    while(i)
-        i = list_delete(i, NULL);
-    mod->__cam_module.prov_list = NULL;
+    newcamd_disconnect(mod, -1);
 
     if(mod->prov_buffer)
         free(mod->prov_buffer);
