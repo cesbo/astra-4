@@ -38,6 +38,7 @@ typedef enum
     DVB_TYPE_S,
     DVB_TYPE_S2,
     DVB_TYPE_T,
+    DVB_TYPE_T2,
     DVB_TYPE_C,
 } dvb_type_t;
 
@@ -58,6 +59,7 @@ static fe_value_t dvb_type_list[] =
     { "S", DVB_TYPE_S },
     { "S2", DVB_TYPE_S2 },
     { "T", DVB_TYPE_T },
+    { "T2", DVB_TYPE_T2 },
     { "C", DVB_TYPE_C },
 };
 
@@ -437,25 +439,94 @@ static int frontend_tune_s(module_data_t *mod)
 
 static int frontend_tune_t(module_data_t *mod)
 {
-    struct dvb_frontend_parameters feparams;
-
-    memset(&feparams, 0, sizeof(feparams));
-    feparams.frequency = mod->config.frequency;
-    feparams.inversion = INVERSION_AUTO;
-
-    feparams.u.ofdm.code_rate_HP = FEC_AUTO;
-    feparams.u.ofdm.code_rate_LP = FEC_AUTO;
-
-    feparams.u.ofdm.bandwidth = mod->config.bandwidth;
-    feparams.u.ofdm.constellation = mod->config.modulation;
-    feparams.u.ofdm.transmission_mode = mod->config.transmitmode;
-    feparams.u.ofdm.guard_interval = mod->config.guardinterval;
-    feparams.u.ofdm.hierarchy_information = mod->config.hierarchy;
-
-    if(ioctl(mod->fe_fd, FE_SET_FRONTEND, &feparams) != 0)
+    if(mod->config.type == DVB_TYPE_T)
     {
-        mod->status.error_message = "FE_SET_FRONTEND";
+        struct dvb_frontend_parameters feparams;
+
+        memset(&feparams, 0, sizeof(feparams));
+        feparams.frequency = mod->config.frequency;
+        feparams.inversion = INVERSION_AUTO;
+
+        feparams.u.ofdm.code_rate_HP = FEC_AUTO;
+        feparams.u.ofdm.code_rate_LP = FEC_AUTO;
+
+        feparams.u.ofdm.bandwidth = mod->config.bandwidth;
+        feparams.u.ofdm.constellation = mod->config.modulation;
+        feparams.u.ofdm.transmission_mode = mod->config.transmitmode;
+        feparams.u.ofdm.guard_interval = mod->config.guardinterval;
+        feparams.u.ofdm.hierarchy_information = mod->config.hierarchy;
+
+        if(ioctl(mod->fe_fd, FE_SET_FRONTEND, &feparams) != 0)
+        {
+            mod->status.error_message = "FE_SET_FRONTEND";
+            return 0;
+        }
+    }
+    else
+    {
+#if DVB_API_VERSION >= 5
+        /* clear */
+        struct dtv_properties cmdseq;
+
+        struct dtv_property cmd_clear[] =
+        {
+            { .cmd = DTV_CLEAR }
+        };
+        cmdseq.num = 1;
+        cmdseq.props = cmd_clear;
+
+        if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
+        {
+            mod->status.error_message = "FE_SET_PROPERTY clear";
+            return 0;
+        }
+
+        int bandwidth = 8000000;
+        switch(mod->config.bandwidth)
+        {
+            case BANDWIDTH_7_MHZ:
+                bandwidth = 7000000;
+                break;
+            case BANDWIDTH_6_MHZ:
+                bandwidth = 6000000;
+                break;
+            default:
+                break;
+        }
+
+        /* tune */
+        struct dtv_property cmd_tune[] =
+        {
+            { .cmd = DTV_FREQUENCY,         .u.data = mod->config.frequency },
+            { .cmd = DTV_MODULATION,        .u.data = mod->config.modulation},
+            { .cmd = DTV_INVERSION,         .u.data = INVERSION_AUTO        },
+            { .cmd = DTV_BANDWIDTH_HZ,      .u.data = bandwidth             },
+            { .cmd = DTV_CODE_RATE_HP,      .u.data = FEC_AUTO              },
+            { .cmd = DTV_CODE_RATE_LP,      .u.data = FEC_AUTO              },
+            { .cmd = DTV_GUARD_INTERVAL
+              ,                         .u.data = mod->config.guardinterval },
+            { .cmd = DTV_TRANSMISSION_MODE
+              ,                          .u.data = mod->config.transmitmode },
+            { .cmd = DTV_HIERARCHY,         .u.data = mod->config.hierarchy },
+            { .cmd = DTV_DELIVERY_SYSTEM,   .u.data = SYS_DVBT              },
+            { .cmd = DTV_TUNE                                               },
+        };
+        cmdseq.num = ARRAY_SIZE(cmd_tune);
+        cmdseq.props = cmd_tune;
+
+        struct dvb_frontend_event ev;
+        while(ioctl(mod->fe_fd, FE_GET_EVENT, &ev) != -1)
+            ;
+
+        if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
+        {
+            mod->status.error_message = "FE_SET_PROPERTY tune";
+            return 0;
+        }
+#else
+#       warning "DVB-T2 is disabled. Update driver"
         return 0;
+#endif
     }
 
     return 1;
@@ -512,6 +583,7 @@ static void frontend_tune(module_data_t *mod)
                 ret = frontend_tune_s(mod);
                 break;
             case DVB_TYPE_T:
+            case DVB_TYPE_T2:
                 ret = frontend_tune_t(mod);
                 break;
             case DVB_TYPE_C:
@@ -1049,7 +1121,7 @@ static void module_configure(module_data_t *mod)
                   , modulation_list, ARRAY_SIZE(modulation_list)
                   , (int *)&mod->config.modulation);
 
-    if(mod->config.type == DVB_TYPE_S2 || mod->config.type == DVB_TYPE_S)
+    if(mod->config.type == DVB_TYPE_S || mod->config.type == DVB_TYPE_S2)
     {
         if(module_set_string(mod, "tp", 0, NULL, &tmp_value))
         {
@@ -1089,8 +1161,6 @@ static void module_configure(module_data_t *mod)
         else
         {
             module_set_number(mod, "frequency", 1, 0, &mod->config.frequency);
-            if(!mod->config.frequency)
-                return;
             mod->config.frequency *= 1000;
             fe_option_set(mod, "polarization", 1, NULL
                           , polarization_list, ARRAY_SIZE(polarization_list)
@@ -1161,11 +1231,9 @@ static void module_configure(module_data_t *mod)
                       , fec_list, ARRAY_SIZE(fec_list)
                       , (int *)&mod->config.fec);
     }
-    else if(mod->config.type == DVB_TYPE_T)
+    else if(mod->config.type == DVB_TYPE_T || mod->config.type == DVB_TYPE_T2)
     {
-        module_set_number(mod, "frequency", 0, 0, &mod->config.frequency);
-        if(!mod->config.frequency)
-            return;
+        module_set_number(mod, "frequency", 1, 0, &mod->config.frequency);
         mod->config.frequency *= 1000000;
 
         fe_option_set(mod, "bandwidth", 0, "AUTO"
@@ -1185,6 +1253,7 @@ static void module_configure(module_data_t *mod)
     {
         module_set_number(mod, "frequency", 1, 0, &mod->config.frequency);
         mod->config.frequency *= 1000000;
+
         module_set_number(mod, "symbolrate", 1, 0, &mod->config.symbolrate);
         mod->config.symbolrate *= 1000;
         fe_option_set(mod, "fec", 0, "AUTO"

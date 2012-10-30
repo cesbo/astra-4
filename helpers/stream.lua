@@ -19,6 +19,10 @@ options = {
         guardinterval = true,
         transmitmode = true,
         hierarchy = true,
+        polarization = true,
+        lof1 = true,
+        lof2 = true,
+        slof = true,
     },
     demux = {
     },
