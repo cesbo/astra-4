@@ -128,10 +128,13 @@ static void module_initialize(module_data_t *mod)
     lua_pushvalue(L, -1);
     mod->idx_self = luaL_ref(L, LUA_REGISTRYINDEX);
 
-    mod->sock = socket_open(SOCKET_BIND | SOCKET_REUSEADDR
+    mod->sock = socket_open(SOCKET_BIND | SOCKET_REUSEADDR | SOCKET_NO_DELAY
                             , mod->config.addr, mod->config.port);
     if(!mod->sock)
+    {
         method_close(mod);
+        return;
+    }
     event_attach(mod->sock, accept_callback, mod, EVENT_READ);
     log_debug(LOG_MSG("fd=%d"), mod->sock);
 }

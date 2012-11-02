@@ -1180,14 +1180,7 @@ static void module_configure(module_data_t *mod)
                 for(; *conf && *conf != ':'; ++conf)
                     ;
                 if(!*conf)
-                {
-                    if(mod->config.lof1)
-                    {
-                        mod->config.lof2 = mod->config.lof1;
-                        mod->config.slof = mod->config.lof1;
-                    }
                     break;
-                }
                 ++conf;
                 // set lof2 (high)
                 mod->config.lof2 = atoi(conf) * 1000;
@@ -1199,7 +1192,7 @@ static void module_configure(module_data_t *mod)
                 // set slof (switch)
                 mod->config.slof = atoi(conf) * 1000;
             } while(0);
-            if(!mod->config.slof)
+            if(!mod->config.lof1)
             {
                 log_error(LOG_MSG("failed to parse lnb option \"%s\"")
                           , tmp_value);

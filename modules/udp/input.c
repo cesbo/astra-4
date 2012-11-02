@@ -22,9 +22,12 @@ struct module_data_s
         const char *localaddr;
         int socket_size;
         int rtp;
+        int renew;
     } config;
 
     int sock;
+
+    void *timer_renew;
 
     uint8_t buffer[UDP_BUFFER_SIZE];
 };
@@ -54,6 +57,14 @@ void udp_input_callback(void *arg, int event)
         stream_ts_send(mod, &mod->buffer[i]);
 }
 
+void timer_renew_callback(void *arg)
+{
+    module_data_t *mod = arg;
+
+    socket_multicast_leave(mod->sock, mod->config.addr);
+    socket_multicast_join(mod->sock, mod->config.addr, mod->config.localaddr);
+}
+
 /* methods */
 
 static int method_attach(module_data_t *mod)
@@ -77,6 +88,7 @@ static void module_configure(module_data_t *mod)
     module_set_string(mod, "localaddr", 0, NULL, &mod->config.localaddr);
     module_set_number(mod, "socket_size", 0, 0, &mod->config.socket_size);
     module_set_number(mod, "rtp", 0, 0, &mod->config.rtp);
+    module_set_number(mod, "renew", 0, 0, &mod->config.renew);
 }
 
 static void module_initialize(module_data_t *mod)
@@ -93,16 +105,28 @@ static void module_initialize(module_data_t *mod)
                             , mod->config.addr
 #endif
                             , mod->config.port);
+    if(!mod->sock)
+        return;
+
     if(mod->config.socket_size > 0)
         socket_set_buffer(mod->sock, mod->config.socket_size, 0);
     event_attach(mod->sock, udp_input_callback, mod, EVENT_READ);
     socket_multicast_join(mod->sock, mod->config.addr, mod->config.localaddr);
+
+    if(mod->config.renew)
+    {
+        mod->timer_renew = timer_attach(mod->config.renew * 1000
+                                        , timer_renew_callback, mod);
+    }
 }
 
 static void module_destroy(module_data_t *mod)
 {
     /* protocols */
     stream_ts_destroy(mod);
+
+    if(mod->timer_renew)
+        timer_detach(mod->timer_renew);
 
     if(mod->sock)
     {

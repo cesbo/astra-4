@@ -273,6 +273,8 @@ static void scan_pmt(module_data_t *mod, mpegts_psi_t *psi)
 
 static void scan_ecm_emm(module_data_t *mod, mpegts_psi_t *psi)
 {
+    if(mod->stream_reload)
+        return;
     cam_send(mod->cam_mod, mod->cas, psi->buffer);
 } /* scan_ecm_emm */
 
@@ -513,18 +515,8 @@ static void interface_cam_status(module_data_t *mod, int is_ready)
 
         if(mod->stream[0])
         {
-            if(mod->stream[1])
-                stream_ts_leave_pid(mod, 1);
-
-            // PID >= 0x10 May be assigned as NIP, PMT, ES, or for others
-            for(int i = 0x10; i < NULL_TS_PID; ++i)
-            {
-                mpegts_psi_t *p = mod->stream[i];
-                if(p && (p->type & MPEGTS_PACKET_CA))
-                    stream_ts_leave_pid(mod, i);
-            }
-
             mpegts_stream_destroy(mod->stream);
+            stream_ts_leave_all(mod);
         }
 
         if(is_ready < 0)
@@ -612,12 +604,15 @@ static void module_configure(module_data_t *mod)
 
     lua_State *L = LUA_STATE(mod);
     lua_getfield(L, 2, "cam");
-    if(lua_type(L, -1) != LUA_TUSERDATA)
+    if(lua_type(L, -1) != LUA_TNIL)
     {
-        log_error(LOG_MSG("option \"cam\" required cam module instance"));
-        abort();
+        if(lua_type(L, -1) != LUA_TUSERDATA)
+        {
+            log_error(LOG_MSG("option \"cam\" required cam module instance"));
+            abort();
+        }
+        mod->cam_mod = lua_touserdata(L, -1);
     }
-    mod->cam_mod = lua_touserdata(L, -1);
     lua_pop(L, 1);
 
     module_set_number(mod, "real_pnr", 0, 0, &mod->config.real_pnr);
@@ -660,6 +655,8 @@ static void module_destroy(module_data_t *mod)
     stream_ts_destroy(mod);
     module_event_destroy(mod);
 
+    if(mod->cas)
+        cas_destroy(mod->cas);
     if(mod->cam_mod)
         cam_detach_decrypt(mod->cam_mod, mod);
 

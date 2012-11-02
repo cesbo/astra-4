@@ -42,6 +42,7 @@ options = {
         port = true,
         localaddr = true,
         rtp = true,
+        renew = true,
     },
     udp_output = {
         addr = true,

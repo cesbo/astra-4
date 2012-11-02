@@ -38,10 +38,8 @@ if [ $# -ne 0 ] ; then
 fi
 
 if [ -n "$FLIST" ] ; then
-    hg commit -m "$MSG" $FLIST
     git commit -m "$MSG" $FLIST
 else
-    hg commit -m "$MSG"
     git commit -am "$MSG"
 fi
 
