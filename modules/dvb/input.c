@@ -692,7 +692,7 @@ static void frontend_thread_stream(void *arg)
     {
         case MESSAGE_LOCK:
         {
-            log_info(LOG_MSG("lock signal:%3u%% snr:%3u%%")
+            log_info(LOG_MSG("lock. signal:%3u%% snr:%3u%%")
                      , mod->status.signal, mod->status.snr);
             if(!mod->is_lock)
             {
@@ -716,7 +716,15 @@ static void frontend_thread_stream(void *arg)
         }
         case MESSAGE_RETUNE:
         {
-            log_info(LOG_MSG("retune status:%02X"), mod->status.fe);
+            const char ss = (mod->status.fe & FE_HAS_SIGNAL) ? 'S' : '_';
+            const char sc = (mod->status.fe & FE_HAS_CARRIER) ? 'C' : '_';
+            const char sv = (mod->status.fe & FE_HAS_VITERBI) ? 'V' : '_';
+            const char sy = (mod->status.fe & FE_HAS_SYNC) ? 'Y' : '_';
+            const char sl = (mod->status.fe & FE_HAS_LOCK) ? 'L' : '_';
+            log_info(LOG_MSG("retune. status:%c%c%c%c%c "
+                             "signal:%3u%% snr:%3u%%")
+                     , ss, sc, sv, sy, sl
+                     , mod->status.signal, mod->status.snr);
             if(mod->is_lock)
             {
                 mod->is_retune = 1;

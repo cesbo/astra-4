@@ -20,6 +20,7 @@ struct module_data_s
     struct
     {
         const char *filename;
+        const char *lock;
         // int loop;
     } config;
 
@@ -27,6 +28,8 @@ struct module_data_s
     stream_t *thread_stream;
 
     int fd;
+    size_t skip;
+    void *timer_skip;
 
     uint64_t pcr;
 
@@ -101,13 +104,20 @@ static double timeval_diff(struct timeval *start, struct timeval *end)
 static int open_file(module_data_t *mod)
 {
     if(mod->fd)
+    {
+        mod->skip = 0; // reopen file
         close(mod->fd);
+    }
+
     mod->fd = open(mod->config.filename, O_RDONLY);
     if(mod->fd <= 0)
     {
         mod->fd = 0;
         return 0;
     }
+
+    if(mod->skip)
+        lseek(mod->fd, mod->skip, SEEK_SET);
 
     // sync file position
     uint8_t *data = mod->buffer.data;
@@ -191,6 +201,7 @@ static void thread_loop(void *arg)
                     break;
                 continue;
             }
+            mod->skip += rlen;
             mod->buffer.end += rlen;
             mod->buffer.block_end = seek_pcr(dst, mod->buffer.end);
             if(!mod->buffer.block_end)
@@ -243,6 +254,20 @@ static void thread_callback(void *arg)
         stream_ts_send(mod, ts);
 }
 
+static void timer_skip_set(void *arg)
+{
+    module_data_t *mod = arg;
+    char skip_str[64];
+    int fd = open(mod->config.lock, O_CREAT | O_WRONLY | O_TRUNC
+                  , S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if(fd > 0)
+    {
+        const int l = sprintf(skip_str, "%lu", mod->skip);
+        write(fd, skip_str, l);
+        close(fd);
+    }
+}
+
 /* methods */
 
 static int method_attach(module_data_t *mod)
@@ -262,8 +287,23 @@ static int method_detach(module_data_t *mod)
 static void module_initialize(module_data_t *mod)
 {
     module_set_string(mod, "filename", 1, NULL, &mod->config.filename);
+    module_set_string(mod, "lock", 0, NULL, &mod->config.lock);
 
     stream_ts_init(mod, NULL, NULL, NULL, NULL, NULL);
+
+    if(mod->config.lock)
+    {
+        int fd = open(mod->config.lock, O_RDONLY);
+        if(fd)
+        {
+            char skip_str[64];
+            const int l = read(fd, skip_str, sizeof(skip_str));
+            if(l > 0)
+                mod->skip = strtoul(skip_str, NULL, 10);
+            close(fd);
+        }
+        mod->timer_skip = timer_attach(2000, timer_skip_set, mod);
+    }
 
     mod->thread_stream = stream_init(thread_callback, mod);
     thread_init(&mod->thread, thread_loop, mod);
@@ -271,6 +311,7 @@ static void module_initialize(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
+    timer_detach(mod->timer_skip);
     thread_destroy(&mod->thread);
     stream_destroy(mod->thread_stream);
 

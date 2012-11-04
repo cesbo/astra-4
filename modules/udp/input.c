@@ -60,9 +60,7 @@ void udp_input_callback(void *arg, int event)
 void timer_renew_callback(void *arg)
 {
     module_data_t *mod = arg;
-
-    socket_multicast_leave(mod->sock, mod->config.addr);
-    socket_multicast_join(mod->sock, mod->config.addr, mod->config.localaddr);
+    socket_multicast_renew(mod->sock, mod->config.addr, mod->config.localaddr);
 }
 
 /* methods */
