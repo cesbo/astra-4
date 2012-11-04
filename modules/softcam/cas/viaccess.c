@@ -85,8 +85,8 @@ static int viaccess_check_caid(uint16_t caid)
     return (caid == 0x0500);
 }
 
-static const uint8_t * viaccess_check_em(cas_data_t *cas
-                                         , const uint8_t *payload)
+static cam_packet_t * viaccess_check_em(cas_data_t *cas
+                                        , const uint8_t *payload)
 {
     const uint8_t em_type = payload[0];
     switch(em_type)
@@ -98,7 +98,7 @@ static const uint8_t * viaccess_check_em(cas_data_t *cas
             if(em_type != cas->parity)
             {
                 cas->parity = em_type;
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_ECM);
             }
             break;
         }
@@ -167,7 +167,7 @@ static const uint8_t * viaccess_check_em(cas_data_t *cas
             cas->emm[2] = size + 4;
             sort_nanos(&cas->emm[7], emm, size);
 
-            return cas->emm;
+            return cam_packet_init(cas, cas->emm, MPEGTS_PACKET_EMM);
         }
         default:
             break;
@@ -176,7 +176,7 @@ static const uint8_t * viaccess_check_em(cas_data_t *cas
     return NULL;
 }
 
-static int viaccess_check_keys(cas_data_t *cas, const uint8_t *keys)
+static int viaccess_check_keys(cam_packet_t *packet)
 {
     return 1;
 }

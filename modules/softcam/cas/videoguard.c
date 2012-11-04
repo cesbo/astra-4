@@ -41,8 +41,8 @@ static int videoguard_check_caid(uint16_t caid)
 }
 
 /* check Entitlement Message */
-static const uint8_t * videoguard_check_em(cas_data_t *cas
-                                           , const uint8_t *payload)
+static cam_packet_t * videoguard_check_em(cas_data_t *cas
+                                          , const uint8_t *payload)
 {
     const uint8_t em_type = payload[0];
     switch(em_type)
@@ -54,7 +54,7 @@ static const uint8_t * videoguard_check_em(cas_data_t *cas
             if(em_type != cas->parity)
             {
                 cas->parity = em_type;
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_ECM);
             }
             break;
         }
@@ -63,7 +63,7 @@ static const uint8_t * videoguard_check_em(cas_data_t *cas
             const uint8_t emm_type = (payload[3] & 0xC0) >> 6;
             if(emm_type == 0)
             { // global
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
             }
             else if(emm_type == 1 || emm_type == 2)
             {
@@ -73,7 +73,10 @@ static const uint8_t * videoguard_check_em(cas_data_t *cas
                 {
                     const uint8_t *serial = &payload[i * 4 + 4];
                     if(!memcmp(serial, &CAS2CAM(cas).ua[4], serial_len))
-                        return payload;
+                    {
+                        return cam_packet_init(cas, payload
+                                               , MPEGTS_PACKET_EMM);
+                    }
                 }
             }
             break;
@@ -83,7 +86,7 @@ static const uint8_t * videoguard_check_em(cas_data_t *cas
     return NULL;
 }
 
-static int videoguard_check_keys(cas_data_t *cas, const uint8_t *keys)
+static int videoguard_check_keys(cam_packet_t *packet)
 {
     return 1; // if 0, then cas don't send any message to decrypt module
 }

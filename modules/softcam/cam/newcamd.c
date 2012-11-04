@@ -246,31 +246,6 @@ static uint8_t xor_sum(const uint8_t *mem, int len)
 
 /* timeout */
 
-static void newcamd_drop_packet(module_data_t *mod)
-{
-    cam_packet_t *packet = NULL;
-    list_t *i = mod->__cam_module.queue.head;
-    while(i)
-    {
-        packet = list_get_data(i);
-        if(packet->id == mod->msg_id)
-            break;
-        i = list_get_next(i);
-    }
-    if(!i)
-    {
-        log_error(LOG_MSG("please report to and@cesbo.com bug:235620102012"));
-        return;
-    }
-
-    packet->type = MPEGTS_PACKET_UNKNOWN; // drop packet in cam_callback
-    packet->keys[0] = packet->payload[0];
-    packet->keys[1] = 0x00;
-    packet->keys[2] = 0x00;
-
-    cam_callback(mod, i);
-}
-
 static void newcamd_connect(void *);
 static void newcamd_disconnect(module_data_t *, int);
 
@@ -288,15 +263,25 @@ static void timeout_timer_callback(void *arg)
             log_error(LOG_MSG("connection timeout. try again"));
             break;
         case NEWCAMD_READY:
+        {
             log_warning(LOG_MSG("receiving timeout. drop packet"));
-            newcamd_drop_packet(mod);
+            cam_packet_t *packet
+                = list_get_data(mod->__cam_module.queue.head);
+            // drop packet in cam_callback
+            packet->type = MPEGTS_PACKET_UNKNOWN;
+            packet->keys[0] = packet->payload[0];
+            packet->keys[1] = 0x00;
+            packet->keys[2] = 0x00;
+            cam_callback(mod, packet);
             return;
+        }
         default:
             log_error(LOG_MSG("receiving timeout. reconnect"));
             break;
     }
 
-    newcamd_disconnect(mod, 0);
+    if(mod->status != NEWCAMD_UNKNOWN)
+        newcamd_disconnect(mod, 0);
     newcamd_connect(mod);
 }
 
@@ -319,17 +304,16 @@ static void newcamd_timeout_unset(module_data_t *mod)
 
 /* send/recv */
 
-static int newcamd_send_msg(module_data_t *mod, list_t *q_item)
+static int newcamd_send_msg(module_data_t *mod, cam_packet_t *packet)
 {
     // packet header
     const size_t buffer_size = mod->buffer_size;
     uint8_t *buffer = mod->buffer;
 
     memset(&buffer[2], 0, NEWCAMD_HEADER_SIZE - 2);
-    if(q_item)
+    if(packet)
     {
-        cam_packet_t *packet = list_get_data(q_item);
-        const uint16_t pnr = cas_pnr(packet->cas);
+        const uint16_t pnr = packet->cas->__cas_module.pnr;
         buffer[4] = pnr >> 8;
         buffer[5] = pnr & 0xff;
 
@@ -380,10 +364,10 @@ static int newcamd_send_msg(module_data_t *mod, list_t *q_item)
     if(socket_send(mod->sock, buffer, packet_size) != packet_size)
     {
         log_error(LOG_MSG("send: failed [%d]"), errno);
-        if(q_item)
+        if(packet)
         {
-            // TODO: set the packet error flag
-            cam_callback(mod, q_item);
+            packet->keys[2] = 0x00;
+            cam_callback(mod, packet);
             --mod->msg_id;
         }
         return 0;
@@ -403,7 +387,7 @@ static int newcamd_send_cmd(module_data_t *mod, newcamd_cmd_t cmd)
     return newcamd_send_msg(mod, NULL);
 }
 
-int newcamd_recv_msg(module_data_t *mod, list_t **q_item)
+int newcamd_recv_msg(module_data_t *mod, cam_packet_t **packet)
 {
     if(mod->status != NEWCAMD_READY)
         newcamd_timeout_unset(mod);
@@ -451,27 +435,20 @@ int newcamd_recv_msg(module_data_t *mod, list_t **q_item)
     }
 
     const uint8_t msg_type = buffer[NEWCAMD_HEADER_SIZE];
-    if(q_item && msg_type >= 0x80 && msg_type <= 0x8F)
+    if(packet && msg_type >= 0x80 && msg_type <= 0x8F)
     {
         const uint16_t msg_id = (buffer[2] << 8) | buffer[3];
-
-        cam_packet_t *p = NULL;
-        list_t *i = mod->__cam_module.queue.head;
-        while(i)
-        {
-            p = list_get_data(i);
-            if(p->id == msg_id)
-                break;
-            i = list_get_next(i);
-        }
-        if(!i)
+        cam_packet_t *p = list_get_data(mod->__cam_module.queue.head);
+        if(p->id != msg_id)
         {
             log_warning(LOG_MSG("packet with id %d is not found [type:0x%02X]")
                         , msg_id, msg_type);
         }
         else
+        {
+            *packet = p;
             newcamd_timeout_unset(mod);
-        *q_item = i;
+        }
     }
 
     mod->buffer_size = (((buffer[NEWCAMD_HEADER_SIZE + 1] << 8)
@@ -589,14 +566,14 @@ static int newcamd_login_3(module_data_t *mod)
 
 static int newcamd_process(module_data_t *mod)
 {
-    list_t *q_item = NULL;
-    const int len = newcamd_recv_msg(mod, &q_item);
-    if(len > 0 && q_item)
+    cam_packet_t *packet = NULL;
+    const int len = newcamd_recv_msg(mod, &packet);
+    if(packet)
     {
         uint8_t *buffer = &mod->buffer[NEWCAMD_HEADER_SIZE];
-        cam_packet_t *packet = list_get_data(q_item);
-        const uint16_t pnr = cas_pnr(packet->cas);
-        if(len == 19 && packet->type == MPEGTS_PACKET_ECM)
+
+        const uint16_t pnr = packet->cas->__cas_module.pnr;
+        if(len == 19)
         {
             uint64_t *key_0 = (uint64_t *)&buffer[3];
             uint64_t *key_1 = (uint64_t *)&buffer[11];
@@ -626,7 +603,7 @@ static int newcamd_process(module_data_t *mod)
                       , pnr, len);
         }
 
-        cam_callback(mod, q_item);
+        cam_callback(mod, packet);
     }
 
     return len;
@@ -675,7 +652,7 @@ static void newcamd_write_cb(void *arg, int event)
     module_data_t *mod = arg;
     if(event == EVENT_ERROR)
     {
-        log_error(LOG_MSG("socket not ready [%s]"), strerror(errno));
+        log_error(LOG_MSG("socket not ready [%s]"), socket_error());
         newcamd_disconnect(mod, 0);
         newcamd_timeout_set(mod);
         return;
@@ -727,12 +704,11 @@ static void newcamd_disconnect(module_data_t *mod, int status)
 
 static void interface_send_em(module_data_t *mod)
 {
-    list_t *current = mod->__cam_module.queue.current;
-    cam_packet_t *packet = list_get_data(current);
+    cam_packet_t *packet = list_get_data(mod->__cam_module.queue.head);
     uint8_t *buffer = &mod->buffer[NEWCAMD_HEADER_SIZE];
     memcpy(buffer, packet->payload, packet->size);
     mod->buffer_size = packet->size;
-    newcamd_send_msg(mod, current);
+    newcamd_send_msg(mod, packet);
 }
 
 /* required */

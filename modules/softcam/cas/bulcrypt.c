@@ -42,8 +42,8 @@ static int bulcrypt_check_caid(uint16_t caid)
 }
 
 /* check Entitlement Message */
-static const uint8_t * bulcrypt_check_em(cas_data_t *cas
-                                         , const uint8_t *payload)
+static cam_packet_t * bulcrypt_check_em(cas_data_t *cas
+                                        , const uint8_t *payload)
 {
     const uint8_t em_type = payload[0];
     switch(em_type)
@@ -55,7 +55,7 @@ static const uint8_t * bulcrypt_check_em(cas_data_t *cas
             if(em_type != cas->parity)
             {
                 cas->parity = em_type;
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_ECM);
             }
             break;
         }
@@ -63,25 +63,25 @@ static const uint8_t * bulcrypt_check_em(cas_data_t *cas
         case 0x85:
         { // unique
             if(!memcmp(&payload[3], &CAS2CAM(cas).ua[2], 3))
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
             break;
         }
         case 0x84:
         { // shared
             if(!memcmp(&payload[3], &CAS2CAM(cas).ua[2], 2))
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
             break;
         }
         case 0x8b:
         { //shared-unknown
             if(!memcmp(&payload[4], &CAS2CAM(cas).ua[2], 2))
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
             break;
         }
         case 0x8a:
         { // global
             if(payload[4] == CAS2CAM(cas).ua[2])
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
             break;
         }
         default:
@@ -91,7 +91,7 @@ static const uint8_t * bulcrypt_check_em(cas_data_t *cas
     return NULL;
 }
 
-static int bulcrypt_check_keys(cas_data_t *cas, const uint8_t *keys)
+static int bulcrypt_check_keys(cam_packet_t *packet)
 {
     return 1; // if 0, then cas don't send any message to decrypt module
 }

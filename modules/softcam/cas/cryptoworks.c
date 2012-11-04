@@ -42,8 +42,8 @@ static int cryptoworks_check_caid(uint16_t caid)
 }
 
 /* check Entitlement Message */
-static const uint8_t * cryptoworks_check_em(cas_data_t *cas
-                                            , const uint8_t *payload)
+static cam_packet_t * cryptoworks_check_em(cas_data_t *cas
+                                           , const uint8_t *payload)
 {
     const uint8_t em_type = payload[0];
     switch(em_type)
@@ -55,7 +55,7 @@ static const uint8_t * cryptoworks_check_em(cas_data_t *cas
             if(em_type != cas->parity)
             {
                 cas->parity = em_type;
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_ECM);
             }
             break;
         }
@@ -65,7 +65,7 @@ static const uint8_t * cryptoworks_check_em(cas_data_t *cas
                && payload[13] == 0x80 && payload[14] == 0x05
                && !memcmp(&payload[5], &CAS2CAM(cas).ua[3], 5))
             {
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
             }
             break;
         }
@@ -75,7 +75,7 @@ static const uint8_t * cryptoworks_check_em(cas_data_t *cas
                && payload[12] == 0x80 && payload[13] == 0x04
                && !memcmp(&payload[5], &CAS2CAM(cas).ua[3], 4))
             {
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
             }
             break;
         }
@@ -85,7 +85,7 @@ static const uint8_t * cryptoworks_check_em(cas_data_t *cas
                && payload[5] == 0x83 && payload[6] == 0x01
                && payload[8] == 0x85) /* payload[8] == 0x84 is not known */
             {
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
             }
             break;
         }
@@ -95,7 +95,7 @@ static const uint8_t * cryptoworks_check_em(cas_data_t *cas
             if(payload[3] == 0xA9 && payload[4] == 0xFF
                && payload[8] == 0x83 && payload[9] == 0x01)
             {
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
             }
             break;
         }
@@ -106,7 +106,7 @@ static const uint8_t * cryptoworks_check_em(cas_data_t *cas
     return NULL;
 }
 
-static int cryptoworks_check_keys(cas_data_t *cas, const uint8_t *keys)
+static int cryptoworks_check_keys(cam_packet_t *packet)
 {
     return 1; // if 0, then cas don't send any message to decrypt module
 }

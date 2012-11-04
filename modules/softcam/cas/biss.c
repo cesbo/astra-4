@@ -40,12 +40,12 @@ static int biss_check_caid(uint16_t caid)
     return (caid == 0x2600);
 }
 
-static const uint8_t * biss_check_em(cas_data_t *cas, const uint8_t *payload)
+static cam_packet_t * biss_check_em(cas_data_t *cas, const uint8_t *payload)
 {
-    return payload;
+    return cam_packet_init(cas, payload, MPEGTS_PACKET_ECM);
 }
 
-static int biss_check_keys(cas_data_t *cas, const uint8_t *keys)
+static int biss_check_keys(cam_packet_t *packet)
 {
     return 1;
 }

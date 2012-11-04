@@ -38,7 +38,7 @@ static void interface_send_em(module_data_t *mod)
 {
     cam_packet_t *packet = list_get_data(mod->__cam_module.queue.head);
     memcpy(packet->keys, packet->payload, 19);
-    cam_callback(mod, mod->__cam_module.queue.head);
+    cam_callback(mod, packet);
 }
 
 /* required */

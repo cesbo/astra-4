@@ -42,19 +42,12 @@ typedef struct
 {
     int id;
     cas_data_t *cas;
-
     mpegts_packet_type_t type;
+
     uint8_t payload[EM_MAX_SIZE];
     size_t size;
 
     uint8_t keys[19];
-
-/* status:
- * 0 - in queue
- * 1 - awaiting response
- * 2 - out of date
- */
-    int status;
 } cam_packet_t;
 
 /* Conditional Access System */
@@ -64,8 +57,8 @@ typedef struct
     const char *name;
     int (*check_caid)(uint16_t);
     uint16_t (*check_desc)(cas_data_t *, const uint8_t *);
-    const uint8_t * (*check_em)(cas_data_t *, const uint8_t *);
-    int (*check_keys)(cas_data_t *, const uint8_t *);
+    cam_packet_t * (*check_em)(cas_data_t *, const uint8_t *);
+    int (*check_keys)(cam_packet_t *);
     size_t datasize;
 } cas_module_t;
 
@@ -96,7 +89,6 @@ cas_data_t * cas_init(module_data_t *, module_data_t *, uint16_t);
 void cas_destroy(cas_data_t *);
 
 const char * cas_name(cas_data_t *);
-uint16_t cas_pnr(cas_data_t *);
 int cas_check_keys(cas_data_t *, const uint8_t *);
 uint16_t cas_check_descriptor(cas_data_t *, const uint8_t *);
 
@@ -117,7 +109,6 @@ struct                                                                      \
         size_t size;                                                        \
         list_t *head;                                                       \
         list_t *tail;                                                       \
-        list_t *current;                                                    \
     } queue;                                                                \
     uint8_t cas_data[32];                                                   \
     list_t *decrypts;                                                       \
@@ -134,9 +125,11 @@ void cam_detach_decrypt(module_data_t *, module_data_t *);
 
 void cam_set_cas_data(module_data_t *, const char *);
 
+cam_packet_t * cam_packet_init(cas_data_t *, const uint8_t *
+                               , mpegts_packet_type_t);
 void cam_queue_flush(module_data_t *);
 
-int cam_callback(module_data_t *, list_t *);
+int cam_callback(module_data_t *, cam_packet_t *);
 int cam_send(module_data_t *, cas_data_t *, const uint8_t *);
 
 /* CAM-module interface */
@@ -157,8 +150,8 @@ int cam_send(module_data_t *, cas_data_t *, const uint8_t *);
     MODULE_INTERFACE(0x6, interface_cam_status);                            \
 }
 
-#define decrypt_module_set_keys(_mod, _keys)                                \
-    _mod->__interface[0x5](_mod, _keys)
+#define decrypt_module_set_keys(_mod, _keys, _is_ok)                        \
+    _mod->__interface[0x5](_mod, _keys, _is_ok)
 
 /*
  * status:

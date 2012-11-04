@@ -91,16 +91,6 @@ inline const char * cas_name(cas_data_t *cas)
     return cas->__cas_module.cas->name;
 }
 
-inline uint16_t cas_pnr(cas_data_t *cas)
-{
-    return cas->__cas_module.pnr;
-}
-
-inline int cas_check_keys(cas_data_t *cas, const uint8_t *keys)
-{
-    return cas->__cas_module.cas->check_keys(cas, keys);
-}
-
 uint16_t cas_check_descriptor(cas_data_t *cas, const uint8_t *desc)
 {
     if(desc[0] != 0x09)

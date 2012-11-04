@@ -47,8 +47,8 @@ static int dre_check_caid(uint16_t caid)
     return (caid == 0x4AE0 || caid == 0x7BE0);
 }
 
-static const uint8_t * dre_check_em(cas_data_t *cas
-                                    , const uint8_t *payload)
+static cam_packet_t * dre_check_em(cas_data_t *cas
+                                   , const uint8_t *payload)
 {
     const uint8_t em_type = payload[0];
     switch(em_type)
@@ -60,7 +60,7 @@ static const uint8_t * dre_check_em(cas_data_t *cas
             if(em_type != cas->parity)
             {
                 cas->parity = em_type;
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_ECM);
             }
             break;
         }
@@ -69,7 +69,7 @@ static const uint8_t * dre_check_em(cas_data_t *cas
         case 0x8b:
         {
             if(!memcmp(&payload[3], &CAS2CAM(cas).ua[4], 4))
-               return payload;
+               return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
             break;
         }
         // EMM-Group
@@ -79,7 +79,7 @@ static const uint8_t * dre_check_em(cas_data_t *cas
         case 0x8c:
         {
             if(payload[3] == CAS2CAM(cas).ua[4])
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
             break;
         }
         // EMM-Shared
@@ -90,8 +90,10 @@ static const uint8_t * dre_check_em(cas_data_t *cas
     return NULL;
 }
 
-static int dre_check_keys(cas_data_t *cas, const uint8_t *keys)
+static int dre_check_keys(cam_packet_t *packet)
 {
+    cas_data_t *cas = packet->cas;
+    const uint8_t *keys = packet->keys;
     if(!keys[2])
         return 1; // skip, process error in cas.c
 

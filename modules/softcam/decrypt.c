@@ -410,36 +410,9 @@ static void callback_leave_pid(module_data_t *mod
 
 /* softcam callbacks */
 
-static int check_keys(cas_data_t *cas, const uint8_t *keys)
+static void interface_set_keys(module_data_t *mod, uint8_t *data, int is_ok)
 {
-    do
-    {
-        if(!cas_check_keys(cas, keys))
-            break;
-
-        if(keys[2] != 16)
-            break;
-
-        if((keys[0] & (~1)) != 0x80)
-            break;
-
-        const uint8_t ck1 = (keys[3] + keys[4] + keys[5]) & 0xFF;
-        if(ck1 != keys[6])
-            break;
-
-        const uint8_t ck2 = (keys[7] + keys[8] + keys[9]) & 0xFF;
-        if(ck2 != keys[10])
-            break;
-
-        return 1;
-    } while(0);
-
-    return 0;
-}
-
-static void interface_set_keys(module_data_t *mod, uint8_t *data)
-{
-    if(check_keys(mod->cas, data))
+    if(is_ok)
     {
 #ifdef CAS_ECM_DUMP
         char ecm_dump[34];
@@ -515,8 +488,18 @@ static void interface_cam_status(module_data_t *mod, int is_ready)
 
         if(mod->stream[0])
         {
+            if(mod->stream[1])
+                stream_ts_leave_pid(mod, 1);
+
+            // PID >= 0x10 May be assigned as NIP, PMT, ES, or for others
+            for(int i = 0x10; i < NULL_TS_PID; ++i)
+            {
+                mpegts_psi_t *p = mod->stream[i];
+                if(p && (p->type & MPEGTS_PACKET_CA))
+                    stream_ts_leave_pid(mod, i);
+            }
+
             mpegts_stream_destroy(mod->stream);
-            stream_ts_leave_all(mod);
         }
 
         if(is_ready < 0)

@@ -43,8 +43,8 @@ static int conax_check_caid(uint16_t caid)
     return ((caid & 0xFF00) == 0x0B00);
 }
 
-static const uint8_t * conax_check_em(cas_data_t *cas
-                                      , const uint8_t *payload)
+static cam_packet_t * conax_check_em(cas_data_t *cas
+                                     , const uint8_t *payload)
 {
     const uint8_t em_type = payload[0];
     switch(em_type)
@@ -56,7 +56,7 @@ static const uint8_t * conax_check_em(cas_data_t *cas
             if(em_type != cas->parity)
             {
                 cas->parity = em_type;
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_ECM);
             }
             break;
         }
@@ -71,11 +71,11 @@ static const uint8_t * conax_check_em(cas_data_t *cas
                 // 4 - skip 0
                 uint8_t *prov = &((uint8_t *)list_get_data(i))[3 + 4];
                 if(!memcmp(emm_id, prov, 4)) // shared
-                    return payload;
+                    return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
                 i = list_get_next(i);
             }
             if(!memcmp(emm_id, &CAS2CAM(cas).ua[4], 4)) // unique
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
             break;
         }
     }
@@ -83,7 +83,7 @@ static const uint8_t * conax_check_em(cas_data_t *cas
     return NULL;
 }
 
-static int conax_check_keys(cas_data_t *cas, const uint8_t *keys)
+static int conax_check_keys(cam_packet_t *packet)
 {
     return 1; // if 0, then cas don't send any message to decrypt module
 }

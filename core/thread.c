@@ -79,7 +79,7 @@ int thread_init(thread_t **tptr, void (*loop)(void *), void *arg)
     int ret = 0;
 #ifdef _WIN32
     DWORD tid;
-    t->thread = CreateThread(NULL, 0, &thread_loop, thread, 0, &tid);
+    t->thread = CreateThread(NULL, 0, &thread_loop, t, 0, &tid);
     if(!t->thread)
         ret = -1;
 #else

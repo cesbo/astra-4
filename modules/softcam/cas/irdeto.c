@@ -55,7 +55,7 @@ struct cas_data_s
 
 static int irdeto_check_caid(uint16_t caid)
 {
-    return (((caid & 0xFF00) == 0x0600) || (caid == 1702));
+    return (((caid & 0xFF00) == 0x0600) || (caid == 0x1702));
 }
 
 inline static uint16_t irdeto_ecm_chid(const uint8_t *payload)
@@ -97,8 +97,8 @@ static int irdeto_check_ecm(cas_data_t *cas, const uint8_t *payload)
     return 1;
 }
 
-static const uint8_t * irdeto_check_em(cas_data_t *cas
-                                       , const uint8_t *payload)
+static cam_packet_t * irdeto_check_em(cas_data_t *cas
+                                      , const uint8_t *payload)
 {
     const uint8_t em_type = payload[0];
     switch(em_type)
@@ -108,7 +108,7 @@ static const uint8_t * irdeto_check_em(cas_data_t *cas
         case 0x81:
         {
             if(irdeto_check_ecm(cas, payload))
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_ECM);
             break;
         }
         // EMM
@@ -122,7 +122,7 @@ static const uint8_t * irdeto_check_em(cas_data_t *cas
             if(emm_base == a[4]
                && (!emm_len || !memcmp(&payload[4], &a[5], emm_len)))
             {
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
             }
             break;
         }
@@ -131,8 +131,11 @@ static const uint8_t * irdeto_check_em(cas_data_t *cas
     return NULL;
 }
 
-static int irdeto_check_keys(cas_data_t *cas, const uint8_t *keys)
+static int irdeto_check_keys(cam_packet_t *packet)
 {
+    cas_data_t *cas = packet->cas;
+    const uint8_t *keys = packet->keys;
+
     if(!keys[2])
     {
         if(!cas->chid)
@@ -147,7 +150,7 @@ static int irdeto_check_keys(cas_data_t *cas, const uint8_t *keys)
         cas->chid = cas->test.ecm_id[cas->test.current_id].chid;
         cas->parity = keys[0];
         log_info("[cas Irdeto pnr:%d] select chid:0x%04X"
-                 , cas_pnr(cas), cas->chid);
+                 , cas->__cas_module.pnr, cas->chid);
     }
 
     return 1;

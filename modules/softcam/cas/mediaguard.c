@@ -43,8 +43,8 @@ static int mediaguard_check_caid(uint16_t caid)
 }
 
 /* check Entitlement Message */
-static const uint8_t * mediaguard_check_em(cas_data_t *cas
-                                           , const uint8_t *payload)
+static cam_packet_t * mediaguard_check_em(cas_data_t *cas
+                                          , const uint8_t *payload)
 {
     const uint8_t em_type = payload[0];
     switch(em_type)
@@ -56,7 +56,7 @@ static const uint8_t * mediaguard_check_em(cas_data_t *cas
             if(em_type != cas->parity)
             {
                 cas->parity = em_type;
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_ECM);
             }
             break;
         }
@@ -64,13 +64,13 @@ static const uint8_t * mediaguard_check_em(cas_data_t *cas
         case 0x82:
         {
             if(!memcmp(&payload[3], &CAS2CAM(cas).ua[2], 6))
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
             break;
         }
         case 0x84:
         {
             if(!memcmp(&payload[5], &cas->sa[5], 3))
-                return payload;
+                return cam_packet_init(cas, payload, MPEGTS_PACKET_EMM);
             break;
         }
         default:
@@ -81,7 +81,7 @@ static const uint8_t * mediaguard_check_em(cas_data_t *cas
 }
 
 /* keys = 3bytes header + 2x64bit control words */
-static int mediaguard_check_keys(cas_data_t *cas, const uint8_t *keys)
+static int mediaguard_check_keys(cam_packet_t *packet)
 {
     return 1; // if 0, then cas don't send any message to decrypt module
 }
