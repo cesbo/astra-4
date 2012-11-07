@@ -5,7 +5,7 @@
 
 #include <astra.h>
 
-#define UDP_BUFFER_SIZE 1316
+#define UDP_BUFFER_SIZE 1460
 #define TS_PACKET_SIZE 188
 
 #define LOG_MSG(_msg) "[udp_input %s:%d] " _msg \
