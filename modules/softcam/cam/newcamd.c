@@ -438,16 +438,19 @@ int newcamd_recv_msg(module_data_t *mod, cam_packet_t **packet)
     if(packet && msg_type >= 0x80 && msg_type <= 0x8F)
     {
         const uint16_t msg_id = (buffer[2] << 8) | buffer[3];
-        cam_packet_t *p = list_get_data(mod->__cam_module.queue.head);
-        if(p->id != msg_id)
-        {
-            log_warning(LOG_MSG("packet with id %d is not found [type:0x%02X]")
-                        , msg_id, msg_type);
-        }
-        else
+        cam_packet_t *p = NULL;
+        if(mod->__cam_module.queue.head)
+            p = list_get_data(mod->__cam_module.queue.head);
+        if(p && p->id == msg_id)
         {
             *packet = p;
             newcamd_timeout_unset(mod);
+        }
+        else
+        {
+            *packet = NULL;
+            log_warning(LOG_MSG("packet with id %d is not found [type:0x%02X]")
+                        , msg_id, msg_type);
         }
     }
 
@@ -465,8 +468,6 @@ static newcamd_cmd_t newcamd_recv_cmd(module_data_t *mod)
 
     return NEWCAMD_MSG_ERROR;
 }
-
-/* login */
 
 static int newcamd_login_1(module_data_t *mod)
 {
@@ -738,7 +739,7 @@ static void module_configure(module_data_t *mod)
     if(module_set_string(mod, "cas_data", 0, NULL, &cas_data))
         cam_set_cas_data(mod, cas_data);
 
-    module_set_number(mod, "timeout", 0, 5, &mod->config.timeout);
+    module_set_number(mod, "timeout", 0, 8, &mod->config.timeout);
     mod->config.timeout *= 1000;
 }
 

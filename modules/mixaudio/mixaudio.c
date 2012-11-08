@@ -8,9 +8,8 @@
 
 #include <libavcodec/avcodec.h>
 
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(53,23,0)
-#   error "libavcodec >=53.23.0 required"
-#else
+#if defined(LIBAVCODEC_VERSION_INT) \
+    && LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(53,23,0)
 
 #include <time.h>
 #include <fcntl.h>
@@ -86,6 +85,7 @@ void mix_buffer_rr(uint8_t *buffer, size_t buffer_size)
 
 static void pack_es(module_data_t *mod, uint8_t *data, size_t size)
 {
+    // hack to set PTS from source PES
     if(!mod->pes_o->buffer_size)
     {
         // copy PES header from original PES
@@ -95,15 +95,14 @@ static void pack_es(module_data_t *mod, uint8_t *data, size_t size)
     }
 
     mpegts_pes_add_data(mod->pes_o, data, size);
+    ++mod->count;
 
-    if(mod->count == 1)
+    if(mod->count == 8)
     {
         mpegts_pes_demux(mod->pes_o, stream_ts_send, mod);
         mod->pes_o->buffer_size = 0;
         mod->count = 0;
     }
-    else
-        ++mod->count;
 }
 
 static void transcode(module_data_t *mod, const uint8_t *data)
@@ -266,29 +265,31 @@ static void mux_pes(module_data_t *mod, mpegts_pes_t *pes)
     {
         const size_t rlen = mod->fsize - mod->fbuffer_skip;
         memcpy(&mod->fbuffer[mod->fbuffer_skip], ptr, rlen);
-        ptr += rlen;
         transcode(mod, mod->fbuffer);
+        ptr += rlen;
     }
 
-    do
+    while(1)
     {
-        transcode(mod, ptr);
         const uint8_t *const nptr = ptr + mod->fsize;
         if(nptr < ptr_end)
         {
+            transcode(mod, ptr);
             ptr = nptr;
-            continue;
         }
-        else if(nptr > ptr_end)
+        else if(nptr == ptr_end)
+        {
+            transcode(mod, ptr);
+            mod->fbuffer_skip = 0;
+            break;
+        }
+        else /* nptr > ptr_end */
         {
             mod->fbuffer_skip = ptr_end - ptr;
             memcpy(mod->fbuffer, ptr, mod->fbuffer_skip);
+            break;
         }
-        else
-            mod->fbuffer_skip = 0;
-
-        break;
-    } while(1);
+    }
 }
 
 static void callback_send_ts(module_data_t *mod, uint8_t *ts)
@@ -361,6 +362,7 @@ static void module_initialize(module_data_t *mod)
 
         mod->pes_i = mpegts_pes_init(MPEGTS_PACKET_AUDIO, mod->config.pid);
         mod->pes_o = mpegts_pes_init(MPEGTS_PACKET_AUDIO, mod->config.pid);
+        mod->pes_o->pts = 1;
     } while(0);
 }
 
@@ -390,4 +392,6 @@ MODULE_METHODS()
 
 MODULE(mixaudio)
 
+#else
+#   error "libavcodec >=53.23.0 required"
 #endif
