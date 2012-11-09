@@ -1210,7 +1210,7 @@ static void module_configure(module_data_t *mod)
         else
         {
             module_set_number(mod, "lof1", 1, 0, &mod->config.lof1);
-            module_set_number(mod, "slof", 0, mod->config.lof1
+            module_set_number(mod, "lof2", 0, mod->config.lof1
                               , &mod->config.lof2);
             module_set_number(mod, "slof", 0, mod->config.lof1
                               , &mod->config.slof);

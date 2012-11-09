@@ -92,7 +92,7 @@ if [ -z "$IN_CFLAGS" ]; then
 fi
 
 if [ $ARG_DEBUG -eq 1 ]; then
-    IN_CFLAGS="$IN_CFLAGS -O0 -g -DDEBUG=1 -pedantic"
+    IN_CFLAGS="$IN_CFLAGS -O2 -g -DDEBUG=1 -pedantic"
     IN_STRIP=":"
 else
     IN_CFLAGS="$IN_CFLAGS -O3 -fexpensive-optimizations"

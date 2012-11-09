@@ -280,8 +280,7 @@ static void timeout_timer_callback(void *arg)
             break;
     }
 
-    if(mod->status != NEWCAMD_UNKNOWN)
-        newcamd_disconnect(mod, 0);
+    newcamd_disconnect(mod, 0);
     newcamd_connect(mod);
 }
 
@@ -478,7 +477,7 @@ static int newcamd_login_1(module_data_t *mod)
     const ssize_t len = socket_recv(mod->sock, rnd_data, sizeof(rnd_data));
     if(len != sizeof(rnd_data))
     {
-        log_debug(LOG_MSG("%s(): len=%d [%s]"), __FUNCTION__, len
+        log_error(LOG_MSG("%s(): len=%d [%s]"), __FUNCTION__, len
                   , strerror(errno));
         return 0;
     }

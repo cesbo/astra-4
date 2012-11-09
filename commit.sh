@@ -12,10 +12,13 @@ cd `dirname $0`
 ASTRA_VERSION=`cat version.h | grep "ASTRA_VERSION " | cut -d ' ' -f 3`
 ASTRA_VERSION_DEV=`cat version.h | grep "ASTRA_VERSION_DEV " | cut -d ' ' -f 3`
 
+IS_RELEASE=0
+
 if [ "$1" = "--release" ] ; then
     shift
     ASTRA_VERSION=$((ASTRA_VERSION+1))
     ASTRA_VERSION_DEV=0
+    IS_RELEASE=1
 else
     ASTRA_VERSION_DEV=$((ASTRA_VERSION_DEV+1))
 fi
@@ -30,17 +33,17 @@ cat >version.h <<EOF
 #endif /* _VERSION_H_ */
 EOF
 
-MSG=$1
-shift
-FLIST=""
-if [ $# -ne 0 ] ; then
-    FLIST="$* version.h"
-fi
-
-if [ -n "$FLIST" ] ; then
-    git commit -m "$MSG" $FLIST
+if [ $IS_RELEASE -eq 1 ] ; then
+    git commit -m "release" version.h
 else
-    git commit -am "$MSG"
+    MSG=$1
+    shift
+
+    if [ $# -ne 0 ] ; then
+        git commit -m "$MSG" $* version.h
+    else
+        git commit -am "$MSG"
+    fi
 fi
 
 cd $CDIR
