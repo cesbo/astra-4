@@ -268,7 +268,6 @@ static void timeout_timer_callback(void *arg)
             cam_packet_t *packet
                 = list_get_data(mod->__cam_module.queue.head);
             // drop packet in cam_callback
-            packet->type = MPEGTS_PACKET_UNKNOWN;
             packet->keys[0] = packet->payload[0];
             packet->keys[1] = 0x00;
             packet->keys[2] = 0x00;

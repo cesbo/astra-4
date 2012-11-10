@@ -1,11 +1,8 @@
 
 local hostname = utils.hostname()
 
-json = nil
-
-if event_request then
-    json = require("json")
-end
+local json = nil
+if event_request then json = require("json") end
 
 function send_json(info)
     local content = json.encode(info)
@@ -48,67 +45,68 @@ end
 
 local module_event_list = {}
 
-function module_event_list.analyze(group, stat)
-    local info = {}
-    info.type = 'channel'
-    info.server = hostname
-    info.channel = group.event_name
-    info.onair = stat.ready
-    info.ready = stat.ready
-    info.bitrate = stat.bitrate * 1024
-    info.scrambled = stat.scrambled
+function module_event_list.analyze(ch, stat)
+    local info = {
+        type = 'channel',
+        server = hostname,
+        stream = ch.stream.config.name,
+        channel = ch.config.name,
+        output = ch.config.output[1],
+        ready = stat.ready,
+        bitrate = stat.bitrate * 1000,
+        scrambled = stat.scrambled,
+        pes_error = 0,
+        cc_error = 0,
+    }
 
-    info.pes_error = 0
-    if group.last_pes_error ~= stat.pes_error then
-        info.pes_error = stat.pes_error - group.last_pes_error
-        group.last_pes_error = stat.pes_error
+    if ch.last_pes_error ~= stat.pes_error then
+        info.pes_error = stat.pes_error - ch.last_pes_error
+        ch.last_pes_error = stat.pes_error
     end
 
-    info.cc_error = 0
-    if group.last_cc_error ~= stat.cc_error then
-        info.cc_error = stat.cc_error - group.last_cc_error
-        group.last_cc_error = stat.cc_error
+    if ch.last_cc_error ~= stat.cc_error then
+        info.cc_error = stat.cc_error - ch.last_cc_error
+        ch.last_cc_error = stat.cc_error
     end
 
     send_json(info)
 end
 
-function module_event_list.decrypt(group, stat)
-    local info = {}
-    info.type = 'decrypt'
-    info.server = hostname
-    info.channel = group.event_name
-    info.keys = stat.keys
-    info.cam = stat.cam
-    send_json(info)
+function module_event_list.decrypt(ch, stat)
+    send_json({
+        type = 'decrypt',
+        server = hostname,
+        stream = ch.stream.config.name,
+        channel = ch.config.name,
+        output = ch.config.output[1],
+        keys = stat.keys,
+        cam = stat.cam,
+    })
 end
 
-function module_event_list.dvb_input(group, stat)
-    local info = {}
-    info.type = 'dvb'
-    info.server = hostname
-    info.adapter = group.config.input.adapter
-    info.bitrate = stat.bitrate * 1024
-    info.lock = stat.lock
-    info.unc = stat.unc
-    info.ber = stat.ber
-    info.snr = stat.snr
-
-    send_json(info)
+function module_event_list.dvb_input(stream, stat)
+    send_json({
+        type = 'dvb',
+        server = hostname,
+        stream = stream.config.name,
+        bitrate = stat.bitrate * 1000,
+        lock = stat.lock,
+        unc = stat.unc,
+        ber = stat.ber,
+        snr = stat.snr,
+    })
 end
 
-function stream_event(obj, group, stat)
+function stream_event(obj, ch, stat)
     if not json then return end
     if not stat then stat = obj:status() end
     local obj_name = tostring(obj)
-    module_event_list[obj_name](group, stat)
+    module_event_list[obj_name](ch, stat)
 end
 
 function heartbeat()
     for _, s in pairs(stream_list) do
-        if type(s.config.input) == 'table' and s.event then
-            s.event(s.input)
-        end
+        if s.input and s.event then s.event(s.input) end
         for _, c in pairs(s.channels) do
             if c.event then
                 if c.analyze then c.event(c.analyze) end
@@ -118,11 +116,14 @@ function heartbeat()
     end
 end
 
-stat_timer = nil
-if event_request then
+function start_event_time()
+    if not event_request then return nil end
+    if not json then return nil end
     if not event_request.interval then event_request.interval = 30 end
-    stat_timer = timer({
+    return timer({
         interval = event_request.interval,
-        callback = heartbeat
+        callback = heartbeat,
     })
 end
+
+stat_timer = start_event_time()

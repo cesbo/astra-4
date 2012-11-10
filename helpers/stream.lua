@@ -1,100 +1,4 @@
 
-options = {
-    dvb_input = {
-        adapter = true,
-        device = true,
-        diseqc = true,
-        type = true,
-        tp = true,
-        lnb = true,
-        lnb_sharing = true,
-        budget = true,
-        buffer_size = true,
-        modulation = true,
-        fec = true,
-        rolloff = true,
-        symbolrate = true,
-        frequency = true,
-        bandwidth = true,
-        guardinterval = true,
-        transmitmode = true,
-        hierarchy = true,
-        polarization = true,
-        lof1 = true,
-        lof2 = true,
-        slof = true,
-    },
-    demux = {
-    },
-    channel = {
-        name = true,
-        pid = true,
-        pnr = true,
-        sdt = true,
-        filter = true,
-        map = true,
-    },
-    analyze = {
-        name = true,
-    },
-    udp_input = {
-        addr = true,
-        port = true,
-        localaddr = true,
-        rtp = true,
-        renew = true,
-    },
-    udp_output = {
-        addr = true,
-        port = true,
-        ttl = true,
-        localaddr = true,
-        socket_size = true,
-        rtp = true,
-    },
-    file_input = {
-        filename = true,
-    },
-    file_output = {
-        filename = true,
-        m2ts = true,
-    },
-    decrypt = {
-        name = true,
-        cam = true,
-        real_pnr = true,
-        ecm_pid = true,
-        fake = true,
-    },
-    newcamd = {
-        name = true,
-        host = true,
-        port = true,
-        user = true,
-        pass = true,
-        key = true,
-        disable_emm = true,
-        cas_data = true,
-    },
-}
-
-function module_options(module, config, default)
-    local ret = {}
-    local template = options[tostring(module)]
-
-    if default then
-        for var,val in pairs(default) do
-            if template[var] then ret[var] = val end
-        end
-    end
-
-    for var,val in pairs(config) do
-        if template[var] then ret[var] = val end
-    end
-
-    return ret
-end
-
 function module_attach(obj, m)
     if #obj.modules > 0 then
         local tail = obj.modules[#obj.modules]
@@ -104,44 +8,36 @@ function module_attach(obj, m)
     return m
 end
 
------------
--- INPUT --
------------
-
 input_list = {}
 
 function input_list.dvb(stream)
-    local dvb_input_config = module_options(dvb_input, stream.config.input)
-    stream.input = dvb_input(dvb_input_config)
+    stream.input = dvb_input(stream.config.dvb)
 
-    stream.event = function(self)
-        local stat = self:status()
-        stream_event(self, stream, stat)
+    if stream_event then
+        stream.event = function(self)
+            stream_event(self, stream, self:status())
+        end
+        stream.input:event(stream.event)
     end
-    if stream_event then stream.input:event(stream.event) end
 end
 
 function input_list.udp(stream)
-    local udp_input_default = { port = 1234 }
-    local udp_input_config = module_options(udp_input, stream.config.input, udp_input_default)
-
-    stream.input = udp_input(udp_input_config)
+    stream.input = udp_input(stream.config.udp)
 end
 
 function input_list.file(stream)
-    local file_input_config = module_options(file_input, stream.config.input)
-    stream.input = file_input(file_input_config)
+    stream.input = file_input(stream.config.file)
 end
 
-------------
--- OUTPUT --
-------------
+function input_list.module(stream)
+    stream.input = stream.config.module[1]
+end
 
 output_list = {}
 
 function output_list.udp(output, is_rtp)
-    local udp_output_default = { port = 1234, ttl = 32 }
-    if is_rtp then udp_output_default.rtp = true end
+    if not output.config.ttl then output.config.ttl = 32 end
+    if is_rtp then output.config.rtp = true end
 
     -- parse dst
     local addr = output.dst
@@ -149,21 +45,20 @@ function output_list.udp(output, is_rtp)
     local so, eo = addr:find("@")
     if eo then
         if so > 1 then
-            udp_output_default.localaddr = addr:sub(0, so - 1)
+            output.config.localaddr = addr:sub(0, so - 1)
         end
         addr = addr:sub(eo + 1)
     end
     -- port
     local so, eo = addr:find(":")
     if eo then
-        udp_output_default.port = tonumber(addr:sub(eo + 1))
+        output.config.port = tonumber(addr:sub(eo + 1))
         addr = addr:sub(0, so - 1)
     end
     -- addr
-    udp_output_default.addr = addr
+    output.config.addr = addr
 
-    local udp_output_config = module_options(udp_output, output.config, udp_output_default)
-    module_attach(output, udp_output(udp_output_config))
+    module_attach(output, udp_output(output.config))
 end
 
 function output_list.rtp(output)
@@ -171,16 +66,13 @@ function output_list.rtp(output)
 end
 
 function output_list.file(output)
-    module_attach(output, file_output({ filename = output.dst }))
+    output.config.filename = output.dst
+    module_attach(output, file_output(output.config))
 end
-
------------
--- EXTRA --
------------
 
 extra_list = {}
 
-function extra_list.mixaudio(obj) -- obj is channel or output
+function extra_list.mixaudio(obj)
     local mixaudio_config = {}
     mixaudio_config.pid = obj.config.mixaudio[1]
     if type(obj.config.mixaudio[2]) == 'string' then
@@ -189,55 +81,54 @@ function extra_list.mixaudio(obj) -- obj is channel or output
     return module_attach(obj, mixaudio(mixaudio_config))
 end
 
--------------
--- CHANNEL --
--------------
-
-function make_channel(parent, config)
-    local ch = { config = config, modules = {}, outputs = {} }
+function make_channel(parent, stream, config)
+    local ch = {
+        stream = stream,
+        config = config,
+        modules = {},
+        output = {},
+    }
 
     local tail = module_attach(ch, parent)
 
+    local check_demux = false
     -- channel
     if config.pnr then
-        local channel_config = module_options(channel, config)
-        tail = module_attach(ch, channel(channel_config))
+        tail = module_attach(ch, channel(config))
+        check_demux = true
+    end
+
+    if stream.demux and not check_demux then
+        log.warning("[stream.lua] channel:" .. config.name
+                    .. " pnr option is required")
     end
 
     -- event
     if config.event and stream_event then
-        if type(config.event) == 'string' then
-            ch.event_name = config.event
-        end
         ch.event = function(self) stream_event(self, ch) end
     end
 
     -- decrypt
     if type(config.cam) == 'userdata' then
-        local decrypt_config = module_options(decrypt, config)
-        tail = module_attach(ch, decrypt(decrypt_config))
-        ch.decrypt = tail
-        if ch.event then ch.decrypt:event(ch.event) end
-
+        ch.decrypt = module_attach(ch, decrypt(config))
+        tail = ch.decrypt
+        if ch.event then tail:event(ch.event) end
     elseif type(config.cam) == 'table' then
-        local decrypt_config = module_options(decrypt, config)
-        decrypt_config.cam = nil
-        tail = module_attach(ch, decrypt(decrypt_config))
-        ch.decrypt = tail
+        ch.camgroup = { config = config.cam }
+        config.cam = nil
+        ch.decrypt = module_attach(ch, decrypt(config))
+        tail = ch.decrypt
         camgroup_channel(ch)
     end
 
     -- extra
     for extra, _ in pairs(config) do
-        if extra_list[extra] then
-            tail = extra_list[extra](ch)
-        end
+        if extra_list[extra] then tail = extra_list[extra](ch) end
     end
 
     -- analyze
     if config.analyze ~= false then
-        local analyze_config = module_options(analyze, config)
-        ch.analyze = analyze(analyze_config)
+        ch.analyze = analyze(config)
         tail:attach(ch.analyze)
 
         if ch.event then
@@ -250,81 +141,78 @@ function make_channel(parent, config)
     -- outputs
     if not config.output then return ch end
 
-    if type(config.event) == 'boolean' then
-        ch.event_name = config.output[1]
+    function get_dst(dst)
+        if type(dst) ~= 'string' then return nil, nil end
+        local so, eo = dst:find("://")
+        if not eo then return nil, nil end
+        local dst_type = dst:sub(0, so - 1)
+        return output_list[dst_type], dst:sub(eo + 1)
     end
 
     local oi = 1
     while config.output[oi] do
-        local output = { config = {}, modules = { tail } }
-        output.config.name = config.name
-        output.config.dst = config.output[oi]
-        local ofunc = nil
-
-        -- output dst
-        local dst = output.config.dst
-        local so, eo = dst:find("://")
-        if eo then
-            local dst_type = dst:sub(0, so - 1)
-            output.dst = dst:sub(eo + 1)
-            ofunc = output_list[dst_type]
-            if not ofunc then
-                log.warning("[stream.lua] unknown output type: " .. dst_type)
-            end
-        else
-            log.warning("[stream.lua] wrong output format: " .. dst)
+        local output_func, dst_addr = get_dst(config.output[oi])
+        if not output_func then
+            log.error("[stream.lua] unknown output type"
+                      .. " stream:" .. stream.name
+                      .. " channel:" .. config.name)
+            astra.abort()
         end
         oi = oi + 1
 
-        -- output config
+        local output = {
+            channel = ch,
+            dst = dst_addr,
+            config = {},
+            modules = { tail },
+        }
+
         if type(config.output[oi]) == 'table' then
-            for var, val in pairs(config.output[oi]) do
-                output.config[var] = val
-            end
+            output.config = config.output[oi]
             oi = oi + 1
-        end
 
-        -- start output
-        if ofunc then
-            -- extra
             for extra, _ in pairs(output.config) do
-                if extra_list[extra] then
-                    extra_list[extra](output)
-                end
+                if extra_list[extra] then extra_list[extra](output) end
             end
-
-            -- output
-            ofunc(output)
         end
 
-        table.insert(ch.outputs, output)
+        output_func(output)
+        table.insert(ch.output, output)
     end
 
     return ch
 end
 
-------------
--- STREAM --
-------------
-
 stream_list = {}
 
 function make_stream(config, channels)
-    local stream = { config = config, channels = {} }
+    local stream = {
+        config = config,
+    }
+
+    function get_input()
+        for name, method in pairs(input_list) do
+            if config[name] then return method end
+        end
+        log.error("[stream.lua] make_stream() wrong input type")
+        astra.abort()
+    end
+
+    if not config.name then
+        config.name = "Stream #" .. tostring(#stream_list + 1)
+        log.warning("[stream.lua] name of stream is undefined")
+    end
 
     if type(config.input) == 'table' then
+        log.warning("[stream.lua] option \"input\" is deprecated")
         local input_type = config.input[1]
-        if not input_list[input_type] then
-            log.error("[stream.lua] make_stream() wrong input type")
-            return
-        end
-        input_list[input_type](stream)
-    elseif type(config.input) == 'userdata' then
-        stream.input = config.input
-    else
-        log.error("[stream.lua] make_stream() input is not defined")
-        return
+        table.remove(config.input, 1)
+        config[input_type] = config.input
+        config.input = nil
     end
+
+    local input_func = get_input()
+    input_func(stream)
 
     local tail = stream.input
 
@@ -335,9 +223,10 @@ function make_stream(config, channels)
             tail = stream.demux
         end
 
-        for _, cconf in pairs(channels) do
-            local ch = make_channel(tail, cconf)
-            table.insert(stream.channels, ch)
+        stream.channels = {}
+        for _, channel_config in pairs(channels) do
+            local c = make_channel(tail, stream, channel_config)
+            table.insert(stream.channels, c)
         end
     else
         stream.analyze = analyze({ name = "Stream" })

@@ -4,7 +4,7 @@ function camgroup_event(self, channel, decrypt_id)
 
     function set_active_cam(id)
         if id > 0 then
-            local item = channel.config.cam.items[id]
+            local item = channel.camgroup.config.items[id]
             log.info("[camgroup.lua] active cam: " .. item.cam_config.name)
             channel.camgroup.active_id = id
             channel.decrypt:cam(item.cam)
@@ -23,7 +23,7 @@ function camgroup_event(self, channel, decrypt_id)
         else
             local active_id = channel.camgroup.active_id
             local active_group_item = channel.camgroup.items[active_id]
-            local active_cam_item = channel.config.cam.items[active_id]
+            local active_cam_item = channel.camgroup.config.items[active_id]
 
             if active_cam_item.mode == 2 then
                 set_active_cam(decrypt_id)
@@ -38,8 +38,9 @@ function camgroup_event(self, channel, decrypt_id)
         if decrypt_id == channel.camgroup.active_id
            or channel.camgroup.active_id == 0
         then
-            log.warning("[camgroup.lua] failed cam: " ..
-                        channel.config.cam.items[decrypt_id].cam_config.name)
+            log.warning("[camgroup.lua] failed cam: "
+                        .. channel.camgroup.config.items[decrypt_id]
+                           .cam_config.name)
 
             for id, item in pairs(channel.camgroup.items) do
                 if item.is_active then
@@ -48,7 +49,7 @@ function camgroup_event(self, channel, decrypt_id)
                 end
             end
 
-            for id, item in pairs(channel.config.cam.items) do
+            for id, item in pairs(channel.camgroup.config.items) do
                 if item.mode == 2 and not item.cam then
                     item.cam = item.cam_mod(item.cam_config)
                     channel.camgroup.items[id].decrypt:cam(item.cam)
@@ -68,16 +69,30 @@ end
 function camgroup(items)
     local group = { items = {} }
 
-    for _,itemconf in pairs(items) do
-        local cam = _G[itemconf[1]]
+    for id = 1, #items do
+        local item = items[1]
+        table.remove(items, 1)
+        local cam_name = item[1]
+        if _G[cam_name] then items[cam_name .. "_" .. id] = item end
+    end
+
+    function parse_name(name)
+        local so, eo = name:find("_")
+        if not eo then return nil end
+        return name:sub(0, so - 1)
+    end
+
+    for item_id,item_conf in pairs(items) do
+        local cam_name = parse_name(item_id)
+        local cam = _G[cam_name]
         if cam then
             local item = {
                 cam_mod = cam,
-                mode = itemconf.mode,
-                cam_config = module_options(cam, itemconf)
+                cam_config = item_conf,
+                mode = item_conf.mode,
             }
 
-            if itemconf.mode == 1 then
+            if item_conf.mode == 1 then
                 item.cam = cam(item.cam_config)
             end
 
@@ -89,24 +104,26 @@ function camgroup(items)
 end
 
 function camgroup_channel(channel)
-    local group = channel.config.cam
-    channel.camgroup = { active_id = 0, items = {} }
+    channel.camgroup.active_id = 0
+    channel.camgroup.items = {}
 
-    -- get parent module (of the channel decrypt)
+    -- get a parent module of the decrypt module
     local parent = channel.modules[#channel.modules - 1]
 
-    for id,cam_item in pairs(group.items) do
-        local decrypt_config = {}
-        decrypt_config.name = channel.config.name .. ":" .. tostring(id)
-        decrypt_config.cam = nil
-        decrypt_config.fake = true
+    for id,cam_item in pairs(channel.camgroup.config.items) do
+        local decrypt_config = {
+            name = channel.config.name .. ":" .. tostring(id),
+            cam = nil,
+            fake = true,
+        }
 
-        local item = {}
-        item.is_active = false
-        item.decrypt = decrypt(decrypt_config)
-        item.event = function(self)
-            camgroup_event(self, channel, id)
-        end
+        local item = {
+            is_active = false,
+            decrypt = decrypt(decrypt_config),
+            event = function(self)
+                camgroup_event(self, channel, id)
+            end
+        }
         item.decrypt:event(item.event)
         parent:attach(item.decrypt)
 

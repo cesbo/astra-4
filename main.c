@@ -34,10 +34,23 @@ static int astra_version(lua_State *L)
     return 2;
 }
 
+static int astra_abort(lua_State *L)
+{
+    lua_Debug ar;
+    lua_getstack(L, 1, &ar);
+    lua_getinfo(L, "nSl", &ar);
+    log_error("[main] abort execution. line:%d source:%s"
+              , ar.currentline, ar.source);
+    abort();
+
+    return 0;
+}
+
 static luaL_Reg astra_api[] =
 {
     { "exit", astra_exit },
     { "version", astra_version },
+    { "abort", astra_abort },
     { NULL, NULL }
 };
 
