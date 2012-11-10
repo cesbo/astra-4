@@ -11,6 +11,45 @@ end
 input_list = {}
 
 function input_list.dvb(stream)
+    function parse_tp(tp)
+        local _, _, freq_s, pol_s, srate_s = tp:find("(%d+):(%a):(%d+)")
+        if not freq_s then return nil end
+        return tonumber(freq_s), pol_s, tonumber(srate_s)
+    end
+    if stream.config.dvb.tp then
+        local freq, pol, srate = parse_tp(stream.config.dvb.tp)
+        if not freq then
+            log.error("[stream.lua] failed to parse \"tp\"")
+            astra.abort()
+        end
+        stream.config.dvb.frequency = freq
+        stream.config.dvb.polarization = pol
+        stream.config.dvb.symbolrate = srate
+    end
+
+    function parse_lnb(lnb)
+        local _, eo, lof1_s = lnb:find("(%d+):*")
+        if not lof1_s then return nil end
+        local lof2, slof = 0, 0
+        if #lnb > eo then
+            local _, _, lof2_s, slof_s = lnb:find("(%d+):(%d+)", eo + 1)
+            if not lof2_s then return nil end
+            lof2 = tonumber(lof2_s)
+            slof = tonumber(slof_s)
+        end
+        return tonumber(lof1_s), lof2, slof
+    end
+    if stream.config.dvb.lnb then
+        local lof1, lof2, slof = parse_lnb(stream.config.dvb.lnb)
+        if not lof1 then
+            log.error("[stream.lua] failed to parse \"lnb\"")
+            astra.abort()
+        end
+        stream.config.dvb.lof1 = lof1
+        stream.config.dvb.lof2 = lof2
+        stream.config.dvb.slof = slof
+    end
+
     stream.input = dvb_input(stream.config.dvb)
 
     if stream_event then
@@ -104,7 +143,7 @@ function make_channel(parent, stream, config)
     end
 
     -- event
-    if config.event and stream_event then
+    if config.event and event_request and stream_event then
         ch.event = function(self) stream_event(self, ch) end
     end
 

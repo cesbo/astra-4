@@ -1293,93 +1293,22 @@ static void module_configure(module_data_t *mod)
 
     if(mod->config.type == DVB_TYPE_S || mod->config.type == DVB_TYPE_S2)
     {
-        if(module_set_string(mod, "tp", 0, NULL, &tmp_value))
-        {
-            do
-            {
-                const char *conf = tmp_value;
-                // set frequency
-                mod->config.frequency = atoi(conf) * 1000;
-                for(; *conf && *conf != ':'; ++conf)
-                    ;
-                if(!*conf)
-                    break;
-                ++conf;
-                // set polarization
-                char pol = *conf;
-                if(pol > 'Z')
-                    pol -= ('z' - 'Z'); // Upper Case
-                // V - vertical/right // H - horizontal/left
-                mod->config.polarization = (pol == 'V' || pol == 'R')
-                                         ? TP_POL_V
-                                         : TP_POL_H;
-                for(; *conf && *conf != ':'; ++conf)
-                    ;
-                if(!*conf)
-                    break;
-                ++conf;
-                // set symbol-rate
-                mod->config.symbolrate = atoi(conf) * 1000;
-            } while(0);
-            if(!mod->config.symbolrate)
-            {
-                log_error(LOG_MSG("failed to parse tp option \"%s\"")
-                          , tmp_value);
-                abort();
-            }
-        }
-        else
-        {
-            module_set_number(mod, "frequency", 1, 0, &mod->config.frequency);
-            mod->config.frequency *= 1000;
-            fe_option_set(mod, "polarization", 1, NULL
-                          , polarization_list, ARRAY_SIZE(polarization_list)
-                          , (int *)&mod->config.polarization);
-            module_set_number(mod, "symbolrate", 1, 0
-                              , &mod->config.symbolrate);
-            mod->config.symbolrate *= 1000;
-        }
+        module_set_number(mod, "frequency", 1, 0, &mod->config.frequency);
+        mod->config.frequency *= 1000;
+        fe_option_set(mod, "polarization", 1, NULL
+                      , polarization_list, ARRAY_SIZE(polarization_list)
+                      , (int *)&mod->config.polarization);
+        module_set_number(mod, "symbolrate", 1, 0
+                          , &mod->config.symbolrate);
+        mod->config.symbolrate *= 1000;
 
-        if(module_set_string(mod, "lnb", 0, NULL, &tmp_value))
-        {
-            do
-            {
-                const char *conf = tmp_value;
-                // set lof1 (low)
-                mod->config.lof1 = atoi(conf) * 1000;
-                for(; *conf && *conf != ':'; ++conf)
-                    ;
-                if(!*conf)
-                    break;
-                ++conf;
-                // set lof2 (high)
-                mod->config.lof2 = atoi(conf) * 1000;
-                for(; *conf && *conf != ':'; ++conf)
-                    ;
-                if(!*conf)
-                    break;
-                ++conf;
-                // set slof (switch)
-                mod->config.slof = atoi(conf) * 1000;
-            } while(0);
-            if(!mod->config.lof1)
-            {
-                log_error(LOG_MSG("failed to parse lnb option \"%s\"")
-                          , tmp_value);
-                abort();
-            }
-        }
-        else
-        {
-            module_set_number(mod, "lof1", 1, 0, &mod->config.lof1);
-            module_set_number(mod, "lof2", 0, mod->config.lof1
-                              , &mod->config.lof2);
-            module_set_number(mod, "slof", 0, mod->config.lof1
-                              , &mod->config.slof);
-            mod->config.lof1 *= 1000;
+        module_set_number(mod, "lof1", 1, 0, &mod->config.lof1);
+        mod->config.lof1 *= 1000;
+        if(module_set_number(mod, "lof2", 0, 0, &mod->config.lof2))
             mod->config.lof2 *= 1000;
+        if(module_set_number(mod, "slof", 0, 0, &mod->config.slof))
             mod->config.slof *= 1000;
-        }
+
         module_set_number(mod, "lnb_sharing", 0, 0, &mod->config.lnb_sharing);
 
         module_set_number(mod, "diseqc", 0, 0, &mod->config.diseqc);
