@@ -12,10 +12,17 @@
 #include <sys/time.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>
+#include <dirent.h>
+
+#include <sys/socket.h>
+#include <net/if.h>
 
 #include <linux/dvb/version.h>
 #include <linux/dvb/dmx.h>
 #include <linux/dvb/frontend.h>
+#include <linux/dvb/net.h>
+
+#include <modules/utils/utils.h>
 
 #if (DVB_API_VERSION < 5)
 #   error "Please, update DVB drivers"
@@ -167,6 +174,8 @@ struct module_data_s
     struct
     {
         dvb_type_t type;
+
+        uint8_t mac[6];
 
         int adapter;
         int device;
@@ -1023,6 +1032,132 @@ static void demux_bounce(module_data_t *mod)
 } /* demux_bounce */
 
 /*
+ * oooo   oooo ooooooooooo ooooooooooo
+ *  8888o  88   888    88  88  888  88
+ *  88 888o88   888ooo8        888
+ *  88   8888   888    oo      888
+ * o88o    88  o888ooo8888    o888o
+ *
+ */
+
+static int iterate_dir(const char *dir, const char *filter
+                       , int (*callback)(module_data_t *, const char *)
+                       , module_data_t *mod)
+{
+    int ret = 0;
+
+    DIR *dirp = opendir(dir);
+    if(!dirp)
+    {
+        log_error("[dvb_input] opendir() failed %s [%s]"
+                  , dir, strerror(errno));
+        return 0;
+    }
+
+    char item[64];
+    const int item_len = sprintf(item, "%s/", dir);
+    const int filter_len = strlen(filter);
+    do
+    {
+        struct dirent *entry = readdir(dirp);
+        if(!entry)
+            break;
+        if(strncmp(entry->d_name, filter, filter_len))
+            continue;
+        sprintf(&item[item_len], "%s", entry->d_name);
+        ret = callback(mod, item);
+        if(ret)
+            break;
+    } while(1);
+
+    closedir(dirp);
+    return ret;
+}
+
+static int get_last_int(const char *str)
+{
+    int i_pos = -1;
+    for(int i = 0; str[i]; ++i)
+    {
+        const char c = str[i];
+        if(c >= '0' && c <= '9')
+        {
+            if(i_pos == -1)
+                i_pos = i;
+        }
+        else if(i_pos >= 0)
+            i_pos = -1;
+    }
+
+    if(i_pos == -1)
+        return 0;
+
+    return atoi(&str[i_pos]);
+}
+
+static int check_net_device(module_data_t *mod, const char *item)
+{
+    mod->config.device = get_last_int(&item[(sizeof("/dev/dvb/adapter") - 1)
+                                            + (sizeof("/net") - 1)]);
+
+    int ret = 0;
+
+    int fd = open(item, O_RDWR | O_NONBLOCK);
+    if(!fd)
+    {
+        log_error("[dvb_input] open() failed %s [%s]"
+                  , item, strerror(errno));
+        return 0;
+    }
+
+    struct dvb_net_if net = { .pid = 0 };
+    if(ioctl(fd, NET_ADD_IF, &net) < 0)
+    {
+        log_error("[dvb_input] NET_ADD_IF failed %s [%s]"
+                  , item, strerror(errno));
+        close(fd);
+        return 0;
+    }
+
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(ifr));
+    sprintf(ifr.ifr_name, "dvb%d_%d", mod->config.adapter, mod->config.device);
+
+    int sock = socket(PF_INET, SOCK_DGRAM, 0);
+    if(ioctl(sock, SIOCGIFHWADDR, &ifr) < 0)
+    {
+        log_error("[dvb_input] SIOCGIFHWADDR failed %s [%s]"
+                  , item, strerror(errno));
+    }
+    else
+    {
+        if(!memcmp(mod->config.mac, ifr.ifr_hwaddr.sa_data, 6))
+            ret = 1;
+    }
+    close(sock);
+
+    if(ioctl(fd, NET_REMOVE_IF, net.if_num) < 0)
+    {
+        log_error("[dvb_input] NET_REMOVE_IF failed %s [%s]"
+                  , item, strerror(errno));
+    }
+
+    close(fd);
+    return ret;
+}
+
+static int check_adapter(module_data_t *mod, const char *item)
+{
+    mod->config.adapter = get_last_int(&item[sizeof("/dev/dvb/adapter") - 1]);
+    return iterate_dir(item, "net", check_net_device, mod);
+}
+
+static int set_adapter_by_mac(module_data_t *mod)
+{
+    return iterate_dir("/dev/dvb", "adapter", check_adapter, mod);
+}
+
+/*
  * oooo     oooo  ooooooo  ooooooooo  ooooo  oooo ooooo       ooooooooooo
  *  8888o   888 o888   888o 888    88o 888    88   888         888    88
  *  88 888o8 88 888     888 888    888 888    88   888         888ooo8
@@ -1119,8 +1254,35 @@ static void module_configure(module_data_t *mod)
                   , dvb_type_list, ARRAY_SIZE(dvb_type_list)
                   , (int *)&mod->config.type);
 
-    module_set_number(mod, "adapter", 1, 0, &mod->config.adapter);
-    module_set_number(mod, "device", 0, 0, &mod->config.device);
+    if(module_set_string(mod, "mac", 0, NULL, &tmp_value))
+    {
+        const char *ptr = tmp_value;
+        for(int d = 0; d < 6; ++d)
+        {
+            if(ptr[0] && ptr[1])
+                str_to_hex(ptr, &mod->config.mac[d], 1);
+            else
+            {
+                log_error("[dvb_input] failed to parse \"mac\"");
+                abort();
+            }
+            ptr += 2;
+            if(*ptr == ':')
+                ++ptr;
+        }
+        if(!set_adapter_by_mac(mod))
+        {
+            log_error("[dvb_input] mac %s is not found", tmp_value);
+            abort();
+        }
+        else
+            log_info(LOG_MSG("selected by mac:%s"), tmp_value);
+    }
+    else
+    {
+        module_set_number(mod, "adapter", 1, 0, &mod->config.adapter);
+        module_set_number(mod, "device", 0, 0, &mod->config.device);
+    }
 
     module_set_number(mod, "budget", 0, 0, &mod->config.budget);
     module_set_number(mod, "buffer_size", 0, 0, &mod->config.buffer_size);
