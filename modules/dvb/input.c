@@ -1201,6 +1201,8 @@ static int method_status(module_data_t *mod)
     lua_newtable(L);
     lua_pushnumber(L, mod->status.fe);
     lua_setfield(L, -2, "status");
+    lua_pushnumber(L, mod->config.adapter);
+    lua_setfield(L, -2, "adapter");
     lua_pushboolean(L, mod->status.lock);
     lua_setfield(L, -2, "lock");
     lua_pushnumber(L, mod->status.signal);
