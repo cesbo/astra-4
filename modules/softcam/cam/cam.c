@@ -156,7 +156,8 @@ int cam_send(module_data_t *mod, cas_data_t *cas, const uint8_t *em)
     const uint8_t em_type = em[0];
     if(em_type == 0x80 || em_type == 0x81)
     {
-        i = mod->__cam_module.queue.head;
+        if(mod->__cam_module.queue.head) // skip head, it processed by cam
+            i = list_get_next(mod->__cam_module.queue.head);
     }
     else if(em_type >= 0x82 && em_type <= 0x8F)
     {

@@ -16,11 +16,11 @@ IS_RELEASE=0
 
 if [ "$1" = "--release" ] ; then
     shift
-    ASTRA_VERSION=$((ASTRA_VERSION+1))
+    let ASTRA_VERSION=ASTRA_VERSION+1
     ASTRA_VERSION_DEV=0
     IS_RELEASE=1
 else
-    ASTRA_VERSION_DEV=$((ASTRA_VERSION_DEV+1))
+    let ASTRA_VERSION_DEV=ASTRA_VERSION_DEV+1
 fi
 
 cat >version.h <<EOF
@@ -33,17 +33,34 @@ cat >version.h <<EOF
 #endif /* _VERSION_H_ */
 EOF
 
-if [ $IS_RELEASE -eq 1 ] ; then
-    git commit -m "release" version.h
-else
-    MSG=$1
-    shift
+VERSION="v.$ASTRA_VERSION.$ASTRA_VERSION_DEV"
+GITRET=1
+MSG=$1
+shift
 
-    if [ $# -ne 0 ] ; then
-        git commit -m "$MSG" $* version.h
-    else
-        git commit -am "$MSG"
-    fi
+if [ $# -ne 0 ] ; then
+    git commit -m "$VERSION $MSG" $* version.h
+    GITRET=$?
+else
+    git commit -am "$VERSION $MSG"
+    GITRET=$?
+fi
+
+if [ $GITRET -ne 0 ] ; then
+    echo "git commit failed"
+    git checkout -- version.h
+    exit 1
+fi
+
+if [ $IS_RELEASE -eq 1 ] ; then
+    git checkout master
+    git merge --no-ff -m "$VERSION merge" dev
+fi
+
+git tag "$VERSION"
+
+if [ $IS_RELEASE -eq 1 ] ; then
+    git checkout dev
 fi
 
 cd $CDIR
