@@ -120,6 +120,10 @@ function extra_list.mixaudio(obj)
     return module_attach(obj, mixaudio(mixaudio_config))
 end
 
+function reserve_event(obj, channel)
+    -- TODO: continue here...
+end
+
 function make_channel(parent, stream, config)
     local ch = {
         stream = stream,
@@ -170,9 +174,22 @@ function make_channel(parent, stream, config)
         ch.analyze = analyze(config)
         tail:attach(ch.analyze)
 
-        if ch.event then
-            ch.last_cc_error = 0
-            ch.last_pes_error = 0
+        ch.last_cc_error = 0
+        ch.last_pes_error = 0
+
+        local is_reserve = (config.reserve == 'string')
+        if is_reserve and ch.event then
+            ch.reserve = function(self)
+                reserve_event(self, ch)
+                ch.event(self)
+            end
+            ch.analyze:event(ch.reserve)
+        elseif is_reserve then
+            ch.reserve = function(self)
+                reserve_event(self, ch)
+            end
+            ch.analyze:event(ch.reserve)
+        elseif ch.event then
             ch.analyze:event(ch.event)
         end
     end
@@ -200,9 +217,8 @@ function make_channel(parent, stream, config)
         oi = oi + 1
 
         local output = {
-            channel = ch,
             dst = dst_addr,
-            config = {},
+            config = { name = config.name },
             modules = { tail },
         }
 

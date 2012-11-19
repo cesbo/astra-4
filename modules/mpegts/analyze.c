@@ -46,6 +46,7 @@ struct module_data_s
     uint32_t ts_error;
 
     int is_ready;
+    int is_low_bitrate;
     int is_ts_error;
     int is_cc_error;
     int is_pes_error;
@@ -182,6 +183,7 @@ static void scan_pmt(module_data_t *mod, mpegts_psi_t *psi)
     }
 
     mod->is_ready = 1;
+    mod->is_low_bitrate = 0;
 } /* scan_pmt */
 
 #if DEBUG
@@ -223,6 +225,7 @@ void rate_timer_callback(void *arg)
 
     // analyze ts headers
 
+    const int last_bitrate = mod->bitrate / 10;
     mod->bitrate = 0;
 
     if(mod->ts_error)
@@ -278,8 +281,18 @@ void rate_timer_callback(void *arg)
         }
     }
 
-    if(!mod->bitrate)
+    if(!mod->bitrate || mod->bitrate < last_bitrate)
+    {
+        if(!mod->is_low_bitrate)
+        {
+            log_info(LOG_MSG("low bitrate: %uKbit/s"), mod->bitrate);
+            mod->is_ready = 0;
+            mod->stream_reload = 1;
+            mod->is_low_bitrate = 1;
+            module_event_call(mod);
+        }
         return;
+    }
 
     if(ts_error != mod->is_ts_error)
     {
@@ -407,8 +420,6 @@ static int method_status(module_data_t *mod)
     lua_State *L = LUA_STATE(mod);
     lua_newtable(L);
 
-    lua_pushboolean(L, mod->is_ready);
-    lua_setfield(L, -2, "onair");
     lua_pushboolean(L, mod->is_ready);
     lua_setfield(L, -2, "ready");
     lua_pushnumber(L, mod->bitrate / 1000);

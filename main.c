@@ -7,31 +7,17 @@
 
 #include <signal.h>
 #include <sys/stat.h>
+#include <setjmp.h>
 
 #include "config.h"
 
 static const char __version[] = ASTRA_VERSION_STR;
-static int main_loop = 1;
+static jmp_buf main_loop;
 
 static int astra_exit(lua_State *L)
 {
-    main_loop = 0;
+    longjmp(main_loop, 1);
     return 0;
-}
-
-static int astra_version(lua_State *L)
-{
-    lua_pushstring(L, __version);
-
-    lua_newtable(L);
-    lua_pushnumber(L, 1);
-    lua_pushnumber(L, ASTRA_VERSION);
-    lua_settable(L, -3);
-    lua_pushnumber(L, 2);
-    lua_pushnumber(L, ASTRA_VERSION_DEV);
-    lua_settable(L, -3);
-
-    return 2;
 }
 
 static int astra_abort(lua_State *L)
@@ -49,7 +35,6 @@ static int astra_abort(lua_State *L)
 static luaL_Reg astra_api[] =
 {
     { "exit", astra_exit },
-    { "version", astra_version },
     { "abort", astra_abort },
     { NULL, NULL }
 };
@@ -64,25 +49,11 @@ static void signal_handler(int signum)
     }
 #endif
 
-    main_loop = 0;
+    longjmp(main_loop, 1);
 }
 
-int main(int argc, const char *argv[])
+void astra_main(int argc, const char **argv, const char *lua_script)
 {
-    if(argc < 2)
-    {
-        printf("Astra %s\n"
-               "Usage: %s script [argv]\n"
-               , __version, argv[0]);
-        return 1;
-    }
-    const char *lua_script = argv[1];
-    if(access(lua_script, R_OK))
-    {
-        printf("Error: initial script isn't found\n");
-        return 1;
-    }
-
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 #ifndef _WIN32
@@ -102,6 +73,9 @@ int main(int argc, const char *argv[])
 #endif
     lua_setfield(L, -2, "debug");
 
+    lua_pushstring(L, __version);
+    lua_setfield(L, -2, "version");
+
     lua_setglobal(L, "astra");
 
     for(int i = 0; astra_mods[i]; i++)
@@ -109,9 +83,9 @@ int main(int argc, const char *argv[])
 
     /* argv table */
     lua_newtable(L);
-    for(int j = 1, i = 2; i < argc; i++, j++)
+    for(int i = 0; i < argc; i++)
     {
-        lua_pushinteger(L, j);
+        lua_pushinteger(L, i + 1);
         lua_pushstring(L, argv[i]);
         lua_settable(L, -3);
     }
@@ -119,17 +93,50 @@ int main(int argc, const char *argv[])
 
     /* change package.path */
     lua_getglobal(L, "package");
-    lua_pushstring(L, "/etc/astra/helpers/?.lua");
+    lua_pushstring(L, "/etc/astra/helpers/?.lua;./?.lua");
     lua_setfield(L, -2, "path");
     lua_pushstring(L, "");
     lua_setfield(L, -2, "cpath");
     lua_pop(L, 1);
 
-    if(luaL_dofile(L, lua_script))
-        luaL_error(L, "[main] %s", lua_tostring(L, -1));
+    if(!setjmp(main_loop))
+    {
+        if(luaL_dofile(L, lua_script))
+            luaL_error(L, "[main] %s", lua_tostring(L, -1));
+        ASTRA_CORE_LOOP();
+    }
 
-    ASTRA_CORE_LOOP(main_loop != 0);
     ASTRA_CORE_DESTROY();
+}
+
+#ifndef ASTRA_SHELL
+int main(int argc, const char **argv)
+{
+    if(argc < 2)
+    {
+        printf("Astra %s\n"
+               "Usage: %s script [argv]\n"
+               , __version, argv[0]);
+        return 1;
+    }
+    const char *lua_script = argv[1];
+    if(lua_script[0] == '-' && lua_script[1] == '\0')
+    {
+        lua_script = NULL;
+    }
+    else if(!access(lua_script, R_OK))
+    {
+        ;
+    }
+    else
+    {
+        printf("Error: initial script isn't found\n");
+        return 1;
+    }
+
+    /* 2 - skip app and script names */
+    astra_main(argc - 2, argv + 2, lua_script);
 
     return 0;
 }
+#endif /* ! ASTRA_SHELL */

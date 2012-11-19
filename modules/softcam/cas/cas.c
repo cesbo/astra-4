@@ -82,6 +82,8 @@ cas_data_t * cas_init(module_data_t *decrypt, module_data_t *cam, uint16_t pnr)
 
 void cas_destroy(cas_data_t *cas)
 {
+    cam_queue_flush(cas->__cas_module.cam, cas);
+
     if(cas)
         free(cas);
 }

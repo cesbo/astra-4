@@ -64,7 +64,7 @@ static void module_initialize(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    cam_queue_flush(mod);
+    cam_queue_flush(mod, NULL);
     decrypt_module_cam_status(mod, -1);
 }
 

@@ -690,7 +690,7 @@ static void newcamd_disconnect(module_data_t *mod, int status)
     }
     mod->status = NEWCAMD_UNKNOWN;
 
-    cam_queue_flush(mod);
+    cam_queue_flush(mod, NULL);
     decrypt_module_cam_status(mod, status);
 
     list_t *i = mod->__cam_module.prov_list;

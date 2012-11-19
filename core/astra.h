@@ -289,7 +289,7 @@ ASTRA_API int socket_set_buffer(int, int, int);
 ASTRA_API int socket_set_timeout(int, int, int);
 
 ASTRA_API int socket_multicast_join(int, const char *, const char *);
-ASTRA_API int socket_multicast_leave(int, const char *);
+ASTRA_API int socket_multicast_leave(int, const char *, const char *);
 ASTRA_API int socket_multicast_renew(int, const char *, const char *);
 ASTRA_API int socket_multicast_set_ttl(int, int);
 ASTRA_API int socket_multicast_set_if(int, const char *);
@@ -330,8 +330,8 @@ int thread_is_started(thread_t *);
     socket_init();                                                          \
     event_init()
 
-#define ASTRA_CORE_LOOP(_cond)                                              \
-    while(_cond)                                                            \
+#define ASTRA_CORE_LOOP()                                                   \
+    while(1)                                                                \
     {                                                                       \
         event_action();                                                     \
         timer_action();                                                     \
@@ -344,5 +344,7 @@ int thread_is_started(thread_t *);
     socket_destroy();                                                       \
     log_info("[main] exit");                                                \
     log_destroy()
+
+void astra_main(int, const char **, const char *);
 
 #endif /* _ASTRA_H_ */

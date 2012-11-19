@@ -74,18 +74,35 @@ static void __remove_item(module_data_t *mod, list_t *i)
     free(p);
 }
 
-void cam_queue_flush(module_data_t *mod)
+void cam_queue_flush(module_data_t *mod, cas_data_t *cas)
 {
     list_t *i = mod->__cam_module.queue.head;
-    while(i)
+
+    if(cas)
     {
-        cam_packet_t *packet = list_get_data(i);
-        free(packet);
-        i = list_delete(i, NULL);
+        while(i)
+        {
+            list_t *n = list_get_next(i);
+
+            cam_packet_t *packet = list_get_data(i);
+            if(packet->cas == cas)
+                __remove_item(mod, i);
+
+            i = n;
+        }
     }
-    mod->__cam_module.queue.head = NULL;
-    mod->__cam_module.queue.tail = NULL;
-    mod->__cam_module.queue.size = 0;
+    else
+    {
+        while(i)
+        {
+            cam_packet_t *packet = list_get_data(i);
+            free(packet);
+            i = list_delete(i, NULL);
+        }
+        mod->__cam_module.queue.head = NULL;
+        mod->__cam_module.queue.tail = NULL;
+        mod->__cam_module.queue.size = 0;
+    }
 }
 
 inline uint16_t cam_caid(module_data_t *mod)

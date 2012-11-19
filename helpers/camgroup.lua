@@ -1,11 +1,13 @@
 
 function camgroup_event(self, channel, decrypt_id)
     local s = self:status()
+    local isok = s.keys and s.cam
+    channel.camgroup.items[decrypt_id].is_active = isok
 
     function set_active_cam(id)
         if id > 0 then
             local item = channel.camgroup.config.items[id]
-            log.info("[camgroup.lua] active cam: " .. item.cam_config.name)
+            log.info("[camgroup.lua] cam activated: " .. item.cam_config.name)
             channel.camgroup.active_id = id
             channel.decrypt:cam(item.cam)
         else
@@ -14,31 +16,29 @@ function camgroup_event(self, channel, decrypt_id)
         end
     end
 
-    local isok = s.keys and s.cam
-    channel.camgroup.items[decrypt_id].is_active = isok
-
     if isok then
-        if channel.camgroup.active_id == 0 then
+        local active_id = channel.camgroup.active_id
+        if active_id == 0 then
             set_active_cam(decrypt_id)
-        else
-            local active_id = channel.camgroup.active_id
-            local active_group_item = channel.camgroup.items[active_id]
-            local active_cam_item = channel.camgroup.config.items[active_id]
+            return
+        end
 
-            if active_cam_item.mode == 2 then
-                set_active_cam(decrypt_id)
+        local active_cam = channel.camgroup.config.items[active_id]
 
-                active_group_item.decrypt:cam(nil)
-                active_group_item.is_active = false
-                active_cam_item.cam = nil
-                collectgarbage()
-            end
+        if active_cam.mode == 2 then
+            set_active_cam(decrypt_id)
+
+            local active_group = channel.camgroup.items[active_id]
+            active_group.decrypt:cam(nil)
+            active_group.is_active = false
+            active_cam.cam = nil
+            collectgarbage()
         end
     else
         if decrypt_id == channel.camgroup.active_id
            or channel.camgroup.active_id == 0
         then
-            log.warning("[camgroup.lua] failed cam: "
+            log.warning("[camgroup.lua] cam failed: "
                         .. channel.camgroup.config.items[decrypt_id]
                            .cam_config.name)
 
@@ -53,7 +53,6 @@ function camgroup_event(self, channel, decrypt_id)
                 if item.mode == 2 and not item.cam then
                     item.cam = item.cam_mod(item.cam_config)
                     channel.camgroup.items[id].decrypt:cam(item.cam)
-
                     set_active_cam(0)
                     return
                 end
@@ -82,22 +81,25 @@ function camgroup(items)
         return name:sub(0, so - 1)
     end
 
-    for item_id,item_conf in pairs(items) do
-        local cam_name = parse_name(item_id)
+    local item_id = 1
+    for item_name,item_conf in pairs(items) do
+        local cam_name = parse_name(item_name)
         local cam = _G[cam_name]
         if cam then
             local item = {
                 cam_mod = cam,
                 cam_config = item_conf,
                 mode = item_conf.mode,
+                count = 0, -- decrypts that use this cam
             }
 
             if item_conf.mode == 1 then
                 item.cam = cam(item.cam_config)
             end
 
-            table.insert(group.items, item)
+            group.items[item_id] = item
         end
+        item_id = item_id + 1
     end
 
     return group
@@ -110,9 +112,9 @@ function camgroup_channel(channel)
     -- get a parent module of the decrypt module
     local parent = channel.modules[#channel.modules - 1]
 
-    for id,cam_item in pairs(channel.camgroup.config.items) do
+    for cam_id,cam_item in pairs(channel.camgroup.config.items) do
         local decrypt_config = {
-            name = channel.config.name .. ":" .. tostring(id),
+            name = channel.config.name .. ":" .. tostring(cam_id),
             cam = nil,
             fake = true,
         }
@@ -121,13 +123,15 @@ function camgroup_channel(channel)
             is_active = false,
             decrypt = decrypt(decrypt_config),
             event = function(self)
-                camgroup_event(self, channel, id)
+                camgroup_event(self, channel, cam_id)
             end
         }
         item.decrypt:event(item.event)
         parent:attach(item.decrypt)
 
-        if cam_item.cam then item.decrypt:cam(cam_item.cam) end
+        if cam_item.cam then
+            item.decrypt:cam(cam_item.cam)
+        end
 
         table.insert(channel.camgroup.items, item)
     end

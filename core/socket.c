@@ -433,7 +433,7 @@ int socket_set_timeout(int sock, int rcvmsec, int sndmsec)
 }
 
 static int _socket_multicast_cmd(int sock, int cmd, const char *addr
-                                 , const char *local)
+                                 , const char *localaddr)
 {
     struct ip_mreq mreq;
     memset(&mreq, 0, sizeof(mreq));
@@ -446,12 +446,12 @@ static int _socket_multicast_cmd(int sock, int cmd, const char *addr
     if(!IN_MULTICAST(ntohl(mreq.imr_multiaddr.s_addr)))
         return 1;
 
-    if(local)
+    if(localaddr)
     {
-        mreq.imr_interface.s_addr = inet_addr(local);
+        mreq.imr_interface.s_addr = inet_addr(localaddr);
         if(mreq.imr_interface.s_addr == INADDR_NONE)
         {
-            log_error(LOG_MSG("failed to set local address '%s'"), local);
+            log_error(LOG_MSG("failed to set local address '%s'"), localaddr);
             mreq.imr_interface.s_addr = INADDR_ANY;
         }
     }
@@ -468,21 +468,21 @@ static int _socket_multicast_cmd(int sock, int cmd, const char *addr
     return 1;
 }
 
-int socket_multicast_join(int sock, const char *addr, const char *local)
+int socket_multicast_join(int sock, const char *addr, const char *localaddr)
 {
-    return _socket_multicast_cmd(sock, IP_ADD_MEMBERSHIP, addr, local);
+    return _socket_multicast_cmd(sock, IP_ADD_MEMBERSHIP, addr, localaddr);
 }
 
-int socket_multicast_leave(int sock, const char *addr)
+int socket_multicast_leave(int sock, const char *addr, const char *localaddr)
 {
-    return _socket_multicast_cmd(sock, IP_DROP_MEMBERSHIP, addr, NULL);
+    return _socket_multicast_cmd(sock, IP_DROP_MEMBERSHIP, addr, localaddr);
 }
 
-int socket_multicast_renew(int sock, const char *addr, const char *local)
+int socket_multicast_renew(int sock, const char *addr, const char *localaddr)
 {
-    if(!_socket_multicast_cmd(sock, IP_DROP_MEMBERSHIP, addr, NULL))
+    if(!_socket_multicast_cmd(sock, IP_DROP_MEMBERSHIP, addr, localaddr))
         return 0;
-    return _socket_multicast_cmd(sock, IP_ADD_MEMBERSHIP, addr, local);
+    return _socket_multicast_cmd(sock, IP_ADD_MEMBERSHIP, addr, localaddr);
 }
 
 int socket_multicast_set_ttl(int sock, int ttl)

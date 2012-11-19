@@ -128,7 +128,8 @@ static void module_destroy(module_data_t *mod)
 
     if(mod->sock)
     {
-        socket_multicast_leave(mod->sock, mod->config.addr);
+        socket_multicast_leave(mod->sock, mod->config.addr
+                               , mod->config.localaddr);
         event_detach(mod->sock);
         socket_close(mod->sock);
     }

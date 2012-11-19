@@ -41,7 +41,7 @@ struct module_data_s
 
 static void interface_send_em(module_data_t *mod)
 {
-    cam_packet_t *packet = list_get_data(mod->__cam_module.queue.current);
+    cam_packet_t *packet = list_get_data(mod->__cam_module.queue.head);
 }
 
 /* required */
@@ -64,7 +64,7 @@ static void module_initialize(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    cam_queue_flush(mod);
+    cam_queue_flush(mod, NULL);
     decrypt_module_cam_status(mod, -1);
 }
 

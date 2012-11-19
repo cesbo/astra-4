@@ -20,7 +20,7 @@ function send_json(info)
         port = 80,
         method = "POST",
         headers = {
-            "User-Agent: Astra " .. astra.version(),
+            "User-Agent: Astra " .. astra.version,
             "Host: " .. event_request.host,
             "Content-Type: application/jsonrequest",
             "Content-Length: " .. #content,

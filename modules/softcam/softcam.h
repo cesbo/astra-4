@@ -127,7 +127,7 @@ void cam_set_cas_data(module_data_t *, const char *);
 
 cam_packet_t * cam_packet_init(cas_data_t *, const uint8_t *
                                , mpegts_packet_type_t);
-void cam_queue_flush(module_data_t *);
+void cam_queue_flush(module_data_t *, cas_data_t *);
 
 int cam_callback(module_data_t *, cam_packet_t *);
 int cam_send(module_data_t *, cas_data_t *, const uint8_t *);

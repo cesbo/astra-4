@@ -224,8 +224,58 @@ EOF
     fi
 }
 
+IN_OBJECTS_APP=""
+
+IN_CFLAGS_APP=""
+if [ -n "$ARG_MAIN_APP" ] ; then
+    IN_CFLAGS_APP="-DASTRA_SHELL=1"
+fi
+
+S="$SRCDIR/main.c"
+O=`echo $S | sed 's/.c$/.o/'`
+CC_RET=`$IN_CC $IN_CFLAGS $IN_CFLAGS_APP -MT $O -MM $S`
+if [ $? -eq 0 ] ; then
+    echo "     OK: $S"
+    cat >&5 <<EOF
+${CC_RET}
+	@echo Compiling: $S
+	@\$(CC) \$(CFLAGS) $IN_CFLAGS_APP -c $S -o \$@
+
+EOF
+    IN_OBJECTS_APP="$O"
+else
+    echo "    ERR: $S"
+    exec 5>&-
+    exec 6>&-
+    exec 7>&-
+    rm -f $SRCDIR/__modules.mk $SRCDIR/__config_1.h $SRCDIR/__config_2.h
+    exit 1
+fi
+
+if [ -n "$ARG_MAIN_APP" ] ; then
+    O=`echo $ARG_MAIN_APP | sed 's/.c$/.o/'`
+    CC_RET=`$IN_CC $IN_CFLAGS -MT $O -MM $ARG_MAIN_APP`
+    if [ $? -eq 0 ] ; then
+        echo "     OK: $ARG_MAIN_APP"
+        cat >&5 <<EOF
+${CC_RET}
+	@echo Compiling: $ARG_MAIN_APP
+	@\$(CC) \$(CFLAGS) -c $ARG_MAIN_APP -o \$@
+
+EOF
+        IN_OBJECTS_APP="$IN_OBJECTS_APP $O"
+    else
+        echo "    ERR: $ARG_MAIN_APP"
+        exec 5>&-
+        exec 6>&-
+        exec 7>&-
+        rm -f $SRCDIR/__modules.mk $SRCDIR/__config_1.h $SRCDIR/__config_2.h
+        exit 1
+    fi
+fi
+
 check_module $SRCDIR/core
-IN_OBJECTS_CORE=$IN_OBJECTS
+IN_OBJECTS_CORE="$IN_OBJECTS_APP $IN_OBJECTS"
 IN_OBJECTS=""
 
 IN_OBJECTS_LUA=""
@@ -233,27 +283,6 @@ if [ $ARG_WITHOUT_LUA -ne 1 ] ; then
     check_module $SRCDIR/lua
     IN_OBJECTS_LUA=$IN_OBJECTS
     IN_OBJECTS=""
-fi
-
-IN_MAIN_APP=""
-if [ -z "$ARG_MAIN_APP" ] ; then
-    IN_MAIN_APP="$SRCDIR/main.c"
-else
-    IN_MAIN_APP="$ARG_MAIN_APP"
-fi
-
-IN_OBJECTS=`echo $IN_MAIN_APP | sed 's/.c$/.o/'`
-CC_RET=`$IN_CC $IN_CFLAGS -MT $IN_OBJECTS -MM $IN_MAIN_APP`
-if [ $? -eq 0 ] ; then
-    echo "     OK: $IN_MAIN_APP"
-    cat >&5 <<EOF
-${CC_RET}
-	@echo Compiling: $IN_MAIN_APP
-	@\$(CC) \$(CFLAGS) -c $IN_MAIN_APP -o \$@
-
-EOF
-else
-    echo "    ERR: $IN_MAIN_APP"
 fi
 
 if [ -z "$ARG_MODULES" ] ; then
