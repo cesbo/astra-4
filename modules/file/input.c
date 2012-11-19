@@ -198,7 +198,6 @@ static void thread_loop(void *arg)
             const ssize_t rlen = read(mod->fd, mod->buffer.end, read_size);
             if(rlen != read_size)
             {
-                log_info(LOG_MSG("end of file"));
                 // TODO: mod->config.loop
                 if(!open_file(mod))
                     break;

@@ -43,10 +43,11 @@ struct module_data_s
     analyze_item_t items[MAX_PID];
 
     uint32_t bitrate;
+    uint32_t average_bitrate;
     uint32_t ts_error;
 
     int is_ready;
-    int is_low_bitrate;
+    int is_bitrate;
     int is_ts_error;
     int is_cc_error;
     int is_pes_error;
@@ -183,7 +184,6 @@ static void scan_pmt(module_data_t *mod, mpegts_psi_t *psi)
     }
 
     mod->is_ready = 1;
-    mod->is_low_bitrate = 0;
 } /* scan_pmt */
 
 #if DEBUG
@@ -223,9 +223,6 @@ void rate_timer_callback(void *arg)
     int scrambled = 0;
     int pes_error = 0;
 
-    // analyze ts headers
-
-    const int last_bitrate = mod->bitrate / 10;
     mod->bitrate = 0;
 
     if(mod->ts_error)
@@ -281,17 +278,26 @@ void rate_timer_callback(void *arg)
         }
     }
 
-    if(!mod->bitrate || mod->bitrate < last_bitrate)
+    if(!mod->bitrate || mod->bitrate < (mod->average_bitrate / 10))
     {
-        if(!mod->is_low_bitrate)
+        if(mod->is_bitrate)
         {
-            log_info(LOG_MSG("low bitrate: %uKbit/s"), mod->bitrate);
-            mod->is_ready = 0;
-            mod->stream_reload = 1;
-            mod->is_low_bitrate = 1;
+            log_info(LOG_MSG("bitrate: ERROR %uKbit/s"), mod->bitrate / 1000);
+            mod->is_bitrate = 0;
             module_event_call(mod);
         }
         return;
+    }
+    else if(mod->bitrate > (mod->average_bitrate / 2))
+    {
+        mod->average_bitrate = (mod->average_bitrate + mod->bitrate) / 2;
+
+        if(!mod->is_bitrate)
+        {
+            log_info(LOG_MSG("bitrate: OK %uKbit/s"), mod->bitrate / 1000);
+            mod->is_bitrate = 1;
+            do_event = 1;
+        }
     }
 
     if(ts_error != mod->is_ts_error)
@@ -424,6 +430,8 @@ static int method_status(module_data_t *mod)
     lua_setfield(L, -2, "ready");
     lua_pushnumber(L, mod->bitrate / 1000);
     lua_setfield(L, -2, __bitrate);
+    lua_pushboolean(L, mod->is_bitrate);
+    lua_setfield(L, -2, "onair");
 
     uint32_t total_cc_error = 0;
     uint32_t total_pes_error = 0;

@@ -190,6 +190,7 @@ function make_channel(parent, stream, config)
                 local stat = obj:status()
 
                 local is_ok = ((stat.ready == true)
+                               and (stat.onair == true)
                                and (stat.scrambled == false))
 
                 if (is_ok == true)

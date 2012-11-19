@@ -53,6 +53,7 @@ function module_event_list.analyze(ch, stat)
         channel = ch.config.name,
         output = ch.config.output[1],
         ready = stat.ready,
+        onair = stat.onair,
         bitrate = stat.bitrate,
         scrambled = stat.scrambled,
         pes_error = 0,
