@@ -120,10 +120,6 @@ function extra_list.mixaudio(obj)
     return module_attach(obj, mixaudio(mixaudio_config))
 end
 
-function reserve_event(obj, channel)
-    -- TODO: continue here...
-end
-
 function make_channel(parent, stream, config)
     local ch = {
         stream = stream,
@@ -148,7 +144,7 @@ function make_channel(parent, stream, config)
 
     -- event
     if config.event and event_request and stream_event then
-        ch.event = function(self) stream_event(self, ch) end
+        ch.event = function(self, stat) stream_event(self, ch, stat) end
     end
 
     -- decrypt
@@ -177,19 +173,57 @@ function make_channel(parent, stream, config)
         ch.last_cc_error = 0
         ch.last_pes_error = 0
 
-        local is_reserve = (config.reserve == 'string')
-        if is_reserve and ch.event then
-            ch.reserve = function(self)
-                reserve_event(self, ch)
-                ch.event(self)
+        if type(config.reserve) == 'string' then
+            function reserve_parse_addr(raddr)
+                local so, eo = raddr:find(':')
+                local conf = {}
+                if eo then
+                    conf.addr = raddr:sub(0, so - 1)
+                    conf.port = tonumber(raddr:sub(eo + 1))
+                else
+                    conf.addr = raddr
+                end
+                return conf
             end
-            ch.analyze:event(ch.reserve)
-        elseif is_reserve then
-            ch.reserve = function(self)
-                reserve_event(self, ch)
+
+            function reserve_event(obj, channel)
+                local stat = obj:status()
+
+                local is_ok = ((stat.ready == true)
+                               and (stat.scrambled == false))
+
+                if (is_ok == true)
+                   and (channel.reserve.is_active == true)
+                then
+                    log.info("[stream.lua/reserve] channel "
+                             .. channel.config.name
+                             .. " is acitve")
+                    channel.reserve.instance:stop()
+                    channel.reserve.is_active = false
+
+                elseif (is_ok == false)
+                       and (channel.reserve.is_active == false)
+                then
+                    log.info("[stream.lua/reserve] channel "
+                             .. channel.config.name
+                             .. " switch to reserve")
+                    channel.reserve.instance:start()
+                    channel.reserve.is_active = true
+                end
+
+                if channel.event then
+                    channel.event(obj, stat)
+                end
             end
-            ch.analyze:event(ch.reserve)
-        elseif ch.event then
+
+            ch.reserve = {
+                instance = reserve(reserve_parse_addr(config.reserve)),
+                event = function(self) reserve_event(self, ch) end,
+                is_active = false,
+            }
+            tail = module_attach(ch, ch.reserve.instance)
+            ch.analyze:event(ch.reserve.event)
+        elseif ch.event then -- is not reserve
             ch.analyze:event(ch.event)
         end
     end

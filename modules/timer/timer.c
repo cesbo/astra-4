@@ -57,10 +57,6 @@ static int method_close(module_data_t *mod)
 
 static void module_configure(module_data_t *mod)
 {
-    /*
-    OPTION_NUMBER("interval", config.interval, 1, 0)
-    OPTION_CUSTOM("callback", NULL           , 1)
-    */
     module_set_number(mod, "interval", 1, 0, &mod->config.interval);
     if(mod->config.interval <= 0)
     {

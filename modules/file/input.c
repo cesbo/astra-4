@@ -9,7 +9,7 @@
 
 #include <fcntl.h>
 
-#define BUFFER_SIZE (188 * 1000)
+#define BUFFER_SIZE (188 * 8000)
 
 #define LOG_MSG(_msg) "[file_intput %s] " _msg, mod->config.filename
 
@@ -134,6 +134,7 @@ static int open_file(module_data_t *mod)
         ;
     if(i == TS_PACKET_SIZE)
     {
+        log_error(LOG_MSG("failed to sync file"));
         close(mod->fd);
         mod->fd = 0;
         return 0;
@@ -148,6 +149,7 @@ static int open_file(module_data_t *mod)
     mod->buffer.ptr = seek_pcr(mod->buffer.data, mod->buffer.end);
     if(!mod->buffer.ptr)
     {
+        log_error(LOG_MSG("first PCR is not found"));
         close(mod->fd);
         mod->fd = 0;
         return 0;
@@ -196,6 +198,7 @@ static void thread_loop(void *arg)
             const ssize_t rlen = read(mod->fd, mod->buffer.end, read_size);
             if(rlen != read_size)
             {
+                log_info(LOG_MSG("end of file"));
                 // TODO: mod->config.loop
                 if(!open_file(mod))
                     break;
@@ -206,6 +209,7 @@ static void thread_loop(void *arg)
             mod->buffer.block_end = seek_pcr(dst, mod->buffer.end);
             if(!mod->buffer.block_end)
             {
+                log_warning(LOG_MSG("PCR is not found. reopen file"));
                 // TODO: mod->config.loop
                 if(!open_file(mod))
                     break;

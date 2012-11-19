@@ -96,6 +96,15 @@ typedef enum {
 
 /* module code */
 
+/*
+ * ooooooooooo ooooooooo  ooooooooooo      o
+ * 88  888  88  888    88o 888    88      888
+ *     888      888    888 888ooo8       8  88
+ *     888      888    888 888    oo    8oooo88
+ *    o888o    o888ooo88  o888ooo8888 o88o  o888o
+ *
+ */
+
 static void triple_des_set_key(module_data_t *mod
                                , uint8_t *key
                                , size_t key_size)
@@ -244,7 +253,14 @@ static uint8_t xor_sum(const uint8_t *mem, int len)
     return cs;
 }
 
-/* timeout */
+/*
+ * ooooooooooo o88                                                   o8
+ * 88  888  88 oooo  oo ooo oooo   ooooooooo8  ooooooo  oooo  oooo o888oo
+ *     888      888   888 888 888 888oooooo8 888     888 888   888  888
+ *     888      888   888 888 888 888        888     888 888   888  888
+ *    o888o    o888o o888o888o888o  88oooo888  88ooo88    888o88 8o  888o
+ *
+ */
 
 static void newcamd_connect(void *);
 static void newcamd_disconnect(module_data_t *, int);
@@ -300,7 +316,14 @@ static void newcamd_timeout_unset(module_data_t *mod)
     }
 }
 
-/* send/recv */
+/*
+ *  oooooooo8                                oooo
+ * 888          ooooooooo8 oo oooooo    ooooo888
+ *  888oooooo  888oooooo8   888   888 888    888
+ *         888 888          888   888 888    888
+ * o88oooo888    88oooo888 o888o o888o  88ooo888o
+ *
+ */
 
 static int newcamd_send_msg(module_data_t *mod, cam_packet_t *packet)
 {
@@ -385,6 +408,15 @@ static int newcamd_send_cmd(module_data_t *mod, newcamd_cmd_t cmd)
     return newcamd_send_msg(mod, NULL);
 }
 
+/*
+ * oooooooooo
+ *  888    888 ooooooooo8  ooooooo  oooo   oooo
+ *  888oooo88 888oooooo8 888     888 888   888
+ *  888  88o  888        888          888 888
+ * o888o  88o8  88oooo888  88ooo888     888
+ *
+ */
+
 int newcamd_recv_msg(module_data_t *mod, cam_packet_t **packet)
 {
     if(mod->status != NEWCAMD_READY)
@@ -466,6 +498,15 @@ static newcamd_cmd_t newcamd_recv_cmd(module_data_t *mod)
 
     return NEWCAMD_MSG_ERROR;
 }
+
+/*
+ * ooooo                               o88
+ *  888          ooooooo     oooooooo8 oooo  oo oooooo
+ *  888        888     888 888    88o   888   888   888
+ *  888      o 888     888  888oo888o   888   888   888
+ * o888ooooo88   88ooo88   888     888 o888o o888o o888o
+ *                          888ooo888
+ */
 
 static int newcamd_login_1(module_data_t *mod)
 {
@@ -563,6 +604,15 @@ static int newcamd_login_3(module_data_t *mod)
     return 1;
 }
 
+/*
+ * oooooooooo
+ *  888    888 oo oooooo     ooooooo     ooooooo
+ *  888oooo88   888    888 888     888 888     888
+ *  888         888        888     888 888
+ * o888o       o888o         88ooo88     88ooo888
+ *
+ */
+
 static int newcamd_process(module_data_t *mod)
 {
     cam_packet_t *packet = NULL;
@@ -608,7 +658,14 @@ static int newcamd_process(module_data_t *mod)
     return len;
 }
 
-/* read/write callbacks */
+/*
+ * oooooooooo         o88 oooo     oooo                 oooo
+ *  888    888       o88   88   88  88         ooooooo   888ooooo
+ *  888oooo88      o88      88 888 88        888     888 888    888
+ *  888  88o     o88         888 888         888         888    888
+ * o888o  88o8 o88            8   8            88ooo888 o888ooo88
+ *            o88
+ */
 
 static void newcamd_read_cb(void *arg, int event)
 {
@@ -662,7 +719,14 @@ static void newcamd_write_cb(void *arg, int event)
     event_attach(mod->sock, newcamd_read_cb, mod, EVENT_READ);
 }
 
-/* connect/disconnect */
+/*
+ *   oooooooo8                                                           o8
+ * o888     88   ooooooo  oo oooooo   oo oooooo   ooooooooo8  ooooooo  o888oo
+ * 888         888     888 888   888   888   888 888oooooo8 888     888 888
+ * 888o     oo 888     888 888   888   888   888 888        888         888
+ *  888oooo88    88ooo88  o888o o888o o888o o888o  88oooo888  88ooo888   888o
+ *
+ */
 
 static void newcamd_connect(void *arg)
 {
@@ -699,7 +763,14 @@ static void newcamd_disconnect(module_data_t *mod, int status)
     mod->__cam_module.prov_list = NULL;
 }
 
-/* softcam callbacks */
+/*
+ * oooo     oooo                   oooo            o888
+ *  8888o   888   ooooooo     ooooo888 oooo  oooo   888  ooooooooo8
+ *  88 888o8 88 888     888 888    888  888   888   888 888oooooo8
+ *  88  888  88 888     888 888    888  888   888   888 888
+ * o88o  8  o88o  88ooo88     88ooo888o  888o88 8o o888o  88oooo888
+ *
+ */
 
 static void interface_send_em(module_data_t *mod)
 {
@@ -709,8 +780,6 @@ static void interface_send_em(module_data_t *mod)
     mod->buffer_size = packet->size;
     newcamd_send_msg(mod, packet);
 }
-
-/* required */
 
 static void module_configure(module_data_t *mod)
 {
