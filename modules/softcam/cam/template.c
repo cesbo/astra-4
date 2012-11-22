@@ -20,7 +20,7 @@
 
 #include "../softcam.h"
 
-#define LOG_MSG(_msg) "[%s %s] " _msg, mod->__cam_module.name, mod->config.name
+#define LOG_MSG(_msg) "[%s %s] " _msg, mod->__name, mod->__cam_module.name
 
 struct module_data_s
 {
@@ -28,7 +28,6 @@ struct module_data_s
 
     struct
     {
-        const char *name;
         // options
     } config;
 
@@ -44,11 +43,16 @@ static void interface_send_em(module_data_t *mod)
     cam_packet_t *packet = list_get_data(mod->__cam_module.queue.head);
 }
 
+static void interface_activate(module_data_t *mod, int is_active)
+{
+    ;
+}
+
 /* required */
 
 static void module_configure(module_data_t *mod)
 {
-    module_set_string(mod, "name", 1, NULL, &mod->config.name);
+    module_set_string(mod, "name", 1, NULL, &mod->__cam_module.name);
 
     const char *cas_data = NULL;
     if(module_set_string(mod, "cas_data", 0, NULL, &cas_data))

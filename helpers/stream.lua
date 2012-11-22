@@ -253,17 +253,20 @@ function make_channel(parent, stream, config)
 
         local output = {
             dst = dst_addr,
-            config = { name = config.name },
+            config = {},
             modules = { tail },
         }
 
         if type(config.output[oi]) == 'table' then
             output.config = config.output[oi]
+            output.config.name = config.name
             oi = oi + 1
 
             for extra, _ in pairs(output.config) do
                 if extra_list[extra] then extra_list[extra](output) end
             end
+        else
+            output.config.name = config.name
         end
 
         output_func(output)

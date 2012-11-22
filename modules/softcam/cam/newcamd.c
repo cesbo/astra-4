@@ -24,7 +24,7 @@
 #include <openssl/des.h>
 #include <openssl/md5.h>
 
-#define LOG_MSG(_msg) "[newcamd %s] " _msg, mod->config.name
+#define LOG_MSG(_msg) "[newcamd %s] " _msg, mod->__cam_module.name
 
 #define NEWCAMD_HEADER_SIZE 12
 #define NEWCAMD_MSG_SIZE 400
@@ -46,7 +46,6 @@ struct module_data_s
 
     struct
     {
-        const char *name;
         const char *host;
         int port;
         const char *user;
@@ -781,6 +780,14 @@ static void interface_send_em(module_data_t *mod)
     newcamd_send_msg(mod, packet);
 }
 
+static void interface_activate(module_data_t *mod, int is_active)
+{
+    if(is_active)
+        newcamd_connect(mod);
+    else
+        newcamd_disconnect(mod, -1);
+}
+
 static void module_configure(module_data_t *mod)
 {
     /*
@@ -789,7 +796,7 @@ static void module_configure(module_data_t *mod)
      *   disable_emm, cas_data, timeout
      */
 
-    module_set_string(mod, "name", 1, NULL, &mod->config.name);
+    module_set_string(mod, "name", 1, NULL, &mod->__cam_module.name);
     module_set_string(mod, "host", 1, NULL, &mod->config.host);
     module_set_number(mod, "port", 1, 0, &mod->config.port);
     module_set_string(mod, "user", 1, NULL, &mod->config.user);
@@ -815,8 +822,6 @@ static void module_initialize(module_data_t *mod)
     module_configure(mod);
 
     CAM_INTERFACE();
-
-    newcamd_connect(mod);
 }
 
 static void module_destroy(module_data_t *mod)

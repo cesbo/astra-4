@@ -190,11 +190,25 @@ inline static int __check_ident(const uint8_t *ident, const uint8_t *prov)
 
 static uint16_t viaccess_check_desc(cas_data_t *cas, const uint8_t *desc)
 {
-    const int length = desc[1] - 4;
-    if(length < 4)
+    const int length = desc[1] + 2;
+    if(length < 9) // 9 = 6 (desc header) + 3 (viaccess minimal header)
         return 0;
 
-    const uint8_t *ident = &desc[length + 6 - 3];
+    const uint8_t *ident = NULL;
+    int skip = 6;
+    while(skip < length)
+    {
+        const uint8_t dtype = desc[skip];
+        const int dlen = desc[skip + 1] + 2;
+        if(dtype == 0x14 && dlen == 5)
+        {
+            ident = &desc[skip + 2];
+            break;
+        }
+        skip += dlen;
+    }
+    if(!ident)
+        return CA_DESC_PID(desc);
 
     uint8_t *cas_data = CAS2CAM(cas).cas_data;
     if((cas_data[0] || cas_data[1]) && !__check_ident(ident, cas_data))

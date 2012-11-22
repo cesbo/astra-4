@@ -21,8 +21,9 @@ struct module_data_s
         int port;
     } config;
 
-    int sock;
+    int is_reserve;
 
+    int sock;
     uint8_t buffer[UDP_BUFFER_SIZE];
 };
 
@@ -51,7 +52,7 @@ void reserve_input_callback(void *arg, int event)
 
 static void callback_send_ts(module_data_t *mod, uint8_t *ts)
 {
-    if(mod->sock)
+    if(mod->is_reserve)
         return;
 
     stream_ts_send(mod, ts);
@@ -61,7 +62,7 @@ static void callback_send_ts(module_data_t *mod, uint8_t *ts)
 
 static int method_start(module_data_t *mod)
 {
-    if(!mod->sock)
+    if(!mod->sock && mod->config.port)
     {
         mod->sock = socket_open(SOCKET_PROTO_UDP
                                 | SOCKET_REUSEADDR
@@ -74,11 +75,11 @@ static int method_start(module_data_t *mod)
                                 , mod->config.port);
         if(mod->sock)
         {
-            socket_set_buffer(mod->sock, 0x80000, 0);
             event_attach(mod->sock, reserve_input_callback, mod, EVENT_READ);
             socket_multicast_join(mod->sock, mod->config.addr, NULL);
         }
     }
+    mod->is_reserve = 1;
     return 0;
 }
 
@@ -91,6 +92,7 @@ static int method_stop(module_data_t *mod)
         socket_close(mod->sock);
         mod->sock = 0;
     }
+    mod->is_reserve = 0;
     return 0;
 }
 
@@ -111,6 +113,10 @@ static int method_detach(module_data_t *mod)
 static void module_configure(module_data_t *mod)
 {
     module_set_string(mod, "addr", 1, NULL, &mod->config.addr);
+
+    if(!strcasecmp(mod->config.addr, "DROP"))
+        return;
+
     module_set_number(mod, "port", 0, 1234, &mod->config.port);
 }
 

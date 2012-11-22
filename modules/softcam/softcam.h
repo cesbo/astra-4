@@ -117,6 +117,7 @@ struct                                                                      \
 #define CAS2CAM(_cas) _cas->__cas_module.cam->__cam_module
 
 uint16_t cam_caid(module_data_t *);
+const char * cam_name(module_data_t *);
 int cam_is_ready(module_data_t *);
 int cam_disable_emm(module_data_t *);
 
@@ -137,10 +138,14 @@ int cam_send(module_data_t *, cas_data_t *, const uint8_t *);
 #define CAM_INTERFACE()                                                     \
 {                                                                           \
     MODULE_INTERFACE(0x4, interface_send_em);                               \
+    MODULE_INTERFACE(0x7, interface_activate);                              \
 }
 
 #define cam_module_send_em(_mod)                                            \
     _mod->__interface[0x4](_mod)
+
+#define cam_module_activate(_mod, _is_active)                               \
+    _mod->__interface[0x7](_mod, _is_active)
 
 /* Decrypt-module interface */
 

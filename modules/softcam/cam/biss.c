@@ -20,16 +20,11 @@
 
 #include "../softcam.h"
 
-#define LOG_MSG(_msg) "[biss %s] " _msg, mod->config.name
+#define LOG_MSG(_msg) "[biss %s] " _msg, mod->__cam_module.name
 
 struct module_data_s
 {
     CAM_MODULE_BASE();
-
-    struct
-    {
-        const char *name;
-    } config;
 };
 
 /* softcam callbacks */
@@ -41,16 +36,21 @@ static void interface_send_em(module_data_t *mod)
     cam_callback(mod, packet);
 }
 
+static void interface_activate(module_data_t *mod, int is_active)
+{
+    ;
+}
+
 /* required */
 
 static void module_configure(module_data_t *mod)
 {
-    module_set_string(mod, "name", 0, "", &mod->config.name);
-
     const char *cas_data = NULL;
     module_set_string(mod, "cas_data", 1, NULL, &cas_data);
     cam_set_cas_data(mod, cas_data);
+    module_set_string(mod, "name", 0, cas_data, &mod->__cam_module.name);
 }
+
 static void module_initialize(module_data_t *mod)
 {
     module_configure(mod);

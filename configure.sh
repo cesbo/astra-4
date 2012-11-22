@@ -217,7 +217,7 @@ EOF
                     IN_LIBS="$IN_LIBS $LIBS"
                 fi
             else
-                echo "    ERR: $MODDIR"
+                echo "   SKIP: $MODDIR"
             fi
             rm $MODDIR/__module.mk
         fi

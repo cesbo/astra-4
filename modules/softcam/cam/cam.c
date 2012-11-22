@@ -110,6 +110,11 @@ inline uint16_t cam_caid(module_data_t *mod)
     return mod->__cam_module.caid;
 }
 
+inline const char * cam_name(module_data_t *mod)
+{
+    return mod->__cam_module.name;
+}
+
 inline int cam_is_ready(module_data_t *mod)
 {
     return mod->__cam_module.is_ready;
@@ -124,6 +129,9 @@ inline void cam_attach_decrypt(module_data_t *mod, module_data_t *decrypt)
 {
     if(mod && decrypt)
     {
+        if(!mod->__cam_module.decrypts)
+            cam_module_activate(mod, 1);
+
         mod->__cam_module.decrypts
             = list_insert(mod->__cam_module.decrypts, decrypt);
     }
@@ -145,6 +153,9 @@ inline void cam_detach_decrypt(module_data_t *mod, module_data_t *decrypt)
 
         mod->__cam_module.decrypts
             = list_delete(mod->__cam_module.decrypts, decrypt);
+
+        if(!mod->__cam_module.decrypts)
+            cam_module_activate(mod, 0);
     }
 }
 
