@@ -229,6 +229,46 @@ function make_channel(parent, stream, config)
         end
     end
 
+    if type(config.time) == 'string' then
+        function timelimit_parse(time)
+            local ret = {}
+
+            local sh, sm, eh, em = time:match("(%d+):(%d+)-(%d+):(%d+)")
+            if not sh then
+                log.error("[stream.lua/time] channel "
+                          .. channel.config.name
+                          .. " failed to parse time option")
+                astra.abort()
+            end
+
+            local t = os.date("*t")
+            t.sec = 00
+
+            t.hour = tonumber(sh)
+            t.min = tonumber(sm)
+            ret.start = os.time(t) - 15
+            t.hour = tonumber(eh)
+            t.min = tonumber(em)
+            ret.stop = os.time(t) - 15
+
+            return ret
+        end
+
+        ch.timelimit = {
+            instance = reserve({ addr = "DROP" }),
+            time = timelimit_parse(config.time),
+            is_active = false,
+        }
+        tail = module_attach(ch, ch.timelimit.instance)
+
+        local t = os.time()
+        if ch.timelimit.time.start > t or ch.timelimit.time.stop <= t then
+            print("deactivate channel " .. config.name)
+            ch.timelimit.instance:start()
+            ch.timelimit.is_active = true
+        end
+    end
+
     -- outputs
     if not config.output then return ch end
 
@@ -329,3 +369,30 @@ function make_stream(config, channels)
     table.insert(stream_list, stream)
     return stream
 end
+
+function channel_time_callback()
+    local t = os.time()
+    for _, s in pairs(stream_list) do
+        for _, ch in pairs(s.channels) do
+            if ch.timelimit then
+                local is_active = (ch.timelimit.time.start > t
+                                   or ch.timelimit.time.stop <= t)
+                print("check " .. ch.config.name .. " " .. tostring(is_active))
+                if is_active ~= ch.timelimit.is_active then
+                    if is_active then
+                        log.info("[stream.lua/time] deactivate channel "
+                                 .. ch.config.name)
+                        ch.timelimit.instance:start()
+                    else
+                        log.info("[stream.lua/time] activate channel "
+                                 .. ch.config.name)
+                        ch.timelimit.instance:stop()
+                    end
+                    ch.timelimit.is_active = is_active
+                end
+            end
+        end
+    end
+end
+
+timer({ interval = 20, callback = channel_time_callback, })
