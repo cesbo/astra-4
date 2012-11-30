@@ -132,11 +132,17 @@ void mpegts_pmt_parse(mpegts_psi_t *psi)
 
     while(buffer < buffer_end)
     {
+        if(5 > (buffer_end - buffer))
+            break;
+
         const uint8_t es_type = buffer[0];
         const uint16_t es_pid = ((buffer[1] & 0x1f) << 8) | buffer[2];
         const uint16_t es_desc_size = ((buffer[3] & 0x0f) << 8)
                                             | buffer[4];
         buffer += 5; // PMT item header size
+
+        if(es_desc_size > (buffer_end - buffer))
+            break;
 
         mpegts_pmt_item_t *item = calloc(1, sizeof(mpegts_pmt_item_t));
         item->pid = es_pid;
