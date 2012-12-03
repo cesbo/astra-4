@@ -194,6 +194,10 @@ static uint16_t viaccess_check_desc(cas_data_t *cas, const uint8_t *desc)
     if(length < 9) // 9 = 6 (desc header) + 3 (viaccess minimal header)
         return 0;
 
+    uint8_t *cas_data = CAS2CAM(cas).cas_data;
+    const int is_cas_data = (cas_data[0] || cas_data[1]);
+
+    int ident_count = 0;
     const uint8_t *ident = NULL;
     int skip = 6;
     while(skip < length)
@@ -203,32 +207,32 @@ static uint16_t viaccess_check_desc(cas_data_t *cas, const uint8_t *desc)
         if(dtype == 0x14 && dlen == 5)
         {
             ident = &desc[skip + 2];
-            break;
+            ++ident_count;
+            if((!is_cas_data)
+               || (is_cas_data && __check_ident(ident, cas_data)))
+            {
+                list_t *i = list_get_first(CAS2CAM(cas).prov_list);
+                while(i)
+                {
+                    const uint8_t *prov = list_get_data(i);
+                    if(__check_ident(ident, prov))
+                    {
+                        if(!cas->ident)
+                        {
+                            cas->ident = &prov[0];
+                            cas->sa = &prov[3];
+                        }
+                        return CA_DESC_PID(desc);
+                    }
+                    i = list_get_next(i);
+                }
+            }
         }
         skip += dlen;
     }
-    if(!ident)
+
+    if(!ident_count)
         return CA_DESC_PID(desc);
-
-    uint8_t *cas_data = CAS2CAM(cas).cas_data;
-    if((cas_data[0] || cas_data[1]) && !__check_ident(ident, cas_data))
-        return 0;
-
-    list_t *i = list_get_first(CAS2CAM(cas).prov_list);
-    while(i)
-    {
-        const uint8_t *prov = list_get_data(i);
-        if(__check_ident(ident, prov))
-        {
-            if(!cas->ident)
-            {
-                cas->ident = &prov[0];
-                cas->sa = &prov[3];
-            }
-            return CA_DESC_PID(desc);
-        }
-        i = list_get_next(i);
-    }
 
     return 0;
 }
