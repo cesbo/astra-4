@@ -58,6 +58,7 @@ struct module_data_s
     size_t fbuffer_skip;
 
     int count;
+    int max_count;
 };
 
 // buffer16[i  ] - L
@@ -97,7 +98,7 @@ static void pack_es(module_data_t *mod, uint8_t *data, size_t size)
     mpegts_pes_add_data(mod->pes_o, data, size);
     ++mod->count;
 
-    if(mod->count == 8)
+    if(mod->count == mod->max_count)
     {
         mpegts_pes_demux(mod->pes_o, stream_ts_send, mod);
         mod->pes_o->buffer_size = 0;
@@ -212,6 +213,10 @@ static void mux_pes(module_data_t *mod, mpegts_pes_t *pes)
         {
             log_debug(LOG_MSG("set frame size = %lu"), fsize);
             mod->fsize = fsize;
+            if(!(es_size % fsize))
+                mod->max_count = es_size / fsize;
+            else
+                mod->max_count = 8;
         }
         else
             return;
