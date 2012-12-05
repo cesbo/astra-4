@@ -114,6 +114,7 @@ static void module_initialize(module_data_t *mod)
                             , mod->config.addr, mod->config.port);
     if(mod->config.socket_size > 0)
         socket_set_buffer(mod->sock, 0, mod->config.socket_size);
+    socket_multicast_set_if(mod->sock, mod->config.localaddr);
     socket_multicast_set_ttl(mod->sock, mod->config.ttl);
     socket_multicast_join(mod->sock, mod->config.addr, NULL);
 }
