@@ -25,7 +25,7 @@
 #include <modules/utils/utils.h>
 
 #if (DVB_API_VERSION < 5)
-#   error "Please, update DVB drivers"
+#   warning "Please, update DVB drivers"
 #endif
 
 #define TS_PACKET_SIZE 188
@@ -43,10 +43,12 @@
 typedef enum
 {
     DVB_TYPE_S,
-    DVB_TYPE_S2,
     DVB_TYPE_T,
-    DVB_TYPE_T2,
     DVB_TYPE_C,
+#if DVB_API_VERSION >= 5
+    DVB_TYPE_S2,
+    DVB_TYPE_T2,
+#endif
 } dvb_type_t;
 
 typedef enum
@@ -61,13 +63,26 @@ typedef struct
     int value;
 } fe_value_t;
 
+#if DVB_API_VERSION >= 5
+#define DTV_PROPERTY_BEGIN()                                                \
+    cmdseq.num = 0;                                                         \
+    cmdseq.props = cmd_list
+
+#define DTV_PROPERTY_SET(_cmd, _data)                                       \
+    cmd_list[cmdseq.num].cmd = _cmd;                                        \
+    cmd_list[cmdseq.num].u.data = _data;                                    \
+    ++cmdseq.num
+#endif
+
 static fe_value_t dvb_type_list[] =
 {
     { "S", DVB_TYPE_S },
-    { "S2", DVB_TYPE_S2 },
     { "T", DVB_TYPE_T },
-    { "T2", DVB_TYPE_T2 },
     { "C", DVB_TYPE_C },
+#if DVB_API_VERSION >= 5
+    { "S2", DVB_TYPE_S2 },
+    { "T2", DVB_TYPE_T2 },
+#endif
 };
 
 static fe_value_t polarization_list[] =
@@ -80,6 +95,7 @@ static fe_value_t polarization_list[] =
 
 static fe_value_t modulation_list[] =
 {
+    { "NONE", -1 },
     { "QPSK", QPSK },
     { "QAM16", QAM_16 },
     { "QAM32", QAM_32 },
@@ -115,6 +131,7 @@ static fe_value_t fec_list[] =
 #endif
 };
 
+#if DVB_API_VERSION >= 5
 static fe_value_t rolloff_list[] =
 {
     { "35", ROLLOFF_35 },
@@ -122,6 +139,7 @@ static fe_value_t rolloff_list[] =
     { "25", ROLLOFF_25 },
     { "AUTO", ROLLOFF_AUTO },
 };
+#endif
 
 static fe_value_t bandwidth_list[] =
 {
@@ -383,18 +401,15 @@ static int frontend_tune_s(module_data_t *mod)
             return 0;
         }
     }
+#if DVB_API_VERSION >= 5
     else
     {
-#if DVB_API_VERSION >= 5
         /* clear */
         struct dtv_properties cmdseq;
+        struct dtv_property cmd_list[12];
 
-        struct dtv_property cmd_clear[] =
-        {
-            { .cmd = DTV_CLEAR }
-        };
-        cmdseq.num = 1;
-        cmdseq.props = cmd_clear;
+        DTV_PROPERTY_BEGIN();
+        DTV_PROPERTY_SET(DTV_CLEAR, 0);
 
         if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
         {
@@ -403,21 +418,20 @@ static int frontend_tune_s(module_data_t *mod)
         }
 
         /* tune */
-        struct dtv_property cmd_tune[] =
+        DTV_PROPERTY_BEGIN();
+        DTV_PROPERTY_SET(DTV_DELIVERY_SYSTEM,   SYS_DVBS2);
+        DTV_PROPERTY_SET(DTV_FREQUENCY,         freq);
+        DTV_PROPERTY_SET(DTV_SYMBOL_RATE,       mod->config.symbolrate);
+        DTV_PROPERTY_SET(DTV_INNER_FEC,         mod->config.fec);
+        DTV_PROPERTY_SET(DTV_INVERSION,         INVERSION_AUTO);
+        DTV_PROPERTY_SET(DTV_VOLTAGE,           voltage);
+        if(mod->config.modulation != -1)
         {
-            { .cmd = DTV_DELIVERY_SYSTEM,   .u.data = SYS_DVBS2             },
-            { .cmd = DTV_FREQUENCY,         .u.data = freq                  },
-            { .cmd = DTV_SYMBOL_RATE,       .u.data = mod->config.symbolrate},
-            { .cmd = DTV_INNER_FEC,         .u.data = mod->config.fec       },
-            { .cmd = DTV_INVERSION,         .u.data = INVERSION_AUTO        },
-            { .cmd = DTV_VOLTAGE,           .u.data = voltage               },
-            { .cmd = DTV_MODULATION,        .u.data = mod->config.modulation},
-            { .cmd = DTV_ROLLOFF,           .u.data = mod->config.rolloff   },
-            { .cmd = DTV_TONE,              .u.data = tone                  },
-            { .cmd = DTV_TUNE                                               }
-        };
-        cmdseq.num = ARRAY_SIZE(cmd_tune);
-        cmdseq.props = cmd_tune;
+            DTV_PROPERTY_SET(DTV_MODULATION,    mod->config.modulation);
+            DTV_PROPERTY_SET(DTV_ROLLOFF,       mod->config.rolloff);
+        }
+        DTV_PROPERTY_SET(DTV_TONE,              tone);
+        DTV_PROPERTY_SET(DTV_TUNE,              0);
 
         struct dvb_frontend_event ev;
         while(ioctl(mod->fe_fd, FE_GET_EVENT, &ev) != -1)
@@ -428,11 +442,8 @@ static int frontend_tune_s(module_data_t *mod)
             mod->status.error_message = "FE_SET_PROPERTY tune";
             return 0;
         }
-#else
-#       warning "DVB-S2 is disabled. Update driver"
-        return 0;
-#endif
     }
+#endif
 
     return 1;
 }
@@ -471,18 +482,15 @@ static int frontend_tune_t(module_data_t *mod)
             return 0;
         }
     }
+#if DVB_API_VERSION >= 5
     else
     {
-#if DVB_API_VERSION >= 5
         /* clear */
         struct dtv_properties cmdseq;
+        struct dtv_property cmd_list[12];
 
-        struct dtv_property cmd_clear[] =
-        {
-            { .cmd = DTV_CLEAR }
-        };
-        cmdseq.num = 1;
-        cmdseq.props = cmd_clear;
+        DTV_PROPERTY_BEGIN();
+        DTV_PROPERTY_SET(DTV_CLEAR, 0);
 
         if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
         {
@@ -504,24 +512,18 @@ static int frontend_tune_t(module_data_t *mod)
         }
 
         /* tune */
-        struct dtv_property cmd_tune[] =
-        {
-            { .cmd = DTV_FREQUENCY,         .u.data = mod->config.frequency },
-            { .cmd = DTV_MODULATION,        .u.data = mod->config.modulation},
-            { .cmd = DTV_INVERSION,         .u.data = INVERSION_AUTO        },
-            { .cmd = DTV_BANDWIDTH_HZ,      .u.data = bandwidth             },
-            { .cmd = DTV_CODE_RATE_HP,      .u.data = FEC_AUTO              },
-            { .cmd = DTV_CODE_RATE_LP,      .u.data = FEC_AUTO              },
-            { .cmd = DTV_GUARD_INTERVAL
-              ,                         .u.data = mod->config.guardinterval },
-            { .cmd = DTV_TRANSMISSION_MODE
-              ,                          .u.data = mod->config.transmitmode },
-            { .cmd = DTV_HIERARCHY,         .u.data = mod->config.hierarchy },
-            { .cmd = DTV_DELIVERY_SYSTEM,   .u.data = SYS_DVBT              },
-            { .cmd = DTV_TUNE                                               },
-        };
-        cmdseq.num = ARRAY_SIZE(cmd_tune);
-        cmdseq.props = cmd_tune;
+        DTV_PROPERTY_BEGIN();
+        DTV_PROPERTY_SET(DTV_DELIVERY_SYSTEM,   SYS_DVBT);
+        DTV_PROPERTY_SET(DTV_FREQUENCY,         mod->config.frequency);
+        DTV_PROPERTY_SET(DTV_MODULATION,        mod->config.modulation);
+        DTV_PROPERTY_SET(DTV_INVERSION,         INVERSION_AUTO);
+        DTV_PROPERTY_SET(DTV_BANDWIDTH_HZ,      bandwidth);
+        DTV_PROPERTY_SET(DTV_CODE_RATE_HP,      FEC_AUTO);
+        DTV_PROPERTY_SET(DTV_CODE_RATE_LP,      FEC_AUTO);
+        DTV_PROPERTY_SET(DTV_GUARD_INTERVAL,    mod->config.guardinterval);
+        DTV_PROPERTY_SET(DTV_TRANSMISSION_MODE, mod->config.transmitmode);
+        DTV_PROPERTY_SET(DTV_HIERARCHY,         mod->config.hierarchy);
+        DTV_PROPERTY_SET(DTV_TUNE,              0);
 
         struct dvb_frontend_event ev;
         while(ioctl(mod->fe_fd, FE_GET_EVENT, &ev) != -1)
@@ -532,11 +534,8 @@ static int frontend_tune_t(module_data_t *mod)
             mod->status.error_message = "FE_SET_PROPERTY tune";
             return 0;
         }
-#else
-#       warning "DVB-T2 is disabled. Update driver"
-        return 0;
-#endif
     }
+#endif
 
     return 1;
 } /* frontend_tune_t */
@@ -588,11 +587,15 @@ static void frontend_tune(module_data_t *mod)
         switch(mod->config.type)
         {
             case DVB_TYPE_S:
+#if DVB_API_VERSION >= 5
             case DVB_TYPE_S2:
+#endif
                 ret = frontend_tune_s(mod);
                 break;
             case DVB_TYPE_T:
+#if DVB_API_VERSION >= 5
             case DVB_TYPE_T2:
+#endif
                 ret = frontend_tune_t(mod);
                 break;
             case DVB_TYPE_C:
@@ -779,12 +782,14 @@ static int frontend_open(module_data_t *mod)
     {
         case FE_QPSK:   // DVB-S
         {
+#if DVB_API_VERSION >= 5
             if(mod->config.type == DVB_TYPE_S2
                && !(feinfo.caps & FE_CAN_2G_MODULATION))
             {
                 log_error(LOG_MSG("S2 not suppoerted by DVB card"));
                 return 0;
             }
+#endif
             break;
         }
         case FE_OFDM:   // DVB-T
@@ -1293,7 +1298,11 @@ static void module_configure(module_data_t *mod)
                   , modulation_list, ARRAY_SIZE(modulation_list)
                   , (int *)&mod->config.modulation);
 
-    if(mod->config.type == DVB_TYPE_S || mod->config.type == DVB_TYPE_S2)
+    if(mod->config.type == DVB_TYPE_S
+#if DVB_API_VERSION >= 5
+       || mod->config.type == DVB_TYPE_S2
+#endif
+       )
     {
         module_set_number(mod, "frequency", 1, 0, &mod->config.frequency);
         mod->config.frequency *= 1000;
@@ -1315,17 +1324,23 @@ static void module_configure(module_data_t *mod)
 
         module_set_number(mod, "diseqc", 0, 0, &mod->config.diseqc);
 
+#if DVB_API_VERSION >= 5
         if(mod->config.type == DVB_TYPE_S2)
         {
             fe_option_set(mod, "rolloff", 0, "35"
                           , rolloff_list, ARRAY_SIZE(rolloff_list)
                           , (int *)&mod->config.rolloff);
         }
+#endif
         fe_option_set(mod, "fec", 0, "AUTO"
                       , fec_list, ARRAY_SIZE(fec_list)
                       , (int *)&mod->config.fec);
     }
-    else if(mod->config.type == DVB_TYPE_T || mod->config.type == DVB_TYPE_T2)
+    else if(mod->config.type == DVB_TYPE_T
+#if DVB_API_VERSION >= 5
+            || mod->config.type == DVB_TYPE_T2
+#endif
+            )
     {
         module_set_number(mod, "frequency", 1, 0, &mod->config.frequency);
         mod->config.frequency *= 1000000;
