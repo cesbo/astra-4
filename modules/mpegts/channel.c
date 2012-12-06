@@ -281,7 +281,7 @@ static void callback_on_attach(module_data_t *mod, module_data_t *parent)
     list_t *i = list_get_first(mod->pid_attach);
     while(i)
     {
-        uint16_t pid = (uint16_t)(intptr_t)list_get_data(i);
+        const uint16_t pid = (uint16_t)(intptr_t)list_get_data(i);
         stream_ts_join_pid(mod, pid);
         i = list_get_next(i);
     }
@@ -336,6 +336,23 @@ static void module_configure(module_data_t *mod)
      module_set_number(mod, "sdt", 0, 0, &mod->config.sdt);
 
     lua_State *L = LUA_STATE(mod);
+
+    lua_getfield(L, 2, "pid");
+    if(lua_type(L, -1) == LUA_TTABLE)
+    {
+        const int pid_list = lua_gettop(L);
+        for(lua_pushnil(L); lua_next(L, pid_list); lua_pop(L, 1))
+        {
+            const uint16_t pid = lua_tonumber(L, -1);
+            if(pid < MAX_PID)
+            {
+                mod->pid_attach = list_append(mod->pid_attach
+                                              , (void *)(intptr_t)pid);
+                mod->pid_map[pid] = pid;
+            }
+        }
+    }
+    lua_pop(L, 1); // pid
 
     lua_getfield(L, 2, "filter");
     if(lua_type(L, -1) == LUA_TTABLE)

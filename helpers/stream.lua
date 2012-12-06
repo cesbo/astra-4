@@ -132,7 +132,7 @@ function make_channel(parent, stream, config)
 
     local check_demux = false
     -- channel
-    if config.pnr then
+    if config.pnr or config.pid then
         tail = module_attach(ch, channel(config))
         check_demux = true
     end
