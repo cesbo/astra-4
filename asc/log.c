@@ -1,10 +1,13 @@
 /*
- * For more information, visit https://cesbo.com
+ * AsC Framework
+ * http://cesbo.com
+ *
  * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
  */
 
-#define ASTRA_CORE
-#include <astra.h>
+#define ASC
+#include "asc.h"
 
 #include <fcntl.h>
 #ifndef _WIN32
@@ -12,25 +15,18 @@
 #endif
 #include <stdarg.h>
 
-static struct
+typedef struct
 {
+    int fd;
     int debug;
+    int stdout;
+    char *filename;
 #ifndef _WIN32
     int syslog;
 #endif
-    int fd;
-    int sout;
-    const char *filename;
-} log_g =
-{
-    .debug = 0
-#ifndef _WIN32
-    , .syslog = 0
-#endif
-    , .fd = 0
-    , .sout = 1
-    , .filename = NULL
-};
+} log_t;
+
+static log_t __log = { 0, 0, 1, NULL, 0 };
 
 enum
 {
@@ -70,11 +66,11 @@ static void _log(int type, const char *msg, va_list ap)
 {
     static char buffer[4096];
 
-    if(type == LOG_TYPE_DEBUG && !log_g.debug)
+    if(type == LOG_TYPE_DEBUG && !__log.debug)
         return;
 
     size_t len_1 = 0; // to skip time stamp
-    if(log_g.fd || log_g.sout)
+    if(__log.fd || __log.stdout)
     {
         time_t ct = time(NULL);
         struct tm *sct = localtime(&ct);
@@ -90,17 +86,17 @@ static void _log(int type, const char *msg, va_list ap)
         len_2 += snprintf(&buffer[len_2], sizeof(buffer) - len_2, "%s", msg);
 
 #ifndef _WIN32
-    if(log_g.syslog)
+    if(__log.syslog)
         syslog(_get_type_syslog(type), "%s", &buffer[len_1]);
 #endif
 
     buffer[len_2] = '\n';
     ++len_2;
 
-    if(log_g.sout && write(1, buffer, len_2) == -1)
+    if(__log.stdout && write(1, buffer, len_2) == -1)
         ;
 
-    if(log_g.fd && write(log_g.fd, buffer, len_2) == -1)
+    if(__log.fd && write(__log.fd, buffer, len_2) == -1)
         ;
 }
 
@@ -140,132 +136,89 @@ inline void log_debug(const char *msg, ...)
 
 void log_hup(void)
 {
-    if(log_g.fd > 1)
-        close(log_g.fd);
+    if(__log.fd > 1)
+    {
+        close(__log.fd);
+        __log.fd = 0;
+    }
 
-    if(!log_g.filename)
+    if(!__log.filename)
         return;
 
-    log_g.fd = open(log_g.filename, O_WRONLY | O_CREAT | O_APPEND
+    __log.fd = open(__log.filename, O_WRONLY | O_CREAT | O_APPEND
 #ifndef _WIN32
                     , S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 #else
                     , S_IRUSR | S_IWUSR);
 #endif
 
-    if(log_g.fd <= 0)
+    if(__log.fd <= 0)
     {
-        log_g.fd = 0;
-        log_g.sout = 1;
+        __log.fd = 0;
+        __log.stdout = 1;
         log_error("[core/log] failed to open %s (%s)"
-                  , log_g.filename, strerror(errno));
+                  , __log.filename, strerror(errno));
     }
 }
 
 void log_destroy(void)
 {
-    if(log_g.fd > 1)
-        close(log_g.fd);
-    log_g.fd = 0;
+    if(__log.fd > 1)
+        close(__log.fd);
+    __log.fd = 0;
 
 #ifndef _WIN32
-    if(log_g.syslog > 0)
+    if(__log.syslog > 0)
         closelog();
-    log_g.syslog = 0;
+    __log.syslog = 0;
 #endif
 
-    log_g.debug = 0;
-    log_g.sout = 1;
-    log_g.filename = NULL;
+    __log.debug = 0;
+    __log.stdout = 1;
+    if(__log.filename)
+    {
+        free(__log.filename);
+        __log.filename = NULL;
+    }
 }
 
-#ifdef WITH_LUA
-
-static int lua_log_set(lua_State *L)
+void log_set_stdout(int val)
 {
-    luaL_checktype(L, 1, LUA_TTABLE);
+    __log.stdout = val;
+}
 
-    // store in registry to prevent the gc cleaning
-    lua_pushstring(L, "astra.log");
-    lua_pushvalue(L, 1);
-    lua_settable(L, LUA_REGISTRYINDEX);
+void log_set_debug(int val)
+{
+    __log.debug = val;
+}
 
-    for(lua_pushnil(L); lua_next(L, 1); lua_pop(L, 1))
+void log_set_file(const char *val)
+{
+    if(__log.filename)
     {
-        const char *var = lua_tostring(L, -2);
-
-        if(!strcmp(var, "debug"))
-        {
-            luaL_checktype(L, -1, LUA_TBOOLEAN);
-            log_g.debug = lua_toboolean(L, -1);
-        }
-        else if(!strcmp(var, "filename"))
-        {
-            luaL_checktype(L, -1, LUA_TSTRING);
-            log_g.filename = lua_tostring(L, -1);
-            log_hup();
-        }
-        else if(!strcmp(var, "syslog"))
-        {
-#ifndef _WIN32
-            luaL_checktype(L, -1, LUA_TSTRING);
-            const char *syslog_name = lua_tostring(L, -1);
-            openlog(syslog_name, LOG_PID | LOG_CONS, LOG_USER);
-            log_g.syslog = 1;
-#endif
-        }
-        else if(!strcmp(var, "stdout"))
-        {
-            luaL_checktype(L, -1, LUA_TBOOLEAN);
-            log_g.sout = lua_toboolean(L, -1);
-        }
+        free(__log.filename);
+        __log.filename = NULL;
     }
 
-    return 0;
+    if(val)
+        __log.filename = strdup(val);
+
+    log_hup();
 }
 
-static int lua_log_error(lua_State *L)
+#ifndef _WIN32
+void log_set_syslog(const char *val)
 {
-    const char *str = luaL_checkstring(L, 1);
-    _log(LOG_TYPE_ERROR, str, NULL);
-    return 0;
-}
-
-static int lua_log_warning(lua_State *L)
-{
-    const char *str = luaL_checkstring(L, 1);
-    _log(LOG_TYPE_WARNING, str, NULL);
-    return 0;
-}
-
-static int lua_log_info(lua_State *L)
-{
-    const char *str = luaL_checkstring(L, 1);
-    _log(LOG_TYPE_INFO, str, NULL);
-    return 0;
-}
-
-static int lua_log_debug(lua_State *L)
-{
-    const char *str = luaL_checkstring(L, 1);
-    _log(LOG_TYPE_DEBUG, str, NULL);
-    return 0;
-}
-
-void log_init(lua_State *L)
-{
-    static const luaL_Reg api[] =
+    if(__log.syslog)
     {
-        { "set", lua_log_set },
-        { "error", lua_log_error },
-        { "warning", lua_log_warning },
-        { "info", lua_log_info },
-        { "debug", lua_log_debug },
-        { NULL, NULL }
-    };
+        closelog();
+        __log.syslog = 0;
+    }
 
-    luaL_newlib(L, api);
-    lua_setglobal(L, "log");
+    if(!val)
+        return;
+
+    openlog(val, LOG_PID | LOG_CONS, LOG_USER);
+    __log.syslog = 1;
 }
-
-#endif /* WITH_LUA */
+#endif

@@ -1,10 +1,13 @@
 /*
- * For more information, visit https://cesbo.com
+ * AsC Framework
+ * http://cesbo.com
+ *
  * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
  */
 
-#define ASTRA_CORE
-#include <astra.h>
+#define ASC
+#include "asc.h"
 
 #ifdef _WIN32
 #   define _WIN32_WINNT 0x0501
@@ -294,7 +297,8 @@ int socket_port(int sock)
 
 void * socket_sockaddr_init(const char *addr, int port)
 {
-    struct sockaddr_in *sockaddr = calloc(1, sizeof(struct sockaddr_in));
+    struct sockaddr_in *sockaddr
+        = (struct sockaddr_in *)calloc(1, sizeof(struct sockaddr_in));
     sockaddr->sin_family = AF_INET;
     sockaddr->sin_addr.s_addr = (addr) ? inet_addr(addr) : INADDR_ANY;
     sockaddr->sin_port = htons(port);

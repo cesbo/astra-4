@@ -3,10 +3,7 @@
  * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
  */
 
-#define ASTRA_CORE
 #include <astra.h>
-
-#ifndef WITHOUT_MODULES
 
 struct module_data_s
 {
@@ -82,5 +79,3 @@ int module_set_string(module_data_t *mod, const char *name, int is_required
     *dst = def;
     return 0;
 }
-
-#endif /* ! WITHOUT_MODULES */

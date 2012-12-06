@@ -396,7 +396,7 @@ function channel_time_callback()
     end
 
     for _, s in pairs(stream_list) do
-        if s.channels then check_channels(s.channels)
+        if s.channels then check_channels(s.channels) end
     end
 end
 

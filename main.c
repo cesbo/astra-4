@@ -61,7 +61,10 @@ void astra_main(int argc, const char **argv, const char *lua_script)
     signal(SIGQUIT, signal_handler);
 #endif
 
-    ASTRA_CORE_INIT();
+    ASC_INIT();
+
+    lua_State *L = luaL_newstate();
+    luaL_openlibs(L);
 
     // astra
     luaL_newlib(L, astra_api);
@@ -103,10 +106,11 @@ void astra_main(int argc, const char **argv, const char *lua_script)
     {
         if(luaL_dofile(L, lua_script))
             luaL_error(L, "[main] %s", lua_tostring(L, -1));
-        ASTRA_CORE_LOOP();
+        ASC_LOOP();
     }
 
-    ASTRA_CORE_DESTROY();
+    lua_close(L);
+    ASC_DESTROY();
 }
 
 #ifndef ASTRA_SHELL

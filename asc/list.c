@@ -1,10 +1,13 @@
 /*
- * For more information, visit https://cesbo.com
+ * AsC Framework
+ * http://cesbo.com
+ *
  * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
  */
 
-#define ASTRA_CORE
-#include <astra.h>
+#define ASC
+#include "asc.h"
 
 // TODO: pre-buffered nodes
 
@@ -17,7 +20,7 @@ struct list_s
 
 list_t * list_append(list_t *li, void *data)
 {
-    list_t *nli = malloc(sizeof(list_t));
+    list_t *nli = (list_t *)malloc(sizeof(list_t));
     nli->data = data;
     if(!li)
     {
@@ -36,7 +39,7 @@ list_t * list_append(list_t *li, void *data)
 
 list_t * list_insert(list_t *li, void *data)
 {
-    list_t *nli = malloc(sizeof(list_t));
+    list_t *nli = (list_t *)malloc(sizeof(list_t));
     nli->data = data;
     if(!li)
     {

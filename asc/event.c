@@ -1,10 +1,13 @@
 /*
- * For more information, visit https://cesbo.com
+ * AsC Framework
+ * http://cesbo.com
+ *
  * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
  */
 
-#define ASTRA_CORE
-#include <astra.h>
+#define ASC
+#include "asc.h"
 
 #ifndef EVENT_STEP
 #   define EVENT_STEP 32
@@ -88,7 +91,7 @@ void event_detach(int fd)
     list_t *item = list_get_first(event->ev_list);
     while(item)
     {
-        ev = list_get_data(item);
+        ev = (event_item_t *)list_get_data(item);
         if(ev->fd == fd)
             break;
         item = list_get_next(item);
@@ -129,7 +132,7 @@ int event_attach(int fd, void (*cb)(void *, int), void *arg
     log_debug(LOG_MSG("attach fd=%d"), fd);
 #endif
 
-    event_item_t *ev = calloc(1, sizeof(event_item_t));
+    event_item_t *ev = (event_item_t *)calloc(1, sizeof(event_item_t));
     ev->fd = fd;
     ev->cb = cb;
     ev->arg = arg;
@@ -191,7 +194,7 @@ void event_destroy(void)
     list_t *i = list_get_first(event->ev_list);
     while(i)
     {
-        event_item_t *ev = list_get_data(i);
+        event_item_t *ev = (event_item_t *)list_get_data(i);
         ev->cb(ev->arg, EVENT_ERROR);
         i = list_get_first(event->ev_list);
     }
@@ -207,7 +210,7 @@ void event_destroy(void)
 /* kqueue/epoll */
 int event_init(void)
 {
-    event = calloc(1, sizeof(event_t));
+    event = (event_t *)calloc(1, sizeof(event_t));
 
 #if defined(EV_TYPE_KQUEUE)
     event->efd = kqueue();
@@ -228,7 +231,7 @@ int event_init(void)
 /* kqueue/epoll */
 void event_action(void)
 {
-    static struct timespec tv = { .tv_sec = 0, .tv_nsec = 10000000 };
+    static struct timespec tv = { 0, 10000000 };
     if(!event->fd_count)
     {
         nanosleep(&tv, NULL);
@@ -240,9 +243,9 @@ void event_action(void)
         event->fd_max = ((event->fd_count / EVENT_STEP) + 1) * EVENT_STEP;
         const size_t ed_list_size = sizeof(EV_ETYPE) * event->fd_max;
         if(!event->ed_list)
-            event->ed_list = malloc(ed_list_size);
+            event->ed_list = (EV_ETYPE *)malloc(ed_list_size);
         else
-            event->ed_list = realloc(event->ed_list, ed_list_size);
+            event->ed_list = (EV_ETYPE *)realloc(event->ed_list, ed_list_size);
     }
 
     int ret = -1;
@@ -264,14 +267,14 @@ void event_action(void)
     {
         EV_ETYPE *ed = &event->ed_list[i];
 #if defined(EV_TYPE_KQUEUE)
-        event_item_t *ev = ed->udata;
+        event_item_t *ev = (event_item_t *)ed->udata;
         const int ev_check_ok = ((ed->flags & EV_ADD)
                                  && !(ed->fflags & EV_FFLAGS)
                                  && (ed->data > 0));
         const int ev_check_err = (!ev_check_ok
                                   && (ed->flags & ~EV_ADD));
 #else
-        event_item_t *ev = ed->data.ptr;
+        event_item_t *ev = (event_item_t *)ed->data.ptr;
         const int ev_check_ok = (!(ed->events & EPOLLERR)
                                  && ed->events & (EPOLLIN | EPOLLOUT));
         const int ev_check_err = (!ev_check_ok
@@ -381,7 +384,7 @@ int event_init(void)
 /* poll */
 void event_action(void)
 {
-    static struct timespec tv = { .tv_sec = 0, .tv_nsec = 10000000 };
+    static struct timespec tv = { 0, 10000000 };
     if(!event->fd_count)
     {
         nanosleep(&tv, NULL);

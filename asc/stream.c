@@ -1,10 +1,13 @@
 /*
- * For more information, visit https://cesbo.com
+ * AsC Framework
+ * http://cesbo.com
+ *
  * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
  */
 
-#define ASTRA_CORE
-#include <astra.h>
+#define ASC
+#include "asc.h"
 
 #ifdef _WIN32
 #   define _WIN32_WINNT 0x0501
@@ -129,13 +132,13 @@ static void stream_event(void *arg, int event)
         return;
     }
 
-    stream_t *s = arg;
+    stream_t *s = (stream_t *)arg;
     s->callback(s->arg);
 }
 
 stream_t * stream_init(void (*callback)(void *), void *arg)
 {
-    stream_t *s = calloc(1, sizeof(stream_t));
+    stream_t *s = (stream_t *)calloc(1, sizeof(stream_t));
 
     if(!stream_gate_open(s->gate))
     {

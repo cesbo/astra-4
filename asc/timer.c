@@ -1,10 +1,13 @@
 /*
- * For more information, visit https://cesbo.com
+ * AsC Framework
+ * http://cesbo.com
+ *
  * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
  */
 
-#define ASTRA_CORE
-#include <astra.h>
+#define ASC
+#include "asc.h"
 
 static list_t *timer_list = NULL;
 
@@ -46,7 +49,7 @@ static timer_item_t * _timer_attach(unsigned int msec
                                     , void (*cb)(void *), void *arg
                                     , int is_one_shot)
 {
-    timer_item_t *item = malloc(sizeof(timer_item_t));
+    timer_item_t *item = (timer_item_t *)malloc(sizeof(timer_item_t));
     item->interval.tv_sec = msec / 1000;
     item->interval.tv_usec = (msec % 1000) * 1000;
     item->cb = cb;
@@ -75,7 +78,7 @@ void timer_detach(void *id)
 {
     if(!id)
         return;
-    timer_item_t *item = id;
+    timer_item_t *item = (timer_item_t *)id;
     item->cb = NULL; // delete item on next action
 }
 
@@ -85,7 +88,7 @@ void timer_action(void)
     struct timeval cur;
     while(i)
     {
-        timer_item_t *item = list_get_data(i);
+        timer_item_t *item = (timer_item_t *)list_get_data(i);
         list_t *next_i = list_get_next(i);
 
         if(!item->cb)
