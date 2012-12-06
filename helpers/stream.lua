@@ -372,8 +372,9 @@ end
 
 function channel_time_callback()
     local t = os.time()
-    for _, s in pairs(stream_list) do
-        for _, ch in pairs(s.channels) do
+
+    function check_channels(chs)
+        for _, ch in pairs(chs) do
             if ch.timelimit then
                 local is_active = (ch.timelimit.time.start > t
                                    or ch.timelimit.time.stop <= t)
@@ -392,6 +393,10 @@ function channel_time_callback()
                 end
             end
         end
+    end
+
+    for _, s in pairs(stream_list) do
+        if s.channels then check_channels(s.channels)
     end
 end
 

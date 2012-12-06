@@ -213,7 +213,9 @@ struct module_data_s
 
         fe_modulation_t modulation;
         fe_code_rate_t fec;
+#if DVB_API_VERSION >= 5
         fe_rolloff_t rolloff;
+#endif
         fe_bandwidth_t bandwidth;
         fe_guard_interval_t guardinterval;
         fe_transmit_mode_t transmitmode;
@@ -404,21 +406,11 @@ static int frontend_tune_s(module_data_t *mod)
 #if DVB_API_VERSION >= 5
     else
     {
-        /* clear */
         struct dtv_properties cmdseq;
         struct dtv_property cmd_list[12];
 
         DTV_PROPERTY_BEGIN();
-        DTV_PROPERTY_SET(DTV_CLEAR, 0);
-
-        if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
-        {
-            mod->status.error_message = "FE_SET_PROPERTY clear";
-            return 0;
-        }
-
-        /* tune */
-        DTV_PROPERTY_BEGIN();
+        DTV_PROPERTY_SET(DTV_CLEAR,             0);
         DTV_PROPERTY_SET(DTV_DELIVERY_SYSTEM,   SYS_DVBS2);
         DTV_PROPERTY_SET(DTV_FREQUENCY,         freq);
         DTV_PROPERTY_SET(DTV_SYMBOL_RATE,       mod->config.symbolrate);
@@ -485,39 +477,29 @@ static int frontend_tune_t(module_data_t *mod)
 #if DVB_API_VERSION >= 5
     else
     {
-        /* clear */
         struct dtv_properties cmdseq;
         struct dtv_property cmd_list[12];
 
         DTV_PROPERTY_BEGIN();
-        DTV_PROPERTY_SET(DTV_CLEAR, 0);
-
-        if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
-        {
-            mod->status.error_message = "FE_SET_PROPERTY clear";
-            return 0;
-        }
-
-        int bandwidth = 8000000;
-        switch(mod->config.bandwidth)
-        {
-            case BANDWIDTH_7_MHZ:
-                bandwidth = 7000000;
-                break;
-            case BANDWIDTH_6_MHZ:
-                bandwidth = 6000000;
-                break;
-            default:
-                break;
-        }
-
-        /* tune */
-        DTV_PROPERTY_BEGIN();
+        DTV_PROPERTY_SET(DTV_CLEAR,             0);
         DTV_PROPERTY_SET(DTV_DELIVERY_SYSTEM,   SYS_DVBT);
         DTV_PROPERTY_SET(DTV_FREQUENCY,         mod->config.frequency);
         DTV_PROPERTY_SET(DTV_MODULATION,        mod->config.modulation);
         DTV_PROPERTY_SET(DTV_INVERSION,         INVERSION_AUTO);
-        DTV_PROPERTY_SET(DTV_BANDWIDTH_HZ,      bandwidth);
+
+        switch(mod->config.bandwidth)
+        {
+            case BANDWIDTH_7_MHZ:
+                DTV_PROPERTY_SET(DTV_BANDWIDTH_HZ, 7000000);
+                break;
+            case BANDWIDTH_6_MHZ:
+                DTV_PROPERTY_SET(DTV_BANDWIDTH_HZ, 6000000);
+                break;
+            default:
+                DTV_PROPERTY_SET(DTV_BANDWIDTH_HZ, 8000000);
+                break;
+        }
+
         DTV_PROPERTY_SET(DTV_CODE_RATE_HP,      FEC_AUTO);
         DTV_PROPERTY_SET(DTV_CODE_RATE_LP,      FEC_AUTO);
         DTV_PROPERTY_SET(DTV_GUARD_INTERVAL,    mod->config.guardinterval);
@@ -1294,16 +1276,16 @@ static void module_configure(module_data_t *mod)
     module_set_number(mod, "budget", 0, 0, &mod->config.budget);
     module_set_number(mod, "buffer_size", 0, 0, &mod->config.buffer_size);
 
-    fe_option_set(mod, "modulation", 0, "AUTO"
-                  , modulation_list, ARRAY_SIZE(modulation_list)
-                  , (int *)&mod->config.modulation);
-
     if(mod->config.type == DVB_TYPE_S
 #if DVB_API_VERSION >= 5
        || mod->config.type == DVB_TYPE_S2
 #endif
        )
     {
+        fe_option_set(mod, "modulation", 0, "NONE"
+                      , modulation_list, ARRAY_SIZE(modulation_list)
+                      , (int *)&mod->config.modulation);
+
         module_set_number(mod, "frequency", 1, 0, &mod->config.frequency);
         mod->config.frequency *= 1000;
         fe_option_set(mod, "polarization", 1, NULL
@@ -1325,7 +1307,7 @@ static void module_configure(module_data_t *mod)
         module_set_number(mod, "diseqc", 0, 0, &mod->config.diseqc);
 
 #if DVB_API_VERSION >= 5
-        if(mod->config.type == DVB_TYPE_S2)
+        if(mod->config.type == DVB_TYPE_S2 && mod->config.modulation != -1)
         {
             fe_option_set(mod, "rolloff", 0, "35"
                           , rolloff_list, ARRAY_SIZE(rolloff_list)
@@ -1342,6 +1324,10 @@ static void module_configure(module_data_t *mod)
 #endif
             )
     {
+        fe_option_set(mod, "modulation", 0, "AUTO"
+                      , modulation_list, ARRAY_SIZE(modulation_list)
+                      , (int *)&mod->config.modulation);
+
         module_set_number(mod, "frequency", 1, 0, &mod->config.frequency);
         mod->config.frequency *= 1000000;
 
@@ -1360,6 +1346,10 @@ static void module_configure(module_data_t *mod)
     }
     else if(mod->config.type == DVB_TYPE_C)
     {
+        fe_option_set(mod, "modulation", 0, "AUTO"
+                      , modulation_list, ARRAY_SIZE(modulation_list)
+                      , (int *)&mod->config.modulation);
+
         module_set_number(mod, "frequency", 1, 0, &mod->config.frequency);
         mod->config.frequency *= 1000000;
 
