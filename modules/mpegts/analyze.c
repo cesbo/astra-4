@@ -493,6 +493,7 @@ static void module_initialize(module_data_t *mod)
 
     mod->rate_timer = timer_attach(UPDATING_INTERVAL, rate_timer_callback, mod);
 
+    mod->is_bitrate = -1;
     mod->is_ts_error = -1;
     mod->is_scrambled = -1;
 
