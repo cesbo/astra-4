@@ -49,6 +49,10 @@ static void signal_handler(int signum)
     }
 #endif
 
+    static int is_signum = 0;
+    if(is_signum)
+        return;
+    is_signum = 1;
     longjmp(main_loop, 1);
 }
 

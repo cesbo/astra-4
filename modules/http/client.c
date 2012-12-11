@@ -145,6 +145,11 @@ static void client_callback(void *arg, int event)
         lua_pushlstring(L, &buffer[m[3].so], m[3].eo - m[3].so);
         lua_setfield(L, request, __version);
 
+        lua_pushstring(L, mod->config.addr);
+        lua_setfield(L, request, "addr");
+        lua_pushnumber(L, mod->config.port);
+        lua_setfield(L, request, "port");
+
         skip = m[0].eo;
         mod->ready_state = 1;
 
@@ -414,6 +419,8 @@ static int method_send(module_data_t *mod)
         socket_send(mod->sock, (void *)content, content_size);
     }
     lua_pop(L, 1); // content
+
+    mod->ready_state = 0;
 
     return 0;
 }
