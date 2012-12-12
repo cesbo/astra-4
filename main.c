@@ -56,8 +56,26 @@ static void signal_handler(int signum)
     longjmp(main_loop, 1);
 }
 
-void astra_main(int argc, const char **argv, const char *lua_script)
+void astra_main(int argc, const char **argv
+                , const char *lua_script_file
+                , const char *lua_script_text)
 {
+    if(lua_script_file)
+    {
+        lua_script_text = NULL;
+
+        if(lua_script_file[0] == '-' && lua_script_file[1] == '\0')
+            lua_script_file = NULL;
+        else if(!access(lua_script_file, R_OK))
+            ;
+        else
+        {
+            printf("Error: initial script isn't found [%s]\n"
+                   , strerror(errno));
+            return;
+        }
+    }
+
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 #ifndef _WIN32
@@ -108,8 +126,11 @@ void astra_main(int argc, const char **argv, const char *lua_script)
 
     if(!setjmp(main_loop))
     {
-        if(luaL_dofile(L, lua_script))
+        if((!lua_script_text && luaL_dofile(L, lua_script_file))
+           || (lua_script_text && luaL_dostring(L, lua_script_text)))
+        {
             luaL_error(L, "[main] %s", lua_tostring(L, -1));
+        }
         ASC_LOOP();
     }
 
@@ -127,23 +148,9 @@ int main(int argc, const char **argv)
                , __version, argv[0]);
         return 1;
     }
-    const char *lua_script = argv[1];
-    if(lua_script[0] == '-' && lua_script[1] == '\0')
-    {
-        lua_script = NULL;
-    }
-    else if(!access(lua_script, R_OK))
-    {
-        ;
-    }
-    else
-    {
-        printf("Error: initial script isn't found\n");
-        return 1;
-    }
 
     /* 2 - skip app and script names */
-    astra_main(argc - 2, argv + 2, lua_script);
+    astra_main(argc - 2, argv + 2, argv[1], NULL);
 
     return 0;
 }

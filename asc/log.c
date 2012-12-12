@@ -19,14 +19,23 @@ typedef struct
 {
     int fd;
     int debug;
-    int stdout;
+    int sout;
     char *filename;
 #ifndef _WIN32
     int syslog;
 #endif
 } log_t;
 
-static log_t __log = { 0, 0, 1, NULL, 0 };
+static log_t __log =
+{
+    0,
+    0,
+    1,
+    NULL
+#ifndef _WIN32
+    , 0
+#endif
+};
 
 enum
 {
@@ -66,11 +75,8 @@ static void _log(int type, const char *msg, va_list ap)
 {
     static char buffer[4096];
 
-    if(type == LOG_TYPE_DEBUG && !__log.debug)
-        return;
-
     size_t len_1 = 0; // to skip time stamp
-    if(__log.fd || __log.stdout)
+    if(__log.fd || __log.sout)
     {
         time_t ct = time(NULL);
         struct tm *sct = localtime(&ct);
@@ -80,10 +86,7 @@ static void _log(int type, const char *msg, va_list ap)
     size_t len_2 = len_1;
     const char *type_str = _get_type_str(type);
     len_2 += snprintf(&buffer[len_2], sizeof(buffer) - len_2, "%s: ", type_str);
-    if(ap)
-        len_2 += vsnprintf(&buffer[len_2], sizeof(buffer) - len_2, msg, ap);
-    else
-        len_2 += snprintf(&buffer[len_2], sizeof(buffer) - len_2, "%s", msg);
+    len_2 += vsnprintf(&buffer[len_2], sizeof(buffer) - len_2, msg, ap);
 
 #ifndef _WIN32
     if(__log.syslog)
@@ -93,7 +96,7 @@ static void _log(int type, const char *msg, va_list ap)
     buffer[len_2] = '\n';
     ++len_2;
 
-    if(__log.stdout && write(1, buffer, len_2) == -1)
+    if(__log.sout && write(1, buffer, len_2) == -1)
         ;
 
     if(__log.fd && write(__log.fd, buffer, len_2) == -1)
@@ -126,6 +129,9 @@ inline void log_warning(const char *msg, ...)
 
 inline void log_debug(const char *msg, ...)
 {
+    if(!__log.debug)
+        return;
+
     va_list ap;
     va_start(ap, msg);
     _log(LOG_TYPE_DEBUG, msg, ap);
@@ -155,7 +161,7 @@ void log_hup(void)
     if(__log.fd <= 0)
     {
         __log.fd = 0;
-        __log.stdout = 1;
+        __log.sout = 1;
         log_error("[core/log] failed to open %s (%s)"
                   , __log.filename, strerror(errno));
     }
@@ -174,7 +180,7 @@ void log_destroy(void)
 #endif
 
     __log.debug = 0;
-    __log.stdout = 1;
+    __log.sout = 1;
     if(__log.filename)
     {
         free(__log.filename);
@@ -184,7 +190,7 @@ void log_destroy(void)
 
 void log_set_stdout(int val)
 {
-    __log.stdout = val;
+    __log.sout = val;
 }
 
 void log_set_debug(int val)

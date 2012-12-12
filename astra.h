@@ -142,7 +142,7 @@ ASC_API int module_set_number(module_data_t *, const char *, int
 ASC_API int module_set_string(module_data_t *, const char *, int
                               , const char *, const char **);
 
-void astra_main(int, const char **, const char *);
+void astra_main(int, const char **, const char *, const char *);
 
 #define CHECK_RET(_cond, _ret)                                              \
     if(_cond)                                                               \
