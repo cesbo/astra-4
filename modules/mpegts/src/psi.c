@@ -44,17 +44,25 @@ void mpegts_psi_mux(mpegts_psi_t *psi, uint8_t *ts
                     , void (*callback)(module_data_t *, mpegts_psi_t *)
                     , module_data_t *arg)
 {
-    const uint8_t cc = TS_CC(ts);
     uint8_t *payload = &ts[TS_HEADER_SIZE];
-
-    const uint8_t af = TS_AF(ts);
-    if(!(af & 0x10)) // skip packet without payload (CC not incremented)
-        return;
+    switch(TS_AF(ts))
+    {
+        case 0x10:
+            payload = &ts[TS_HEADER_SIZE];
+            break;
+        case 0x30:
+            payload = &ts[TS_HEADER_SIZE] + ts[4] + 1;
+            break;
+        default:
+            return;
+    }
+    const uint8_t cc = TS_CC(ts);
 
     if(TS_PUSI(ts))
     {
-        const uint8_t ptr_field = TS_PTR(ts);
-        payload += 1; // skip pointer field
+        const uint8_t ptr_field = *payload;
+        ++payload; // skip pointer field
+
         if(ptr_field > 0)
         { // pointer field
             if(ptr_field >= TS_BODY_SIZE)
