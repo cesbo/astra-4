@@ -25,20 +25,39 @@
 struct module_data_s
 {
     CAM_MODULE_BASE();
+
+    cas_data_t *cas;
+    uint8_t keys[32];
 };
 
 /* softcam callbacks */
 
 static void interface_send_em(module_data_t *mod)
 {
-    cam_packet_t *packet = list_get_data(mod->__cam_module.queue.head);
-    memcpy(packet->keys, packet->payload, 19);
-    cam_callback(mod, packet);
+    ;
 }
 
 static void interface_activate(module_data_t *mod, int is_active)
 {
-    ;
+    if(!is_active)
+        return;
+
+    if(!mod->keys[0])
+    {
+        mod->keys[0] = 0x80;
+        mod->keys[1] = 0x10;
+        mod->keys[2] = 0x10;
+        memcpy(&mod->keys[3], mod->__cam_module.cas_data, 8);
+        if(mod->keys[6] == 0x00)
+            mod->keys[6] = (mod->keys[3] + mod->keys[4] + mod->keys[5]) & 0xFF;
+        if(mod->keys[10] == 0x00)
+            mod->keys[10] = (mod->keys[7] + mod->keys[8] + mod->keys[9]) & 0xFF;
+        memcpy(&mod->keys[11], &mod->keys[3], 8);
+    }
+
+    module_data_t *decrypt
+        = list_get_data(list_get_first(mod->__cam_module.decrypts));
+    decrypt_module_set_keys(decrypt, mod->keys, 1);
 }
 
 /* required */

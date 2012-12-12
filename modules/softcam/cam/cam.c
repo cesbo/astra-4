@@ -129,11 +129,13 @@ inline void cam_attach_decrypt(module_data_t *mod, module_data_t *decrypt)
 {
     if(mod && decrypt)
     {
-        if(!mod->__cam_module.decrypts)
-            cam_module_activate(mod, 1);
+        const int has_decrypts = (mod->__cam_module.decrypts != NULL);
 
         mod->__cam_module.decrypts
             = list_insert(mod->__cam_module.decrypts, decrypt);
+
+        if(!has_decrypts)
+            cam_module_activate(mod, 1);
     }
 }
 
