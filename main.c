@@ -56,26 +56,8 @@ static void signal_handler(int signum)
     longjmp(main_loop, 1);
 }
 
-void astra_main(int argc, const char **argv
-                , const char *lua_script_file
-                , const char *lua_script_text)
+static lua_State * astra_init(int argc, const char **argv)
 {
-    if(lua_script_file)
-    {
-        lua_script_text = NULL;
-
-        if(lua_script_file[0] == '-' && lua_script_file[1] == '\0')
-            lua_script_file = NULL;
-        else if(!access(lua_script_file, R_OK))
-            ;
-        else
-        {
-            printf("Error: initial script isn't found [%s]\n"
-                   , strerror(errno));
-            return;
-        }
-    }
-
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 #ifndef _WIN32
@@ -124,10 +106,42 @@ void astra_main(int argc, const char **argv
     lua_setfield(L, -2, "cpath");
     lua_pop(L, 1);
 
+    return L;
+}
+
+void astra_do_file(int argc, const char **argv, const char *file)
+{
+    if(file[0] == '-' && file[1] == '\0')
+        file = NULL;
+    else if(!access(file, R_OK))
+        ;
+    else
+    {
+        printf("Error: initial script isn't found [%s]\n", strerror(errno));
+        return;
+    }
+
+    lua_State *L = astra_init(argc, argv);
+
     if(!setjmp(main_loop))
     {
-        if((!lua_script_text && luaL_dofile(L, lua_script_file))
-           || (lua_script_text && luaL_dostring(L, lua_script_text)))
+        if(luaL_dofile(L, file))
+            luaL_error(L, "[main] %s", lua_tostring(L, -1));
+        ASC_LOOP();
+    }
+
+    lua_close(L);
+    ASC_DESTROY();
+}
+
+void astra_do_text(int argc, const char **argv, const char *text, size_t size)
+{
+    lua_State *L = astra_init(argc, argv);
+
+    if(!setjmp(main_loop))
+    {
+        if(luaL_loadbuffer(L, text, size, "=inscript")
+           || lua_pcall(L, 0, LUA_MULTRET, 0))
         {
             luaL_error(L, "[main] %s", lua_tostring(L, -1));
         }
@@ -150,7 +164,7 @@ int main(int argc, const char **argv)
     }
 
     /* 2 - skip app and script names */
-    astra_main(argc - 2, argv + 2, argv[1], NULL);
+    astra_do_file(argc - 2, argv + 2, argv[1]);
 
     return 0;
 }
