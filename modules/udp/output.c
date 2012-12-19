@@ -31,6 +31,7 @@ struct module_data_s
     uint16_t rtpseq;
 
     int sock;
+    void *sockaddr;
 
     size_t buffer_skip;
     uint8_t buffer[UDP_BUFFER_SIZE];
@@ -44,8 +45,11 @@ static void callback_send_ts(module_data_t *mod, uint8_t *ts)
     {
         if(mod->buffer_skip == 0)
             return;
-        if(socket_send(mod->sock, mod->buffer, mod->buffer_skip) == -1)
+        if(socket_sendto(mod->sock, mod->buffer, mod->buffer_skip
+                         , mod->sockaddr) == -1)
+        {
             log_warning(LOG_MSG("error on send [%s]"), socket_error());
+        }
 
         mod->buffer_skip = 0;
     }
@@ -110,13 +114,14 @@ static void module_initialize(module_data_t *mod)
         buffer[11] = (rtpssrc      ) & 0xFF;
     }
 
-    mod->sock = socket_open(SOCKET_PROTO_UDP | SOCKET_CONNECT
-                            , mod->config.addr, mod->config.port);
+    mod->sock = socket_open(SOCKET_PROTO_UDP | SOCKET_REUSEADDR | SOCKET_BIND
+                            , NULL, 0);
     if(mod->config.socket_size > 0)
         socket_set_buffer(mod->sock, 0, mod->config.socket_size);
     socket_multicast_set_if(mod->sock, mod->config.localaddr);
     socket_multicast_set_ttl(mod->sock, mod->config.ttl);
     socket_multicast_join(mod->sock, mod->config.addr, NULL);
+    mod->sockaddr = socket_sockaddr_init(mod->config.addr, mod->config.port);
 }
 
 static void module_destroy(module_data_t *mod)
@@ -124,6 +129,7 @@ static void module_destroy(module_data_t *mod)
     stream_ts_destroy(mod);
 
     socket_close(mod->sock);
+    socket_sockaddr_destroy(mod->sockaddr);
 }
 
 MODULE_METHODS_EMPTY();
