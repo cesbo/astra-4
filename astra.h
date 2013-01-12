@@ -1,8 +1,8 @@
 /*
- * AsC Framework
- * http://cesbo.com
+ * Astra
+ * http://cesbo.com/astra
  *
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  * Licensed under the MIT license.
  */
 
@@ -10,9 +10,18 @@
 #define _ASTRA_H_ 1
 
 #include "asc/asc.h"
+
+#include <sys/queue.h>
+
 #include "lua/lua.h"
 #include "lua/lualib.h"
 #include "lua/lauxlib.h"
+
+extern lua_State *__L; // in main.c
+#define LUA_STATE() __L;
+
+#define STACK_DEBUG(_L, _pos)                                               \
+    printf("%s(): stack %d: %d\n", __FUNCTION__, _pos, lua_gettop(_L))
 
 #include "version.h"
 #define __VSTR(_x) #_x
@@ -25,37 +34,48 @@
 #endif
 #define ASTRA_VERSION_STR _VERSION _VDEBUG
 
-#define STACK_DEBUG(_L, _pos)                                               \
-    printf("%s(): stack %d: %d\n", __FUNCTION__, _pos, lua_gettop(_L))
-
 typedef struct module_data_s module_data_t;
-typedef struct module_option_s module_option_t;
 
-#include "modules/protocols.h"
+/* module_stream_* */
 
-/* ------- */
+typedef struct
+{
+    void (*on_ts)(module_data_t *mod, const uint8_t *ts);
+} module_stream_api_t;
 
-/* modules */
+#define MODULE_STREAM_BASE()                                                \
+    struct                                                                  \
+    {                                                                       \
+        module_stream_api_t api;                                            \
+        module_data_t *parent;                                              \
+        TAILQ_ENTRY(module_data_s) entries;                                 \
+        TAILQ_HEAD(list_s, module_data_s) childs;                           \
+    } __stream
 
-typedef void (*interface_t)(module_data_t *, ...);
+#define MODULE_STREAM_METHODS()                                             \
+    { "attach", module_stream_attach },                                     \
+    { "detach", module_stream_detach }
 
-#define MODULE_INTERFACE(_id, _callback)                                    \
-    mod->__interface[_id] = (interface_t)_callback
+int module_stream_attach(module_data_t *mod);
+int module_stream_detach(module_data_t *mod);
 
-#define MODULE_BASE()                                                       \
-    lua_State *__L;                                                         \
-    const char *__name;                                                     \
-    int __idx_options;                                                      \
-    interface_t __interface[16];                                            \
-    struct { ASTRA_PROTOCOLS } __protocols
+void module_stream_send(module_data_t *mod, const uint8_t *ts);
 
-#define LUA_STATE(_mod) _mod->__L
+void module_stream_init(module_data_t *mod, module_stream_api_t *api);
+void module_stream_destroy(module_data_t *mod);
+
+/* module_lua_* */
 
 typedef struct
 {
     const char *name;
-    int (*func)(module_data_t *);
-} module_method_t;
+    int (*method)(module_data_t *mod);
+} module_lua_method_t;
+
+/* TODO: continue below... */
+
+#define MODULE_BASE()                                                       \
+    int __idx_options
 
 #define MODULE_METHODS()                                                    \
     static const module_method_t __module_methods[] =
@@ -63,14 +83,12 @@ typedef struct
 #define MODULE_METHODS_EMPTY()                                              \
     MODULE_METHODS() {{ NULL, NULL }}
 
-#define MODULE(_name)                                                       \
+#define MODULE_LUA_REGISTER(_name)                                          \
     static const char __module_name[] = #_name;                             \
     static int __module_new(lua_State *L)                                   \
     {                                                                       \
         module_data_t *mod = lua_newuserdata(L, sizeof(module_data_t));     \
         memset(mod, 0, sizeof(module_data_t));                              \
-        mod->__L = L;                                                       \
-        mod->__name = __module_name;                                        \
         lua_getmetatable(L, 1);                                             \
         lua_setmetatable(L, -2);                                            \
         module_initialize(mod);                                             \
@@ -142,14 +160,7 @@ ASC_API int module_set_number(module_data_t *, const char *, int
 ASC_API int module_set_string(module_data_t *, const char *, int
                               , const char *, const char **);
 
-void astra_do_file(int, const char **, const char *);
-void astra_do_text(int, const char **, const char *, size_t);
-
-#define CHECK_RET(_cond, _ret)                                              \
-    if(_cond)                                                               \
-    {                                                                       \
-        log_error("%s:%d %s(): " #_cond, __FILE__, __LINE__, __FUNCTION__); \
-        _ret;                                                               \
-    }
+ASC_API void astra_do_file(int, const char **, const char *);
+ASC_API void astra_do_text(int, const char **, const char *, size_t);
 
 #endif /* _ASTRA_H_ */

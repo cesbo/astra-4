@@ -1,6 +1,9 @@
 /*
- * For more information, visit https://cesbo.com
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra
+ * http://cesbo.com/astra
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
  */
 
 #include <astra.h>
@@ -13,6 +16,8 @@
 
 static const char __version[] = ASTRA_VERSION_STR;
 static jmp_buf main_loop;
+
+lua_State *__L;
 
 static int astra_exit(lua_State *L)
 {
@@ -122,6 +127,7 @@ void astra_do_file(int argc, const char **argv, const char *file)
     }
 
     lua_State *L = astra_init(argc, argv);
+    LUA_STATE() = L;
 
     if(!setjmp(main_loop))
     {
@@ -137,6 +143,7 @@ void astra_do_file(int argc, const char **argv, const char *file)
 void astra_do_text(int argc, const char **argv, const char *text, size_t size)
 {
     lua_State *L = astra_init(argc, argv);
+    LUA_STATE() = L;
 
     if(!setjmp(main_loop))
     {
