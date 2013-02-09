@@ -1,8 +1,8 @@
 /*
- * AsC Framework
- * http://cesbo.com
+ * Astra Core
+ * http://cesbo.com/astra
  *
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  * Licensed under the MIT license.
  */
 
@@ -21,16 +21,6 @@
 #include <unistd.h>
 #include <errno.h>
 
-#ifdef _WIN32
-#   if defined(ASC)
-#       define ASC_API __declspec(dllexport)
-#   else
-#       define ASC_API
-#   endif
-#else
-#   define ASC_API extern
-#endif
-
 #define ARRAY_SIZE(_a) (sizeof(_a)/sizeof(_a[0]))
 #define UNUSED_ARG(_x) (void)_x
 
@@ -44,50 +34,57 @@ enum
     EVENT_ERROR     = 0xF0
 };
 
-ASC_API int event_init(void);
-ASC_API void event_action(void);
-ASC_API void event_destroy(void);
+int event_init(void);
+void event_action(void);
+void event_destroy(void);
 
-ASC_API int event_attach(int, void (*)(void *, int), void *, int);
-ASC_API void event_detach(int);
+int event_attach(int, void (*)(void *, int), void *, int);
+void event_detach(int);
 
 /* timer.c */
 
-ASC_API void timer_action(void);
-ASC_API void timer_destroy(void);
+void timer_action(void);
+void timer_destroy(void);
 
-ASC_API void timer_one_shot(unsigned int, void (*)(void *), void *);
+void timer_one_shot(unsigned int, void (*)(void *), void *);
 
-ASC_API void * timer_attach(unsigned int, void (*)(void *), void *);
-ASC_API void timer_detach(void *);
+void * timer_attach(unsigned int, void (*)(void *), void *);
+void timer_detach(void *);
 
 /* list.c */
 
 typedef struct list_s list_t;
 
-ASC_API list_t * list_append(list_t *, void *);
-ASC_API list_t * list_insert(list_t *, void *);
-ASC_API list_t * list_delete(list_t *, void *);
-ASC_API list_t * list_get_first(list_t *);
-ASC_API list_t * list_get_next(list_t *);
-ASC_API void * list_get_data(list_t *);
+list_t * list_init(void);
+void list_destroy(list_t *list);
+
+void list_first(list_t *list);
+void list_next(list_t *list);
+int list_is_data(list_t *list);
+void * list_data(list_t *list);
+
+void list_insert_head(list_t *list, void *data);
+void list_insert_tail(list_t *list, void *data);
+
+void list_remove_current(list_t *list);
+void list_remove_item(list_t *list, void *data);
 
 /* log.c */
 
-ASC_API void log_set_stdout(int);
-ASC_API void log_set_debug(int);
-ASC_API void log_set_file(const char *);
+void log_set_stdout(int);
+void log_set_debug(int);
+void log_set_file(const char *);
 #ifndef _WIN32
-ASC_API void log_set_syslog(const char *);
+void log_set_syslog(const char *);
 #endif
 
-ASC_API void log_hup(void);
-ASC_API void log_destroy(void);
+void log_hup(void);
+void log_destroy(void);
 
-ASC_API void log_info(const char *, ...);
-ASC_API void log_error(const char *, ...);
-ASC_API void log_warning(const char *, ...);
-ASC_API void log_debug(const char *, ...);
+void log_info(const char *, ...);
+void log_error(const char *, ...);
+void log_warning(const char *, ...);
+void log_debug(const char *, ...);
 
 /* socket.c */
 
@@ -114,53 +111,53 @@ enum
     SOCKET_SHUTDOWN_BOTH    = 3
 };
 
-ASC_API void socket_init(void);
-ASC_API void socket_destroy(void);
+void socket_init(void);
+void socket_destroy(void);
 
-ASC_API int socket_open(int, const char *, int);
-ASC_API int socket_shutdown(int, int);
-ASC_API void socket_close(int);
-ASC_API char * socket_error(void);
+int socket_open(int, const char *, int);
+int socket_shutdown(int, int);
+void socket_close(int);
+char * socket_error(void);
 
-ASC_API int socket_options_set(int, int);
-ASC_API int socket_port(int);
+int socket_options_set(int, int);
+int socket_port(int);
 
-ASC_API int socket_accept(int, char *, int *);
+int socket_accept(int, char *, int *);
 
-ASC_API int socket_set_buffer(int, int, int);
-ASC_API int socket_set_timeout(int, int, int);
+int socket_set_buffer(int, int, int);
+int socket_set_timeout(int, int, int);
 
-ASC_API int socket_multicast_join(int, const char *, const char *);
-ASC_API int socket_multicast_leave(int, const char *, const char *);
-ASC_API int socket_multicast_renew(int, const char *, const char *);
-ASC_API int socket_multicast_set_ttl(int, int);
-ASC_API int socket_multicast_set_if(int, const char *);
+int socket_multicast_join(int, const char *, const char *);
+int socket_multicast_leave(int, const char *, const char *);
+int socket_multicast_renew(int, const char *, const char *);
+int socket_multicast_set_ttl(int, int);
+int socket_multicast_set_if(int, const char *);
 
-ASC_API ssize_t socket_recv(int, void *, size_t);
-ASC_API ssize_t socket_send(int, void *, size_t);
+ssize_t socket_recv(int, void *, size_t);
+ssize_t socket_send(int, void *, size_t);
 
-ASC_API void * socket_sockaddr_init(const char *, int);
-ASC_API void socket_sockaddr_destroy(void *sockaddr);
+void * socket_sockaddr_init(const char *, int);
+void socket_sockaddr_destroy(void *sockaddr);
 
-ASC_API ssize_t socket_recvfrom(int, void *, size_t, void *);
-ASC_API ssize_t socket_sendto(int, void *, size_t, void *);
+ssize_t socket_recvfrom(int, void *, size_t, void *);
+ssize_t socket_sendto(int, void *, size_t, void *);
 
 /* stream.c */
 
 typedef struct stream_s stream_t;
 
-ASC_API stream_t * stream_init(void (*)(void *), void *);
-ASC_API void stream_destroy(stream_t *);
+stream_t * stream_init(void (*)(void *), void *);
+void stream_destroy(stream_t *);
 
-ASC_API ssize_t stream_send(stream_t *, void *, size_t);
-ASC_API ssize_t stream_recv(stream_t *, void *, size_t);
+ssize_t stream_send(stream_t *, void *, size_t);
+ssize_t stream_recv(stream_t *, void *, size_t);
 
 /* thread.c */
 
 typedef struct thread_s thread_t;
 
-ASC_API int thread_init(thread_t **, void (*)(void *), void *);
-ASC_API void thread_destroy(thread_t **);
+int thread_init(thread_t **, void (*)(void *), void *);
+void thread_destroy(thread_t **);
 
 int thread_is_started(thread_t *);
 

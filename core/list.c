@@ -1,110 +1,109 @@
 /*
- * AsC Framework
- * http://cesbo.com
+ * Astra Core
+ * http://cesbo.com/astra
  *
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  * Licensed under the MIT license.
  */
 
 #define ASC
 #include "asc.h"
 
-// TODO: pre-buffered nodes
+#include <sys/queue.h>
+
+#define MSG() "[core/list] %s():%d", __FUNCTION__, __LINE__
+
+typedef struct item_s
+{
+    void *data;
+    TAILQ_ENTRY(item_s) entries;
+} item_t;
 
 struct list_s
 {
-    void *data;
-    list_t *prev;
-    list_t *next;
+    struct item_s *current;
+    TAILQ_HEAD(list_head_s, item_s) list;
 };
 
-list_t * list_append(list_t *li, void *data)
+list_t * list_init(void)
 {
-    list_t *nli = (list_t *)malloc(sizeof(list_t));
-    nli->data = data;
-    if(!li)
-    {
-        nli->prev = nli->next = NULL;
-    }
-    else
-    {
-        nli->prev = li;
-        nli->next = li->next;
-        if(li->next)
-            li->next->prev = nli;
-        li->next = nli;
-    }
-    return nli;
+    list_t *list = (list_t *)malloc(sizeof(list_t));
+    TAILQ_INIT(&list->list);
+    list->current = NULL;
+    return list;
 }
 
-list_t * list_insert(list_t *li, void *data)
+void list_destroy(list_t *list)
 {
-    list_t *nli = (list_t *)malloc(sizeof(list_t));
-    nli->data = data;
-    if(!li)
+    if(list->current)
     {
-        nli->prev = nli->next = NULL;
+        log_error(MSG());
+        abort();
     }
-    else
-    {
-        nli->next = li;
-        nli->prev = li->prev;
-        if(li->prev)
-            li->prev->next = nli;
-        li->prev = nli;
-    }
-    return nli;
+    free(list);
 }
 
-list_t * list_delete(list_t *li, void *data)
+inline void list_first(list_t *list)
 {
-    if(!li)
-        return NULL;
+    list->current = TAILQ_FIRST(&list->list);
+}
 
-    list_t *i = li;
-    if(data)
+inline void list_next(list_t *list)
+{
+    if(list->current)
+        list->current = TAILQ_NEXT(list->current, entries);
+}
+
+inline int list_is_data(list_t *list)
+{
+    return (list->current != NULL);
+}
+
+inline void * list_data(list_t *list)
+{
+    return list->current;
+}
+
+void list_insert_head(list_t *list, void *data)
+{
+    item_t *item = (item_t *)malloc(sizeof(item_t));
+    item->data = data;
+    item->entries.tqe_next = NULL;
+    item->entries.tqe_prev = NULL;
+    TAILQ_INSERT_HEAD(&list->list, item, entries);
+}
+
+void list_insert_tail(list_t *list, void *data)
+{
+    item_t *item = (item_t *)malloc(sizeof(item_t));
+    item->data = data;
+    item->entries.tqe_next = NULL;
+    item->entries.tqe_prev = NULL;
+    TAILQ_INSERT_TAIL(&list->list, item, entries);
+}
+
+void list_remove_current(list_t *list)
+{
+    if(list->current)
     {
-        i = list_get_first(li);
-        while(i)
+        log_error(MSG());
+        abort();
+    }
+    item_t *next = TAILQ_NEXT(list->current, entries);
+    if(!next)
+        next = TAILQ_PREV(list->current, list_head_s, entries);
+    TAILQ_REMOVE(&list->list, list->current, entries);
+    list->current = next;
+}
+
+void list_remove_item(list_t *list, void *data)
+{
+    for(list_first(list); list_is_data(list); list_next(list))
+    {
+        if(data == list_data(list))
         {
-            if(data == list_get_data(i))
-                break;
-            i = i->next;
+            list_remove_current(list);
+            return;
         }
-        if(!i)
-            return li;
     }
-
-    list_t *r = NULL;
-    if(i->next)
-    {
-        i->next->prev = i->prev;
-        r = i->next;
-    }
-    if(i->prev)
-    {
-        i->prev->next = i->next;
-        r = i->prev;
-    }
-    free(i);
-    return r;
-}
-
-inline list_t * list_get_first(list_t *li)
-{
-    if(!li)
-        return NULL;
-    while(li->prev)
-        li = li->prev;
-    return li;
-}
-
-inline list_t * list_get_next(list_t *li)
-{
-    return li->next;
-}
-
-inline void * list_get_data(list_t *li)
-{
-    return li->data;
 }
