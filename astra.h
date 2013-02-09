@@ -9,7 +9,7 @@
 #ifndef _ASTRA_H_
 #define _ASTRA_H_ 1
 
-#include "asc/asc.h"
+#include "core/asc.h"
 
 #include <sys/queue.h>
 
