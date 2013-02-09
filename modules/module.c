@@ -12,79 +12,64 @@
 
 struct module_data_s
 {
-    MODULE_BASE();
     MODULE_STREAM_BASE();
 };
 
 /* module_set_* */
 
-static void _option_required(module_data_t *mod, const char *name)
+int module_set_number(module_data_t *mod, const char *name, int *number)
 {
-    log_error("[%s] option \"%s\" is required", mod->__name, name);
-    abort();
-}
-
-int module_set_number(module_data_t *mod, const char *name, int is_required
-                      , int def, int *dst)
-{
-    lua_State *L = LUA_STATE();
     do
     {
-        if(lua_type(L, 2) != LUA_TTABLE)
+        if(lua_type(lua, 2) != LUA_TTABLE)
             break;
-        lua_getfield(L, 2, name);
-        const int type = lua_type(L, -1);
+        lua_getfield(lua, 2, name);
+        const int type = lua_type(lua, -1);
         if(type == LUA_TNUMBER)
         {
-            *dst = lua_tonumber(L, -1);
-            lua_pop(L, 1);
+            *number = lua_tonumber(lua, -1);
+            lua_pop(lua, 1);
             return 1;
         }
         else if(type == LUA_TSTRING)
         {
-            const char *str = lua_tostring(L, -1);
-            *dst = atoi(str);
-            lua_pop(L, 1);
+            const char *str = lua_tostring(lua, -1);
+            *number = atoi(str);
+            lua_pop(lua, 1);
             return 1;
         }
         else if(type == LUA_TBOOLEAN)
         {
-            *dst = lua_toboolean(L, -1);
-            lua_pop(L, 1);
+            *number = lua_toboolean(lua, -1);
+            lua_pop(lua, 1);
             return 1;
         }
         else
-            lua_pop(L, 1);
+            lua_pop(lua, 1);
     } while(0);
 
-    if(is_required)
-        _option_required(mod, name);
-    *dst = def;
     return 0;
 }
 
-int module_set_string(module_data_t *mod, const char *name, int is_required
-                      , const char *def, const char **dst)
+int module_set_string(module_data_t *mod, const char *name, const char **string, int *length)
 {
-    lua_State *L = LUA_STATE();
     do
     {
-        if(lua_type(L, 2) != LUA_TTABLE)
+        if(lua_type(lua, 2) != LUA_TTABLE)
             break;
-        lua_getfield(L, 2, name);
-        if(lua_type(L, -1) == LUA_TSTRING)
+        lua_getfield(lua, 2, name);
+        if(lua_type(lua, -1) == LUA_TSTRING)
         {
-            *dst = lua_tostring(L, -1);
-            lua_pop(L, 1);
+            if(length)
+                *length = luaL_len(lua, -1);
+            *string = lua_tostring(lua, -1);
+            lua_pop(lua, 1);
             return 1;
         }
         else
-            lua_pop(L, 1);
+            lua_pop(lua, 1);
     } while(0);
 
-    if(is_required)
-        _option_required(mod, name);
-    *dst = def;
     return 0;
 }
 
@@ -114,18 +99,16 @@ static void __module_stream_attach(module_data_t *parent, module_data_t *child)
 
 int module_stream_attach(module_data_t *mod)
 {
-    lua_State *L = LUA_STATE();
-    luaL_checktype(L, 2, LUA_TTABLE);
-    module_data_t *child = lua_touserdata(L, 2);
+    luaL_checktype(lua, 2, LUA_TTABLE);
+    module_data_t *child = lua_touserdata(lua, 2);
     __module_stream_attach(mod, child);
     return 0;
 }
 
 int module_stream_detach(module_data_t *mod)
 {
-    lua_State *L = LUA_STATE();
-    luaL_checktype(L, 2, LUA_TTABLE);
-    module_data_t *child = lua_touserdata(L, 2);
+    luaL_checktype(lua, 2, LUA_TTABLE);
+    module_data_t *child = lua_touserdata(lua, 2);
     __module_stream_detach(mod, child);
     return 0;
 }

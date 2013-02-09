@@ -17,8 +17,7 @@
 #include "lua/lualib.h"
 #include "lua/lauxlib.h"
 
-extern lua_State *__L; // in main.c
-#define LUA_STATE() __L;
+extern lua_State *lua; // in main.c
 
 #define STACK_DEBUG(_L, _pos)                                               \
     printf("%s(): stack %d: %d\n", __FUNCTION__, _pos, lua_gettop(_L))
@@ -70,12 +69,7 @@ typedef struct
 {
     const char *name;
     int (*method)(module_data_t *mod);
-} module_lua_method_t;
-
-/* TODO: continue below... */
-
-#define MODULE_BASE()                                                       \
-    int __idx_options
+} module_method_t;
 
 #define MODULE_METHODS()                                                    \
     static const module_method_t __module_methods[] =
@@ -92,21 +86,11 @@ typedef struct
         lua_getmetatable(L, 1);                                             \
         lua_setmetatable(L, -2);                                            \
         module_initialize(mod);                                             \
-        if(lua_type(L, 2) == LUA_TTABLE)                                    \
-        {                                                                   \
-            lua_pushvalue(L, 2);                                            \
-            mod->__idx_options = luaL_ref(L, LUA_REGISTRYINDEX);            \
-        }                                                                   \
         return 1;                                                           \
     }                                                                       \
     static int __module_delete(lua_State *L)                                \
     {                                                                       \
         module_data_t *mod = luaL_checkudata(L, 1, __module_name);          \
-        if(mod->__idx_options)                                              \
-        {                                                                   \
-            luaL_unref(L, LUA_REGISTRYINDEX, mod->__idx_options);           \
-            mod->__idx_options = 0;                                         \
-        }                                                                   \
         module_destroy(mod);                                                \
         return 0;                                                           \
     }                                                                       \
@@ -155,12 +139,13 @@ typedef struct
         return 1;                                                           \
     }
 
-ASC_API int module_set_number(module_data_t *, const char *, int
-                              , int, int *);
-ASC_API int module_set_string(module_data_t *, const char *, int
-                              , const char *, const char **);
+int module_set_number(module_data_t *mod, const char *name, int *number);
+int module_set_string(module_data_t *mod, const char *name, const char **string, int *length);
 
-ASC_API void astra_do_file(int, const char **, const char *);
-ASC_API void astra_do_text(int, const char **, const char *, size_t);
+void astra_exit(void);
+void astra_abort(void);
+
+void astra_do_file(int argc, const char **argv, const char *fail);
+void astra_do_text(int argc, const char **argv, const char *text, size_t size);
 
 #endif /* _ASTRA_H_ */

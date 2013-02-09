@@ -17,30 +17,40 @@
 static const char __version[] = ASTRA_VERSION_STR;
 static jmp_buf main_loop;
 
-lua_State *__L;
+lua_State *lua;
 
-static int astra_exit(lua_State *L)
+void astra_exit(void)
 {
     longjmp(main_loop, 1);
+}
+
+void astra_abort(void)
+{
+    lua_Debug ar;
+    lua_getstack(lua, 1, &ar);
+    lua_getinfo(lua, "nSl", &ar);
+    log_error("[main] abort execution. line:%d source:%s", ar.currentline, ar.source);
+    abort();
+}
+
+static int _astra_exit(lua_State *L)
+{
+    (void)L;
+    astra_exit();
     return 0;
 }
 
-static int astra_abort(lua_State *L)
+static int _astra_abort(lua_State *L)
 {
-    lua_Debug ar;
-    lua_getstack(L, 1, &ar);
-    lua_getinfo(L, "nSl", &ar);
-    log_error("[main] abort execution. line:%d source:%s"
-              , ar.currentline, ar.source);
-    abort();
-
+    (void)L;
+    astra_abort();
     return 0;
 }
 
 static luaL_Reg astra_api[] =
 {
-    { "exit", astra_exit },
-    { "abort", astra_abort },
+    { "exit", _astra_exit },
+    { "abort", _astra_abort },
     { NULL, NULL }
 };
 
@@ -61,7 +71,7 @@ static void signal_handler(int signum)
     longjmp(main_loop, 1);
 }
 
-static lua_State * astra_init(int argc, const char **argv)
+static void astra_init(int argc, const char **argv)
 {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
@@ -72,46 +82,44 @@ static lua_State * astra_init(int argc, const char **argv)
 
     ASC_INIT();
 
-    lua_State *L = luaL_newstate();
-    luaL_openlibs(L);
+    lua = luaL_newstate();
+    luaL_openlibs(lua);
 
     // astra
-    luaL_newlib(L, astra_api);
+    luaL_newlib(lua, astra_api);
 
 #ifdef DEBUG
-    lua_pushboolean(L, 1);
+    lua_pushboolean(lua, 1);
 #else
-    lua_pushboolean(L, 0);
+    lua_pushboolean(lua, 0);
 #endif
-    lua_setfield(L, -2, "debug");
+    lua_setfield(lua, -2, "debug");
 
-    lua_pushstring(L, __version);
-    lua_setfield(L, -2, "version");
+    lua_pushstring(lua, __version);
+    lua_setfield(lua, -2, "version");
 
-    lua_setglobal(L, "astra");
+    lua_setglobal(lua, "astra");
 
     for(int i = 0; astra_mods[i]; i++)
-        astra_mods[i](L);
+        astra_mods[i](lua);
 
     /* argv table */
-    lua_newtable(L);
+    lua_newtable(lua);
     for(int i = 0; i < argc; i++)
     {
-        lua_pushinteger(L, i + 1);
-        lua_pushstring(L, argv[i]);
-        lua_settable(L, -3);
+        lua_pushinteger(lua, i + 1);
+        lua_pushstring(lua, argv[i]);
+        lua_settable(lua, -3);
     }
-    lua_setglobal(L, "argv");
+    lua_setglobal(lua, "argv");
 
     /* change package.path */
-    lua_getglobal(L, "package");
-    lua_pushstring(L, "/etc/astra/helpers/?.lua;./?.lua");
-    lua_setfield(L, -2, "path");
-    lua_pushstring(L, "");
-    lua_setfield(L, -2, "cpath");
-    lua_pop(L, 1);
-
-    return L;
+    lua_getglobal(lua, "package");
+    lua_pushstring(lua, "/etc/astra/helpers/?.lua;./?.lua");
+    lua_setfield(lua, -2, "path");
+    lua_pushstring(lua, "");
+    lua_setfield(lua, -2, "cpath");
+    lua_pop(lua, 1);
 }
 
 void astra_do_file(int argc, const char **argv, const char *file)
@@ -126,36 +134,34 @@ void astra_do_file(int argc, const char **argv, const char *file)
         return;
     }
 
-    lua_State *L = astra_init(argc, argv);
-    LUA_STATE() = L;
+    astra_init(argc, argv);
 
     if(!setjmp(main_loop))
     {
-        if(luaL_dofile(L, file))
-            luaL_error(L, "[main] %s", lua_tostring(L, -1));
+        if(luaL_dofile(lua, file))
+            luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
         ASC_LOOP();
     }
 
-    lua_close(L);
+    lua_close(lua);
     ASC_DESTROY();
 }
 
 void astra_do_text(int argc, const char **argv, const char *text, size_t size)
 {
-    lua_State *L = astra_init(argc, argv);
-    LUA_STATE() = L;
+    astra_init(argc, argv);
 
     if(!setjmp(main_loop))
     {
-        if(luaL_loadbuffer(L, text, size, "=inscript")
-           || lua_pcall(L, 0, LUA_MULTRET, 0))
+        if(luaL_loadbuffer(lua, text, size, "=inscript")
+           || lua_pcall(lua, 0, LUA_MULTRET, 0))
         {
-            luaL_error(L, "[main] %s", lua_tostring(L, -1));
+            luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
         }
         ASC_LOOP();
     }
 
-    lua_close(L);
+    lua_close(lua);
     ASC_DESTROY();
 }
 
