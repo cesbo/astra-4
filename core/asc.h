@@ -92,59 +92,50 @@ void log_debug(const char *, ...);
 
 /* socket.c */
 
-enum
-{
-    SOCKET_FAMILY_IPv4      = 0x00000001,
-    SOCKET_FAMILY_IPv6      = 0x00000002,
-    SOCKET_PROTO_TCP        = 0x00000004,
-    SOCKET_PROTO_UDP        = 0x00000008,
-    SOCKET_REUSEADDR        = 0x00000010,
-    SOCKET_BLOCK            = 0x00000020,
-    SOCKET_BROADCAST        = 0x00000040,
-    SOCKET_LOOP_DISABLE     = 0x00000080,
-    SOCKET_BIND             = 0x00000100,
-    SOCKET_CONNECT          = 0x00000200,
-    SOCKET_NO_DELAY         = 0x00000400,
-    SOCKET_KEEP_ALIVE       = 0x00000800
-};
-
-enum
-{
-    SOCKET_SHUTDOWN_RECV    = 1,
-    SOCKET_SHUTDOWN_SEND    = 2,
-    SOCKET_SHUTDOWN_BOTH    = 3
-};
+typedef struct socket_s socket_t;
 
 void socket_init(void);
 void socket_destroy(void);
 
-int socket_open(int, const char *, int);
-int socket_shutdown(int, int);
-void socket_close(int);
 char * socket_error(void);
 
-int socket_options_set(int, int);
-int socket_port(int);
+socket_t * socket_open_tcp4(void);
+socket_t * socket_open_udp4(void);
 
-int socket_accept(int, char *, int *);
+void socket_shutdown_recv(socket_t *sock);
+void socket_shutdown_send(socket_t *sock);
+void socket_shutdown_both(socket_t *sock);
+void socket_close(socket_t *sock);
 
-int socket_set_buffer(int, int, int);
-int socket_set_timeout(int, int, int);
+int socket_bind(socket_t *sock, const char *addr, int port);
+int socket_accept(socket_t *sock, socket_t *client);
+int socket_connect(socket_t *sock, const char *addr, int port);
 
-int socket_multicast_join(int, const char *, const char *);
-int socket_multicast_leave(int, const char *, const char *);
-int socket_multicast_renew(int, const char *, const char *);
-int socket_multicast_set_ttl(int, int);
-int socket_multicast_set_if(int, const char *);
+ssize_t socket_recv(socket_t *sock, void *buffer, size_t size);
+ssize_t socket_recvfrom(socket_t *sock, void *buffer, size_t size);
 
-ssize_t socket_recv(int, void *, size_t);
-ssize_t socket_send(int, void *, size_t);
+ssize_t socket_send(socket_t *sock, const void *buffer, size_t size);
+ssize_t socket_sendto(socket_t *sock, const void *buffer, size_t size);
 
-void * socket_sockaddr_init(const char *, int);
-void socket_sockaddr_destroy(void *sockaddr);
+int socket_fd(socket_t *sock);
+const char * socket_addr(socket_t *sock);
+int socket_port(socket_t *sock);
 
-ssize_t socket_recvfrom(int, void *, size_t, void *);
-ssize_t socket_sendto(int, void *, size_t, void *);
+void socket_set_sockaddr(socket_t *sock, const char *addr, int port);
+void socket_set_nonblock(socket_t *sock, int is_nonblock);
+void socket_set_reuseaddr(socket_t *sock, int is_on);
+void socket_set_non_delay(socket_t *sock, int is_on);
+void socket_set_keep_alive(socket_t *sock, int is_on);
+void socket_set_broadcast(socket_t *sock, int is_on);
+void socket_set_timeout(socket_t *sock, int rcvmsec, int sndmsec);
+void socket_set_buffer(socket_t *sock, int rcvbuf, int sndbuf);
+
+void socket_set_multicast_if(socket_t *sock, const char *addr);
+void socket_set_multicast_ttl(socket_t *sock, int ttl);
+void socket_set_multicast_loop(socket_t *sock, int is_on);
+void socket_multicast_join(socket_t *sock, const char *addr, int port, const char *localaddr);
+void socket_multicast_leave(socket_t *sock);
+void socket_multicast_renew(socket_t *sock);
 
 /* stream.c */
 
