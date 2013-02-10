@@ -1,435 +1,356 @@
 /*
- * AsC Framework
- * http://cesbo.com
+ * Astra Core
+ * http://cesbo.com/astra
  *
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  * Licensed under the MIT license.
  */
 
-#define ASC
 #include "asc.h"
 
-#ifndef EVENT_STEP
-#   define EVENT_STEP 32
-#endif
-
-#if defined(WITH_POLL) || defined(WITH_SELECT)
-#   define WITH_CUSTOM 1
-#endif
-
-#if !defined(WITH_CUSTOM) && (defined(__APPLE__) || defined(__FreeBSD__))
+#if defined(WITH_POLL)
+#   define EV_TYPE_POLL
+#   define MSG(_msg) "[core/event poll] " _msg
+#   include <poll.h>
+#   ifndef EV_STEP
+#       define EV_STEP 1024
+#   endif
+#elif defined(WITH_SELECT) || defined(_WIN32)
+#   define EV_TYPE_SELECT
+#   define MSG(_msg) "[core/event select] " _msg
+#   ifndef EV_STEP
+#       define EV_STEP 1024
+#   endif
+#elif !defined(WITH_CUSTOM) && (defined(__APPLE__) || defined(__FreeBSD__))
 #   define EV_TYPE_KQUEUE
 #   include <sys/event.h>
-#   define EV_ETYPE struct kevent
+#   define EV_OTYPE struct kevent
 #   define EV_FLAGS (EV_EOF | EV_ERROR)
 #   define EV_FFLAGS (NOTE_DELETE | NOTE_RENAME | NOTE_EXTEND)
-#   define LOG_MSG(_msg) "[core/event kqueue] " _msg
+#   ifndef EV_LIST_SIZE
+#       define EV_LIST_SIZE 1024
+#   endif
+#   define MSG(_msg) "[core/event kqueue] " _msg
 #elif !defined(WITH_CUSTOM) && defined(__linux)
 #   define EV_TYPE_EPOLL
 #   include <sys/epoll.h>
-#   define EV_ETYPE struct epoll_event
+#   define EV_OTYPE struct epoll_event
 #   if !defined(EPOLLRDHUP) && !defined(WITHOUT_EPOLLRDHUP)
-#       define WITHOUT_EPOLLRDHUP 1
-#   endif
-#   if defined(WITHOUT_EPOLLRDHUP)
 #       define EV_FLAGS (EPOLLERR | EPOLLHUP)
 #   else
 #       define EV_FLAGS (EPOLLERR | EPOLLRDHUP)
 #   endif
-#   define LOG_MSG(_msg) "[core/event epoll] " _msg
-#elif defined(_WIN32)
+#   ifndef EV_LIST_SIZE
+#       define EV_LIST_SIZE 1024
+#   endif
+#   define MSG(_msg) "[core/event epoll] " _msg
+#else
 #   include <windows.h>
 #   include <winsock2.h>
-#   ifdef WITH_POLL
-#       undef WITH_POLL
-#   endif
-#   ifndef WITH_SELECT
-#       define WITH_SELECT
-#   endif
+#   define WITH_SELECT
 #endif
 
-#if defined(WITH_POLL)
-#   define EV_TYPE_POLL
-#   define LOG_MSG(_msg) "[core/event poll] " _msg
-#   include <poll.h>
-#elif defined(WITH_SELECT)
-#   define EV_TYPE_SELECT
-#   define LOG_MSG(_msg) "[core/event select] " _msg
-#endif
+struct event_s
+{
+    int fd;
+    void (*callback)(void *, int);
+    void *arg;
+    int type;
+};
 
-typedef struct event_s event_t;
-static event_t *event = NULL;
+#if defined(EV_TYPE_KQUEUE) || defined(EV_TYPE_EPOLL)
+
+/*
+ * ooooooooooo oooooooooo    ooooooo  ooooo       ooooo
+ *  888    88   888    888 o888   888o 888         888
+ *  888ooo8     888oooo88  888     888 888         888
+ *  888    oo   888        888o   o888 888      o  888      o
+ * o888ooo8888 o888o         88ooo88  o888ooooo88 o888ooooo88
+ *
+ */
 
 typedef struct
 {
     int fd;
-    void (*cb)(void *, int);
-    void *arg;
-    int type;
-} event_item_t;
+    EV_OTYPE ed_list[EV_LIST_SIZE];
 
-#if defined(EV_TYPE_KQUEUE) || defined(EV_TYPE_EPOLL)
-
-struct event_s
-{
-    int fd_max;
     int fd_count;
+    list_t *event_list;
+} event_observer_t;
 
-    int efd;
-    EV_ETYPE *ed_list;
-    list_t *ev_list;
-};
+static event_observer_t event_observer;
 
 /* kqueue/epoll */
-void event_detach(int fd)
+void event_observer_init(void)
 {
-    if(fd <= 0)
-        return;
-
-    int ret;
-    event_item_t *ev;
-    list_t *item = list_get_first(event->ev_list);
-    while(item)
-    {
-        ev = (event_item_t *)list_get_data(item);
-        if(ev->fd == fd)
-            break;
-        item = list_get_next(item);
-    }
-    if(!item)
-    {
-        log_error(LOG_MSG("failed to detach fd=%d [not found]"), fd);
-        return;
-    }
-
-#ifdef DEBUG
-    log_debug(LOG_MSG("detach fd=%d"), fd);
-#endif
+    memset(&event_observer, 0, sizeof(event_observer));
+    event_observer.event_list = list_init();
 
 #if defined(EV_TYPE_KQUEUE)
-    int ev_filter = (EVENT_READ == ev->type) ? EVFILT_READ : EVFILT_WRITE;
-    EV_ETYPE ke;
-    EV_SET(&ke, fd, ev_filter, EV_DELETE, 0, 0, ev);
-    ret = kevent(event->efd, &ke, 1, NULL, 0, NULL);
+    event_observer.fd = kqueue();
 #else
-    ret = epoll_ctl(event->efd, EPOLL_CTL_DEL, fd, NULL);
+    event_observer.fd = epoll_create(1024);
 #endif
 
-    if(ret == -1)
-        log_error(LOG_MSG("failed to detach fd=%d [%s]")
-                  , fd, strerror(errno));
-
-    event->ev_list = list_delete(item, NULL);
-    free(ev);
-    --event->fd_count;
+    if(event_observer.fd == -1)
+    {
+        log_error(MSG("failed to init event observer [%s]"), strerror(errno));
+        abort();
+    }
 }
 
 /* kqueue/epoll */
-int event_attach(int fd, void (*cb)(void *, int), void *arg
-                 , int event_type)
+void event_observer_destroy(void)
 {
-#ifdef DEBUG
-    log_debug(LOG_MSG("attach fd=%d"), fd);
-#endif
+    if(!event_observer.fd)
+        return;
 
-    event_item_t *ev = (event_item_t *)calloc(1, sizeof(event_item_t));
-    ev->fd = fd;
-    ev->cb = cb;
-    ev->arg = arg;
-    ev->type = event_type;
+    event_t *previous_event = NULL;
+    for(list_first(event_observer.event_list)
+        ; list_is_data(event_observer.event_list)
+        ; list_first(event_observer.event_list))
+    {
+        event_t *event = (event_t *)list_data(event_observer.event_list);
+        if(event == previous_event)
+        {
+            log_error(MSG("infinite loop on observer destroing [event:%p]"), (void *)event);
+            abort();
+        }
+        event->callback(event->arg, EVENT_ERROR);
+    }
 
-    int ret = -1;
-    EV_ETYPE ed;
+    if(event_observer.fd > 0)
+    {
+        close(event_observer.fd);
+        event_observer.fd = 0;
+    }
+
+    list_destroy(event_observer.event_list);
+}
+
+/* kqueue/epoll */
+void event_observer_loop(void)
+{
+    static struct timespec tv = { 0, 10000000 };
+    if(!event_observer.fd_count)
+    {
+        nanosleep(&tv, NULL);
+        return;
+    }
 
 #if defined(EV_TYPE_KQUEUE)
-    const int ev_filter = (event_type == EVENT_READ)
-                          ? EVFILT_READ : EVFILT_WRITE;
+    const int ret = kevent(event_observer.fd, NULL, 0, event_observer.ed_list, EV_LIST_SIZE, &tv);
 #else
-    const int ev_filter = (event_type == EVENT_READ)
-                          ? EPOLLIN : EPOLLOUT;
+    const int ret = epoll_wait(event_observer.fd, event_observer.ed_list, EV_LIST_SIZE, 10);
+#endif
+
+    if(ret == -1)
+    {
+        if(errno == EINTR)
+            return;
+
+        log_warning(MSG("event observer critical error [%s]"), strerror(errno));
+        abort();
+    }
+
+    for(int i = 0; i < ret; ++i)
+    {
+        EV_OTYPE *ed = &event_observer.ed_list[i];
+#if defined(EV_TYPE_KQUEUE)
+        event_t *event = (event_t *)ed->udata;
+        const int ev_check_ok = ((ed->flags & EV_ADD)
+                                 && !(ed->fflags & EV_FFLAGS) && (ed->data > 0));
+        const int ev_check_err = (!ev_check_ok && (ed->flags & ~EV_ADD));
+#else
+        event_t *event = (event_t *)ed->data.ptr;
+        const int ev_check_ok = (!(ed->events & EPOLLERR) && ed->events & (EPOLLIN | EPOLLOUT));
+        const int ev_check_err = (!ev_check_ok && (ed->events & ~(EPOLLIN | EPOLLOUT)));
+#endif
+        if(ev_check_ok)
+            event->callback(event->arg, event->type);
+        if(ev_check_err)
+            event->callback(event->arg, EVENT_ERROR);
+    }
+}
+
+/* kqueue/epoll */
+event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int), void *arg)
+{
+#ifdef DEBUG
+    log_debug(MSG("attach fd=%d"), fd);
+#endif
+
+    event_t *event = (event_t *)malloc(sizeof(event_t));
+    event->fd = fd;
+    event->callback = callback;
+    event->arg = arg;
+    event->type = type;
+
+    int ret = -1;
+    EV_OTYPE ed;
+
+#if defined(EV_TYPE_KQUEUE)
+    const int ev_filter = (type == EVENT_READ) ? EVFILT_READ : EVFILT_WRITE;
+#else
+    const int ev_filter = (type == EVENT_READ) ? EPOLLIN : EPOLLOUT;
 #endif
 
     int try_count = 0;
     do
     {
 #if defined(EV_TYPE_KQUEUE)
-        EV_SET(&ed, fd, ev_filter, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, ev);
-        ret = kevent(event->efd, &ed, 1, NULL, 0, NULL);
+        EV_SET(&ed, fd, ev_filter, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, event);
+        ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
 #else
-        ed.data.ptr = ev;
+        ed.data.ptr = event;
         ed.events = ev_filter | EV_FLAGS;
-        ret = epoll_ctl(event->efd, EPOLL_CTL_ADD, fd, &ed);
+        ret = epoll_ctl(event_observer.fd, EPOLL_CTL_ADD, fd, &ed);
 #endif
         if(ret == -1)
         {
-            if(errno == EBADF && try_count < 10)
-            {
-                ++try_count;
-                log_warning(LOG_MSG("attach EBADF, try again %d")
-                            , try_count);
-                usleep(1000);
-                continue;
-            }
-
-            log_error(LOG_MSG("failed to attach fd=%d [%s]")
-                      , fd, strerror(errno));
-            free(ev);
-            return 0;
+            log_error(MSG("failed to attach fd=%d [%s]"), fd, strerror(errno));
+            free(event);
+            return NULL;
         }
         break;
     } while(1);
 
-    event->ev_list = list_append(event->ev_list, ev);
+    list_insert_tail(event_observer.event_list, event);
+    ++event_observer.fd_count;
 
-    ++event->fd_count;
-    return 1;
+    return event;
 }
 
 /* kqueue/epoll */
-void event_destroy(void)
+void event_detach(event_t *event)
 {
     if(!event)
         return;
 
-    list_t *i = list_get_first(event->ev_list);
-    while(i)
-    {
-        event_item_t *ev = (event_item_t *)list_get_data(i);
-        ev->cb(ev->arg, EVENT_ERROR);
-        i = list_get_first(event->ev_list);
-    }
+#ifdef DEBUG
+    log_debug(MSG("detach fd=%d"), event->fd);
+#endif
 
-    if(event->efd > 0)
-        close(event->efd);
+    int ret;
+#if defined(EV_TYPE_KQUEUE)
+    int ev_filter = (EVENT_READ == event->type) ? EVFILT_READ : EVFILT_WRITE;
+    EV_OTYPE ke;
+    EV_SET(&ke, event->fd, ev_filter, EV_DELETE, 0, 0, event);
+    ret = kevent(event_observer.fd, &ke, 1, NULL, 0, NULL);
+#else
+    ret = epoll_ctl(event_observer.fd, EPOLL_CTL_DEL, event->fd, NULL);
+#endif
 
-    free(event->ed_list);
+    if(ret == -1)
+        log_error(MSG("failed to detach fd=%d [%s]"), event->fd, strerror(errno));
+
+    list_remove_item(event_observer.event_list, event);
     free(event);
-    event = NULL;
-}
-
-/* kqueue/epoll */
-int event_init(void)
-{
-    event = (event_t *)calloc(1, sizeof(event_t));
-
-#if defined(EV_TYPE_KQUEUE)
-    event->efd = kqueue();
-#else
-    event->efd = epoll_create(1024);
-#endif
-
-    if(event->efd < 0)
-    {
-        log_error(LOG_MSG("failed to init [%s]"), strerror(errno));
-        event_destroy();
-        return 0;
-    }
-
-    return 1;
-}
-
-/* kqueue/epoll */
-void event_action(void)
-{
-    static struct timespec tv = { 0, 10000000 };
-    if(!event->fd_count)
-    {
-        nanosleep(&tv, NULL);
-        return;
-    }
-
-    if(event->fd_count > event->fd_max)
-    {
-        event->fd_max = ((event->fd_count / EVENT_STEP) + 1) * EVENT_STEP;
-        const size_t ed_list_size = sizeof(EV_ETYPE) * event->fd_max;
-        if(!event->ed_list)
-            event->ed_list = (EV_ETYPE *)malloc(ed_list_size);
-        else
-            event->ed_list = (EV_ETYPE *)realloc(event->ed_list, ed_list_size);
-    }
-
-    int ret = -1;
-#if defined(EV_TYPE_KQUEUE)
-    ret = kevent(event->efd, NULL, 0, event->ed_list, event->fd_count, &tv);
-#else
-    ret = epoll_wait(event->efd, event->ed_list, event->fd_count, 10);
-#endif
-
-    if(ret < 0)
-    {
-        if(errno != EINTR)
-            log_warning(LOG_MSG("action [%s]"), strerror(errno));
-
-        return;
-    }
-
-    for(int i = 0; i < ret; i++)
-    {
-        EV_ETYPE *ed = &event->ed_list[i];
-#if defined(EV_TYPE_KQUEUE)
-        event_item_t *ev = (event_item_t *)ed->udata;
-        const int ev_check_ok = ((ed->flags & EV_ADD)
-                                 && !(ed->fflags & EV_FFLAGS)
-                                 && (ed->data > 0));
-        const int ev_check_err = (!ev_check_ok
-                                  && (ed->flags & ~EV_ADD));
-#else
-        event_item_t *ev = (event_item_t *)ed->data.ptr;
-        const int ev_check_ok = (!(ed->events & EPOLLERR)
-                                 && ed->events & (EPOLLIN | EPOLLOUT));
-        const int ev_check_err = (!ev_check_ok
-                                  && (ed->events & ~(EPOLLIN | EPOLLOUT)));
-#endif
-        if(ev_check_ok)
-            ev->cb(ev->arg, ev->type);
-        if(ev_check_err)
-            ev->cb(ev->arg, EVENT_ERROR);
-    }
+    --event_observer.fd_count;
 }
 
 #elif defined(EV_TYPE_POLL)
 
-struct event_s
+/*
+ * oooooooooo    ooooooo  ooooo       ooooo
+ *  888    888 o888   888o 888         888
+ *  888oooo88  888     888 888         888
+ *  888        888o   o888 888      o  888      o
+ * o888o         88ooo88  o888ooooo88 o888ooooo88
+ *
+ */
+
+typedef struct
 {
     int fd_max;
     int fd_count;
 
     struct pollfd *ed_list;
-    event_item_t *ev_list;
-};
+    event_t *event_list;
+} event_observer_t;
+
+static event_observer_t event_observer;
 
 /* poll */
-void event_detach(int fd)
+void event_observer_init(void)
 {
-#ifdef DEBUG
-    log_debug(LOG_MSG("detach fd=%d"), fd);
-#endif
-
-    for(int i = 0; i < event->fd_count; i++)
-    {
-        if(event->ed_list[i].fd == fd)
-        {
-            event->ed_list[i].events = 0;
-            return;
-        }
-    }
-
-    log_error(LOG_MSG("failed to detach fd=%d [not found]"), fd);
-}
-
-/* poll */
-int event_attach(int fd, void (*cb)(void *, int), void *arg, int event_type)
-{
-#ifdef DEBUG
-    log_debug(LOG_MSG("attach fd=%d"), fd);
-#endif
-
-    if(event->fd_count >= event->fd_max)
-    {
-        event->fd_max += EVENT_STEP;
-        event->ev_list = realloc(event->ev_list
-                                 , sizeof(event_item_t) * event->fd_max);
-        event->ed_list = realloc(event->ed_list
-                                 , sizeof(struct pollfd) * event->fd_max);
-    }
-
-    event_item_t *ev = &event->ev_list[event->fd_count];
-    ev->fd = fd;
-    ev->cb = cb;
-    ev->arg = arg;
-    ev->type = event_type;
-
-    struct pollfd *ed = &event->ed_list[event->fd_count];
-    ed->events = (event_type == EVENT_READ) ? POLLIN : POLLOUT;
-    ed->fd = fd;
-    ed->revents = 0;
-
-    ++event->fd_count;
-    return 1;
+    memset(&event_observer, 0, sizeof(event_observer));
 }
 
 /* poll */
 void event_destroy(void)
 {
-    if(!event)
+    if(!event_observer.fd_count)
         return;
 
-    for(int i = 0; i < event->fd_count; i++)
+    for(int i = 0; i < event_observer.fd_count; i++)
     {
-        event_item_t *ev = &event->ev_list[i];
-        if(event->ed_list[i].events) // check, is callback dettach
-            ev->cb(ev->arg, EVENT_ERROR);
+        event_t *event = &event_observer.event_list[i];
+        if(event_observer.ed_list[i].events) // check, is callback dettach
+            event->callback(event->arg, EVENT_ERROR);
     }
-    if(event->fd_max > 0)
+    if(event_observer.fd_max > 0)
     {
-        free(event->ed_list);
-        free(event->ev_list);
+        free(event_observer.ed_list);
+        free(event_observer.event_list);
     }
 
-    free(event);
-    event = NULL;
+    event_observer.fd_max = 0;
+    event_observer.fd_count = 0;
 }
 
 /* poll */
-int event_init(void)
-{
-    event = calloc(1, sizeof(event_t));
-    if(event)
-        return 1;
-
-    event_destroy();
-    return 0;
-}
-
-/* poll */
-void event_action(void)
+void event_observer_loop(void)
 {
     static struct timespec tv = { 0, 10000000 };
-    if(!event->fd_count)
+    if(!event_observer.fd_count)
     {
         nanosleep(&tv, NULL);
         return;
     }
 
-    int ret = poll(event->ed_list, event->fd_count, 10);
-    if(ret < 0)
+    int ret = poll(event_observer.ed_list, event_observer.fd_count, 10);
+    if(ret == -1)
     {
-        if(errno != EINTR)
-            log_warning(LOG_MSG("action [%s]"), strerror(errno));
-        return;
+        if(errno == EINTR)
+            return;
+
+        log_warning(MSG("event observer critical error [%s]"), strerror(errno));
+        abort();
     }
 
-    int i = 0;
-    for(; i < event->fd_count && ret > 0; i++)
+    int i;
+
+    for(i = 0; i < event_observer.fd_count && ret > 0; ++i)
     {
-        int revents = event->ed_list[i].revents;
+        const int revents = event_observer.ed_list[i].revents;
         if(revents == 0)
             continue;
         --ret;
-        event_item_t *ev = &event->ev_list[i];
-        if(!event->ed_list[i].events)
+        event_t *event = &event_observer.event_list[i];
+        if(!event_observer.ed_list[i].events)
             continue;
         if(revents & (POLLIN | POLLOUT))
-            ev->cb(ev->arg, ev->type);
-        if(!event->ed_list[i].events)
+            event->callback(event->arg, event->type);
+        if(!event_observer.ed_list[i].events)
             continue;
         if(revents & (POLLERR | POLLHUP | POLLNVAL))
-            ev->cb(ev->arg, EVENT_ERROR);
+            event->callback(event->arg, EVENT_ERROR);
     }
 
     // clean detached
     i = 0;
-    while(i < event->fd_count)
+    while(i < event_observer.fd_count)
     {
-        if(!event->ed_list[i].events)
+        if(!event_observer.ed_list[i].events)
         {
-            --event->fd_count;
-            for(int j = i; j < event->fd_count; j++)
+            --event_observer.fd_count;
+            for(int j = i; j < event_observer.fd_count; ++j)
             {
-                memcpy(&event->ed_list[j], &event->ed_list[j+1]
+                memcpy(&event_observer.ed_list[j], &event_observer.ed_list[j+1]
                        , sizeof(struct pollfd));
-                memcpy(&event->ev_list[j], &event->ev_list[j+1]
-                       , sizeof(event_item_t));
+                memcpy(&event_observer.event_list[j], &event_observer.event_list[j+1]
+                       , sizeof(event_t));
             }
         }
         else
@@ -437,126 +358,112 @@ void event_action(void)
     }
 }
 
+/* poll */
+event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int), void *arg)
+{
+#ifdef DEBUG
+    log_debug(MSG("attach fd=%d"), fd);
+#endif
+
+    if(event_observer.fd_count >= event_observer.fd_max)
+    {
+        event_observer.fd_max += EV_STEP;
+        event_observer.event_list = realloc(event_observer.event_list
+                                            , sizeof(event_t) * event_observer.fd_max);
+        event_observer.ed_list = realloc(event_observer.ed_list
+                                 , sizeof(struct pollfd) * event_observer.fd_max);
+    }
+
+    event_t *event = &event_observer.event_list[event_observer.fd_count];
+    event->fd = fd;
+    event->callback = callback;
+    event->arg = arg;
+    event->type = type;
+
+    struct pollfd *ed = &event_observer.ed_list[event_observer.fd_count];
+    ed->events = (type == EVENT_READ) ? POLLIN : POLLOUT;
+    ed->fd = fd;
+    ed->revents = 0;
+
+    ++event_observer.fd_count;
+    return event;
+}
+
+/* poll */
+void event_detach(event_t *event)
+{
+    if(!event)
+        return;
+
+#ifdef DEBUG
+    log_debug(MSG("detach fd=%d"), event->fd);
+#endif
+
+    for(int i = 0; i < event_observer.fd_count; ++i)
+    {
+        if(event_observer.ed_list[i].fd == event->fd)
+        {
+            event_observer.ed_list[i].events = 0;
+            return;
+        }
+    }
+
+    log_error(MSG("failed to detach fd=%d [not found]"), event->fd);
+}
+
 #elif defined(EV_TYPE_SELECT)
 
-struct event_s
+/*
+ *  oooooooo8 ooooooooooo ooooo       ooooooooooo  oooooooo8 ooooooooooo
+ * 888         888    88   888         888    88 o888     88 88  888  88
+ *  888oooooo  888ooo8     888         888ooo8   888             888
+ *         888 888    oo   888      o  888    oo 888o     oo     888
+ * o88oooo888 o888ooo8888 o888ooooo88 o888ooo8888 888oooo88     o888o
+ *
+ */
+
+typedef struct
 {
     int max_fd;
     fd_set rmaster;
     fd_set wmaster;
 
-    list_t *ev_list;
-};
+    int fd_count;
+    list_t *event_list;
+} event_observer_t;
+
+static event_observer_t event_observer;
 
 /* select */
-void event_detach(int fd)
+void event_observer_init(void)
 {
-    if(fd <= 0)
+    memset(&event_observer, 0, sizeof(event_observer));
+    event_observer.event_list = list_init();
+}
+
+/* select */
+void event_observer_destroy(void)
+{
+    if(!event_observer.fd_count)
         return;
 
-    event_item_t *ev;
-    list_t *item = list_get_first(event->ev_list);
-    while(item)
+
+    list_first(event_observer.event_list);
+    while(list_is_data(event_observer.event_list))
     {
-        ev = list_get_data(item);
-        if(ev->fd == fd)
-            break;
-        item = list_get_next(item);
-    }
-    if(!item)
-    {
-        log_error(LOG_MSG("failed to detach fd=%d [not found]"), fd);
-        return;
+        event_t *event = (event_t *)list_data(event_observer.event_list);
+        event->callback(event->arg, EVENT_ERROR);
+        list_first(event_observer.event_list);
     }
 
-#ifdef DEBUG
-    log_debug(LOG_MSG("detach fd=%d"), fd);
-#endif
-
-    if(ev->type == EVENT_READ)
-        FD_CLR(fd, &event->rmaster);
-    else if(ev->type == EVENT_WRITE)
-        FD_CLR(fd, &event->wmaster);
-
-    event->ev_list = list_delete(item, NULL);
-    free(ev);
-
-    if(event->max_fd == fd)
-    {
-        item = list_get_first(event->ev_list);
-        int max_fd = 0;
-        while(item)
-        {
-            ev = list_get_data(item);
-            if(ev->fd > max_fd)
-                max_fd = ev->fd;
-            item = list_get_next(item);
-        }
-        event->max_fd = max_fd;
-    }
+    event_observer.fd_count = 0;
+    list_destroy(event_observer.event_list);
 }
 
 /* select */
-int event_attach(int fd, void (*cb)(void *, int), void *arg, int event_type)
+void event_observer_loop(void)
 {
-#ifdef DEBUG
-    log_debug(LOG_MSG("attach fd=%d"), fd);
-#endif
-
-    event_item_t *ev = calloc(1, sizeof(event_item_t));
-    ev->fd = fd;
-    ev->cb = cb;
-    ev->arg = arg;
-    ev->type = event_type;
-
-    if(event_type == EVENT_READ)
-        FD_SET(fd, &event->rmaster);
-    else if(event_type == EVENT_WRITE)
-        FD_SET(fd, &event->wmaster);
-
-    event->ev_list = list_append(event->ev_list, ev);
-
-    if(fd > event->max_fd)
-        event->max_fd = fd;
-    return 1;
-}
-
-/* select */
-void event_destroy(void)
-{
-    if(!event)
-        return;
-
-    list_t *i = list_get_first(event->ev_list);
-    while(i)
-    {
-        event_item_t *ev = list_get_data(i);
-        ev->cb(ev->arg, EVENT_ERROR);
-        i = list_get_first(event->ev_list);
-    }
-
-    free(event);
-    event = NULL;
-}
-
-/* select */
-int event_init(void)
-{
-    event = calloc(1, sizeof(event_t));
-
-    while(event)
-    {
-        return 1;
-    }
-
-    event_destroy();
-    return 0;
-}
-
-/* select */
-void event_action(void)
-{
-    if(!event->ev_list)
+    if(!event_observer.fd_count)
     {
 #ifdef _WIN32
         Sleep(10);
@@ -569,34 +476,108 @@ void event_action(void)
 
     fd_set rset;
     fd_set wset;
-    memcpy(&rset, &event->rmaster, sizeof(rset));
-    memcpy(&wset, &event->wmaster, sizeof(wset));
+    memcpy(&rset, &event_observer.rmaster, sizeof(rset));
+    memcpy(&wset, &event_observer.wmaster, sizeof(wset));
 
     static struct timeval timeout = { .tv_sec = 0, .tv_usec = 10000 };
-    int ret = select(event->max_fd + 1, &rset, &wset, NULL, &timeout);
-    if(ret < 0)
+    int ret = select(event_observer.max_fd + 1, &rset, &wset, NULL, &timeout);
+    if(ret == -1)
     {
-        if(errno != EINTR)
-            log_warning(LOG_MSG("action [%s]"), strerror(errno));
-        return;
+        if(errno == EINTR)
+            return;
+
+        log_warning(MSG("event observer critical error [%s]"), strerror(errno));
+        abort();
     }
 
-    list_t *i = list_get_first(event->ev_list);
-    while(i)
+    list_for(event_observer.event_list)
     {
-        event_item_t *ev = list_get_data(i);
-        i = list_get_next(i);
-        if(ev->type == EVENT_READ)
+        event_t *event = (event_t *)list_data(event_observer.event_list);
+        if(!event->fd)
+            continue;
+        else if(event->type == EVENT_READ)
         {
-            if(FD_ISSET(ev->fd, &rset))
-                ev->cb(ev->arg, EVENT_READ);
+            if(FD_ISSET(event->fd, &rset))
+                event->callback(event->arg, EVENT_READ);
         }
-        else if(ev->type == EVENT_WRITE)
+        else if(event->type == EVENT_WRITE)
         {
-            if(FD_ISSET(ev->fd, &wset))
-                ev->cb(ev->arg, EVENT_WRITE);
+            if(FD_ISSET(event->fd, &wset))
+                event->callback(event->arg, EVENT_WRITE);
         }
     }
+
+    list_first(event_observer.event_list);
+    while(list_is_data(event_observer.event_list))
+    {
+        event_t *event = (event_t *)list_data(event_observer.event_list);
+        if(!event->fd)
+        {
+            list_remove_current(event_observer.event_list);
+            free(event);
+        }
+        else
+            list_next(event_observer.event_list);
+    }
+}
+
+/* select */
+event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int), void *arg)
+{
+#ifdef DEBUG
+    log_debug(MSG("attach fd=%d"), fd);
+#endif
+
+    event_t *event = malloc(sizeof(event_t));
+    event->fd = fd;
+    event->callback = callback;
+    event->arg = arg;
+    event->type = type;
+
+    if(type == EVENT_READ)
+        FD_SET(fd, &event_observer.rmaster);
+    else if(type == EVENT_WRITE)
+        FD_SET(fd, &event_observer.wmaster);
+
+    list_insert_tail(event_observer.event_list, event);
+
+    if(fd > event_observer.max_fd)
+        event_observer.max_fd = fd;
+
+    ++event_observer.fd_count;
+    return event;
+}
+
+/* select */
+void event_detach(event_t *event)
+{
+    if(!event)
+        return;
+
+#ifdef DEBUG
+    log_debug(MSG("detach fd=%d"), fd);
+#endif
+
+    const int fd = event->fd;
+    event->fd = 0;
+
+    if(event->type == EVENT_READ)
+        FD_CLR(fd, &event_observer.rmaster);
+    else if(event->type == EVENT_WRITE)
+        FD_CLR(fd, &event_observer.wmaster);
+
+    if(event_observer.max_fd == fd)
+    {
+        event_observer.max_fd = 0;
+        list_for(event_observer.event_list)
+        {
+            event = (event_t *)list_data(event_observer.event_list);
+            if(event->fd > event_observer.max_fd)
+                event_observer.max_fd = event->fd;
+        }
+    }
+
+    --event_observer.fd_count;
 }
 
 #endif

@@ -26,20 +26,22 @@
 
 /* event.c */
 
-enum
+typedef struct event_s event_t;
+
+typedef enum
 {
     EVENT_NONE      = 0x00,
     EVENT_READ      = 0x01,
     EVENT_WRITE     = 0x02,
     EVENT_ERROR     = 0xF0
-};
+} event_type_t;
 
-int event_init(void);
-void event_action(void);
-void event_destroy(void);
+void event_observer_init(void);
+void event_observer_loop(void);
+void event_observer_destroy(void);
 
-int event_attach(int, void (*)(void *, int), void *, int);
-void event_detach(int);
+event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int), void *arg);
+void event_detach(event_t *event);
 
 /* timer.c */
 
@@ -68,6 +70,8 @@ void list_insert_tail(list_t *list, void *data);
 
 void list_remove_current(list_t *list);
 void list_remove_item(list_t *list, void *data);
+
+#define list_for(__list) for(list_first(__list); list_is_data(__list); list_next(__list))
 
 /* log.c */
 

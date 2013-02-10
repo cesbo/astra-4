@@ -6,7 +6,6 @@
  * Licensed under the MIT license.
  */
 
-#define ASC
 #include "asc.h"
 
 #include <sys/queue.h>
@@ -90,8 +89,6 @@ void list_remove_current(list_t *list)
         abort();
     }
     item_t *next = TAILQ_NEXT(list->current, entries);
-    if(!next)
-        next = TAILQ_PREV(list->current, list_head_s, entries);
     TAILQ_REMOVE(&list->list, list->current, entries);
     list->current = next;
 }
