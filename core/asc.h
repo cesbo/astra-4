@@ -16,6 +16,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <setjmp.h>
 #include <time.h>
 #include <string.h>
 #include <unistd.h>
@@ -151,10 +152,19 @@ ssize_t stream_recv(stream_t *, void *, size_t);
 
 typedef struct thread_s thread_t;
 
-int thread_init(thread_t **, void (*)(void *), void *);
-void thread_destroy(thread_t **);
+#ifndef _WIN32
+jmp_buf * __thread_getjmp(void);
+void __thread_setjmp(thread_t *thread);
+#   define thread_while(_thread)                                            \
+        const int __thread_loop = setjmp(*__thread_getjmp());               \
+        if(!__thread_loop) __thread_setjmp(_thread);                        \
+        while(!__thread_loop)
+#else
+#   define thread_while() while(1)
+#endif
 
-int thread_is_started(thread_t *);
+void thread_init(thread_t **, void (*)(void *), void *);
+void thread_destroy(thread_t **);
 
 /* */
 

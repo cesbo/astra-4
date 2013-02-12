@@ -1,8 +1,8 @@
 /*
- * AsC Framework
- * http://cesbo.com
+ * Astra Core
+ * http://cesbo.com/astra
  *
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  * Licensed under the MIT license.
  */
 
@@ -16,16 +16,12 @@
 #   include <pthread.h>
 #endif
 
-typedef enum
-{
-    THREAD_UNKNOWN = 0,
-    THREAD_STARTED = 1,
-    THREAD_FINISHED = 2,
-} thread_status_t;
+static jmp_buf global_jmp;
 
 struct thread_s
 {
-    thread_status_t status; // must be first (for IS_THREAD_STARTED)
+    jmp_buf jmp;
+    int is_set_jmp;
 
     void (*loop)(void *);
     void *arg;
@@ -37,95 +33,100 @@ struct thread_s
 #endif
 };
 
-#ifndef _WIN32
-static void ignore_handler(int sig)
-{}
-#endif
-
 #ifdef _WIN32
+
 DWORD WINAPI thread_loop(void *arg)
-#else
-static void * thread_loop(void *arg)
-#endif
 {
-    thread_t *t = arg;
-
-#ifndef _WIN32
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = ignore_handler;
-    if(sigaction(SIGUSR1, &sa, NULL) < 0)
-        pthread_exit(NULL);
-#endif
-
-    t->status = THREAD_STARTED;
-    t->loop(t->arg);
-    t->status = THREAD_FINISHED;
-
-#ifdef _WIN32
+    thread_t *thread = arg;
+    thread->loop(thread->arg);
     return 0;
-#else
-    return NULL;
-#endif
 }
 
-int thread_init(thread_t **tptr, void (*loop)(void *), void *arg)
+#else
+
+static void thread_handler(int sig)
 {
-    if(!tptr || !loop)
-        return 0;
+    if(sig == SIGUSR1)
+        longjmp(global_jmp, 1);
+}
 
-    thread_t *t = calloc(1, sizeof(thread_t));
-    t->loop = loop;
-    t->arg = arg;
-    *tptr = t;
+inline jmp_buf * __thread_getjmp(void)
+{
+    return &global_jmp;
+}
 
-    int ret = 0;
+void __thread_setjmp(thread_t *thread)
+{
+    memcpy(&thread->jmp, &global_jmp, sizeof(jmp_buf));
+    thread->is_set_jmp = 1;
+
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = thread_handler;
+    if(sigaction(SIGUSR1, &sa, NULL) < 0)
+    {
+        log_error("[core/thread] sigaction() failed\n");
+        abort();
+    }
+}
+
+static void * thread_loop(void *arg)
+{
+    thread_t *thread = arg;
+    thread->loop(thread->arg);
+    return NULL;
+}
+
+#endif /* ! _WIN32 */
+
+void thread_init(thread_t **thread_ptr, void (*loop)(void *), void *arg)
+{
+    thread_t *thread = calloc(1, sizeof(thread_t));
+    thread->loop = loop;
+    thread->arg = arg;
+    *thread_ptr = thread;
+
 #ifdef _WIN32
     DWORD tid;
-    t->thread = CreateThread(NULL, 0, &thread_loop, t, 0, &tid);
-    if(!t->thread)
-        ret = -1;
+    thread->thread = CreateThread(NULL, 0, &thread_loop, thread, 0, &tid);
+    if(thread->thread != NULL)
+        return;
 #else
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-    ret = pthread_create(&t->thread, &attr, thread_loop, t);
+    const int ret = pthread_create(&thread->thread, &attr, thread_loop, thread);
     pthread_attr_destroy(&attr);
+    if(ret == 0)
+        return;
 #endif
 
-    if(ret != 0)
-    {
-        *tptr = NULL;
-        free(t);
-        return 0;
-    }
-
-    return 1;
+    *thread_ptr = NULL;
+    free(thread);
+    log_error("[core/thread] failed to start thread");
+    abort();
 }
 
-void thread_destroy(thread_t **tptr)
+void thread_destroy(thread_t **thread_ptr)
 {
-    if(!tptr)
+    if(!thread_ptr)
         return;
-    thread_t *t = *tptr;
-    if(!t)
+    thread_t *thread = *thread_ptr;
+    if(!thread)
         return;
-
-    t->status = THREAD_FINISHED;
 
 #ifdef _WIN32
-    TerminateThread(t->thread, 0);
-    CloseHandle(t->thread);
+    TerminateThread(thread->thread, 0);
+    CloseHandle(thread->thread);
 #else
-    pthread_kill(t->thread, SIGUSR1);
-    pthread_join(t->thread, NULL);
+    if(thread->is_set_jmp)
+    {
+        memcpy(&global_jmp, &thread->jmp, sizeof(jmp_buf));
+        pthread_kill(thread->thread, SIGUSR1);
+    }
+    pthread_join(thread->thread, NULL);
 #endif
 
-    free(t);
-    *tptr = NULL;
-}
-
-inline int thread_is_started(thread_t *t)
-{
-    return (t && t->status == THREAD_STARTED);
+    free(thread);
+    *thread_ptr = NULL;
 }
