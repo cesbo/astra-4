@@ -276,6 +276,11 @@ void event_observer_init(void)
     memset(&event_observer, 0, sizeof(event_observer));
 }
 
+void event_observer_destroy(void)
+{
+    ;
+}
+
 /* poll */
 void event_destroy(void)
 {
@@ -446,13 +451,18 @@ void event_observer_destroy(void)
     if(!event_observer.fd_count)
         return;
 
+    list_for(event_observer.event_list)
+    {
+        event_t *event = (event_t *)list_data(event_observer.event_list);
+        if(event->fd > 0)
+            event->callback(event->arg, EVENT_ERROR);
+    }
 
     list_first(event_observer.event_list);
     while(list_is_data(event_observer.event_list))
     {
-        event_t *event = (event_t *)list_data(event_observer.event_list);
-        event->callback(event->arg, EVENT_ERROR);
-        list_first(event_observer.event_list);
+        free(list_data(event_observer.event_list));
+        list_remove_current(event_observer.event_list);
     }
 
     event_observer.fd_count = 0;
@@ -554,7 +564,7 @@ void event_detach(event_t *event)
         return;
 
 #ifdef DEBUG
-    log_debug(MSG("detach fd=%d"), fd);
+    log_debug(MSG("detach fd=%d"), event->fd);
 #endif
 
     const int fd = event->fd;
