@@ -109,7 +109,7 @@ void socket_shutdown_both(socket_t *sock);
 void socket_close(socket_t *sock);
 
 int socket_bind(socket_t *sock, const char *addr, int port);
-int socket_accept(socket_t *sock, socket_t *client);
+int socket_accept(socket_t *sock, socket_t **client_ptr);
 int socket_connect(socket_t *sock, const char *addr, int port);
 
 ssize_t socket_recv(socket_t *sock, void *buffer, size_t size);
@@ -121,6 +121,10 @@ ssize_t socket_sendto(socket_t *sock, const void *buffer, size_t size);
 int socket_fd(socket_t *sock);
 const char * socket_addr(socket_t *sock);
 int socket_port(socket_t *sock);
+
+int socket_event_attach(socket_t *sock, event_type_t type
+                        , void (*callback)(void *, int), void *arg);
+void socket_event_detach(socket_t *sock);
 
 void socket_set_sockaddr(socket_t *sock, const char *addr, int port);
 void socket_set_nonblock(socket_t *sock, int is_nonblock);
@@ -163,8 +167,8 @@ void __thread_setjmp(thread_t *thread);
 #   define thread_while() while(1)
 #endif
 
-void thread_init(thread_t **, void (*)(void *), void *);
-void thread_destroy(thread_t **);
+void thread_init(thread_t **thread_ptr, void (*loop)(void *), void *arg);
+void thread_destroy(thread_t **thread_ptr);
 
 /* */
 

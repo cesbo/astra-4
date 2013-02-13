@@ -146,7 +146,7 @@ IN_OUT="astra$IN_APP_EXTENSION"
 IN_CFLAGS="$IN_CFLAGS \
 -Wall -Wstrict-prototypes -std=gnu99 \
 -fno-builtin -funit-at-a-time -ffast-math -fforce-addr \
--I$SRCDIR -I$SRCDIR/asc -I$SRCDIR/lua $ARG_CFLAGS"
+-I$SRCDIR -I$SRCDIR/core -I$SRCDIR/lua $ARG_CFLAGS"
 
 echo "Check modules:"
 
@@ -274,7 +274,7 @@ EOF
     fi
 fi
 
-check_module $SRCDIR/asc
+check_module $SRCDIR/core
 IN_OBJECTS_CORE="$IN_OBJECTS_APP $IN_OBJECTS"
 IN_OBJECTS=""
 

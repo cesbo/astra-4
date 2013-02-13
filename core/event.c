@@ -195,7 +195,6 @@ event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int),
     const int ev_filter = (type == EVENT_READ) ? EPOLLIN : EPOLLOUT;
 #endif
 
-    int try_count = 0;
     do
     {
 #if defined(EV_TYPE_KQUEUE)

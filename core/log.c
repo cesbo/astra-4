@@ -1,8 +1,8 @@
 /*
- * AsC Framework
- * http://cesbo.com
+ * Astra Core
+ * http://cesbo.com/astra
  *
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  * Licensed under the MIT license.
  */
 

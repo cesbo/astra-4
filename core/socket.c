@@ -27,12 +27,11 @@
 struct socket_s
 {
     int fd;
-
     int family;
-    int type;
-    int proto;
 
-    struct sockaddr_in clinetaddr;
+    event_t *event;
+
+    struct sockaddr_in addr;
     struct sockaddr_in sockaddr; /* recvfrom, sendto, set_sockaddr */
 
     struct ip_mreq mreq;
@@ -100,9 +99,9 @@ char * socket_error(void)
  *
  */
 
-static socket_t * __socket_open(int family, int type, int proto)
+static socket_t * __socket_open(int family, int type)
 {
-    const int fd = socket(family, type, proto);
+    const int fd = socket(family, type, 0);
     if(fd == -1)
     {
         log_error("[core/socket] failed to open socket [%s]", socket_error());
@@ -112,19 +111,17 @@ static socket_t * __socket_open(int family, int type, int proto)
     sock->fd = fd;
     sock->mreq.imr_multiaddr.s_addr = INADDR_NONE;
     sock->family = family;
-    sock->type = type;
-    sock->proto = proto;
     return sock;
 }
 
-socket_t * socket_open_tcp4(void)
+inline socket_t * socket_open_tcp4(void)
 {
-    return __socket_open(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    return __socket_open(PF_INET, SOCK_STREAM);
 }
 
-socket_t * socket_open_udp4(void)
+inline socket_t * socket_open_udp4(void)
 {
-    return __socket_open(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    return __socket_open(PF_INET, SOCK_DGRAM);
 }
 
 /*
@@ -153,6 +150,9 @@ void socket_shutdown_both(socket_t *sock)
 
 void socket_close(socket_t *sock)
 {
+    if(sock->event)
+        event_detach(sock->event);
+
     if(sock->fd > 0)
     {
 #ifdef _WIN32
@@ -176,13 +176,13 @@ void socket_close(socket_t *sock)
 
 int socket_bind(socket_t *sock, const char *addr, int port)
 {
-    memset(&sock->clinetaddr, 0, sizeof(sock->clinetaddr));
-    sock->clinetaddr.sin_family = sock->family;
-    sock->clinetaddr.sin_port = htons(port);
+    memset(&sock->addr, 0, sizeof(sock->addr));
+    sock->addr.sin_family = sock->family;
+    sock->addr.sin_port = htons(port);
     if(addr) // INADDR_ANY by default
-        sock->clinetaddr.sin_addr.s_addr = inet_addr(addr);
+        sock->addr.sin_addr.s_addr = inet_addr(addr);
 
-    if(bind(sock->fd, (struct sockaddr *)&sock->clinetaddr, sizeof(sock->clinetaddr)) == -1)
+    if(bind(sock->fd, (struct sockaddr *)&sock->addr, sizeof(sock->addr)) == -1)
     {
         log_error(MSG("bind() to %s:%d failed [%s]"), addr, port, socket_error());
         socket_close(sock);
@@ -191,8 +191,8 @@ int socket_bind(socket_t *sock, const char *addr, int port)
 
     if(!port)
     {
-        socklen_t addrlen = sizeof(sock->clinetaddr);
-        getsockname(sock->fd, (struct sockaddr *)&sock->clinetaddr, &addrlen);
+        socklen_t addrlen = sizeof(sock->addr);
+        getsockname(sock->fd, (struct sockaddr *)&sock->addr, &addrlen);
     }
 
     if(listen(sock->fd, SOMAXCONN) == -1)
@@ -216,16 +216,18 @@ int socket_bind(socket_t *sock, const char *addr, int port)
  *
  */
 
-int socket_accept(socket_t *sock, socket_t *client)
+int socket_accept(socket_t *sock, socket_t **client_ptr)
 {
-    socklen_t sin_size = sizeof(client->clinetaddr);
-    memset(&client->clinetaddr, 0, sizeof(sin_size));
-    client->fd = accept(sock->fd, (struct sockaddr *)&client->clinetaddr, &sin_size);
+    socket_t *client = calloc(1, sizeof(socket_t));
+    socklen_t sin_size = sizeof(client->addr);
+    client->fd = accept(sock->fd, (struct sockaddr *)&client->addr, &sin_size);
     if(client->fd <= 0)
     {
         log_error(MSG("accept() failed [%s]"), socket_error());
+        free(client);
         return 0;
     }
+    *client_ptr = client;
     return 1;
 }
 
@@ -240,12 +242,12 @@ int socket_accept(socket_t *sock, socket_t *client)
 
 int socket_connect(socket_t *sock, const char *addr, int port)
 {
-    memset(&sock->clinetaddr, 0, sizeof(sock->clinetaddr));
-    sock->clinetaddr.sin_family = sock->family;
-    sock->clinetaddr.sin_addr.s_addr = inet_addr(addr);
-    sock->clinetaddr.sin_port = htons(port);
+    memset(&sock->addr, 0, sizeof(sock->addr));
+    sock->addr.sin_family = sock->family;
+    sock->addr.sin_addr.s_addr = inet_addr(addr);
+    sock->addr.sin_port = htons(port);
 
-    if(connect(sock->fd, (struct sockaddr *)&sock->clinetaddr, sizeof(sock->clinetaddr)) == -1)
+    if(connect(sock->fd, (struct sockaddr *)&sock->addr, sizeof(sock->addr)) == -1)
     {
 #ifdef _WIN32
         const int err = WSAGetLastError();
@@ -333,12 +335,36 @@ inline int socket_fd(socket_t *sock)
 
 inline const char * socket_addr(socket_t *sock)
 {
-    return inet_ntoa(sock->clinetaddr.sin_addr);
+    return inet_ntoa(sock->addr.sin_addr);
 }
 
 inline int socket_port(socket_t *sock)
 {
-    return ntohs(sock->clinetaddr.sin_port);
+    return ntohs(sock->addr.sin_port);
+}
+
+/*
+ * ooooooooooo ooooo  oooo ooooooooooo oooo   oooo ooooooooooo
+ *  888    88   888    88   888    88   8888o  88  88  888  88
+ *  888ooo8      888  88    888ooo8     88 888o88      888
+ *  888    oo     88888     888    oo   88   8888      888
+ * o888ooo8888     888     o888ooo8888 o88o    88     o888o
+ *
+ */
+
+int socket_event_attach(socket_t *sock, event_type_t type
+                        , void (*callback)(void *, int), void *arg)
+{
+    sock->event = event_attach(sock->fd, type, callback, arg);
+    return (sock->event != NULL);
+}
+
+void socket_event_detach(socket_t *sock)
+{
+    if(!sock->event)
+        return;
+    event_detach(sock->event);
+    sock->event = NULL;
 }
 
 /*

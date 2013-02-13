@@ -60,7 +60,7 @@ inline int list_is_data(list_t *list)
 
 inline void * list_data(list_t *list)
 {
-    return list->current;
+    return list->current->data;
 }
 
 void list_insert_head(list_t *list, void *data)
@@ -83,7 +83,7 @@ void list_insert_tail(list_t *list, void *data)
 
 void list_remove_current(list_t *list)
 {
-    if(list->current)
+    if(!list->current)
     {
         log_error(MSG());
         abort();
