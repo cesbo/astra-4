@@ -80,7 +80,6 @@ typedef struct
 
 static event_observer_t event_observer;
 
-/* kqueue/epoll */
 void event_observer_init(void)
 {
     memset(&event_observer, 0, sizeof(event_observer));
@@ -99,7 +98,6 @@ void event_observer_init(void)
     }
 }
 
-/* kqueue/epoll */
 void event_observer_destroy(void)
 {
     if(!event_observer.fd)
@@ -128,7 +126,6 @@ void event_observer_destroy(void)
     list_destroy(event_observer.event_list);
 }
 
-/* kqueue/epoll */
 void event_observer_loop(void)
 {
     static struct timespec tv = { 0, 10000000 };
@@ -173,7 +170,6 @@ void event_observer_loop(void)
     }
 }
 
-/* kqueue/epoll */
 event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int), void *arg)
 {
 #ifdef DEBUG
@@ -220,7 +216,6 @@ event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int),
     return event;
 }
 
-/* kqueue/epoll */
 void event_detach(event_t *event)
 {
     if(!event)
@@ -270,19 +265,12 @@ typedef struct
 
 static event_observer_t event_observer;
 
-/* poll */
 void event_observer_init(void)
 {
     memset(&event_observer, 0, sizeof(event_observer));
 }
 
 void event_observer_destroy(void)
-{
-    ;
-}
-
-/* poll */
-void event_destroy(void)
 {
     if(!event_observer.fd_count)
         return;
@@ -303,7 +291,6 @@ void event_destroy(void)
     event_observer.fd_count = 0;
 }
 
-/* poll */
 void event_observer_loop(void)
 {
     static struct timespec tv = { 0, 10000000 };
@@ -362,7 +349,6 @@ void event_observer_loop(void)
     }
 }
 
-/* poll */
 event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int), void *arg)
 {
 #ifdef DEBUG
@@ -393,7 +379,6 @@ event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int),
     return event;
 }
 
-/* poll */
 void event_detach(event_t *event)
 {
     if(!event)
@@ -438,14 +423,12 @@ typedef struct
 
 static event_observer_t event_observer;
 
-/* select */
 void event_observer_init(void)
 {
     memset(&event_observer, 0, sizeof(event_observer));
     event_observer.event_list = list_init();
 }
 
-/* select */
 void event_observer_destroy(void)
 {
     if(!event_observer.fd_count)
@@ -469,7 +452,6 @@ void event_observer_destroy(void)
     list_destroy(event_observer.event_list);
 }
 
-/* select */
 void event_observer_loop(void)
 {
     if(!event_observer.fd_count)
@@ -530,7 +512,6 @@ void event_observer_loop(void)
     }
 }
 
-/* select */
 event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int), void *arg)
 {
 #ifdef DEBUG
@@ -557,7 +538,6 @@ event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int),
     return event;
 }
 
-/* select */
 void event_detach(event_t *event)
 {
     if(!event)
