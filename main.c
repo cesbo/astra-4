@@ -1,5 +1,5 @@
 /*
- * Astra
+ * Astra Main App
  * http://cesbo.com/astra
  *
  * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
@@ -14,7 +14,6 @@
 
 #include "config.h"
 
-static const char __version[] = ASTRA_VERSION_STR;
 static jmp_buf main_loop;
 
 lua_State *lua;
@@ -32,27 +31,6 @@ void astra_abort(void)
     log_error("[main] abort execution. line:%d source:%s", ar.currentline, ar.source);
     abort();
 }
-
-static int _astra_exit(lua_State *L)
-{
-    (void)L;
-    astra_exit();
-    return 0;
-}
-
-static int _astra_abort(lua_State *L)
-{
-    (void)L;
-    astra_abort();
-    return 0;
-}
-
-static luaL_Reg astra_api[] =
-{
-    { "exit", _astra_exit },
-    { "abort", _astra_abort },
-    { NULL, NULL }
-};
 
 static void signal_handler(int signum)
 {
@@ -84,21 +62,6 @@ static void astra_init(int argc, const char **argv)
 
     lua = luaL_newstate();
     luaL_openlibs(lua);
-
-    // astra
-    luaL_newlib(lua, astra_api);
-
-#ifdef DEBUG
-    lua_pushboolean(lua, 1);
-#else
-    lua_pushboolean(lua, 0);
-#endif
-    lua_setfield(lua, -2, "debug");
-
-    lua_pushstring(lua, __version);
-    lua_setfield(lua, -2, "version");
-
-    lua_setglobal(lua, "astra");
 
     for(int i = 0; astra_mods[i]; i++)
         astra_mods[i](lua);
@@ -170,9 +133,9 @@ int main(int argc, const char **argv)
 {
     if(argc < 2)
     {
-        printf("Astra %s\n"
+        printf("Astra " ASTRA_VERSION_STR "\n"
                "Usage: %s script [argv]\n"
-               , __version, argv[0]);
+               , argv[0]);
         return 1;
     }
 
