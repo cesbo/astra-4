@@ -10,7 +10,7 @@
 #define _ASTRA_H_ 1
 
 #include "core/asc.h"
-
+#include <sys/queue.h>
 #include "lua/lua.h"
 #include "lua/lualib.h"
 #include "lua/lauxlib.h"
@@ -147,8 +147,8 @@ typedef struct
         return 1;                                                           \
     }
 
-int module_set_number(module_data_t *mod, const char *name, int *number);
-int module_set_string(module_data_t *mod, const char *name, const char **string, int *length);
+int module_option_number(module_data_t *mod, const char *name, int *number);
+int module_option_string(module_data_t *mod, const char *name, const char **string);
 
 void astra_exit(void);
 void astra_abort(void);

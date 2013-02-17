@@ -15,9 +15,9 @@ struct module_data_s
     MODULE_STREAM_BASE();
 };
 
-/* module_set_* */
+/* module_option_* */
 
-int module_set_number(module_data_t *mod, const char *name, int *number)
+int module_option_number(module_data_t *mod, const char *name, int *number)
 {
     do
     {
@@ -48,10 +48,10 @@ int module_set_number(module_data_t *mod, const char *name, int *number)
             lua_pop(lua, 1);
     } while(0);
 
-    return 0;
+    return -1;
 }
 
-int module_set_string(module_data_t *mod, const char *name, const char **string, int *length)
+int module_option_string(module_data_t *mod, const char *name, const char **string)
 {
     do
     {
@@ -60,17 +60,16 @@ int module_set_string(module_data_t *mod, const char *name, const char **string,
         lua_getfield(lua, 2, name);
         if(lua_type(lua, -1) == LUA_TSTRING)
         {
-            if(length)
-                *length = luaL_len(lua, -1);
+            const int length = luaL_len(lua, -1);
             *string = lua_tostring(lua, -1);
             lua_pop(lua, 1);
-            return 1;
+            return length;
         }
         else
             lua_pop(lua, 1);
     } while(0);
 
-    return 0;
+    return -1;
 }
 
 /* module_stream_* */
