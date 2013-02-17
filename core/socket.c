@@ -352,10 +352,21 @@ inline int socket_port(socket_t *sock)
  *
  */
 
-int socket_event_attach(socket_t *sock, event_type_t type
-                        , void (*callback)(void *, int), void *arg)
+int socket_event_on_accept(socket_t *sock, void (*callback)(void *, int), void *arg)
 {
-    sock->event = event_attach(sock->fd, type, callback, arg);
+    sock->event = event_attach(sock->fd, EVENT_READ, callback, arg);
+    return (sock->event != NULL);
+}
+
+int socket_event_on_read(socket_t *sock, void (*callback)(void *, int), void *arg)
+{
+    sock->event = event_attach(sock->fd, EVENT_READ, callback, arg);
+    return (sock->event != NULL);
+}
+
+int socket_event_on_connect(socket_t *sock, void (*callback)(void *, int), void *arg)
+{
+    sock->event = event_attach(sock->fd, EVENT_WRITE, callback, arg);
     return (sock->event != NULL);
 }
 

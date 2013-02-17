@@ -92,7 +92,7 @@ static void module_initialize(module_data_t *mod)
     if(module_option_number("socket_size", &value))
         socket_set_buffer(mod->sock, value, 0);
 
-    socket_event_attach(mod->sock, EVENT_READ, udp_input_callback, mod);
+    socket_event_on_read(mod->sock, udp_input_callback, mod);
 
     const char *localaddr = NULL;
     module_option_string("localaddr", &localaddr);
