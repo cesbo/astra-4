@@ -260,6 +260,10 @@ check_main_app()
     echo "" >&5
 }
 
+if [ -z "$ARG_MODULE_PACK" ] ; then
+    check_main_app
+fi
+
 #
 
 select_modules()

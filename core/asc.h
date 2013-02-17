@@ -46,13 +46,16 @@ void event_detach(event_t *event);
 
 /* timer.c */
 
-void timer_action(void);
-void timer_destroy(void);
+typedef struct timer_s timer_t;
 
-void timer_one_shot(unsigned int, void (*)(void *), void *);
+void timer_observer_init(void);
+void timer_observer_loop(void);
+void timer_observer_destroy(void);
 
-void * timer_attach(unsigned int, void (*)(void *), void *);
-void timer_detach(void *);
+void timer_one_shot(unsigned int ms, void (*callback)(void *), void *arg);
+
+timer_t * timer_attach(unsigned int ms, void (*callback)(void *), void *arg);
+void timer_detach(timer_t *timer);
 
 /* list.c */
 
