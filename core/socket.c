@@ -182,6 +182,17 @@ int socket_bind(socket_t *sock, const char *addr, int port)
     if(addr) // INADDR_ANY by default
         sock->addr.sin_addr.s_addr = inet_addr(addr);
 
+#if defined(__APPLE__)
+    int optval = 0;
+    socklen_t optlen = sizeof(optval);
+    getsockopt(sock->fd, SOL_SOCKET, SO_TYPE, &optval, &optlen);
+    if(optval == SOCK_DGRAM)
+    {
+        optval = 1;
+        setsockopt(sock->fd, SOL_SOCKET, SO_REUSEPORT, &optval, optlen);
+    }
+#endif
+
     if(bind(sock->fd, (struct sockaddr *)&sock->addr, sizeof(sock->addr)) == -1)
     {
         log_error(MSG("bind() to %s:%d failed [%s]"), addr, port, socket_error());
