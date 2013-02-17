@@ -519,7 +519,7 @@ void socket_set_multicast_loop(socket_t *sock, int is_on)
 
 /* multicast_* */
 
-void socket_multicast_join(socket_t *sock, const char *addr, int port, const char *localaddr)
+void socket_multicast_join(socket_t *sock, const char *addr, const char *localaddr)
 {
     memset(&sock->mreq, 0, sizeof(sock->mreq));
     sock->mreq.imr_multiaddr.s_addr = inet_addr(addr);

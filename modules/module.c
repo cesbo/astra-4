@@ -17,7 +17,7 @@ struct module_data_s
 
 /* module_option_* */
 
-int module_option_number(module_data_t *mod, const char *name, int *number)
+int module_option_number(const char *name, int *number)
 {
     do
     {
@@ -51,7 +51,7 @@ int module_option_number(module_data_t *mod, const char *name, int *number)
     return -1;
 }
 
-int module_option_string(module_data_t *mod, const char *name, const char **string)
+int module_option_string(const char *name, const char **string)
 {
     do
     {

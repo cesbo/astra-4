@@ -141,19 +141,9 @@ void socket_set_buffer(socket_t *sock, int rcvbuf, int sndbuf);
 void socket_set_multicast_if(socket_t *sock, const char *addr);
 void socket_set_multicast_ttl(socket_t *sock, int ttl);
 void socket_set_multicast_loop(socket_t *sock, int is_on);
-void socket_multicast_join(socket_t *sock, const char *addr, int port, const char *localaddr);
+void socket_multicast_join(socket_t *sock, const char *addr, const char *localaddr);
 void socket_multicast_leave(socket_t *sock);
 void socket_multicast_renew(socket_t *sock);
-
-/* stream.c */
-
-typedef struct stream_s stream_t;
-
-stream_t * stream_init(void (*)(void *), void *);
-void stream_destroy(stream_t *);
-
-ssize_t stream_send(stream_t *, void *, size_t);
-ssize_t stream_recv(stream_t *, void *, size_t);
 
 /* thread.c */
 

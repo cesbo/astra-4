@@ -106,7 +106,7 @@ typedef struct
     {                                                                       \
         module_data_t *mod = luaL_checkudata(L, 1, __module_name);          \
         module_method_t *m = lua_touserdata(L, lua_upvalueindex(1));        \
-        return m->func(mod);                                                \
+        return m->method(mod);                                              \
     }                                                                       \
     static int __module_tostring(lua_State *L)                              \
     {                                                                       \
@@ -147,8 +147,8 @@ typedef struct
         return 1;                                                           \
     }
 
-int module_option_number(module_data_t *mod, const char *name, int *number);
-int module_option_string(module_data_t *mod, const char *name, const char **string);
+int module_option_number(const char *name, int *number);
+int module_option_string(const char *name, const char **string);
 
 void astra_exit(void);
 void astra_abort(void);

@@ -1,6 +1,22 @@
 /*
- * For more information, visit https://cesbo.com
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra UDP Module
+ * http://cesbo.com/astra
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
+ */
+
+/*
+ * Module Name:
+ *      udp_input
+ *
+ * Module Options:
+ *      addr        - string, source IP address
+ *      port        - number, source UDP port
+ *      localaddr   - string, IP address of the local interface
+ *      socket_size - number, socket buffer size
+ *      rtp         - boolean, use RTP instad RAW UDP
+ *      renew       - number, renewing multicast subscription interval in seconds
  */
 
 #include <astra.h>
@@ -8,26 +24,14 @@
 #define UDP_BUFFER_SIZE 1460
 #define TS_PACKET_SIZE 188
 
-#define LOG_MSG(_msg) "[udp_input %s:%d] " _msg \
-                      , mod->config.addr, mod->config.port
-
 struct module_data_s
 {
-    MODULE_BASE();
+    MODULE_STREAM_BASE();
 
-    struct
-    {
-        const char *addr;
-        int port;
-        const char *localaddr;
-        int socket_size;
-        int rtp;
-        int renew;
-    } config;
+    int is_rtp;
 
-    int sock;
-
-    void *timer_renew;
+    socket_t *sock;
+    timer_t *timer_renew;
 
     uint8_t buffer[UDP_BUFFER_SIZE];
 };
@@ -38,9 +42,8 @@ void udp_input_callback(void *arg, int event)
 
     if(event == EVENT_ERROR)
     {
-        event_detach(mod->sock);
         socket_close(mod->sock);
-        mod->sock = 0;
+        mod->sock = NULL;
         return;
     }
 
@@ -52,93 +55,70 @@ void udp_input_callback(void *arg, int event)
     }
 
     // 12 - RTP header size
-    ssize_t i = (mod->config.rtp) ? 12 : 0;
+    ssize_t i = (mod->is_rtp) ? 12 : 0;
     for(; i < len; i += TS_PACKET_SIZE)
-        stream_ts_send(mod, &mod->buffer[i]);
+        module_stream_send(mod, &mod->buffer[i]);
 }
 
 void timer_renew_callback(void *arg)
 {
     module_data_t *mod = arg;
-    socket_multicast_renew(mod->sock, mod->config.addr, mod->config.localaddr);
-}
-
-/* methods */
-
-static int method_attach(module_data_t *mod)
-{
-    stream_ts_attach(mod);
-    return 0;
-}
-
-static int method_detach(module_data_t *mod)
-{
-    stream_ts_detach(mod);
-    return 0;
+    socket_multicast_renew(mod->sock);
 }
 
 /* required */
 
-static void module_configure(module_data_t *mod)
-{
-    module_set_string(mod, "addr", 1, NULL, &mod->config.addr);
-    module_set_number(mod, "port", 0, 1234, &mod->config.port);
-    module_set_string(mod, "localaddr", 0, NULL, &mod->config.localaddr);
-    module_set_number(mod, "socket_size", 0, 0, &mod->config.socket_size);
-    module_set_number(mod, "rtp", 0, 0, &mod->config.rtp);
-    module_set_number(mod, "renew", 0, 0, &mod->config.renew);
-}
-
 static void module_initialize(module_data_t *mod)
 {
-    module_configure(mod);
+    module_stream_api_t api = { .on_ts = NULL };
+    module_stream_init(mod, &api);
 
-    /* protocols */
-    stream_ts_init(mod, NULL, NULL, NULL, NULL, NULL);
+    const char *addr;
+    if(module_option_string("addr", &addr) == -1)
+    {
+        log_error("[udp_input] option 'addr' is required");
+        astra_abort();
+    }
 
-    mod->sock = socket_open(SOCKET_PROTO_UDP | SOCKET_REUSEADDR | SOCKET_BIND
-#ifdef _WIN32
-                            , NULL
-#else
-                            , mod->config.addr
-#endif
-                            , mod->config.port);
-    if(!mod->sock)
+    int port = 1234;
+    module_option_number("port", &port);
+
+    mod->sock = socket_open_udp4();
+    socket_set_reuseaddr(mod->sock, 1);
+    if(!socket_bind(mod->sock, addr, port))
         return;
 
-    if(mod->config.socket_size > 0)
-        socket_set_buffer(mod->sock, mod->config.socket_size, 0);
-    event_attach(mod->sock, udp_input_callback, mod, EVENT_READ);
-    socket_multicast_join(mod->sock, mod->config.addr, mod->config.localaddr);
+    int value;
+    if(module_option_number("socket_size", &value) > 0)
+        socket_set_buffer(mod->sock, value, 0);
 
-    if(mod->config.renew)
-    {
-        mod->timer_renew = timer_attach(mod->config.renew * 1000
-                                        , timer_renew_callback, mod);
-    }
+    socket_event_attach(mod->sock, EVENT_READ, udp_input_callback, mod);
+
+    const char *localaddr = NULL;
+    module_option_string("localaddr", &localaddr);
+    socket_multicast_join(mod->sock, addr, localaddr);
+
+    if(module_option_number("renew", &value) > 0)
+        mod->timer_renew = timer_attach(value * 1000, timer_renew_callback, mod);
 }
 
 static void module_destroy(module_data_t *mod)
 {
-    /* protocols */
-    stream_ts_destroy(mod);
+    module_stream_destroy(mod);
 
     if(mod->timer_renew)
         timer_detach(mod->timer_renew);
 
     if(mod->sock)
     {
-        socket_multicast_leave(mod->sock, mod->config.addr
-                               , mod->config.localaddr);
-        event_detach(mod->sock);
+        socket_multicast_leave(mod->sock);
         socket_close(mod->sock);
     }
 }
 
 MODULE_METHODS()
 {
-    METHOD(attach)
-    METHOD(detach)
+    MODULE_STREAM_METHODS()
 };
 
-MODULE(udp_input)
+MODULE_LUA_REGISTER(udp_input)
