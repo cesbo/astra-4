@@ -80,7 +80,7 @@ typedef struct
 
 static event_observer_t event_observer;
 
-void event_observer_init(void)
+void event_core_init(void)
 {
     memset(&event_observer, 0, sizeof(event_observer));
     event_observer.event_list = list_init();
@@ -98,7 +98,7 @@ void event_observer_init(void)
     }
 }
 
-void event_observer_destroy(void)
+void event_core_destroy(void)
 {
     if(!event_observer.fd)
         return;
@@ -126,7 +126,7 @@ void event_observer_destroy(void)
     list_destroy(event_observer.event_list);
 }
 
-void event_observer_loop(void)
+void event_core_loop(void)
 {
     static struct timespec tv = { 0, 10000000 };
     if(!event_observer.fd_count)

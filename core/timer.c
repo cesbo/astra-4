@@ -31,12 +31,12 @@ static list_t *timer_list = NULL;
     } while (0)
 #endif
 
-void timer_observer_init(void)
+void timer_core_init(void)
 {
     timer_list = list_init();
 }
 
-void timer_observer_destroy(void)
+void timer_core_destroy(void)
 {
     list_first(timer_list);
     while(list_is_data(timer_list))
@@ -46,7 +46,7 @@ void timer_observer_destroy(void)
     }
 }
 
-void timer_observer_loop(void)
+void timer_core_loop(void)
 {
     int is_detached = 0;
     struct timeval cur;

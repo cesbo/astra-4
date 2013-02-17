@@ -37,9 +37,9 @@ typedef enum
     EVENT_ERROR     = 0xF0
 } event_type_t;
 
-void event_observer_init(void);
-void event_observer_loop(void);
-void event_observer_destroy(void);
+void event_core_init(void);
+void event_core_loop(void);
+void event_core_destroy(void);
 
 event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int), void *arg);
 void event_detach(event_t *event);
@@ -48,9 +48,9 @@ void event_detach(event_t *event);
 
 typedef struct timer_s timer_t;
 
-void timer_observer_init(void);
-void timer_observer_loop(void);
-void timer_observer_destroy(void);
+void timer_core_init(void);
+void timer_core_loop(void);
+void timer_core_destroy(void);
 
 void timer_one_shot(unsigned int ms, void (*callback)(void *), void *arg);
 
@@ -98,8 +98,8 @@ void log_debug(const char *, ...);
 
 typedef struct socket_s socket_t;
 
-void socket_init(void);
-void socket_destroy(void);
+void socket_core_init(void);
+void socket_core_destroy(void);
 
 char * socket_error(void);
 
@@ -176,20 +176,21 @@ void thread_destroy(thread_t **thread_ptr);
 /* */
 
 #define ASC_INIT()                                                          \
-    socket_init();                                                          \
-    event_init();
+    timer_core_init();                                                      \
+    socket_core_init();                                                     \
+    event_core_init();
 
 #define ASC_LOOP()                                                          \
     while(1)                                                                \
     {                                                                       \
-        event_action();                                                     \
-        timer_action();                                                     \
+        event_core_loop();                                                  \
+        timer_core_loop();                                                  \
     }
 
 #define ASC_DESTROY()                                                       \
-    timer_destroy();                                                        \
-    event_destroy();                                                        \
-    socket_destroy();                                                       \
+    event_core_destroy();                                                   \
+    socket_core_destroy();                                                  \
+    timer_core_destroy();                                                   \
     log_info("[main] exit");                                                \
     log_destroy();
 

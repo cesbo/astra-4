@@ -11,27 +11,35 @@
 
 #include "core/asc.h"
 
-#include <sys/queue.h>
-
 #include "lua/lua.h"
 #include "lua/lualib.h"
 #include "lua/lauxlib.h"
 
 extern lua_State *lua; // in main.c
+#define STACK_DEBUG(_L, _pos) printf("%s(): stack %d: %d\n", __FUNCTION__, _pos, lua_gettop(_L))
 
-#define STACK_DEBUG(_L, _pos)                                               \
-    printf("%s(): stack %d: %d\n", __FUNCTION__, _pos, lua_gettop(_L))
+/* version */
 
 #include "version.h"
 #define __VSTR(_x) #_x
 #define _VSTR(_x) __VSTR(_x)
-#define _VERSION "v." _VSTR(ASTRA_VERSION) "." _VSTR(ASTRA_VERSION_DEV)
+#define _VERSION _VSTR(ASTRA_VERSION_MAJOR) "." _VSTR(ASTRA_VERSION_MINOR)
+
+#if ASTRA_VERSION_DEV > 0
+#   define _VDEV " dev:" _VSTR(ASTRA_VERSION_DEV)
+#else
+#   define _VDEV
+#endif
+
 #ifdef DEBUG
 #   define _VDEBUG " debug"
 #else
 #   define _VDEBUG
 #endif
-#define ASTRA_VERSION_STR _VERSION _VDEBUG
+
+#define ASTRA_VERSION_STR _VERSION _VDEV _VDEBUG
+
+/* */
 
 typedef struct module_data_s module_data_t;
 

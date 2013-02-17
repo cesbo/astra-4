@@ -42,7 +42,7 @@ struct socket_s
  * receiving multicast: socket(REUSEADDR | BIND) -> join() -> read() -> close()
  */
 
-void socket_init(void)
+void socket_core_init(void)
 {
 #ifdef _WIN32
     WSADATA wsaData;
@@ -57,7 +57,7 @@ void socket_init(void)
 #endif
 }
 
-void socket_destroy(void)
+void socket_core_destroy(void)
 {
 #ifdef _WIN32
     WSACleanup();

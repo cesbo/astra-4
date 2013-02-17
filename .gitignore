@@ -5,5 +5,4 @@ astra
 temp
 Makefile
 config.h
-
-.hg*
+*.sublime-workspace
