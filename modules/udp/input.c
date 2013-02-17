@@ -74,7 +74,7 @@ static void module_initialize(module_data_t *mod)
     module_stream_init(mod, &api);
 
     const char *addr;
-    if(module_option_string("addr", &addr) == -1)
+    if(!module_option_string("addr", &addr))
     {
         log_error("[udp_input] option 'addr' is required");
         astra_abort();
@@ -89,7 +89,7 @@ static void module_initialize(module_data_t *mod)
         return;
 
     int value;
-    if(module_option_number("socket_size", &value) > 0)
+    if(module_option_number("socket_size", &value))
         socket_set_buffer(mod->sock, value, 0);
 
     socket_event_attach(mod->sock, EVENT_READ, udp_input_callback, mod);
@@ -98,7 +98,7 @@ static void module_initialize(module_data_t *mod)
     module_option_string("localaddr", &localaddr);
     socket_multicast_join(mod->sock, addr, localaddr);
 
-    if(module_option_number("renew", &value) > 0)
+    if(module_option_number("renew", &value))
         mod->timer_renew = timer_attach(value * 1000, timer_renew_callback, mod);
 }
 

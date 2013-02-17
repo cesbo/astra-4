@@ -214,7 +214,7 @@ echo "Check modules:" >&2
 
 # main app
 
-APP_SOURCES="$SRCDIR/main.c $SRCDIR/modules/module.c"
+APP_SOURCES="$SRCDIR/main.c"
 APP_OBJECTS=""
 
 __check_main_app()

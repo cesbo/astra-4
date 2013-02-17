@@ -48,7 +48,7 @@ int module_option_number(const char *name, int *number)
             lua_pop(lua, 1);
     } while(0);
 
-    return -1;
+    return 0;
 }
 
 int module_option_string(const char *name, const char **string)
@@ -69,7 +69,7 @@ int module_option_string(const char *name, const char **string)
             lua_pop(lua, 1);
     } while(0);
 
-    return -1;
+    return 0;
 }
 
 /* module_stream_* */

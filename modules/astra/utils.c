@@ -1,10 +1,41 @@
 /*
- * For more information, visit https://cesbo.com
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra Utils Module
+ * http://cesbo.com/astra
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
+ */
+
+/*
+ * Set of the additional methods and classes for lua
+ *
+ * Methods:
+ *      utils.hostname()
+ *                  - get name of the host
+ *      log.readdir(path)
+ *                  - iterator to scan directory located by path
  */
 
 #include <astra.h>
+
 #include <dirent.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#endif
+
+/* hostname */
+
+static int utils_hostname(lua_State *L)
+{
+    char hostname[64];
+    if(gethostname(hostname, sizeof(hostname)) != 0)
+        luaL_error(L, "failed to get hostname");
+    lua_pushstring(L, hostname);
+    return 1;
+}
+
+/* readdir */
 
 static const char __utils_readdir[] = "__utils_readdir";
 
@@ -52,19 +83,31 @@ static int utils_readder_gc(lua_State *L)
     return 0;
 }
 
-int luaopen_utils_readdir(lua_State *L, int idx)
-{
-    lua_pushvalue(L, idx);
-    const int table = lua_gettop(L);
+/* utils */
 
+LUA_API int luaopen_utils(lua_State *L)
+{
+    static const luaL_Reg api[] =
+    {
+        { "hostname", utils_hostname },
+        { NULL, NULL }
+    };
+
+    luaL_newlib(L, api);
+
+    /* readdir */
+    lua_pushvalue(L, -1);
+    const int table = lua_gettop(L);
     luaL_newmetatable(L, __utils_readdir);
     lua_pushcfunction(L, utils_readder_gc);
     lua_setfield(L, -2, "__gc");
     lua_pop(L, 1); // metatable
-
     lua_pushcfunction(L, utils_readdir_init);
     lua_setfield(L, table, "readdir");
-
     lua_pop(L, 1); // table
-    return 0;
+
+    /* utils */
+    lua_setglobal(L, "utils");
+
+    return 1;
 }

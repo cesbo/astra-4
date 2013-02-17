@@ -1,6 +1,30 @@
 /*
- * For more information, visit https://cesbo.com
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra Log Module
+ * http://cesbo.com/astra
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
+ */
+
+/*
+ * Set of the logging methods for lua
+ *
+ * Methods:
+ *      log.set({ options })
+ *                  - set logging options:
+ *                    debug     - boolean, allow debug messages, false by default
+ *                    filename  - string, writing log to a file
+ *                    syslog    - string, sending log to the syslog,
+ *                                is not available under the windows
+ *                    stdout    - boolean, writing log to the stdout, true by default
+ *      log.error(message)
+ *                  - error message
+ *      log.warning(message)
+ *                  - warning message
+ *      log.info(message)
+ *                  - information message
+ *      log.debug(message)
+ *                  - debug message
  */
 
 #include <astra.h>

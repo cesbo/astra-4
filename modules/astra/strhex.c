@@ -3,7 +3,7 @@
  * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
  */
 
-#include "utils.h"
+#include "base.h"
 
 char * hex_to_str(char *str, const uint8_t *data, size_t size)
 {

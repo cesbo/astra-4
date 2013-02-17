@@ -10,7 +10,10 @@
 #define _ASTRA_H_ 1
 
 #include "core/asc.h"
+#include "modules/astra/base.h"
+
 #include <sys/queue.h>
+
 #include "lua/lua.h"
 #include "lua/lualib.h"
 #include "lua/lauxlib.h"
