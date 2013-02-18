@@ -128,7 +128,6 @@ int socket_port(socket_t *sock);
 int socket_event_on_accept(socket_t *sock, void (*callback)(void *, int), void *arg);
 int socket_event_on_read(socket_t *sock, void (*callback)(void *, int), void *arg);
 int socket_event_on_connect(socket_t *sock, void (*callback)(void *, int), void *arg);
-void socket_event_detach(socket_t *sock);
 
 void socket_set_sockaddr(socket_t *sock, const char *addr, int port);
 void socket_set_nonblock(socket_t *sock, int is_nonblock);

@@ -363,30 +363,35 @@ inline int socket_port(socket_t *sock)
  *
  */
 
+static int __socket_event(socket_t *sock, event_type_t type
+                          , void (*callback)(void *, int), void *arg)
+{
+    if(sock->event)
+    {
+        event_detach(sock->event);
+        sock->event = NULL;
+    }
+
+    if(!callback)
+        return 0;
+
+    sock->event = event_attach(sock->fd, type, callback, arg);
+    return (sock->event != NULL);
+}
+
 int socket_event_on_accept(socket_t *sock, void (*callback)(void *, int), void *arg)
 {
-    sock->event = event_attach(sock->fd, EVENT_READ, callback, arg);
-    return (sock->event != NULL);
+    return __socket_event(sock, EVENT_READ, callback, arg);
 }
 
 int socket_event_on_read(socket_t *sock, void (*callback)(void *, int), void *arg)
 {
-    sock->event = event_attach(sock->fd, EVENT_READ, callback, arg);
-    return (sock->event != NULL);
+    return __socket_event(sock, EVENT_READ, callback, arg);
 }
 
 int socket_event_on_connect(socket_t *sock, void (*callback)(void *, int), void *arg)
 {
-    sock->event = event_attach(sock->fd, EVENT_WRITE, callback, arg);
-    return (sock->event != NULL);
-}
-
-void socket_event_detach(socket_t *sock)
-{
-    if(!sock->event)
-        return;
-    event_detach(sock->event);
-    sock->event = NULL;
+    return __socket_event(sock, EVENT_WRITE, callback, arg);
 }
 
 /*
