@@ -8,72 +8,51 @@
 
 #include <astra.h>
 
-struct module_data_s
+void __module_stream_detach(module_stream_t *stream, module_stream_t *child)
 {
-    MODULE_STREAM_DATA();
-};
-
-static void __module_stream_detach(module_data_t *parent, module_data_t *child)
-{
-    module_data_t *i;
-    TAILQ_FOREACH(i, &parent->__stream.childs, __stream.entries)
+    module_stream_t *i;
+    TAILQ_FOREACH(i, &stream->childs, entries)
     {
         if(i == child)
         {
-            TAILQ_REMOVE(&parent->__stream.childs, i, __stream.entries);
+            TAILQ_REMOVE(&stream->childs, i, entries);
             break;
         }
     }
-    child->__stream.parent = NULL;
+    child->parent = NULL;
 }
 
-static void __module_stream_attach(module_data_t *parent, module_data_t *child)
+void __module_stream_attach(module_stream_t *stream, module_stream_t *child)
 {
-    if(child->__stream.parent)
-        __module_stream_detach(child->__stream.parent, child);
-    child->__stream.parent = parent;
-    TAILQ_INSERT_TAIL(&parent->__stream.childs, child, __stream.entries);
+    if(child->parent)
+        __module_stream_detach(child->parent, child);
+    child->parent = stream;
+    TAILQ_INSERT_TAIL(&stream->childs, child, entries);
 }
 
-int module_stream_attach(module_data_t *mod)
+void __module_stream_send(module_stream_t *stream, const uint8_t *ts)
 {
-    luaL_checktype(lua, 2, LUA_TUSERDATA);
-    module_data_t *child = lua_touserdata(lua, 2);
-    __module_stream_attach(mod, child);
-    return 0;
-}
-
-int module_stream_detach(module_data_t *mod)
-{
-    luaL_checktype(lua, 2, LUA_TUSERDATA);
-    module_data_t *child = lua_touserdata(lua, 2);
-    __module_stream_detach(mod, child);
-    return 0;
-}
-
-void module_stream_send(module_data_t *mod, const uint8_t *ts)
-{
-    module_data_t *i;
-    TAILQ_FOREACH(i, &mod->__stream.childs, __stream.entries)
+    module_stream_t *i;
+    TAILQ_FOREACH(i, &stream->childs, entries)
     {
-        if(i->__stream.on_ts)
-            i->__stream.on_ts(i, ts);
+        if(i->on_ts)
+            i->on_ts(i->self, ts);
     }
 }
 
-void module_stream_init(module_data_t *mod)
+void __module_stream_init(module_stream_t *stream)
 {
-    TAILQ_INIT(&mod->__stream.childs);
+    TAILQ_INIT(&stream->childs);
 }
 
-void module_stream_destroy(module_data_t *mod)
+void __module_stream_destroy(module_stream_t *stream)
 {
-    if(mod->__stream.parent)
-        __module_stream_detach(mod->__stream.parent, mod);
-    module_data_t *i, *n;
-    TAILQ_FOREACH_SAFE(i, &mod->__stream.childs, __stream.entries, n)
+    if(stream->parent)
+        __module_stream_detach(stream->parent, stream);
+    module_stream_t *i, *n;
+    TAILQ_FOREACH_SAFE(i, &stream->childs, entries, n)
     {
-        i->__stream.parent = NULL;
-        TAILQ_REMOVE(&mod->__stream.childs, i, __stream.entries);
+        i->parent = NULL;
+        TAILQ_REMOVE(&stream->childs, i, entries);
     }
 }

@@ -66,15 +66,13 @@ void timer_renew_callback(void *arg)
     socket_multicast_renew(mod->sock);
 }
 
-/* required */
-
 static void module_init(module_data_t *mod)
 {
-    MODULE_STREAM_API(mod, NULL);
-    module_stream_init(mod);
+    module_stream_init(mod, NULL);
 
-    const char *addr;
-    if(!module_option_string("addr", &addr))
+    const char *addr = NULL;
+    module_option_string("addr", &addr);
+    if(!addr)
     {
         log_error("[udp_input] option 'addr' is required");
         astra_abort();
@@ -116,9 +114,9 @@ static void module_destroy(module_data_t *mod)
     }
 }
 
-MODULE_METHODS()
+MODULE_STREAM_METHODS()
+MODULE_LUA_METHODS()
 {
-    MODULE_STREAM_METHODS()
+    MODULE_STREAM_METHODS_REF()
 };
-
 MODULE_LUA_REGISTER(udp_input)

@@ -11,14 +11,14 @@
 
 #include "core/asc.h"
 
+#include "lua/lua.h"
+#include "lua/lualib.h"
+#include "lua/lauxlib.h"
+
 #include "modules/astra/base.h"
 #include "modules/astra/module_lua.h"
 #include "modules/astra/module_stream.h"
 #include "modules/astra/module_event.h"
-
-#include "lua/lua.h"
-#include "lua/lualib.h"
-#include "lua/lauxlib.h"
 
 extern lua_State *lua; // in main.c
 #define STACK_DEBUG(_L, _pos) printf("%s(): stack %d: %d\n", __FUNCTION__, _pos, lua_gettop(_L))

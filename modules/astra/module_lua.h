@@ -15,13 +15,13 @@ typedef struct
 {
     const char *name;
     int (*method)(module_data_t *mod);
-} module_method_t;
+} module_lua_method_t;
 
-#define MODULE_METHODS()                                                    \
-    static const module_method_t __module_methods[] =
-#define METHOD(_name) { #_name, method_##_name },
-#define MODULE_METHODS_EMPTY()                                              \
-    MODULE_METHODS() {{ NULL, NULL }}
+#define MODULE_LUA_METHODS()                                                \
+    static const module_lua_method_t __module_lua_methods[] =
+
+#define MODULE_LUA_METHODS_EMPTY()                                          \
+    MODULE_LUA_METHODS() {{ NULL, NULL }}
 
 #define MODULE_LUA_REGISTER(_name)                                          \
     static const char __module_name[] = #_name;                             \
@@ -43,7 +43,7 @@ typedef struct
     static int __module_thunk(lua_State *L)                                 \
     {                                                                       \
         module_data_t *mod = luaL_checkudata(L, 1, __module_name);          \
-        module_method_t *m = lua_touserdata(L, lua_upvalueindex(1));        \
+        module_lua_method_t *m = lua_touserdata(L, lua_upvalueindex(1));    \
         return m->method(mod);                                              \
     }                                                                       \
     static int __module_tostring(lua_State *L)                              \
@@ -70,11 +70,11 @@ typedef struct
         luaL_newlib(L, meta_methods);                                       \
         lua_setfield(L, meta_table, "__metatable");                         \
         lua_setmetatable(L, module_table);                                  \
-        if(__module_methods[0].name)                                        \
+        if(__module_lua_methods[0].name)                                    \
         {                                                                   \
-            for(size_t i = 0; i < ARRAY_SIZE(__module_methods); ++i)        \
+            for(size_t i = 0; i < ARRAY_SIZE(__module_lua_methods); ++i)    \
             {                                                               \
-                const module_method_t *m = &__module_methods[i];            \
+                const module_lua_method_t *m = &__module_lua_methods[i];    \
                 lua_pushstring(L, m->name);                                 \
                 lua_pushlightuserdata(L, (void*)m);                         \
                 lua_pushcclosure(L, __module_thunk, 1);                     \
@@ -84,5 +84,8 @@ typedef struct
         lua_setglobal(L, __module_name);                                    \
         return 1;                                                           \
     }
+
+int module_option_number(const char *name, int *number);
+int module_option_string(const char *name, const char **string);
 
 #endif /* _MODULE_LUA_H_ */
