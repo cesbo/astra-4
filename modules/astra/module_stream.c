@@ -37,7 +37,7 @@ static void __module_stream_attach(module_data_t *parent, module_data_t *child)
 
 int module_stream_attach(module_data_t *mod)
 {
-    luaL_checktype(lua, 2, LUA_TTABLE);
+    luaL_checktype(lua, 2, LUA_TUSERDATA);
     module_data_t *child = lua_touserdata(lua, 2);
     __module_stream_attach(mod, child);
     return 0;
@@ -45,7 +45,7 @@ int module_stream_attach(module_data_t *mod)
 
 int module_stream_detach(module_data_t *mod)
 {
-    luaL_checktype(lua, 2, LUA_TTABLE);
+    luaL_checktype(lua, 2, LUA_TUSERDATA);
     module_data_t *child = lua_touserdata(lua, 2);
     __module_stream_detach(mod, child);
     return 0;
