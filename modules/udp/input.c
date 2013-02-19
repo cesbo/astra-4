@@ -26,7 +26,7 @@
 
 struct module_data_s
 {
-    MODULE_STREAM_BASE();
+    MODULE_STREAM_DATA();
 
     int is_rtp;
 
@@ -68,10 +68,10 @@ void timer_renew_callback(void *arg)
 
 /* required */
 
-static void module_initialize(module_data_t *mod)
+static void module_init(module_data_t *mod)
 {
-    module_stream_api_t api = { .on_ts = NULL };
-    module_stream_init(mod, &api);
+    MODULE_STREAM_API(mod, NULL);
+    module_stream_init(mod);
 
     const char *addr;
     if(!module_option_string("addr", &addr))
