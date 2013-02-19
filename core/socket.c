@@ -28,6 +28,7 @@ struct socket_s
 {
     int fd;
     int family;
+    int type;
 
     event_t *event;
 
@@ -111,6 +112,7 @@ static socket_t * __socket_open(int family, int type)
     sock->fd = fd;
     sock->mreq.imr_multiaddr.s_addr = INADDR_NONE;
     sock->family = family;
+    sock->type = type;
     return sock;
 }
 
@@ -183,12 +185,10 @@ int socket_bind(socket_t *sock, const char *addr, int port)
         sock->addr.sin_addr.s_addr = inet_addr(addr);
 
 #if defined(__APPLE__)
-    int optval = 0;
-    socklen_t optlen = sizeof(optval);
-    getsockopt(sock->fd, SOL_SOCKET, SO_TYPE, &optval, &optlen);
-    if(optval == SOCK_DGRAM)
+    if(sock->type == SOCK_DGRAM)
     {
-        optval = 1;
+        const int optval = 1;
+        socklen_t optlen = sizeof(optval);
         setsockopt(sock->fd, SOL_SOCKET, SO_REUSEPORT, &optval, optlen);
     }
 #endif
@@ -205,6 +205,9 @@ int socket_bind(socket_t *sock, const char *addr, int port)
         socklen_t addrlen = sizeof(sock->addr);
         getsockname(sock->fd, (struct sockaddr *)&sock->addr, &addrlen);
     }
+
+    if(sock->type == SOCK_DGRAM)
+        return 1;
 
     if(listen(sock->fd, SOMAXCONN) == -1)
     {
