@@ -60,7 +60,7 @@ static int method_close(module_data_t *mod)
 
 /* required */
 
-static void module_initialize(module_data_t *mod)
+static void module_init(module_data_t *mod)
 {
     int interval = 0;
     if(!module_option_number("interval", &interval) || interval <= 0)

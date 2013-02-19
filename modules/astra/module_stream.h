@@ -12,19 +12,17 @@
 #include "base.h"
 #include <sys/queue.h>
 
-typedef struct
-{
-    void (*on_ts)(module_data_t *mod, const uint8_t *ts);
-} module_stream_api_t;
-
 #define MODULE_STREAM_DATA()                                                \
     struct                                                                  \
     {                                                                       \
-        module_stream_api_t api;                                            \
+        void (*on_ts)(module_data_t *mod, const uint8_t *ts);               \
         module_data_t *parent;                                              \
         TAILQ_ENTRY(module_data_s) entries;                                 \
         TAILQ_HEAD(list_s, module_data_s) childs;                           \
     } __stream
+
+#define MODULE_STREAM_API(_mod, _on_ts)                                     \
+    _mod->__stream.on_ts = _on_ts
 
 #define MODULE_STREAM_METHODS()                                             \
     { "attach", module_stream_attach },                                     \
@@ -35,7 +33,7 @@ int module_stream_detach(module_data_t *mod);
 
 void module_stream_send(module_data_t *mod, const uint8_t *ts);
 
-void module_stream_init(module_data_t *mod, module_stream_api_t *api);
+void module_stream_init(module_data_t *mod);
 void module_stream_destroy(module_data_t *mod);
 
 int module_option_number(const char *name, int *number);

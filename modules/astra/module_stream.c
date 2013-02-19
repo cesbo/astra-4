@@ -55,14 +55,14 @@ void module_stream_send(module_data_t *mod, const uint8_t *ts)
 {
     module_data_t *i;
     TAILQ_FOREACH(i, &mod->__stream.childs, __stream.entries)
-        i->__stream.api.on_ts(i, ts);
+    {
+        if(i->__stream.on_ts)
+            i->__stream.on_ts(i, ts);
+    }
 }
 
-void module_stream_init(module_data_t *mod, module_stream_api_t *api)
+void module_stream_init(module_data_t *mod)
 {
-    if(api->on_ts == NULL)
-        abort();
-    mod->__stream.api.on_ts = api->on_ts;
     TAILQ_INIT(&mod->__stream.childs);
 }
 

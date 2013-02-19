@@ -31,7 +31,7 @@ typedef struct
         memset(mod, 0, sizeof(module_data_t));                              \
         lua_getmetatable(L, 1);                                             \
         lua_setmetatable(L, -2);                                            \
-        module_initialize(mod);                                             \
+        module_init(mod);                                                   \
         return 1;                                                           \
     }                                                                       \
     static int __module_delete(lua_State *L)                                \

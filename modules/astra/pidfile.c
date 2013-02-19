@@ -32,7 +32,7 @@ static char *filename = NULL;
 
 /* required */
 
-static void module_initialize(module_data_t *mod)
+static void module_init(module_data_t *mod)
 {
     const int idx_value = 2;
     const char *value = luaL_checkstring(lua, idx_value);
