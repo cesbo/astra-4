@@ -21,7 +21,7 @@
  *                  - normal exit from astra
  */
 
-#include "base.h"
+#include <astra.h>
 
 static int _astra_exit(lua_State *L)
 {

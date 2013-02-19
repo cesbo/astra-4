@@ -39,10 +39,10 @@ static log_t __log =
 
 enum
 {
-    LOG_TYPE_INFO           = 0x00000001
-    , LOG_TYPE_ERROR        = 0x00000002
-    , LOG_TYPE_WARNING      = 0x00000004
-    , LOG_TYPE_DEBUG        = 0x00000008
+    LOG_TYPE_INFO       = 0x00000001,
+    LOG_TYPE_ERROR      = 0x00000002,
+    LOG_TYPE_WARNING    = 0x00000004,
+    LOG_TYPE_DEBUG      = 0x00000008
 };
 
 #ifndef _WIN32
@@ -73,15 +73,12 @@ static const char * _get_type_str(int type)
 
 static void _log(int type, const char *msg, va_list ap)
 {
-    static char buffer[4096];
+    char buffer[4096];
 
     size_t len_1 = 0; // to skip time stamp
-    if(__log.fd || __log.sout)
-    {
-        time_t ct = time(NULL);
-        struct tm *sct = localtime(&ct);
-        len_1 = strftime(buffer, sizeof(buffer), "%b %d %X: ", sct);
-    }
+    time_t ct = time(NULL);
+    struct tm *sct = localtime(&ct);
+    len_1 = strftime(buffer, sizeof(buffer), "%b %d %X: ", sct);
 
     size_t len_2 = len_1;
     const char *type_str = _get_type_str(type);

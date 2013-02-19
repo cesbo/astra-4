@@ -9,11 +9,14 @@
 #ifndef _ASTRA_BASE_H_
 #define _ASTRA_BASE_H_ 1
 
-#include <astra.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "module_event.h"
+typedef struct module_data_s module_data_t;
 
-char * hex_to_str(char *, const uint8_t *, size_t);
-uint8_t * str_to_hex(const char *, uint8_t *, size_t);
+/* utils */
+
+char * hex_to_str(char *str, const uint8_t *hex, size_t len);
+uint8_t * str_to_hex(const char *str, uint8_t *hex, size_t len);
 
 #endif /* _ASTRA_BASE_H_ */

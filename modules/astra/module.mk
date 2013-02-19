@@ -1,5 +1,5 @@
 
-SOURCES="module.c strhex.c"
+SOURCES="module_lua.c module_stream.c strhex.c"
 
 SOURCES="$SOURCES astra.c log.c timer.c utils.c"
 MODULES="astra log timer utils"
