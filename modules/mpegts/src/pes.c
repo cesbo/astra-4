@@ -1,61 +1,14 @@
 /*
- * For more information, visit https://cesbo.com
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra MPEG-TS Module: PES processing
+ * http://cesbo.com/astra
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
  */
 
-#include <astra.h>
+#include <stdlib.h>
+#include <string.h>
 #include "../mpegts.h"
-
-mpegts_packet_type_t mpegts_pes_type(uint8_t t)
-{
-    switch(t)
-    {
-        case 0x01:  // MPEG-1 video
-        case 0x02:  // MPEG-2 video
-        case 0x80:  // MPEG-2 MOTO video
-        case 0x10:  // MPEG-4 video
-        case 0x1B:  // H264 video
-        case 0xA0:  // MSCodec vlc video
-            return MPEGTS_PACKET_VIDEO;
-        case 0x03:  // MPEG-1 audio
-        case 0x04:  // MPEG-2 audio
-        case 0x11:  // MPEG-4 audio (LATM)
-        case 0x0F:  // Audio with ADTS
-        case 0x81:  // A52 audio
-        case 0x83:  // LPCM audio
-        case 0x84:  // SDDS audio
-        case 0x85:  // DTS audio
-        case 0x87:  // E-AC3
-        case 0x91:  // A52 vls audio
-        case 0x94:  // SDDS audio
-            return MPEGTS_PACKET_AUDIO;
-        case 0x82:  // DVB_SPU
-        case 0x92:  // DVB_SPU vls
-            return MPEGTS_PACKET_SUB;
-        case 0x06:  // PES_PRIVATE
-        case 0x12:  // MPEG-4 generic (sub/scene/...)
-        case 0xEA:  // privately managed ES
-        default:
-            return MPEGTS_PACKET_DATA;
-    }
-}
-
-const char * mpegts_pes_name(mpegts_packet_type_t t)
-{
-    switch(t)
-    {
-        case MPEGTS_PACKET_VIDEO:
-            return "VIDEO";
-        case MPEGTS_PACKET_AUDIO:
-            return "AUDIO";
-        case MPEGTS_PACKET_SUB:
-            return "SUB";
-        case MPEGTS_PACKET_DATA:
-            return "DATA";
-        default:
-            return "UNKNOWN";
-    }
-}
 
 mpegts_pes_t * mpegts_pes_init(mpegts_packet_type_t type, uint16_t pid)
 {
@@ -76,12 +29,12 @@ void mpegts_pes_destroy(mpegts_pes_t *pes)
     free(pes);
 }
 
-void mpegts_pes_mux(mpegts_pes_t *pes, uint8_t *ts
-                    , void (*callback)(module_data_t *, mpegts_pes_t *)
-                    , module_data_t *arg)
+void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts
+                    , void (*callback)(void *, mpegts_pes_t *)
+                    , void *arg)
 {
     const uint8_t cc = TS_CC(ts);
-    uint8_t *payload = &ts[TS_HEADER_SIZE];
+    const uint8_t *payload = &ts[TS_HEADER_SIZE];
 
     const uint8_t af = TS_AF(ts);
     if(!(af & 0x10)) // skip packet without payload (CC not incremented)
@@ -140,8 +93,8 @@ void mpegts_pes_mux(mpegts_pes_t *pes, uint8_t *ts
 }
 
 void mpegts_pes_demux(mpegts_pes_t *pes
-                      , void (*callback)(module_data_t *, uint8_t *)
-                      , module_data_t *arg)
+                      , void (*callback)(void *, uint8_t *)
+                      , void *arg)
 {
     const size_t buffer_size = pes->buffer_size;
     if(!buffer_size)
@@ -197,7 +150,7 @@ void mpegts_pes_demux(mpegts_pes_t *pes
     }
 }
 
-void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, size_t size)
+void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t size)
 {
     if(!pes->buffer_size)
     {

@@ -5,8 +5,8 @@
  * Dr. Dobb's Journal, May 1992, pp. 64-67
  */
 
-#include <astra.h>
-#include "../mpegts.h"
+#include "stddef.h"
+#include "stdint.h"
 
 static uint32_t crc32_table[256] = { 0 };
 

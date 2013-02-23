@@ -1,17 +1,24 @@
 /*
- * For more information, visit https://cesbo.com
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra MPEG-TS Module: PSI processing
+ * http://cesbo.com/astra
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
  */
 
-#include <astra.h>
+#include <stdlib.h>
+#include <string.h>
 #include "../mpegts.h"
 
 mpegts_psi_t * mpegts_psi_init(mpegts_packet_type_t type, uint16_t pid)
 {
-    mpegts_psi_t *psi = calloc(1, sizeof(mpegts_psi_t));
+    mpegts_psi_t *psi = malloc(sizeof(mpegts_psi_t));
     psi->type = type;
-    psi->status = MPEGTS_ERROR_NOT_READY;
     psi->pid = pid;
+    psi->cc = 0;
+    psi->buffer_size = 0;
+    psi->buffer_skip = 0;
+    psi->crc32 = 0;
     return psi;
 }
 
@@ -23,39 +30,11 @@ void mpegts_psi_destroy(mpegts_psi_t *psi)
     free(psi);
 }
 
-uint32_t mpegts_psi_get_crc(mpegts_psi_t *psi)
+void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts
+                    , void (*callback)(void *, mpegts_psi_t *)
+                    , void *arg)
 {
-    uint8_t *buffer = &psi->buffer[psi->buffer_size - CRC32_SIZE];
-    const uint32_t crc = (buffer[0] << 24)
-                       | (buffer[1] << 16)
-                       | (buffer[2] << 8)
-                       | (buffer[3]);
-    return crc;
-}
-
-uint32_t mpegts_psi_calc_crc(mpegts_psi_t *psi)
-{
-    // TODO: SSE4.2
-    const size_t size = psi->buffer_size - CRC32_SIZE;
-    return crc32b(psi->buffer, size);
-}
-
-void mpegts_psi_mux(mpegts_psi_t *psi, uint8_t *ts
-                    , void (*callback)(module_data_t *, mpegts_psi_t *)
-                    , module_data_t *arg)
-{
-    uint8_t *payload = &ts[TS_HEADER_SIZE];
-    switch(TS_AF(ts))
-    {
-        case 0x10:
-            payload = &ts[TS_HEADER_SIZE];
-            break;
-        case 0x30:
-            payload = &ts[TS_HEADER_SIZE] + ts[4] + 1;
-            break;
-        default:
-            return;
-    }
+    const uint8_t *payload = TS_PTR(ts);
     const uint8_t cc = TS_CC(ts);
 
     if(TS_PUSI(ts))
@@ -139,8 +118,8 @@ void mpegts_psi_mux(mpegts_psi_t *psi, uint8_t *ts
 } /* mpegts_psi_mux */
 
 void mpegts_psi_demux(mpegts_psi_t *psi
-                      , void (*callback)(module_data_t *, uint8_t *)
-                      , module_data_t *arg)
+                      , void (*callback)(void *, uint8_t *)
+                      , void *arg)
 {
     const size_t buffer_size = psi->buffer_size;
     if(!buffer_size)

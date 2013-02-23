@@ -1,16 +1,22 @@
 /*
- * For more information, visit https://cesbo.com
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra MPEG-TS Modules Set
+ * http://cesbo.com/astra
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
  */
 
 #ifndef _MPEGTS_H_
 #define _MPEGTS_H_ 1
 
-#include <astra.h>
+#include <stdint.h>
+#include <modules/astra/base.h> /* crc32b, hex_to_str */
 
 #define TS_PACKET_SIZE 188
 #define TS_HEADER_SIZE 4
 #define TS_BODY_SIZE (TS_PACKET_SIZE - TS_HEADER_SIZE)
+
+#define M2TS_PACKET_SIZE 192
 
 #define MAX_PID 8192
 #define NULL_TS_PID (MAX_PID - 1)
@@ -23,16 +29,23 @@
 #define TS_SC(_ts) (_ts[3] & 0xC0)
 #define TS_AF(_ts) (_ts[3] & 0x30)
 #define TS_CC(_ts) (_ts[3] & 0x0f)
-#define TS_PTR(_ts) (_ts[4])
-#define PSI_SIZE(_psi) ((((_psi[1] & 0x0f) << 8) | _psi[2]) + 3)
-#define PES_SIZE(_pes) (((_pes[4] << 8) | _pes[5]) + 6)
+#define TS_PTR(_ts) ((TS_AF(_ts) == 0x10)                                                       \
+                     ? &_ts[TS_HEADER_SIZE]                                                     \
+                     : ((TS_AF(_ts) == 0x30)                                                    \
+                        ? (&_ts[TS_HEADER_SIZE] + _ts[4] + 1)                                   \
+                        : NULL                                                                  \
+                       )                                                                        \
+                    )
 
+#define PSI_SIZE(_psi) (3 + (((_psi[1] & 0x0f) << 8) | _psi[2]))
+
+#define PES_SIZE(_pes) (((_pes[4] << 8) | _pes[5]) + 6)
 #define PES_HEADER(_pes) ((_pes[0] << 16) | (_pes[1] << 8) | (_pes[2]))
 
 typedef enum
 {
     MPEGTS_PACKET_UNKNOWN   = 0x00000000,
-    MPEGTS_PACKET_TS        = 0x01000000,
+    MPEGTS_PACKET_TS        = 0x10000000,
     MPEGTS_PACKET_PSI       = 0x00100000, // Program Specific Information
     MPEGTS_PACKET_PAT       = MPEGTS_PACKET_PSI | 0x01,
     MPEGTS_PACKET_CAT       = MPEGTS_PACKET_PSI | 0x02,
@@ -52,214 +65,215 @@ typedef enum
     MPEGTS_PACKET_DATA      = 0x01000000
 } mpegts_packet_type_t;
 
-typedef enum
-{
-    MPEGTS_CRC32_CHANGED = -2, // need to clean and rescan
-    MPEGTS_UNCHANGED = -1,
-    MPEGTS_ERROR_NONE = 0, // ready to scan
-    MPEGTS_ERROR_NOT_READY = 1,
-    MPEGTS_ERROR_PACKET_TYPE = 2,
-    MPEGTS_ERROR_TABLE_ID = 3,
-    MPEGTS_ERROR_FIXED_BITS = 4,
-    MPEGTS_ERROR_LENGTH = 5,
-    MPEGTS_ERROR_CRC32 = 6,
-} mpegts_parse_status_t;
+/* src/types.c */
+
+const char * mpegts_type_name(mpegts_packet_type_t type);
+mpegts_packet_type_t mpegts_pes_type(uint8_t type_id);
+
+const char * mpeg4_profile_level_name(uint8_t type_id);
+
+void mpegts_desc_to_string(char *str, uint32_t len, const uint8_t *desc);
 
 /* src/psi.c */
 
 typedef struct
 {
     mpegts_packet_type_t type;
-    mpegts_parse_status_t status;
-
     uint16_t pid;
     uint8_t cc;
+
     uint32_t crc32;
 
-    void *data; // PAT/CAT/PMT
+    // demux
+    uint8_t ts[TS_PACKET_SIZE];
 
-    uint8_t ts[TS_PACKET_SIZE]; // to demux
-
-    size_t buffer_size;
-    size_t buffer_skip;
+    // mux
+    uint16_t buffer_size;
+    uint16_t buffer_skip;
     uint8_t buffer[PSI_MAX_SIZE];
 } mpegts_psi_t;
 
-mpegts_psi_t * mpegts_psi_init(mpegts_packet_type_t, uint16_t);
-void mpegts_psi_destroy(mpegts_psi_t *);
+mpegts_psi_t * mpegts_psi_init(mpegts_packet_type_t type, uint16_t pid);
+void mpegts_psi_destroy(mpegts_psi_t *psi);
 
-void mpegts_psi_mux(mpegts_psi_t *, uint8_t *
-                    , void (*)(module_data_t *, mpegts_psi_t *)
-                    , module_data_t *);
+void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts
+                    , void (*callback)(void *, mpegts_psi_t *)
+                    , void *arg);
 
-void mpegts_psi_demux(mpegts_psi_t *
-                      , void (*)(module_data_t *, uint8_t *)
-                      , module_data_t *);
+void mpegts_psi_demux(mpegts_psi_t *psi
+                      , void (*callback)(void *, uint8_t *)
+                      , void *arg);
 
-uint32_t mpegts_psi_get_crc(mpegts_psi_t *);
-uint32_t mpegts_psi_calc_crc(mpegts_psi_t *);
+#define PSI_CALC_CRC32(_psi) crc32b(_psi->buffer, _psi->buffer_size - CRC32_SIZE)
 
-/* src/desc.c */
-typedef struct
-{
-    list_t *items;
+// with inline function we have nine more instructions
+#define PSI_GET_CRC32(_psi) (                                                                   \
+    (_psi->buffer[_psi->buffer_size - CRC32_SIZE + 0] << 24) |                                  \
+    (_psi->buffer[_psi->buffer_size - CRC32_SIZE + 1] << 16) |                                  \
+    (_psi->buffer[_psi->buffer_size - CRC32_SIZE + 2] << 8 ) |                                  \
+    (_psi->buffer[_psi->buffer_size - CRC32_SIZE + 3]      ) )
 
-    size_t buffer_size;
-    uint8_t buffer[DESC_MAX_SIZE];
-} mpegts_desc_t;
-
-mpegts_desc_t * mpegts_desc_init(uint8_t *, size_t);
-void mpegts_desc_destroy(mpegts_desc_t *);
-void mpegts_desc_parse(mpegts_desc_t *);
-void mpegts_desc_dump(mpegts_desc_t *, uint8_t, const char *);
-void mpegts_desc_assemble(mpegts_desc_t *);
-
-/* src/pat.c */
-
-typedef struct
-{
-    uint16_t pnr;
-    uint16_t pid;
-} mpegts_pat_item_t;
-
-typedef struct
-{
-    uint16_t stream_id;
-    uint8_t version;
-    uint8_t current_next;
-
-    list_t *items;
-} mpegts_pat_t;
-
-mpegts_psi_t * mpegts_pat_init(void);
-void mpegts_pat_destroy(mpegts_psi_t *);
-
-void mpegts_pat_parse(mpegts_psi_t *);
-void mpegts_pat_dump(mpegts_psi_t *, const char *);
-void mpegts_pat_assemble(mpegts_psi_t *);
-
-void mpegts_pat_item_add(mpegts_psi_t *, uint16_t, uint16_t);
-void mpegts_pat_item_delete(mpegts_psi_t *, uint16_t);
-
-/* src/cat.c */
-
-typedef struct
-{
-    uint8_t version;
-    uint8_t current_next;
-
-    mpegts_desc_t *desc;
-} mpegts_cat_t;
-
-mpegts_psi_t * mpegts_cat_init(void);
-void mpegts_cat_destroy(mpegts_psi_t *);
-
-void mpegts_cat_parse(mpegts_psi_t *);
-void mpegts_cat_dump(mpegts_psi_t *, const char *);
-
-/* src/pmt.c */
-
-typedef struct
-{
-    uint8_t type;
-    uint16_t pid;
-
-    mpegts_desc_t *desc;
-} mpegts_pmt_item_t;
-
-typedef struct
-{
-    uint16_t pnr;
-    uint16_t pcr;
-    uint8_t version;
-    uint8_t current_next;
-
-    mpegts_desc_t *desc;
-
-    list_t *items;
-} mpegts_pmt_t;
-
-mpegts_psi_t * mpegts_pmt_init(uint16_t);
-mpegts_psi_t * mpegts_pmt_duplicate(mpegts_psi_t *);
-void mpegts_pmt_destroy(mpegts_psi_t *);
-
-void mpegts_pmt_parse(mpegts_psi_t *);
-void mpegts_pmt_dump(mpegts_psi_t *, const char *);
-void mpegts_pmt_assemble(mpegts_psi_t *);
-
-void mpegts_pmt_item_add(mpegts_psi_t *, uint16_t, uint8_t, mpegts_desc_t *);
-void mpegts_pmt_item_delete(mpegts_psi_t *, uint16_t);
-mpegts_pmt_item_t * mpegts_pmt_item_get(mpegts_psi_t *, uint16_t);
-
-/* src/sdt.c */
-
-typedef struct
-{
-    uint16_t pnr;
-
-    mpegts_desc_t *desc;
-} mpegts_sdt_item_t;
-
-typedef struct
-{
-    uint16_t stream_id;
-    uint8_t version;
-    uint8_t current_next;
-    uint16_t network_id;
-
-    list_t *items;
-} mpegts_sdt_t;
-
-mpegts_psi_t * mpegts_sdt_init(void);
-void mpegts_sdt_destroy(mpegts_psi_t *);
-
-void mpegts_sdt_parse(mpegts_psi_t *);
-void mpegts_sdt_dump(mpegts_psi_t *, const char *);
-
-/* src/stream.c */
-
-typedef mpegts_psi_t *mpegts_stream_t[MAX_PID];
-
-void mpegts_stream_destroy(mpegts_stream_t);
+#define PSI_SET_CRC32(_psi)                                                                     \
+    {                                                                                           \
+        const uint32_t __crc = PSI_CALC_CRC32(_psi);                                            \
+        _psi->buffer[_psi->buffer_size - CRC32_SIZE + 0] = __crc >> 24;                         \
+        _psi->buffer[_psi->buffer_size - CRC32_SIZE + 1] = __crc >> 16;                         \
+        _psi->buffer[_psi->buffer_size - CRC32_SIZE + 2] = __crc >> 8;                          \
+        _psi->buffer[_psi->buffer_size - CRC32_SIZE + 3] = __crc & 0xFF;                        \
+    }
 
 /* src/pes.c */
 
 typedef struct
 {
     mpegts_packet_type_t type;
-
     uint16_t pid;
     uint8_t cc;
 
     uint8_t stream_id;
     uint8_t pts;
 
-    uint8_t ts[TS_PACKET_SIZE]; // to demux
+    // demux
+    uint8_t ts[TS_PACKET_SIZE];
 
-    size_t buffer_size;
-    size_t buffer_skip;
+    // mux
+    uint32_t buffer_size;
+    uint32_t buffer_skip;
     uint8_t buffer[PES_MAX_SIZE];
 } mpegts_pes_t;
 
-mpegts_pes_t * mpegts_pes_init(mpegts_packet_type_t, uint16_t);
-void mpegts_pes_destroy(mpegts_pes_t *);
+mpegts_pes_t * mpegts_pes_init(mpegts_packet_type_t type, uint16_t pid);
+void mpegts_pes_destroy(mpegts_pes_t *pes);
 
-void mpegts_pes_mux(mpegts_pes_t *, uint8_t *
-                    , void (*)(module_data_t *, mpegts_pes_t *)
-                    , module_data_t *);
+void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts
+                    , void (*callback)(void *, mpegts_pes_t *)
+                    , void *arg);
 
-void mpegts_pes_demux(mpegts_pes_t *
-                      , void (*)(module_data_t *, uint8_t *)
-                      , module_data_t *);
+void mpegts_pes_demux(mpegts_pes_t *pes
+                      , void (*callback)(void *, uint8_t *)
+                      , void *arg);
 
+void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_size);
 
-mpegts_packet_type_t mpegts_pes_type(uint8_t);
-const char * mpegts_pes_name(mpegts_packet_type_t);
+/* DESC */
 
-void mpegts_pes_add_data(mpegts_pes_t *, const uint8_t *, size_t);
+#define DESC_GET_SIZE(_desc) (2 + ((((_desc)[0] & 0x0F) << 8) | (_desc)[1]))
 
-/* src/crc32b.c */
-#define CRC32_SIZE 4
-uint32_t crc32b(const uint8_t *, size_t);
+#define DESC_ITEMS_FIRST(_desc) (&_desc[2])
+#define DESC_ITEMS_EOF(_desc, _pointer) (_pointer >= (DESC_GET_SIZE(_desc) + _desc))
+#define DESC_ITEMS_NEXT(_desc, _pointer) _pointer += 2 + _pointer[1]
+
+#define DESC_ITEMS_APPEND(_desc, _pointer, _type, _data, _data_size)                            \
+    {                                                                                           \
+        _pointer[0] = _type;                                                                    \
+        _pointer[1] = _data_size;                                                               \
+        if(_data_size) memcpy(&_pointer[2], _data, _data_size);                                 \
+        _pointer += 2 + _data_size;                                                             \
+        const uint16_t __desc_size = _pointer - _desc - 2;                                      \
+        _desc[0] = (__desc_size >> 8) & 0x0F;                                                   \
+        _desc[1] = __desc_size & 0xFF;                                                          \
+    }
+
+/* PAT */
+
+#define PAT_GET_TSID(_psi) ((_psi->buffer[3] << 8) | _psi->buffer[4])
+#define PAT_SET_TSID(_psi, _tsid)                                                               \
+    {                                                                                           \
+        const uint16_t __tsid = _tsid;                                                          \
+        _psi->buffer[3] = __tsid >> 8;                                                          \
+        _psi->buffer[4] = __tsid & 0xFF;                                                        \
+    }
+
+#define PAT_GET_VERSION(_psi) ((_psi->buffer[5] & 0x3E) >> 1)
+#define PAT_SET_VERSION(_psi, _version)                                                         \
+    {                                                                                           \
+        const uint8_t __version = _version;                                                     \
+        _psi->buffer[5] &= ~0x3E;                                                               \
+        _psi->buffer[5] |= ((__version << 1) & 0x3E);                                           \
+    }
+
+#define PAT_ITEMS_FIRST(_psi) (&_psi->buffer[8])
+#define PAT_ITEMS_EOF(_psi, _pointer)                                                           \
+    ((_pointer - _psi->buffer) >= (_psi->buffer_size - CRC32_SIZE))
+#define PAT_ITEMS_NEXT(_psi, _pointer) _pointer += 4
+
+#define PAT_ITEMS_GET_PNR(_psi, _pointer) ((_pointer[0] << 8) | _pointer[1])
+#define PAT_ITEMS_GET_PID(_psi, _pointer) (((_pointer[2] & 0x1F) << 8) | _pointer[3])
+
+#define PAT_ITEMS_APPEND(_psi, _pointer, _pnr, _pid)                                            \
+    {                                                                                           \
+        const uint16_t __pnr = _pnr;                                                            \
+        _pointer[0] = __pnr >> 8;                                                               \
+        _pointer[1] = __pnr & 0xFF;                                                             \
+        const uint16_t __pid = _pid;                                                            \
+        _pointer[2] = (__pid >> 8) & 0x1F;                                                      \
+        _pointer[3] = __pid & 0xFF;                                                             \
+        _pointer += 4;                                                                          \
+        _psi->buffer_size = _pointer - _psi->buffer + CRC32_SIZE;                               \
+    }
+
+/* CAT */
+
+#define CAT_GET_VERSION(_psi) PAT_GET_VERSION(_psi)
+#define CAT_SET_VERSION(_psi, _version) PAT_SET_VERSION(_psi, _version)
+
+#define CAT_GET_DESC(_psi) (&_psi->buffer[8])
+#define CAT_SET_DESC(_psi)                                                                      \
+    {                                                                                           \
+        const uint16_t __desc_size = DESC_GET_SIZE(CAT_GET_DESC(_psi));                         \
+        _psi->buffer_size = 8 + __desc_size + CRC32_SIZE;                                       \
+    }
+
+/* PMT */
+
+#define PMT_GET_PNR(_psi) ((_psi->buffer[3] << 8) | _psi->buffer[4])
+#define PMT_SET_PNR(_psi, _pnr)                                                                 \
+    {                                                                                           \
+        const uint16_t __pnr = _pnr;                                                            \
+        _psi->buffer[3] = __pnr >> 8;                                                           \
+        _psi->buffer[4] = __pnr & 0xFF;                                                         \
+    }
+
+#define PMT_GET_PCR(_psi) (((_psi->buffer[8] & 0x1F) << 8) | _psi->buffer[9])
+#define PMT_SET_PCR(_psi, _pcr)                                                                 \
+    {                                                                                           \
+        const uint16_t __pcr = _pcr;                                                            \
+        _psi->buffer[8] = (__pcr >> 8) & 0x1F;                                                  \
+        _psi->buffer[9] = __pcr & 0xFF;                                                         \
+    }
+
+#define PMT_GET_VERSION(_psi) PAT_GET_VERSION(_psi)
+#define PMT_SET_VERSION(_psi, _version) PAT_SET_VERSION(_psi, _version)
+
+#define PMT_GET_DESC(_psi) (&_psi->buffer[10])
+#define PMT_SET_DESC(_psi)                                                                      \
+    {                                                                                           \
+        const uint16_t __desc_size = DESC_GET_SIZE(PMT_GET_DESC(_psi));                         \
+        _psi->buffer_size = 10 + __desc_size + CRC32_SIZE;                                      \
+    }
+
+#define PMT_ITEMS_FIRST(_psi) (PMT_GET_DESC(_psi) + DESC_GET_SIZE(PMT_GET_DESC(_psi)))
+#define PMT_ITEMS_EOF(_psi, _pointer) PAT_ITEMS_EOF(_psi, _pointer)
+#define PMT_ITEMS_NEXT(_psi, _pointer) _pointer += 3 + DESC_GET_SIZE(&_pointer[3])
+
+#define PMT_ITEMS_GET_TYPE(_psi, _pointer) _pointer[0]
+#define PMT_ITEMS_GET_PID(_psi, _pointer) (((_pointer[1] & 0x1F) << 8) | _pointer[2])
+#define PMT_ITEMS_GET_DESC(_psi, _pointer) &_pointer[3]
+
+#define PMT_ITEMS_APPEND(_psi, _pointer, _type, _pid, _desc)                                    \
+    {                                                                                           \
+        _pointer[0] = _type;                                                                    \
+        const uint16_t __pid = _pid;                                                            \
+        _pointer[1] = (_pid >> 8) & 0x1F;                                                       \
+        _pointer[2] = _pid & 0xFF;                                                              \
+        _pointer += 3;                                                                          \
+        if(_desc)                                                                               \
+        {                                                                                       \
+            const uint16_t __desc_size = DESC_GET_SIZE(_desc);                                  \
+            memcpy(_pointer, _desc, __desc_size);                                               \
+            _pointer += __desc_size;                                                            \
+        }                                                                                       \
+        _psi->buffer_size = _pointer - _psi->buffer + CRC32_SIZE;                               \
+    }
 
 #endif /* _MPEGTS_H_ */

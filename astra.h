@@ -20,6 +20,8 @@
 #include "modules/astra/module_stream.h"
 #include "modules/astra/module_event.h"
 
+#include "modules/mpegts/mpegts.h"
+
 extern lua_State *lua; // in main.c
 #define STACK_DEBUG(_L, _pos) printf("%s(): stack %d: %d\n", __FUNCTION__, _pos, lua_gettop(_L))
 
