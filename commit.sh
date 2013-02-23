@@ -58,17 +58,20 @@ cat >version.h <<EOF
 #endif /* _VERSION_H_ */
 EOF
 
-VERSION="v.$ASTRA_VERSION_MAJOR.$ASTRA_VERSION_MINOR"
-
-MSG=$1
+if [ $ASTRA_VERSION_DEV -eq 0 ] ; then
+    VERSION="v.$ASTRA_VERSION_MAJOR.$ASTRA_VERSION_MINOR"
+    MSG="$VERSION $1"
+else
+    MSG="$1"
+fi
 shift
 
 GITRET=1
 if [ $# -ne 0 ] ; then
-    git commit -m "$VERSION $MSG" $* version.h
+    git commit -m "$MSG" $* version.h
     GITRET=$?
 else
-    git commit -am "$VERSION $MSG"
+    git commit -am "$MSG"
     GITRET=$?
 fi
 if [ $GITRET -ne 0 ] ; then
