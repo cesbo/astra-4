@@ -13,6 +13,9 @@
 #   include <windows.h>
 #   include <winsock2.h>
 #   include <ws2tcpip.h>
+#   define SHUT_RD SD_RECEIVE
+#   define SHUT_WR SD_SEND
+#   define SHUT_RDWR SD_BOTH
 #else
 #   include <sys/socket.h>
 #   include <arpa/inet.h>
@@ -67,7 +70,7 @@ void socket_core_destroy(void)
 #endif
 }
 
-char * socket_error(void)
+const char * socket_error(void)
 {
     static char buffer[1024];
 
@@ -418,7 +421,7 @@ void socket_set_sockaddr(socket_t *sock, const char *addr, int port)
 void socket_set_nonblock(socket_t *sock, int is_nonblock)
 {
 #ifdef _WIN32
-    const unsigned long nonblock = is_nonblock;
+    unsigned long nonblock = is_nonblock;
     if(ioctlsocket(sock->fd, FIONBIO, &nonblock) != NO_ERROR)
 #else
     int flags = fcntl(sock->fd, F_GETFL);
@@ -478,7 +481,7 @@ void socket_set_timeout(socket_t *sock, int rcvmsec, int sndmsec)
     }
 }
 
-int _socket_set_buffer(int fd, int type, int size)
+static int _socket_set_buffer(int fd, int type, int size)
 {
     int val;
     socklen_t slen = sizeof(val);

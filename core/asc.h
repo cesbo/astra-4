@@ -101,7 +101,7 @@ typedef struct socket_s socket_t;
 void socket_core_init(void);
 void socket_core_destroy(void);
 
-char * socket_error(void);
+const char * socket_error(void);
 
 socket_t * socket_open_tcp4(void);
 socket_t * socket_open_udp4(void);
