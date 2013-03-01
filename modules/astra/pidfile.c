@@ -23,7 +23,7 @@
 #include <astra.h>
 #include <sys/stat.h>
 
-struct module_data_s
+struct module_data_t
 {
     int _empty;
 };
@@ -84,7 +84,10 @@ static void module_destroy(module_data_t *mod)
     filename = NULL;
 }
 
-MODULE_LUA_METHODS_EMPTY();
+MODULE_LUA_METHODS()
+{
+    { NULL, NULL }
+};
 MODULE_LUA_REGISTER(pidfile)
 
 #endif

@@ -22,7 +22,7 @@
 
 #include <astra.h>
 
-struct module_data_s
+struct module_data_t
 {
     int idx_cb;
     int idx_self;

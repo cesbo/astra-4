@@ -11,8 +11,8 @@
 
 #include "mpegts.h"
 
-typedef struct module_demux_s module_demux_t;
-struct module_demux_s
+typedef struct module_demux_t module_demux_t;
+struct module_demux_t
 {
     void (*join_pid)(module_data_t *mod, uint16_t pid);
     void (*leave_pid)(module_data_t *mod, uint16_t pid);

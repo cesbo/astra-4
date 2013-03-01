@@ -14,17 +14,16 @@
 #include <core/asc.h>
 #include <sys/queue.h>
 
-typedef struct module_stream_s module_stream_t;
-
-struct module_stream_s
+typedef struct module_stream_t module_stream_t;
+struct module_stream_t
 {
     void (*on_ts)(module_data_t *mod, const uint8_t *ts);
 
     module_data_t *self;
     module_stream_t *parent;
 
-    TAILQ_ENTRY(module_stream_s) entries;
-    TAILQ_HEAD(list_s, module_stream_s) childs;
+    TAILQ_ENTRY(module_stream_t) entries;
+    TAILQ_HEAD(list_s, module_stream_t) childs;
 };
 
 #define MODULE_STREAM_DATA() module_stream_t __stream

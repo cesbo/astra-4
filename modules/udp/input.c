@@ -24,7 +24,7 @@
 #define UDP_BUFFER_SIZE 1460
 #define TS_PACKET_SIZE 188
 
-struct module_data_s
+struct module_data_t
 {
     MODULE_STREAM_DATA();
     MODULE_DEMUX_DATA();

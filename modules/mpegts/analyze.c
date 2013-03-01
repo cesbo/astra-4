@@ -17,7 +17,7 @@
 
 #include <astra.h>
 
-struct module_data_s
+struct module_data_t
 {
     MODULE_STREAM_DATA();
 

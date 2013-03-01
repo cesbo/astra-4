@@ -22,9 +22,6 @@ typedef struct
 #define MODULE_LUA_METHODS()                                                \
     static const module_lua_method_t __module_lua_methods[] =
 
-#define MODULE_LUA_METHODS_EMPTY()                                          \
-    MODULE_LUA_METHODS() {{ NULL, NULL }}
-
 #define MODULE_LUA_REGISTER(_name)                                          \
     static const char __module_name[] = #_name;                             \
     static int __module_new(lua_State *L)                                   \

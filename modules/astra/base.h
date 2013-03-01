@@ -12,7 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef struct module_data_s module_data_t;
+typedef struct module_data_t module_data_t;
 
 /* utils */
 
