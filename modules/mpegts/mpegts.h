@@ -174,6 +174,9 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
         _desc[1] = __desc_size & 0xFF;                                                          \
     }
 
+#define DESC_CA_CAID(_desc) ((_desc[2] << 8) | _desc[3])
+#define DESC_CA_PID(_desc) (((_desc[4] & 0x1F) << 8) | _desc[5])
+
 /* PAT */
 
 #define PAT_GET_TSID(_psi) ((_psi->buffer[3] << 8) | _psi->buffer[4])

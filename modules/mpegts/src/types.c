@@ -111,7 +111,7 @@ void mpegts_desc_to_string(char *str, uint32_t len, const uint8_t *desc)
     {
         case 0x09:
         { /* CA */
-            const uint16_t ca_pid = ((desc[4] & 0x1F) << 8) | desc[5];
+            const uint16_t ca_pid = DESC_CA_PID(desc);
             skip = snprintf(str, len, "CAS: caid:0x%02X%02X pid:%d", desc[2], desc[3], ca_pid);
             const uint8_t ca_info_size = desc[1] - 4; // 4 = caid + ca_pid
             if(ca_info_size > 0)

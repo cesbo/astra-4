@@ -29,26 +29,23 @@ struct module_demux_t
 
 #define demux_join_pid(_mod, _pid)                                                              \
     {                                                                                           \
-        ++_mod->__demux.pid_list[_pid];                                                         \
-        if(   _mod->__demux.parent                                                              \
-           && _mod->__demux.parent->join_pid                                                    \
-           && (_mod->__demux.pid_list[_pid] == 1))                                              \
+        const uint16_t __pid = _pid;                                                            \
+        if(!_mod->__demux.pid_list[__pid])                                                      \
         {                                                                                       \
-            _mod->__demux.parent->join_pid(_mod->__demux.parent->self, _pid);                   \
+            _mod->__demux.pid_list[__pid] = 1;                                                  \
+            if(_mod->__demux.parent && _mod->__demux.parent->join_pid)                          \
+                _mod->__demux.parent->join_pid(_mod->__demux.parent->self, __pid);              \
         }                                                                                       \
     }
 
 #define demux_leave_pid(_mod, _pid)                                                             \
     {                                                                                           \
-        if(_mod->__demux.pid_list[_pid] > 0)                                                    \
+        const uint16_t __pid = _pid;                                                            \
+        if(_mod->__demux.pid_list[__pid])                                                       \
         {                                                                                       \
-            --_mod->__demux.pid_list[_pid];                                                     \
-            if(   _mod->__demux.parent                                                          \
-               && _mod->__demux.parent->leave_pid                                               \
-               && _mod->__demux.pid_list[_pid] == 0)                                            \
-            {                                                                                   \
-                _mod->__demux.parent->leave_pid(_mod->__demux.parent->self, _pid);              \
-            }                                                                                   \
+            _mod->__demux.pid_list[__pid] = 0;                                                  \
+            if(_mod->__demux.parent && _mod->__demux.parent->leave_pid)                         \
+                _mod->__demux.parent->leave_pid(_mod->__demux.parent->self, __pid);             \
         }                                                                                       \
     }
 
