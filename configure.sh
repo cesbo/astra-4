@@ -141,6 +141,10 @@ case "$CCSYSTEM" in
     ;;
 esac
 
+if [ $ARG_BUILD_STATIC -eq 1 ] ; then
+    LDFLAGS="$LDFLAGS -static"
+fi
+
 if [ -n "$ARG_MAIN_APP" ] ; then
     CFLAGS="$CFLAGS -DASTRA_SHELL=1"
 fi

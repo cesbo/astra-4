@@ -12,9 +12,9 @@ int module_option_number(const char *name, int *number)
 {
     do
     {
-        if(lua_type(lua, 2) != LUA_TTABLE)
+        if(lua_type(lua, MODULE_OPTIONS_IDX) != LUA_TTABLE)
             break;
-        lua_getfield(lua, 2, name);
+        lua_getfield(lua, MODULE_OPTIONS_IDX, name);
         const int type = lua_type(lua, -1);
         if(type == LUA_TNUMBER)
         {
@@ -46,9 +46,9 @@ int module_option_string(const char *name, const char **string)
 {
     do
     {
-        if(lua_type(lua, 2) != LUA_TTABLE)
+        if(lua_type(lua, MODULE_OPTIONS_IDX) != LUA_TTABLE)
             break;
-        lua_getfield(lua, 2, name);
+        lua_getfield(lua, MODULE_OPTIONS_IDX, name);
         if(lua_type(lua, -1) == LUA_TSTRING)
         {
             const int length = luaL_len(lua, -1);

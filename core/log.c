@@ -100,7 +100,7 @@ static void _log(int type, const char *msg, va_list ap)
         ;
 }
 
-inline void log_info(const char *msg, ...)
+void log_info(const char *msg, ...)
 {
     va_list ap;
     va_start(ap, msg);
@@ -108,7 +108,7 @@ inline void log_info(const char *msg, ...)
     va_end(ap);
 }
 
-inline void log_error(const char *msg, ...)
+void log_error(const char *msg, ...)
 {
     va_list ap;
     va_start(ap, msg);
@@ -116,7 +116,7 @@ inline void log_error(const char *msg, ...)
     va_end(ap);
 }
 
-inline void log_warning(const char *msg, ...)
+void log_warning(const char *msg, ...)
 {
     va_list ap;
     va_start(ap, msg);
@@ -124,7 +124,7 @@ inline void log_warning(const char *msg, ...)
     va_end(ap);
 }
 
-inline void log_debug(const char *msg, ...)
+void log_debug(const char *msg, ...)
 {
     if(!__log.debug)
         return;

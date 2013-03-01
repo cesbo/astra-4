@@ -119,12 +119,12 @@ static socket_t * __socket_open(int family, int type)
     return sock;
 }
 
-inline socket_t * socket_open_tcp4(void)
+socket_t * socket_open_tcp4(void)
 {
     return __socket_open(PF_INET, SOCK_STREAM);
 }
 
-inline socket_t * socket_open_udp4(void)
+socket_t * socket_open_udp4(void)
 {
     return __socket_open(PF_INET, SOCK_DGRAM);
 }
@@ -350,12 +350,12 @@ inline int socket_fd(socket_t *sock)
     return sock->fd;
 }
 
-inline const char * socket_addr(socket_t *sock)
+const char * socket_addr(socket_t *sock)
 {
     return inet_ntoa(sock->addr.sin_addr);
 }
 
-inline int socket_port(socket_t *sock)
+int socket_port(socket_t *sock)
 {
     return ntohs(sock->addr.sin_port);
 }

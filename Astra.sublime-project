@@ -19,7 +19,8 @@
 			"-I${folder:${project_path:main.c}}/lua",
 			"-I${folder:${project_path:main.c}}",
 			"-I${folder:${project_path:main.c}}/contrib/build/ffmpeg",
-			"-Wno-deprecated-declarations"
+			"-Wno-deprecated-declarations",
+			"-std=iso9899:1999"
 		],
 		"rulers": [ 101 ],
 		"wrap_width": 100

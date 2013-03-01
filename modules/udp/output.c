@@ -11,6 +11,7 @@
  *      udp_output
  *
  * Module Options:
+ *      upstream    - object, stream instance returned by module_instance:stream()
  *      addr        - string, source IP address
  *      port        - number, source UDP port
  *      ttl         - number, time to live

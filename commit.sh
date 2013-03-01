@@ -19,7 +19,8 @@ if [ ! -f "commit.sh" ] ; then
 fi
 
 BRANCH=`git branch | grep '^\*' | cut -d ' ' -f 2`
-if [ "$BRANCH" != "dev" ] ; then
+# TODO: remove astra-4 checking
+if [ "$BRANCH" != "dev" -a "$BRANCH" != "astra-4" ] ; then
     echo "Error: checkout to the dev branch"
     exit 3
 fi

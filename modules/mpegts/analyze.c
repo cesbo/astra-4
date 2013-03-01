@@ -11,6 +11,7 @@
  *      analyze
  *
  * Module Options:
+ *      upstream    - object, stream instance returned by module_instance:stream()
  *      name        - string, analyzer name
  */
 
@@ -80,7 +81,6 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
         log_error(MSG("CAT checksum mismatch"));
         return;
     }
-
     psi->crc32 = crc32;
 
     char desc_dump[256];
@@ -111,7 +111,6 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         log_error(MSG("PMT checksum mismatch"));
         return;
     }
-
     psi->crc32 = crc32;
 
     const uint16_t pnr = PMT_GET_PNR(psi);
@@ -163,6 +162,9 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             case MPEGTS_PACKET_PAT:
                 mpegts_psi_mux(psi, ts, on_pat, mod);
                 break;
+            case MPEGTS_PACKET_CAT:
+                mpegts_psi_mux(psi, ts, on_cat, mod);
+                break;
             case MPEGTS_PACKET_PMT:
                 mpegts_psi_mux(psi, ts, on_pmt, mod);
                 break;
@@ -183,7 +185,7 @@ static void module_init(module_data_t *mod)
         log_error("[analyze] option 'name' is required");
         astra_abort();
     }
-    mod->name = malloc(name_length);
+    mod->name = malloc(name_length + 1);
     strcpy(mod->name, value);
 
     module_stream_init(mod, on_ts);
@@ -201,6 +203,8 @@ static void module_destroy(module_data_t *mod)
         if(mod->stream[i])
             mpegts_psi_destroy(mod->stream[i]);
     }
+
+    free(mod->name);
 }
 
 MODULE_STREAM_METHODS()

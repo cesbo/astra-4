@@ -50,7 +50,7 @@ static void thread_handler(int sig)
         longjmp(global_jmp, 1);
 }
 
-inline jmp_buf * __thread_getjmp(void)
+jmp_buf * __thread_getjmp(void)
 {
     return &global_jmp;
 }

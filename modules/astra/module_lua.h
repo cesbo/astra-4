@@ -17,6 +17,8 @@ typedef struct
     int (*method)(module_data_t *mod);
 } module_lua_method_t;
 
+#define MODULE_OPTIONS_IDX 2
+
 #define MODULE_LUA_METHODS()                                                \
     static const module_lua_method_t __module_lua_methods[] =
 

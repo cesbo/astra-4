@@ -21,9 +21,10 @@
 #include "modules/astra/module_event.h"
 
 #include "modules/mpegts/mpegts.h"
+#include "modules/mpegts/module_demux.h"
 
 extern lua_State *lua; // in main.c
-#define STACK_DEBUG(_L, _pos) printf("%s(): stack %d: %d\n", __FUNCTION__, _pos, lua_gettop(_L))
+#define STACK_DEBUG(_pos) printf("%s(): stack %d: %d\n", __FUNCTION__, _pos, lua_gettop(lua))
 
 /* version */
 
