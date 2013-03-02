@@ -5,7 +5,6 @@ usage()
     cat <<EOF
 Usage: $0 [OPTIONS]
     --help
-    --debug                     - build version for debug
     --with-modules=PATH[:PATH]  - list of modules (by default: *)
                                   * - include all defaults modules
                                   For example, to append custom module, use:
@@ -34,7 +33,6 @@ APP_C="gcc"
 APP_STRIP="strip"
 
 ARG_CC=0
-ARG_DEBUG=0
 ARG_MODULES="*"
 ARG_MAIN_APP=""
 ARG_BUILD_STATIC=0
@@ -56,9 +54,6 @@ while [ $# -ne 0 ] ; do
     case "$OPT" in
         "--help")
             usage
-            ;;
-        "--debug")
-            ARG_DEBUG=1
             ;;
         "--with-modules="*)
             ARG_MODULES=`echo $OPT | sed -e 's/^[a-z-]*=//'`
@@ -84,6 +79,7 @@ while [ $# -ne 0 ] ; do
         *)
             echo "Unknown option: $OPT"
             echo "For more information see: $0 --help"
+            exit 1
             ;;
     esac
 done
@@ -149,10 +145,6 @@ if [ -n "$ARG_MAIN_APP" ] ; then
     CFLAGS="$CFLAGS -DASTRA_SHELL=1"
 fi
 
-if [ $ARG_DEBUG -eq 1 ] ; then
-    CFLAGS="$CFLAGS -DDEBUG=1"
-fi
-
 APP_CFLAGS="$CFLAGS -Wstrict-prototypes -std=iso9899:1999"
 APP_LDFLAGS="$LDFLAGS"
 
@@ -201,7 +193,6 @@ MAKEFLAGS = -rR --no-print-directory
 
 APP         = $APP
 C           = $APP_C
-STRIP       = $APP_STRIP
 CFLAGS      = $APP_CFLAGS
 OS          = $OS
 
@@ -456,10 +447,12 @@ EOF
     cat >&5 <<EOF
 LD          = $APP_C
 LDFLAGS     = $APP_LDFLAGS
+STRIP       = $APP_STRIP
 
 \$(APP): $APP_OBJECTS $APP_MODULES_A
 	@echo "BUILD: \$@"
 	@\$(LD) -o \$@ \$(LDFLAGS) \$^
+	@\$(STRIP) \$@
 
 \$(APP)-clean: $APP_MODULES_CLEAN
 	@echo "CLEAN: \$(APP)"

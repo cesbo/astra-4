@@ -118,7 +118,8 @@ static void module_init(module_data_t *mod)
 
     mod->sock = socket_open_udp4();
     socket_set_reuseaddr(mod->sock, 1);
-    socket_bind(mod->sock, NULL, 0);
+    if(!socket_bind(mod->sock, NULL, 0))
+        ;
 
     int value;
     if(module_option_number("socket_size", &value))

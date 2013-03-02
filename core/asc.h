@@ -25,6 +25,10 @@
 #define ARRAY_SIZE(_a) (sizeof(_a)/sizeof(_a[0]))
 #define UNUSED_ARG(_x) (void)_x
 
+#ifndef __wur
+#   define __wur __attribute__(( __warn_unused_result__ ))
+#endif
+
 /* event.c */
 
 typedef struct event_s event_t;
@@ -41,7 +45,7 @@ void event_core_init(void);
 void event_core_loop(void);
 void event_core_destroy(void);
 
-event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int), void *arg);
+event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int), void *arg) __wur;
 void event_detach(event_t *event);
 
 /* timer.c */
@@ -54,20 +58,20 @@ void timer_core_destroy(void);
 
 void timer_one_shot(unsigned int ms, void (*callback)(void *), void *arg);
 
-timer_t * timer_attach(unsigned int ms, void (*callback)(void *), void *arg);
+timer_t * timer_attach(unsigned int ms, void (*callback)(void *), void *arg) __wur;
 void timer_detach(timer_t *timer);
 
 /* list.c */
 
 typedef struct list_s list_t;
 
-list_t * list_init(void);
+list_t * list_init(void) __wur;
 void list_destroy(list_t *list);
 
 void list_first(list_t *list);
 void list_next(list_t *list);
-int list_is_data(list_t *list);
-void * list_data(list_t *list);
+int list_is_data(list_t *list) __wur;
+void * list_data(list_t *list) __wur;
 
 void list_insert_head(list_t *list, void *data);
 void list_insert_tail(list_t *list, void *data);
@@ -103,27 +107,27 @@ void socket_core_destroy(void);
 
 const char * socket_error(void);
 
-socket_t * socket_open_tcp4(void);
-socket_t * socket_open_udp4(void);
+socket_t * socket_open_tcp4(void) __wur;
+socket_t * socket_open_udp4(void) __wur;
 
 void socket_shutdown_recv(socket_t *sock);
 void socket_shutdown_send(socket_t *sock);
 void socket_shutdown_both(socket_t *sock);
 void socket_close(socket_t *sock);
 
-int socket_bind(socket_t *sock, const char *addr, int port);
-int socket_accept(socket_t *sock, socket_t **client_ptr);
-int socket_connect(socket_t *sock, const char *addr, int port);
+int socket_bind(socket_t *sock, const char *addr, int port) __wur;
+int socket_accept(socket_t *sock, socket_t **client_ptr) __wur;
+int socket_connect(socket_t *sock, const char *addr, int port) __wur;
 
-ssize_t socket_recv(socket_t *sock, void *buffer, size_t size);
-ssize_t socket_recvfrom(socket_t *sock, void *buffer, size_t size);
+ssize_t socket_recv(socket_t *sock, void *buffer, size_t size) __wur;
+ssize_t socket_recvfrom(socket_t *sock, void *buffer, size_t size) __wur;
 
-ssize_t socket_send(socket_t *sock, const void *buffer, size_t size);
-ssize_t socket_sendto(socket_t *sock, const void *buffer, size_t size);
+ssize_t socket_send(socket_t *sock, const void *buffer, size_t size) __wur;
+ssize_t socket_sendto(socket_t *sock, const void *buffer, size_t size) __wur;
 
-int socket_fd(socket_t *sock);
-const char * socket_addr(socket_t *sock);
-int socket_port(socket_t *sock);
+int socket_fd(socket_t *sock) __wur;
+const char * socket_addr(socket_t *sock) __wur;
+int socket_port(socket_t *sock) __wur;
 
 int socket_event_on_accept(socket_t *sock, void (*callback)(void *, int), void *arg);
 int socket_event_on_read(socket_t *sock, void (*callback)(void *, int), void *arg);
