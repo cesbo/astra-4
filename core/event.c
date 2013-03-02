@@ -479,7 +479,7 @@ void asc_event_core_loop(void)
     memcpy(&wset, &event_observer.wmaster, sizeof(wset));
 
     static struct timeval timeout = { .tv_sec = 0, .tv_usec = 10000 };
-    int ret = select(event_observer.max_fd + 1, &rset, &wset, NULL, &timeout);
+    const int ret = select(event_observer.max_fd + 1, &rset, &wset, NULL, &timeout);
     if(ret == -1)
     {
         if(errno == EINTR)
@@ -488,21 +488,23 @@ void asc_event_core_loop(void)
         asc_log_error(MSG("event observer critical error [%s]"), strerror(errno));
         abort();
     }
-
-    asc_list_for(event_observer.event_list)
+    else if(ret > 0)
     {
-        asc_event_t *event = asc_list_data(event_observer.event_list);
-        if(!event->fd)
-            continue;
-        else if(event->is_event_read)
+        asc_list_for(event_observer.event_list)
         {
-            if(FD_ISSET(event->fd, &rset))
-                event->callback(event->arg, 1);
-        }
-        else
-        {
-            if(FD_ISSET(event->fd, &wset))
-                event->callback(event->arg, 1);
+            asc_event_t *event = asc_list_data(event_observer.event_list);
+            if(!event->fd)
+                continue;
+            else if(event->is_event_read)
+            {
+                if(FD_ISSET(event->fd, &rset))
+                    event->callback(event->arg, 1);
+            }
+            else
+            {
+                if(FD_ISSET(event->fd, &wset))
+                    event->callback(event->arg, 1);
+            }
         }
     }
 

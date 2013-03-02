@@ -137,12 +137,20 @@ case "$CCSYSTEM" in
     ;;
 esac
 
-if [ $ARG_BUILD_STATIC -eq 1 ] ; then
-    LDFLAGS="$LDFLAGS -static"
+if [ -n "$ARG_CFLAGS" ] ; then
+    CFLAGS="$CFLAGS $ARG_CFLAGS"
 fi
 
 if [ -n "$ARG_MAIN_APP" ] ; then
     CFLAGS="$CFLAGS -DASTRA_SHELL=1"
+fi
+
+if [ $ARG_BUILD_STATIC -eq 1 ] ; then
+    LDFLAGS="$LDFLAGS -static"
+fi
+
+if [ -n "$ARG_LDFLAGS" ] ; then
+    LDFLAGS="$LDFLAGS $ARG_LDFLAGS"
 fi
 
 APP_CFLAGS="$CFLAGS -Wstrict-prototypes -std=iso9899:1999"

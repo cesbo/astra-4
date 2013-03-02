@@ -134,7 +134,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         const uint16_t pid = PMT_ITEMS_GET_PID(psi, pointer);
         const uint8_t type = PMT_ITEMS_GET_TYPE(psi, pointer);
         asc_log_info(MSG("PMT: pid:%4d %s:0x%02X")
-                 , pid, mpegts_type_name(mpegts_pes_type(type)), type);
+                     , pid, mpegts_type_name(mpegts_pes_type(type)), type);
 
         desc = PMT_ITEMS_GET_DESC(psi, pointer);
         desc_pointer = DESC_ITEMS_FIRST(desc);
