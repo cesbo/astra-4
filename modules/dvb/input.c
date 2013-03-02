@@ -8,16 +8,6 @@
 
 #include "dvb.h"
 
-static void join_pid(module_data_t *mod, uint16_t pid)
-{
-    ;
-}
-
-static void leave_pid(module_data_t *mod, uint16_t pid)
-{
-    ;
-}
-
 /*
  *   ooooooo  oooooooooo  ooooooooooo ooooo  ooooooo  oooo   oooo oooooooo8
  * o888   888o 888    888 88  888  88  888 o888   888o 8888o  88 888
@@ -30,6 +20,8 @@ static void leave_pid(module_data_t *mod, uint16_t pid)
 static const char __adapter[] = "adapter";
 static const char __device[] = "device";
 static const char __type[] = "type";
+
+static const char __buffer_size[] = "buffer_size";
 static const char __modulation[] = "modulation";
 
 static const char __frequency[] = "frequency";
@@ -185,6 +177,8 @@ static void module_options(module_data_t *mod)
         astra_abort();
     }
 
+    module_option_number(__buffer_size, &mod->dvr_buffer_size);
+
     if(module_option_string(__modulation, &string_val))
     {
         if(!strcasecmp(string_val, "NONE")) mod->modulation = -1;
@@ -225,6 +219,16 @@ static void module_options(module_data_t *mod)
  *
  */
 
+static void join_pid(module_data_t *mod, uint16_t pid)
+{
+    ;
+}
+
+static void leave_pid(module_data_t *mod, uint16_t pid)
+{
+    ;
+}
+
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, NULL);
@@ -233,6 +237,7 @@ static void module_init(module_data_t *mod)
     module_options(mod);
 
     frontend_open(mod);
+    dvr_open(mod);
 }
 
 static void module_destroy(module_data_t *mod)
@@ -241,6 +246,7 @@ static void module_destroy(module_data_t *mod)
     module_demux_destroy(mod);
 
     frontend_close(mod);
+    dvr_close(mod);
 }
 
 MODULE_STREAM_METHODS()

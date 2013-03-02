@@ -17,8 +17,10 @@
 #include <sys/ioctl.h>
 #include <linux/dvb/version.h>
 #include <linux/dvb/frontend.h>
+#include <linux/dvb/dmx.h>
 
 #define DVB_API ((DVB_API_VERSION * 100) + DVB_API_VERSION_MINOR)
+#define DVR_BUFFER_SIZE (1022 * TS_PACKET_SIZE)
 
 typedef enum
 {
@@ -33,16 +35,26 @@ struct module_data_t
     MODULE_STREAM_DATA();
     MODULE_DEMUX_DATA();
 
-    /* config */
+    /* Base Config */
     dvb_type_t type;
     int adapter;
     int device;
 
+    /* DVR Config */
+    int dvr_buffer_size;
+
+    /* DVR Base */
+    int dvr_fd;
+    asc_event_t *dvr_event;
+    uint8_t dvr_buffer[DVR_BUFFER_SIZE];
+
+    uint32_t dvr_read;
+
+    /* FE Config */
     int frequency;
 
     fe_sec_voltage_t polarization;
     int symbolrate;
-
     int lnb_lof1;
     int lnb_lof2;
     int lnb_slof;
@@ -57,12 +69,12 @@ struct module_data_t
     fe_rolloff_t rolloff;
 #endif
 
-    /* FE */
+    /* FE Base */
+    int fe_fd;
     asc_thread_t *fe_thread;
 
-    int fe_fd;
+    /* FE Status */
     fe_status_t fe_status;
-
     int lock;
     int signal;
     int snr;
@@ -74,3 +86,6 @@ struct module_data_t
 
 void frontend_open(module_data_t *mod);
 void frontend_close(module_data_t *mod);
+
+void dvr_open(module_data_t *mod);
+void dvr_close(module_data_t *mod);
