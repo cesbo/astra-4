@@ -54,7 +54,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        log_error(MSG("PAT checksum mismatch"));
+        asc_log_error(MSG("PAT checksum mismatch"));
         return;
     }
     psi->crc32 = crc32;
@@ -95,7 +95,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        log_error(MSG("PMT checksum mismatch"));
+        asc_log_error(MSG("PMT checksum mismatch"));
         return;
     }
     psi->crc32 = crc32;
@@ -138,7 +138,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        log_error(MSG("PMT checksum mismatch"));
+        asc_log_error(MSG("PMT checksum mismatch"));
         return;
     }
     psi->crc32 = crc32;
@@ -237,7 +237,7 @@ static void module_init(module_data_t *mod)
     const int name_length = module_option_string("name", &string_value);
     if(!string_value)
     {
-        log_error("[channel] option 'name' is required");
+        asc_log_error("[channel] option 'name' is required");
         astra_abort();
     }
     mod->name = malloc(name_length + 1);
@@ -246,7 +246,7 @@ static void module_init(module_data_t *mod)
     lua_getfield(lua, MODULE_OPTIONS_IDX, "demux");
     if(lua_type(lua, -1) != LUA_TLIGHTUSERDATA)
     {
-        log_error("[channel] option 'demux' is required");
+        asc_log_error("[channel] option 'demux' is required");
         astra_abort();
     }
     demux_set_parent(mod, lua_touserdata(lua, -1));

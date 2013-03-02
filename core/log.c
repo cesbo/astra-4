@@ -100,7 +100,7 @@ static void _log(int type, const char *msg, va_list ap)
         ;
 }
 
-void log_info(const char *msg, ...)
+void asc_log_info(const char *msg, ...)
 {
     va_list ap;
     va_start(ap, msg);
@@ -108,7 +108,7 @@ void log_info(const char *msg, ...)
     va_end(ap);
 }
 
-void log_error(const char *msg, ...)
+void asc_log_error(const char *msg, ...)
 {
     va_list ap;
     va_start(ap, msg);
@@ -116,7 +116,7 @@ void log_error(const char *msg, ...)
     va_end(ap);
 }
 
-void log_warning(const char *msg, ...)
+void asc_log_warning(const char *msg, ...)
 {
     va_list ap;
     va_start(ap, msg);
@@ -124,7 +124,7 @@ void log_warning(const char *msg, ...)
     va_end(ap);
 }
 
-void log_debug(const char *msg, ...)
+void asc_log_debug(const char *msg, ...)
 {
     if(!__log.debug)
         return;
@@ -137,7 +137,7 @@ void log_debug(const char *msg, ...)
 
 /* API */
 
-void log_hup(void)
+void asc_log_hup(void)
 {
     if(__log.fd > 1)
     {
@@ -159,12 +159,12 @@ void log_hup(void)
     {
         __log.fd = 0;
         __log.sout = 1;
-        log_error("[core/log] failed to open %s (%s)"
-                  , __log.filename, strerror(errno));
+        asc_log_error("[core/log] failed to open %s (%s)"
+                      , __log.filename, strerror(errno));
     }
 }
 
-void log_destroy(void)
+void asc_log_core_destroy(void)
 {
     if(__log.fd > 1)
         close(__log.fd);
@@ -185,17 +185,17 @@ void log_destroy(void)
     }
 }
 
-void log_set_stdout(int val)
+void asc_log_set_stdout(int val)
 {
     __log.sout = val;
 }
 
-void log_set_debug(int val)
+void asc_log_set_debug(int val)
 {
     __log.debug = val;
 }
 
-void log_set_file(const char *val)
+void asc_log_set_file(const char *val)
 {
     if(__log.filename)
     {
@@ -206,11 +206,11 @@ void log_set_file(const char *val)
     if(val)
         __log.filename = strdup(val);
 
-    log_hup();
+    asc_log_hup();
 }
 
 #ifndef _WIN32
-void log_set_syslog(const char *val)
+void asc_log_set_syslog(const char *val)
 {
     if(__log.syslog)
     {

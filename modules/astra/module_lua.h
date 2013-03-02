@@ -71,7 +71,7 @@ typedef struct
         lua_setmetatable(L, module_table);                                  \
         if(__module_lua_methods[0].name)                                    \
         {                                                                   \
-            for(size_t i = 0; i < ARRAY_SIZE(__module_lua_methods); ++i)    \
+            for(size_t i = 0; i < ASC_ARRAY_SIZE(__module_lua_methods); ++i)\
             {                                                               \
                 const module_lua_method_t *m = &__module_lua_methods[i];    \
                 lua_pushstring(L, m->name);                                 \

@@ -196,6 +196,9 @@ C           = $APP_C
 CFLAGS      = $APP_CFLAGS
 OS          = $OS
 
+CORE_OBJS   =
+MODS_OBJS   =
+
 .PHONY: all clean distclean
 all: \$(APP)
 
@@ -210,7 +213,7 @@ echo "Check modules:" >&2
 # main app
 
 APP_SOURCES="$SRCDIR/main.c"
-APP_OBJECTS=""
+APP_OBJS=""
 
 __check_main_app()
 {
@@ -220,7 +223,7 @@ __check_main_app()
 
     for S in $APP_SOURCES ; do
         O=`echo $S | sed -e 's/.c$/.o/' -e 's/.cpp$/.o/'`
-        APP_OBJECTS="$APP_OBJECTS $O"
+        APP_OBJS="$APP_OBJS $O"
         $APP_C $APP_CFLAGS -MT $O -MM $S 2>$TMP_MODULE_MK
         if [ $? -ne 0 ] ; then
             return 1
@@ -284,12 +287,12 @@ APP_MODULES_LIST=`select_modules`
 
 APP_MODULES_CONF=""
 APP_MODULES_A=""
-APP_MODULES_CLEAN=""
-APP_CORE_CLEAN=""
 
 __check_module()
 {
     MODULE="$1"
+    OGROUP="$2"
+
     SOURCES=""
     MODULES=""
     CFLAGS=""
@@ -340,17 +343,9 @@ EOF
     cat <<EOF
 
 ${MODULE}_OBJECTS = $OBJECTS
-${MODULE}/module.a: \$(${MODULE}_OBJECTS)
-	@echo "   AR: \$@"
-	@ar rcs \$@ \$^
-${MODULE}-clean:
-	@echo "CLEAN: ${MODULE}"
-	@rm -f ${MODULE}/module.a \$(${MODULE}_OBJECTS)
+${OGROUP} += \$(${MODULE}_OBJECTS)
 
 EOF
-
-    APP_MODULES_A="$APP_MODULES_A $MODULE/module.a"
-    APP_MODULES_CLEAN="$APP_MODULES_CLEAN $MODULE-clean"
 
     if [ -n "MODULES" ] ; then
         APP_MODULES_CONF="$APP_MODULES_CONF $MODULES"
@@ -362,7 +357,9 @@ EOF
 check_module()
 {
     MODULE="$1"
-    __check_module $MODULE >&5
+    OGROUP="$2"
+
+    __check_module $MODULE $OGROUP >&5
     if [ $? -eq 0 ] ; then
         echo "     OK: $MODULE" >&2
     else
@@ -377,17 +374,14 @@ check_module()
 check_core()
 {
     for M in $SRCDIR/core $SRCDIR/lua ; do
-        check_module $M
+        check_module $M "CORE_OBJS"
     done
-
-    APP_CORE_CLEAN="$APP_MODULES_CLEAN"
-    APP_MODULES_CLEAN=""
 }
 
 check_modules()
 {
     for M in $APP_MODULES_LIST ; do
-        check_module $M
+        check_module $M "MODS_OBJS"
     done
 
     # config.h
@@ -430,7 +424,7 @@ if [ -z "$ARG_MODULE_PACK" ] ; then
     check_core
     check_modules
 else
-    check_module $APP_MODULES_LIST
+    check_module $APP_MODULES_LIST "MODS_OBJS"
 fi
 
 #
@@ -449,17 +443,17 @@ LD          = $APP_C
 LDFLAGS     = $APP_LDFLAGS
 STRIP       = $APP_STRIP
 
-\$(APP): $APP_OBJECTS $APP_MODULES_A
+\$(APP): $APP_OBJS \$(CORE_OBJS) \$(MODS_OBJS)
 	@echo "BUILD: \$@"
-	@\$(LD) -o \$@ \$(LDFLAGS) \$^
+	@\$(LD) -o \$@ \$(LDFLAGS) $APP_MODULES_A \$^
 	@\$(STRIP) \$@
 
-\$(APP)-clean: $APP_MODULES_CLEAN
+\$(APP)-clean:
 	@echo "CLEAN: \$(APP)"
-	@rm -f \$(APP) $APP_OBJECTS
+	@rm -f \$(APP) $APP_OBJS \$(MODS_OBJS)
 
-\$(APP)-distclean: $APP_CORE_CLEAN \$(APP)-clean
-
+\$(APP)-distclean: \$(APP)-clean
+	@rm -f \$(CORE_OBJS)
 EOF
 }
 
@@ -469,18 +463,18 @@ makefile_module_pack()
     PACKDIR=.pack-$RANDOM
 
     cat >&5 <<EOF
-\$(APP): $APP_MODULES_A
 
-pack: $APP_MODULES_A
+pack: \$(MODS_OBJS)
 	@echo "  ZIP: $PACKNAME.zip"
 	@mkdir -p $PACKDIR/$PACKNAME
-	@cp \$< $PACKDIR/$PACKNAME/
+	@ar rcs $PACKDIR/$PACKNAME/module.a \$^
 	@cp $APP_MODULES_LIST/module-pack.mk $PACKDIR/$PACKNAME/module.mk
 	@cd $PACKDIR && zip -qr ../$PACKNAME.zip ./$PACKNAME
 	@cd ..
 	@rm -rf $PACKDIR
 
-\$(APP)-clean: $APP_MODULES_CLEAN
+\$(APP)-clean:
+	@rm -f \$(MODS_OBJS)
 
 \$(APP)-distclean: \$(APP)-clean
 	@rm -f $PACKNAME.zip

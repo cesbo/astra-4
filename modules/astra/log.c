@@ -46,24 +46,24 @@ static int lua_log_set(lua_State *L)
         if(!strcmp(var, "debug"))
         {
             luaL_checktype(L, -1, LUA_TBOOLEAN);
-            log_set_debug(lua_toboolean(L, -1));
+            asc_log_set_debug(lua_toboolean(L, -1));
         }
         else if(!strcmp(var, "filename"))
         {
             const char *val = luaL_checkstring(L, -1);
-            log_set_file((*val != '\0') ? val : NULL);
+            asc_log_set_file((*val != '\0') ? val : NULL);
         }
 #ifndef _WIN32
         else if(!strcmp(var, "syslog"))
         {
             const char *val = luaL_checkstring(L, -1);
-            log_set_syslog((*val != '\0') ? val : NULL);
+            asc_log_set_syslog((*val != '\0') ? val : NULL);
         }
 #endif
         else if(!strcmp(var, "stdout"))
         {
             luaL_checktype(L, -1, LUA_TBOOLEAN);
-            log_set_stdout(lua_toboolean(L, -1));
+            asc_log_set_stdout(lua_toboolean(L, -1));
         }
     }
 
@@ -72,25 +72,25 @@ static int lua_log_set(lua_State *L)
 
 static int lua_log_error(lua_State *L)
 {
-    log_error("%s", luaL_checkstring(L, 1));
+    asc_log_error("%s", luaL_checkstring(L, 1));
     return 0;
 }
 
 static int lua_log_warning(lua_State *L)
 {
-    log_warning("%s", luaL_checkstring(L, 1));
+    asc_log_warning("%s", luaL_checkstring(L, 1));
     return 0;
 }
 
 static int lua_log_info(lua_State *L)
 {
-    log_info("%s", luaL_checkstring(L, 1));
+    asc_log_info("%s", luaL_checkstring(L, 1));
     return 0;
 }
 
 static int lua_log_debug(lua_State *L)
 {
-    log_debug("%s", luaL_checkstring(L, 1));
+    asc_log_debug("%s", luaL_checkstring(L, 1));
     return 0;
 }
 

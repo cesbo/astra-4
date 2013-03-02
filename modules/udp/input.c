@@ -31,27 +31,27 @@ struct module_data_t
 
     int is_rtp;
 
-    socket_t *sock;
-    timer_t *timer_renew;
+    asc_socket_t *sock;
+    asc_timer_t *timer_renew;
 
     uint8_t buffer[UDP_BUFFER_SIZE];
 };
 
-void udp_input_callback(void *arg, int event)
+void udp_input_callback(void *arg, int is_data)
 {
     module_data_t *mod = (module_data_t *)arg;
 
-    if(event == EVENT_ERROR)
+    if(!is_data)
     {
-        socket_close(mod->sock);
+        asc_socket_close(mod->sock);
         mod->sock = NULL;
         return;
     }
 
-    ssize_t len = socket_recv(mod->sock, mod->buffer, UDP_BUFFER_SIZE);
+    ssize_t len = asc_socket_recv(mod->sock, mod->buffer, UDP_BUFFER_SIZE);
     if(len <= 0)
     {
-        udp_input_callback(arg, EVENT_ERROR);
+        udp_input_callback(arg, 0);
         return;
     }
 
@@ -64,7 +64,7 @@ void udp_input_callback(void *arg, int event)
 void timer_renew_callback(void *arg)
 {
     module_data_t *mod = arg;
-    socket_multicast_renew(mod->sock);
+    asc_socket_multicast_renew(mod->sock);
 }
 
 static void module_init(module_data_t *mod)
@@ -76,30 +76,30 @@ static void module_init(module_data_t *mod)
     module_option_string("addr", &addr);
     if(!addr)
     {
-        log_error("[udp_input] option 'addr' is required");
+        asc_log_error("[udp_input] option 'addr' is required");
         astra_abort();
     }
 
     int port = 1234;
     module_option_number("port", &port);
 
-    mod->sock = socket_open_udp4();
-    socket_set_reuseaddr(mod->sock, 1);
-    if(!socket_bind(mod->sock, addr, port))
+    mod->sock = asc_socket_open_udp4();
+    asc_socket_set_reuseaddr(mod->sock, 1);
+    if(!asc_socket_bind(mod->sock, addr, port))
         return;
 
     int value;
     if(module_option_number("socket_size", &value))
-        socket_set_buffer(mod->sock, value, 0);
+        asc_socket_set_buffer(mod->sock, value, 0);
 
-    socket_event_on_read(mod->sock, udp_input_callback, mod);
+    asc_socket_event_on_read(mod->sock, udp_input_callback, mod);
 
     const char *localaddr = NULL;
     module_option_string("localaddr", &localaddr);
-    socket_multicast_join(mod->sock, addr, localaddr);
+    asc_socket_multicast_join(mod->sock, addr, localaddr);
 
     if(module_option_number("renew", &value))
-        mod->timer_renew = timer_attach(value * 1000, timer_renew_callback, mod);
+        mod->timer_renew = asc_timer_init(value * 1000, timer_renew_callback, mod);
 }
 
 static void module_destroy(module_data_t *mod)
@@ -108,12 +108,12 @@ static void module_destroy(module_data_t *mod)
     module_demux_destroy(mod);
 
     if(mod->timer_renew)
-        timer_detach(mod->timer_renew);
+        asc_timer_destroy(mod->timer_renew);
 
     if(mod->sock)
     {
-        socket_multicast_leave(mod->sock);
-        socket_close(mod->sock);
+        asc_socket_multicast_leave(mod->sock);
+        asc_socket_close(mod->sock);
     }
 }
 

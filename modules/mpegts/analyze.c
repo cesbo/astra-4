@@ -40,30 +40,30 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        log_error(MSG("PAT checksum mismatch"));
+        asc_log_error(MSG("PAT checksum mismatch"));
         return;
     }
 
     psi->crc32 = crc32;
 
-    log_info(MSG("PAT: stream_id:%d"), PAT_GET_TSID(psi));
+    asc_log_info(MSG("PAT: stream_id:%d"), PAT_GET_TSID(psi));
     const uint8_t *pointer = PAT_ITEMS_FIRST(psi);
     while(!PAT_ITEMS_EOF(psi, pointer))
     {
         const uint16_t pnr = PAT_ITEMS_GET_PNR(psi, pointer);
         const uint16_t pid = PAT_ITEMS_GET_PID(psi, pointer);
         if(!pnr)
-            log_info(MSG("PAT: pid:%4d NIT"), pid);
+            asc_log_info(MSG("PAT: pid:%4d NIT"), pid);
         else
         {
-            log_info(MSG("PAT: pid:%4d PMT pnr:%4d"), pid, pnr);
+            asc_log_info(MSG("PAT: pid:%4d PMT pnr:%4d"), pid, pnr);
             mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_PMT, pid);
         }
 
         PAT_ITEMS_NEXT(psi, pointer);
     }
 
-    log_info(MSG("PAT: crc32:0x%08X"), crc32);
+    asc_log_info(MSG("PAT: crc32:0x%08X"), crc32);
 }
 
 static void on_cat(void *arg, mpegts_psi_t *psi)
@@ -78,7 +78,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        log_error(MSG("CAT checksum mismatch"));
+        asc_log_error(MSG("CAT checksum mismatch"));
         return;
     }
     psi->crc32 = crc32;
@@ -89,11 +89,11 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     while(!DESC_ITEMS_EOF(desc, desc_pointer))
     {
         mpegts_desc_to_string(desc_dump, sizeof(desc_dump), desc_pointer);
-        log_info(MSG("CAT: %s"), desc_dump);
+        asc_log_info(MSG("CAT: %s"), desc_dump);
         DESC_ITEMS_NEXT(desc, desc_pointer);
     }
 
-    log_info(MSG("CAT: crc32:0x%08X"), crc32);
+    asc_log_info(MSG("CAT: crc32:0x%08X"), crc32);
 }
 
 static void on_pmt(void *arg, mpegts_psi_t *psi)
@@ -108,13 +108,13 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        log_error(MSG("PMT checksum mismatch"));
+        asc_log_error(MSG("PMT checksum mismatch"));
         return;
     }
     psi->crc32 = crc32;
 
     const uint16_t pnr = PMT_GET_PNR(psi);
-    log_info(MSG("PMT: pnr:%d"), pnr);
+    asc_log_info(MSG("PMT: pnr:%d"), pnr);
 
     char desc_dump[256];
     const uint8_t *desc = PMT_GET_DESC(psi);
@@ -122,18 +122,18 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     while(!DESC_ITEMS_EOF(desc, desc_pointer))
     {
         mpegts_desc_to_string(desc_dump, sizeof(desc_dump), desc_pointer);
-        log_info(MSG("PMT:     %s"), desc_dump);
+        asc_log_info(MSG("PMT:     %s"), desc_dump);
         DESC_ITEMS_NEXT(desc, desc_pointer);
     }
 
-    log_info(MSG("PMT: pid:%4d PCR"), PMT_GET_PCR(psi));
+    asc_log_info(MSG("PMT: pid:%4d PCR"), PMT_GET_PCR(psi));
 
     const uint8_t *pointer = PMT_ITEMS_FIRST(psi);
     while(!PMT_ITEMS_EOF(psi, pointer))
     {
         const uint16_t pid = PMT_ITEMS_GET_PID(psi, pointer);
         const uint8_t type = PMT_ITEMS_GET_TYPE(psi, pointer);
-        log_info(MSG("PMT: pid:%4d %s:0x%02X")
+        asc_log_info(MSG("PMT: pid:%4d %s:0x%02X")
                  , pid, mpegts_type_name(mpegts_pes_type(type)), type);
 
         desc = PMT_ITEMS_GET_DESC(psi, pointer);
@@ -141,14 +141,14 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         while(!DESC_ITEMS_EOF(desc, desc_pointer))
         {
             mpegts_desc_to_string(desc_dump, sizeof(desc_dump), desc_pointer);
-            log_info(MSG("PMT:     %s"), desc_dump);
+            asc_log_info(MSG("PMT:     %s"), desc_dump);
             DESC_ITEMS_NEXT(desc, desc_pointer);
         }
 
         PMT_ITEMS_NEXT(psi, pointer);
     }
 
-    log_info(MSG("PMT: crc32:0x%08X"), crc32);
+    asc_log_info(MSG("PMT: crc32:0x%08X"), crc32);
 }
 
 static void on_ts(module_data_t *mod, const uint8_t *ts)
@@ -182,7 +182,7 @@ static void module_init(module_data_t *mod)
     const int name_length = module_option_string("name", &value);
     if(!value)
     {
-        log_error("[analyze] option 'name' is required");
+        asc_log_error("[analyze] option 'name' is required");
         astra_abort();
     }
     mod->name = malloc(name_length + 1);

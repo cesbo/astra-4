@@ -28,7 +28,7 @@ void astra_abort(void)
     lua_Debug ar;
     lua_getstack(lua, 1, &ar);
     lua_getinfo(lua, "nSl", &ar);
-    log_error("[main] abort execution. line:%d source:%s", ar.currentline, ar.source);
+    asc_log_error("[main] abort execution. line:%d source:%s", ar.currentline, ar.source);
     abort();
 }
 
@@ -37,7 +37,7 @@ static void signal_handler(int signum)
 #ifndef _WIN32
     if(signum == SIGHUP)
     {
-        log_hup();
+        asc_log_hup();
         return;
     }
 #endif

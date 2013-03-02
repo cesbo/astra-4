@@ -18,7 +18,7 @@
 
 static jmp_buf global_jmp;
 
-struct thread_s
+struct asc_thread_t
 {
     jmp_buf jmp;
     int is_set_jmp;
@@ -37,7 +37,7 @@ struct thread_s
 
 DWORD WINAPI thread_loop(void *arg)
 {
-    thread_t *thread = arg;
+    asc_thread_t *thread = arg;
     thread->loop(thread->arg);
     return 0;
 }
@@ -55,7 +55,7 @@ jmp_buf * __thread_getjmp(void)
     return &global_jmp;
 }
 
-void __thread_setjmp(thread_t *thread)
+void __thread_setjmp(asc_thread_t *thread)
 {
     memcpy(&thread->jmp, &global_jmp, sizeof(jmp_buf));
     thread->is_set_jmp = 1;
@@ -65,23 +65,23 @@ void __thread_setjmp(thread_t *thread)
     sa.sa_handler = thread_handler;
     if(sigaction(SIGUSR1, &sa, NULL) < 0)
     {
-        log_error("[core/thread] sigaction() failed\n");
+        asc_log_error("[core/thread] sigaction() failed\n");
         abort();
     }
 }
 
 static void * thread_loop(void *arg)
 {
-    thread_t *thread = arg;
+    asc_thread_t *thread = arg;
     thread->loop(thread->arg);
     return NULL;
 }
 
 #endif /* ! _WIN32 */
 
-void thread_init(thread_t **thread_ptr, void (*loop)(void *), void *arg)
+void asc_thread_init(asc_thread_t **thread_ptr, void (*loop)(void *), void *arg)
 {
-    thread_t *thread = calloc(1, sizeof(thread_t));
+    asc_thread_t *thread = calloc(1, sizeof(asc_thread_t));
     thread->loop = loop;
     thread->arg = arg;
     *thread_ptr = thread;
@@ -103,15 +103,15 @@ void thread_init(thread_t **thread_ptr, void (*loop)(void *), void *arg)
 
     *thread_ptr = NULL;
     free(thread);
-    log_error("[core/thread] failed to start thread");
+    asc_log_error("[core/thread] failed to start thread");
     abort();
 }
 
-void thread_destroy(thread_t **thread_ptr)
+void asc_thread_destroy(asc_thread_t **thread_ptr)
 {
     if(!thread_ptr)
         return;
-    thread_t *thread = *thread_ptr;
+    asc_thread_t *thread = *thread_ptr;
     if(!thread)
         return;
 

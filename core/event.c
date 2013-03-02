@@ -50,12 +50,15 @@
 #   define WITH_SELECT
 #endif
 
-struct event_s
+struct asc_event_t
 {
     int fd;
     void (*callback)(void *, int);
     void *arg;
-    int type;
+
+#if defined(EV_TYPE_KQUEUE) || defined(EV_TYPE_SELECT)
+    int is_event_read;
+#endif
 };
 
 #if defined(EV_TYPE_KQUEUE) || defined(EV_TYPE_EPOLL)
@@ -75,15 +78,15 @@ typedef struct
     EV_OTYPE ed_list[EV_LIST_SIZE];
 
     int fd_count;
-    list_t *event_list;
+    asc_list_t *event_list;
 } event_observer_t;
 
 static event_observer_t event_observer;
 
-void event_core_init(void)
+void asc_event_core_init(void)
 {
     memset(&event_observer, 0, sizeof(event_observer));
-    event_observer.event_list = list_init();
+    event_observer.event_list = asc_list_init();
 
 #if defined(EV_TYPE_KQUEUE)
     event_observer.fd = kqueue();
@@ -93,28 +96,28 @@ void event_core_init(void)
 
     if(event_observer.fd == -1)
     {
-        log_error(MSG("failed to init event observer [%s]"), strerror(errno));
+        asc_log_error(MSG("failed to init event observer [%s]"), strerror(errno));
         abort();
     }
 }
 
-void event_core_destroy(void)
+void asc_event_core_destroy(void)
 {
     if(!event_observer.fd)
         return;
 
-    event_t *previous_event = NULL;
-    for(list_first(event_observer.event_list)
-        ; list_is_data(event_observer.event_list)
-        ; list_first(event_observer.event_list))
+    asc_event_t *previous_event = NULL;
+    for(asc_list_first(event_observer.event_list)
+        ; asc_list_eol(event_observer.event_list)
+        ; asc_list_first(event_observer.event_list))
     {
-        event_t *event = (event_t *)list_data(event_observer.event_list);
+        asc_event_t *event = asc_list_data(event_observer.event_list);
         if(event == previous_event)
         {
-            log_error(MSG("infinite loop on observer destroing [event:%p]"), (void *)event);
+            asc_log_error(MSG("infinite loop on observer destroing [event:%p]"), (void *)event);
             abort();
         }
-        event->callback(event->arg, EVENT_ERROR);
+        event->callback(event->arg, 0);
     }
 
     if(event_observer.fd > 0)
@@ -123,10 +126,10 @@ void event_core_destroy(void)
         event_observer.fd = 0;
     }
 
-    list_destroy(event_observer.event_list);
+    asc_list_destroy(event_observer.event_list);
 }
 
-void event_core_loop(void)
+void asc_event_core_loop(void)
 {
     static struct timespec tv = { 0, 10000000 };
     if(!event_observer.fd_count)
@@ -146,7 +149,7 @@ void event_core_loop(void)
         if(errno == EINTR)
             return;
 
-        log_warning(MSG("event observer critical error [%s]"), strerror(errno));
+        asc_log_error(MSG("event observer critical error [%s]"), strerror(errno));
         abort();
     }
 
@@ -154,41 +157,45 @@ void event_core_loop(void)
     {
         EV_OTYPE *ed = &event_observer.ed_list[i];
 #if defined(EV_TYPE_KQUEUE)
-        event_t *event = (event_t *)ed->udata;
+        asc_event_t *event = ed->udata;
         const int ev_check_ok = ((ed->flags & EV_ADD)
                                  && !(ed->fflags & EV_FFLAGS) && (ed->data > 0));
         const int ev_check_err = (!ev_check_ok && (ed->flags & ~EV_ADD));
 #else
-        event_t *event = (event_t *)ed->data.ptr;
+        asc_event_t *event = ed->data.ptr;
         const int ev_check_ok = (!(ed->events & EPOLLERR) && ed->events & (EPOLLIN | EPOLLOUT));
         const int ev_check_err = (!ev_check_ok && (ed->events & ~(EPOLLIN | EPOLLOUT)));
 #endif
         if(ev_check_ok)
-            event->callback(event->arg, event->type);
+            event->callback(event->arg, 1);
         if(ev_check_err)
-            event->callback(event->arg, EVENT_ERROR);
+            event->callback(event->arg, 0);
     }
 }
 
-event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int), void *arg)
+static asc_event_t * __asc_event_attach(int fd
+                                        , void (*callback)(void *, int), void *arg
+                                        , int is_event_read)
 {
 #ifdef DEBUG
     log_debug(MSG("attach fd=%d"), fd);
 #endif
 
-    event_t *event = (event_t *)malloc(sizeof(event_t));
+    asc_event_t *event = malloc(sizeof(asc_event_t));
     event->fd = fd;
     event->callback = callback;
     event->arg = arg;
-    event->type = type;
+#if defined(EV_TYPE_KQUEUE)
+    event->is_event_read = is_event_read;
+#endif
 
     int ret = -1;
     EV_OTYPE ed;
 
 #if defined(EV_TYPE_KQUEUE)
-    const int ev_filter = (type == EVENT_READ) ? EVFILT_READ : EVFILT_WRITE;
+    const int ev_filter = (is_event_read) ? EVFILT_READ : EVFILT_WRITE;
 #else
-    const int ev_filter = (type == EVENT_READ) ? EPOLLIN : EPOLLOUT;
+    const int ev_filter = (is_event_read) ? EPOLLIN : EPOLLOUT;
 #endif
 
     do
@@ -203,20 +210,20 @@ event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int),
 #endif
         if(ret == -1)
         {
-            log_error(MSG("failed to attach fd=%d [%s]"), fd, strerror(errno));
+            asc_log_error(MSG("failed to attach fd=%d [%s]"), fd, strerror(errno));
             free(event);
             return NULL;
         }
         break;
     } while(1);
 
-    list_insert_tail(event_observer.event_list, event);
+    asc_list_insert_tail(event_observer.event_list, event);
     ++event_observer.fd_count;
 
     return event;
 }
 
-void event_detach(event_t *event)
+void asc_event_close(asc_event_t *event)
 {
     if(!event)
         return;
@@ -227,7 +234,7 @@ void event_detach(event_t *event)
 
     int ret;
 #if defined(EV_TYPE_KQUEUE)
-    int ev_filter = (EVENT_READ == event->type) ? EVFILT_READ : EVFILT_WRITE;
+    int ev_filter = (event->is_event_read) ? EVFILT_READ : EVFILT_WRITE;
     EV_OTYPE ke;
     EV_SET(&ke, event->fd, ev_filter, EV_DELETE, 0, 0, event);
     ret = kevent(event_observer.fd, &ke, 1, NULL, 0, NULL);
@@ -236,9 +243,9 @@ void event_detach(event_t *event)
 #endif
 
     if(ret == -1)
-        log_error(MSG("failed to detach fd=%d [%s]"), event->fd, strerror(errno));
+        asc_log_error(MSG("failed to detach fd=%d [%s]"), event->fd, strerror(errno));
 
-    list_remove_item(event_observer.event_list, event);
+    asc_list_remove_item(event_observer.event_list, event);
     free(event);
     --event_observer.fd_count;
 }
@@ -260,26 +267,26 @@ typedef struct
     int fd_count;
 
     struct pollfd *ed_list;
-    event_t *event_list;
+    asc_event_t *event_list;
 } event_observer_t;
 
 static event_observer_t event_observer;
 
-void event_observer_init(void)
+void asc_event_core_init(void)
 {
     memset(&event_observer, 0, sizeof(event_observer));
 }
 
-void event_observer_destroy(void)
+void asc_event_core_destroy(void)
 {
     if(!event_observer.fd_count)
         return;
 
     for(int i = 0; i < event_observer.fd_count; i++)
     {
-        event_t *event = &event_observer.event_list[i];
+        asc_event_t *event = &event_observer.event_list[i];
         if(event_observer.ed_list[i].events) // check, is callback dettach
-            event->callback(event->arg, EVENT_ERROR);
+            event->callback(event->arg, 0);
     }
     if(event_observer.fd_max > 0)
     {
@@ -291,7 +298,7 @@ void event_observer_destroy(void)
     event_observer.fd_count = 0;
 }
 
-void event_observer_loop(void)
+void asc_event_core_loop(void)
 {
     static struct timespec tv = { 0, 10000000 };
     if(!event_observer.fd_count)
@@ -306,7 +313,7 @@ void event_observer_loop(void)
         if(errno == EINTR)
             return;
 
-        log_warning(MSG("event observer critical error [%s]"), strerror(errno));
+        asc_log_error(MSG("event observer critical error [%s]"), strerror(errno));
         abort();
     }
 
@@ -318,15 +325,15 @@ void event_observer_loop(void)
         if(revents == 0)
             continue;
         --ret;
-        event_t *event = &event_observer.event_list[i];
+        asc_event_t *event = &event_observer.event_list[i];
         if(!event_observer.ed_list[i].events)
             continue;
         if(revents & (POLLIN | POLLOUT))
-            event->callback(event->arg, event->type);
+            event->callback(event->arg, 1);
         if(!event_observer.ed_list[i].events)
             continue;
         if(revents & (POLLERR | POLLHUP | POLLNVAL))
-            event->callback(event->arg, EVENT_ERROR);
+            event->callback(event->arg, 0);
     }
 
     // clean detached
@@ -341,7 +348,7 @@ void event_observer_loop(void)
                 memcpy(&event_observer.ed_list[j], &event_observer.ed_list[j+1]
                        , sizeof(struct pollfd));
                 memcpy(&event_observer.event_list[j], &event_observer.event_list[j+1]
-                       , sizeof(event_t));
+                       , sizeof(asc_event_t));
             }
         }
         else
@@ -349,7 +356,9 @@ void event_observer_loop(void)
     }
 }
 
-event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int), void *arg)
+static asc_event_t * __asc_event_attach(int fd
+                                        , void (*callback)(void *, int), void *arg
+                                        , int is_event_read)
 {
 #ifdef DEBUG
     log_debug(MSG("attach fd=%d"), fd);
@@ -359,19 +368,18 @@ event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int),
     {
         event_observer.fd_max += EV_STEP;
         event_observer.event_list = realloc(event_observer.event_list
-                                            , sizeof(event_t) * event_observer.fd_max);
+                                            , sizeof(asc_event_t) * event_observer.fd_max);
         event_observer.ed_list = realloc(event_observer.ed_list
                                  , sizeof(struct pollfd) * event_observer.fd_max);
     }
 
-    event_t *event = &event_observer.event_list[event_observer.fd_count];
+    asc_event_t *event = &event_observer.event_list[event_observer.fd_count];
     event->fd = fd;
     event->callback = callback;
     event->arg = arg;
-    event->type = type;
 
     struct pollfd *ed = &event_observer.ed_list[event_observer.fd_count];
-    ed->events = (type == EVENT_READ) ? POLLIN : POLLOUT;
+    ed->events = (is_event_read) ? POLLIN : POLLOUT;
     ed->fd = fd;
     ed->revents = 0;
 
@@ -379,7 +387,7 @@ event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int),
     return event;
 }
 
-void event_detach(event_t *event)
+void asc_event_close(asc_event_t *event)
 {
     if(!event)
         return;
@@ -397,7 +405,7 @@ void event_detach(event_t *event)
         }
     }
 
-    log_error(MSG("failed to detach fd=%d [not found]"), event->fd);
+    asc_log_error(MSG("failed to detach fd=%d [not found]"), event->fd);
 }
 
 #elif defined(EV_TYPE_SELECT)
@@ -418,41 +426,41 @@ typedef struct
     fd_set wmaster;
 
     int fd_count;
-    list_t *event_list;
+    asc_list_t *event_list;
 } event_observer_t;
 
 static event_observer_t event_observer;
 
-void event_observer_init(void)
+void asc_event_core_init(void)
 {
     memset(&event_observer, 0, sizeof(event_observer));
-    event_observer.event_list = list_init();
+    event_observer.event_list = asc_list_init();
 }
 
-void event_observer_destroy(void)
+void asc_event_core_destroy(void)
 {
     if(!event_observer.fd_count)
         return;
 
-    list_for(event_observer.event_list)
+    asc_list_for(event_observer.event_list)
     {
-        event_t *event = (event_t *)list_data(event_observer.event_list);
+        asc_event_t *event = asc_list_data(event_observer.event_list);
         if(event->fd > 0)
-            event->callback(event->arg, EVENT_ERROR);
+            event->callback(event->arg, 0);
     }
 
-    list_first(event_observer.event_list);
-    while(list_is_data(event_observer.event_list))
+    asc_list_first(event_observer.event_list);
+    while(asc_list_eol(event_observer.event_list))
     {
-        free(list_data(event_observer.event_list));
-        list_remove_current(event_observer.event_list);
+        free(asc_list_data(event_observer.event_list));
+        asc_list_remove_current(event_observer.event_list);
     }
 
     event_observer.fd_count = 0;
-    list_destroy(event_observer.event_list);
+    asc_list_destroy(event_observer.event_list);
 }
 
-void event_observer_loop(void)
+void asc_event_core_loop(void)
 {
     if(!event_observer.fd_count)
     {
@@ -477,59 +485,61 @@ void event_observer_loop(void)
         if(errno == EINTR)
             return;
 
-        log_warning(MSG("event observer critical error [%s]"), strerror(errno));
+        asc_log_error(MSG("event observer critical error [%s]"), strerror(errno));
         abort();
     }
 
-    list_for(event_observer.event_list)
+    asc_list_for(event_observer.event_list)
     {
-        event_t *event = (event_t *)list_data(event_observer.event_list);
+        asc_event_t *event = asc_list_data(event_observer.event_list);
         if(!event->fd)
             continue;
-        else if(event->type == EVENT_READ)
+        else if(event->is_event_read)
         {
             if(FD_ISSET(event->fd, &rset))
-                event->callback(event->arg, EVENT_READ);
+                event->callback(event->arg, 1);
         }
-        else if(event->type == EVENT_WRITE)
+        else
         {
             if(FD_ISSET(event->fd, &wset))
-                event->callback(event->arg, EVENT_WRITE);
+                event->callback(event->arg, 1);
         }
     }
 
-    list_first(event_observer.event_list);
-    while(list_is_data(event_observer.event_list))
+    asc_list_first(event_observer.event_list);
+    while(asc_list_eol(event_observer.event_list))
     {
-        event_t *event = (event_t *)list_data(event_observer.event_list);
+        asc_event_t *event = asc_list_data(event_observer.event_list);
         if(!event->fd)
         {
-            list_remove_current(event_observer.event_list);
+            asc_list_remove_current(event_observer.event_list);
             free(event);
         }
         else
-            list_next(event_observer.event_list);
+            asc_list_next(event_observer.event_list);
     }
 }
 
-event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int), void *arg)
+static asc_event_t * __asc_event_attach(int fd
+                                        , void (*callback)(void *, int), void *arg
+                                        , int is_event_read)
 {
 #ifdef DEBUG
     log_debug(MSG("attach fd=%d"), fd);
 #endif
 
-    event_t *event = malloc(sizeof(event_t));
+    asc_event_t *event = malloc(sizeof(asc_event_t));
     event->fd = fd;
     event->callback = callback;
     event->arg = arg;
-    event->type = type;
+    event->is_event_read = is_event_read;
 
-    if(type == EVENT_READ)
+    if(is_event_read)
         FD_SET(fd, &event_observer.rmaster);
-    else if(type == EVENT_WRITE)
+    else
         FD_SET(fd, &event_observer.wmaster);
 
-    list_insert_tail(event_observer.event_list, event);
+    asc_list_insert_tail(event_observer.event_list, event);
 
     if(fd > event_observer.max_fd)
         event_observer.max_fd = fd;
@@ -538,7 +548,7 @@ event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int),
     return event;
 }
 
-void event_detach(event_t *event)
+void asc_event_close(asc_event_t *event)
 {
     if(!event)
         return;
@@ -550,17 +560,17 @@ void event_detach(event_t *event)
     const int fd = event->fd;
     event->fd = 0;
 
-    if(event->type == EVENT_READ)
+    if(event->is_event_read)
         FD_CLR(fd, &event_observer.rmaster);
-    else if(event->type == EVENT_WRITE)
+    else
         FD_CLR(fd, &event_observer.wmaster);
 
     if(event_observer.max_fd == fd)
     {
         event_observer.max_fd = 0;
-        list_for(event_observer.event_list)
+        asc_list_for(event_observer.event_list)
         {
-            event = (event_t *)list_data(event_observer.event_list);
+            event = asc_list_data(event_observer.event_list);
             if(event->fd > event_observer.max_fd)
                 event_observer.max_fd = event->fd;
         }
@@ -570,3 +580,13 @@ void event_detach(event_t *event)
 }
 
 #endif
+
+asc_event_t * asc_event_on_read(int fd, void (*callback)(void *, int), void *arg)
+{
+    return __asc_event_attach(fd, callback, arg, 1);
+}
+
+asc_event_t * asc_event_on_write(int fd, void (*callback)(void *, int), void *arg)
+{
+    return __asc_event_attach(fd, callback, arg, 0);
+}

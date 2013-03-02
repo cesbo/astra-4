@@ -14,6 +14,13 @@
 #include <core/asc.h>
 #include <sys/queue.h>
 
+#ifndef TAILQ_FOREACH_SAFE
+#define TAILQ_FOREACH_SAFE(var, head, field, tvar)                      \
+        for ((var) = TAILQ_FIRST((head));                               \
+            (var) && ((tvar) = TAILQ_NEXT((var), field), 1);            \
+            (var) = (tvar))
+#endif
+
 typedef struct module_stream_t module_stream_t;
 struct module_stream_t
 {
@@ -23,7 +30,7 @@ struct module_stream_t
     module_stream_t *parent;
 
     TAILQ_ENTRY(module_stream_t) entries;
-    TAILQ_HEAD(list_s, module_stream_t) childs;
+    TAILQ_HEAD(a_list_t, module_stream_t) childs;
 };
 
 #define MODULE_STREAM_DATA() module_stream_t __stream

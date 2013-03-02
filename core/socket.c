@@ -27,13 +27,13 @@
 
 #define MSG(_msg) "[core/socket %d]" _msg, sock->fd
 
-struct socket_s
+struct asc_socket_t
 {
     int fd;
     int family;
     int type;
 
-    event_t *event;
+    asc_event_t *event;
 
     struct sockaddr_in addr;
     struct sockaddr_in sockaddr; /* recvfrom, sendto, set_sockaddr */
@@ -46,14 +46,14 @@ struct socket_s
  * receiving multicast: socket(REUSEADDR | BIND) -> join() -> read() -> close()
  */
 
-void socket_core_init(void)
+void asc_socket_core_init(void)
 {
 #ifdef _WIN32
     WSADATA wsaData;
     int err = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if(err != 0)
     {
-        log_error("[core/socket] WSAStartup failed %d", err);
+        asc_log_error("[core/socket] WSAStartup failed %d", err);
         abort();
     }
 #else
@@ -61,7 +61,7 @@ void socket_core_init(void)
 #endif
 }
 
-void socket_core_destroy(void)
+void asc_socket_core_destroy(void)
 {
 #ifdef _WIN32
     WSACleanup();
@@ -70,7 +70,7 @@ void socket_core_destroy(void)
 #endif
 }
 
-const char * socket_error(void)
+const char * asc_socket_error(void)
 {
     static char buffer[1024];
 
@@ -103,15 +103,15 @@ const char * socket_error(void)
  *
  */
 
-static socket_t * __socket_open(int family, int type)
+static asc_socket_t * __socket_open(int family, int type)
 {
     const int fd = socket(family, type, 0);
     if(fd == -1)
     {
-        log_error("[core/socket] failed to open socket [%s]", socket_error());
+        asc_log_error("[core/socket] failed to open socket [%s]", asc_socket_error());
         return NULL;
     }
-    socket_t *sock = calloc(1, sizeof(socket_t));
+    asc_socket_t *sock = calloc(1, sizeof(asc_socket_t));
     sock->fd = fd;
     sock->mreq.imr_multiaddr.s_addr = INADDR_NONE;
     sock->family = family;
@@ -119,12 +119,12 @@ static socket_t * __socket_open(int family, int type)
     return sock;
 }
 
-socket_t * socket_open_tcp4(void)
+asc_socket_t * asc_socket_open_tcp4(void)
 {
     return __socket_open(PF_INET, SOCK_STREAM);
 }
 
-socket_t * socket_open_udp4(void)
+asc_socket_t * asc_socket_open_udp4(void)
 {
     return __socket_open(PF_INET, SOCK_DGRAM);
 }
@@ -138,25 +138,25 @@ socket_t * socket_open_udp4(void)
  *
  */
 
-void socket_shutdown_recv(socket_t *sock)
+void asc_socket_shutdown_recv(asc_socket_t *sock)
 {
     shutdown(sock->fd, SHUT_RD);
 }
 
-void socket_shutdown_send(socket_t *sock)
+void asc_socket_shutdown_send(asc_socket_t *sock)
 {
     shutdown(sock->fd, SHUT_WR);
 }
 
-void socket_shutdown_both(socket_t *sock)
+void asc_socket_shutdown_both(asc_socket_t *sock)
 {
     shutdown(sock->fd, SHUT_RDWR);
 }
 
-void socket_close(socket_t *sock)
+void asc_socket_close(asc_socket_t *sock)
 {
     if(sock->event)
-        event_detach(sock->event);
+        asc_event_close(sock->event);
 
     if(sock->fd > 0)
     {
@@ -179,7 +179,7 @@ void socket_close(socket_t *sock)
  *
  */
 
-int socket_bind(socket_t *sock, const char *addr, int port)
+int asc_socket_bind(asc_socket_t *sock, const char *addr, int port)
 {
     memset(&sock->addr, 0, sizeof(sock->addr));
     sock->addr.sin_family = sock->family;
@@ -198,8 +198,8 @@ int socket_bind(socket_t *sock, const char *addr, int port)
 
     if(bind(sock->fd, (struct sockaddr *)&sock->addr, sizeof(sock->addr)) == -1)
     {
-        log_error(MSG("bind() to %s:%d failed [%s]"), addr, port, socket_error());
-        socket_close(sock);
+        asc_log_error(MSG("bind() to %s:%d failed [%s]"), addr, port, asc_socket_error());
+        asc_socket_close(sock);
         return 0;
     }
 
@@ -216,8 +216,8 @@ int socket_bind(socket_t *sock, const char *addr, int port)
     {
         if(!addr)
             addr = "0.0.0.0";
-        log_error(MSG("listen() on %s:%d failed [%s]"), addr, port, socket_error());
-        socket_close(sock);
+        asc_log_error(MSG("listen() on %s:%d failed [%s]"), addr, port, asc_socket_error());
+        asc_socket_close(sock);
         return 0;
     }
 
@@ -233,14 +233,14 @@ int socket_bind(socket_t *sock, const char *addr, int port)
  *
  */
 
-int socket_accept(socket_t *sock, socket_t **client_ptr)
+int asc_socket_accept(asc_socket_t *sock, asc_socket_t **client_ptr)
 {
-    socket_t *client = calloc(1, sizeof(socket_t));
+    asc_socket_t *client = calloc(1, sizeof(asc_socket_t));
     socklen_t sin_size = sizeof(client->addr);
     client->fd = accept(sock->fd, (struct sockaddr *)&client->addr, &sin_size);
     if(client->fd <= 0)
     {
-        log_error(MSG("accept() failed [%s]"), socket_error());
+        asc_log_error(MSG("accept() failed [%s]"), asc_socket_error());
         free(client);
         return 0;
     }
@@ -257,7 +257,7 @@ int socket_accept(socket_t *sock, socket_t **client_ptr)
  *
  */
 
-int socket_connect(socket_t *sock, const char *addr, int port)
+int asc_socket_connect(asc_socket_t *sock, const char *addr, int port)
 {
     memset(&sock->addr, 0, sizeof(sock->addr));
     sock->addr.sin_family = sock->family;
@@ -273,8 +273,8 @@ int socket_connect(socket_t *sock, const char *addr, int port)
         if((errno != EISCONN) && (errno != EINPROGRESS))
 #endif
         {
-            log_error(MSG("connect() to %s:%d failed [%s]"), addr, port, socket_error());
-            socket_close(sock);
+            asc_log_error(MSG("connect() to %s:%d failed [%s]"), addr, port, asc_socket_error());
+            asc_socket_close(sock);
             return 0;
         }
     }
@@ -291,21 +291,21 @@ int socket_connect(socket_t *sock, const char *addr, int port)
  *
  */
 
-ssize_t socket_recv(socket_t *sock, void *buffer, size_t size)
+ssize_t asc_socket_recv(asc_socket_t *sock, void *buffer, size_t size)
 {
     const ssize_t ret = recv(sock->fd, buffer, size, 0);
     if(ret == -1)
-        log_error(MSG("recv() failed [%s]"), socket_error());
+        asc_log_error(MSG("recv() failed [%s]"), asc_socket_error());
     return ret;
 }
 
-ssize_t socket_recvfrom(socket_t *sock, void *buffer, size_t size)
+ssize_t asc_socket_recvfrom(asc_socket_t *sock, void *buffer, size_t size)
 {
     socklen_t slen = sizeof(struct sockaddr_in);
     const ssize_t ret = recvfrom(sock->fd, buffer, size, 0
                                  , (struct sockaddr *)&sock->sockaddr, &slen);
     if(ret == -1)
-        log_error(MSG("recvfrom() failed [%s]"), socket_error());
+        asc_log_error(MSG("recvfrom() failed [%s]"), asc_socket_error());
     return ret;
 }
 
@@ -318,21 +318,21 @@ ssize_t socket_recvfrom(socket_t *sock, void *buffer, size_t size)
  *
  */
 
-ssize_t socket_send(socket_t *sock, const void *buffer, size_t size)
+ssize_t asc_socket_send(asc_socket_t *sock, const void *buffer, size_t size)
 {
     const ssize_t ret = send(sock->fd, buffer, size, 0);
     if(ret == -1)
-        log_error(MSG("send() failed [%s]"), socket_error());
+        asc_log_error(MSG("send() failed [%s]"), asc_socket_error());
     return ret;
 }
 
-ssize_t socket_sendto(socket_t *sock, const void *buffer, size_t size)
+ssize_t asc_socket_sendto(asc_socket_t *sock, const void *buffer, size_t size)
 {
     socklen_t slen = sizeof(struct sockaddr_in);
     const ssize_t ret = sendto(sock->fd, buffer, size, 0
                                  , (struct sockaddr *)&sock->sockaddr, slen);
     if(ret == -1)
-        log_error(MSG("sendto() failed [%s]"), socket_error());
+        asc_log_error(MSG("sendto() failed [%s]"), asc_socket_error());
     return ret;
 }
 
@@ -345,17 +345,17 @@ ssize_t socket_sendto(socket_t *sock, const void *buffer, size_t size)
  *
  */
 
-inline int socket_fd(socket_t *sock)
+inline int asc_socket_fd(asc_socket_t *sock)
 {
     return sock->fd;
 }
 
-const char * socket_addr(socket_t *sock)
+const char * asc_socket_addr(asc_socket_t *sock)
 {
     return inet_ntoa(sock->addr.sin_addr);
 }
 
-int socket_port(socket_t *sock)
+int asc_socket_port(asc_socket_t *sock)
 {
     return ntohs(sock->addr.sin_port);
 }
@@ -369,35 +369,39 @@ int socket_port(socket_t *sock)
  *
  */
 
-static int __socket_event(socket_t *sock, event_type_t type
-                          , void (*callback)(void *, int), void *arg)
+static int __socket_event(asc_socket_t *sock
+                          , void (*callback)(void *, int), void *arg
+                          , int is_event_read)
 {
     if(sock->event)
     {
-        event_detach(sock->event);
+        asc_event_close(sock->event);
         sock->event = NULL;
     }
 
     if(!callback)
         return 0;
 
-    sock->event = event_attach(sock->fd, type, callback, arg);
+    if(is_event_read)
+        sock->event = asc_event_on_read(sock->fd, callback, arg);
+    else
+        sock->event = asc_event_on_write(sock->fd, callback, arg);
     return (sock->event != NULL);
 }
 
-int socket_event_on_accept(socket_t *sock, void (*callback)(void *, int), void *arg)
+int asc_socket_event_on_accept(asc_socket_t *sock, void (*callback)(void *, int), void *arg)
 {
-    return __socket_event(sock, EVENT_READ, callback, arg);
+    return __socket_event(sock, callback, arg, 1);
 }
 
-int socket_event_on_read(socket_t *sock, void (*callback)(void *, int), void *arg)
+int asc_socket_event_on_read(asc_socket_t *sock, void (*callback)(void *, int), void *arg)
 {
-    return __socket_event(sock, EVENT_READ, callback, arg);
+    return __socket_event(sock, callback, arg, 1);
 }
 
-int socket_event_on_connect(socket_t *sock, void (*callback)(void *, int), void *arg)
+int asc_socket_event_on_connect(asc_socket_t *sock, void (*callback)(void *, int), void *arg)
 {
-    return __socket_event(sock, EVENT_WRITE, callback, arg);
+    return __socket_event(sock, callback, arg, 0);
 }
 
 /*
@@ -410,7 +414,7 @@ int socket_event_on_connect(socket_t *sock, void (*callback)(void *, int), void 
  */
 
 
-void socket_set_sockaddr(socket_t *sock, const char *addr, int port)
+void asc_socket_set_sockaddr(asc_socket_t *sock, const char *addr, int port)
 {
     memset(&sock->sockaddr, 0, sizeof(sock->sockaddr));
     sock->sockaddr.sin_family = sock->family;
@@ -418,7 +422,7 @@ void socket_set_sockaddr(socket_t *sock, const char *addr, int port)
     sock->sockaddr.sin_port = htons(port);
 }
 
-void socket_set_nonblock(socket_t *sock, int is_nonblock)
+void asc_socket_set_nonblock(asc_socket_t *sock, int is_nonblock)
 {
 #ifdef _WIN32
     unsigned long nonblock = is_nonblock;
@@ -433,33 +437,33 @@ void socket_set_nonblock(socket_t *sock, int is_nonblock)
 #endif
     {
         const char *msg = (is_nonblock) ? "failed to set NONBLOCK" : "failed to unset NONBLOCK";
-        log_error(MSG("%s [%s]"), msg, socket_error());
-        socket_close(sock);
+        asc_log_error(MSG("%s [%s]"), msg, asc_socket_error());
+        asc_socket_close(sock);
     }
 }
 
 
-void socket_set_reuseaddr(socket_t *sock, int is_on)
+void asc_socket_set_reuseaddr(asc_socket_t *sock, int is_on)
 {
     setsockopt(sock->fd, SOL_SOCKET, SO_REUSEADDR, (void *)&is_on, sizeof(is_on));
 }
 
-void socket_set_non_delay(socket_t *sock, int is_on)
+void asc_socket_set_non_delay(asc_socket_t *sock, int is_on)
 {
     setsockopt(sock->fd, IPPROTO_TCP, TCP_NODELAY, (void *)&is_on, sizeof(is_on));
 }
 
-void socket_set_keep_alive(socket_t *sock, int is_on)
+void asc_socket_set_keep_alive(asc_socket_t *sock, int is_on)
 {
     setsockopt(sock->fd, SOL_SOCKET, SO_KEEPALIVE, (void *)&is_on, is_on);
 }
 
-void socket_set_broadcast(socket_t *sock, int is_on)
+void asc_socket_set_broadcast(asc_socket_t *sock, int is_on)
 {
     setsockopt(sock->fd, SOL_SOCKET, SO_BROADCAST, (void *)&is_on, sizeof(is_on));
 }
 
-void socket_set_timeout(socket_t *sock, int rcvmsec, int sndmsec)
+void asc_socket_set_timeout(asc_socket_t *sock, int rcvmsec, int sndmsec)
 {
     struct timeval tv;
 
@@ -496,17 +500,17 @@ static int _socket_set_buffer(int fd, int type, int size)
     return (slen && val == size);
 }
 
-void socket_set_buffer(socket_t *sock, int rcvbuf, int sndbuf)
+void asc_socket_set_buffer(asc_socket_t *sock, int rcvbuf, int sndbuf)
 {
 #if defined(SO_RCVBUF) && defined(SO_SNDBUF)
     if(rcvbuf > 0 && !_socket_set_buffer(sock->fd, SO_RCVBUF, rcvbuf))
     {
-        log_error(MSG("failed to set rcvbuf %d (%s)"), rcvbuf, socket_error());
+        asc_log_error(MSG("failed to set rcvbuf %d (%s)"), rcvbuf, asc_socket_error());
     }
 
     if(sndbuf > 0 && !_socket_set_buffer(sock->fd, SO_SNDBUF, rcvbuf))
     {
-        log_error(MSG("failed to set sndbuf %d (%s)"), sndbuf, socket_error());
+        asc_log_error(MSG("failed to set sndbuf %d (%s)"), sndbuf, asc_socket_error());
     }
 #else
 #   warning "RCVBUF/SNDBUF is not defined"
@@ -523,7 +527,7 @@ void socket_set_buffer(socket_t *sock, int rcvbuf, int sndbuf)
  */
 
 
-void socket_set_multicast_if(socket_t *sock, const char *addr)
+void asc_socket_set_multicast_if(asc_socket_t *sock, const char *addr)
 {
     if(!addr)
         return;
@@ -531,34 +535,34 @@ void socket_set_multicast_if(socket_t *sock, const char *addr)
     a.s_addr = inet_addr(addr);
     if(setsockopt(sock->fd, IPPROTO_IP, IP_MULTICAST_IF, (void *)&a, sizeof(a)) == -1)
     {
-        log_error(MSG("failed to set if \"%s\" (%s)"), addr, socket_error());
+        asc_log_error(MSG("failed to set if \"%s\" (%s)"), addr, asc_socket_error());
     }
 }
 
-void socket_set_multicast_ttl(socket_t *sock, int ttl)
+void asc_socket_set_multicast_ttl(asc_socket_t *sock, int ttl)
 {
     if(ttl <= 0)
         return;
     if(setsockopt(sock->fd, IPPROTO_IP, IP_MULTICAST_TTL, (void *)&ttl, sizeof(ttl)) == -1)
     {
-        log_error(MSG("failed to set ttl \"%d\" (%s)"), ttl, socket_error());
+        asc_log_error(MSG("failed to set ttl \"%d\" (%s)"), ttl, asc_socket_error());
     }
 }
 
-void socket_set_multicast_loop(socket_t *sock, int is_on)
+void asc_socket_set_multicast_loop(asc_socket_t *sock, int is_on)
 {
     setsockopt(sock->fd, IPPROTO_IP, IP_MULTICAST_LOOP, (void *)&is_on, sizeof(is_on));
 }
 
 /* multicast_* */
 
-void socket_multicast_join(socket_t *sock, const char *addr, const char *localaddr)
+void asc_socket_multicast_join(asc_socket_t *sock, const char *addr, const char *localaddr)
 {
     memset(&sock->mreq, 0, sizeof(sock->mreq));
     sock->mreq.imr_multiaddr.s_addr = inet_addr(addr);
     if(sock->mreq.imr_multiaddr.s_addr == INADDR_NONE)
     {
-        log_error(MSG("failed to join multicast \"%s\" (%s)"), addr, socket_error());
+        asc_log_error(MSG("failed to join multicast \"%s\" (%s)"), addr, asc_socket_error());
         return;
     }
     if(!IN_MULTICAST(ntohl(sock->mreq.imr_multiaddr.s_addr)))
@@ -575,24 +579,24 @@ void socket_multicast_join(socket_t *sock, const char *addr, const char *localad
     if(setsockopt(sock->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP
                   , (void *)&sock->mreq, sizeof(sock->mreq)) == -1)
     {
-        log_error(MSG("failed to join multicast \"%s\" (%s)"), addr, socket_error());
+        asc_log_error(MSG("failed to join multicast \"%s\" (%s)"), addr, asc_socket_error());
         sock->mreq.imr_multiaddr.s_addr = INADDR_NONE;
     }
 }
 
-void socket_multicast_leave(socket_t *sock)
+void asc_socket_multicast_leave(asc_socket_t *sock)
 {
     if(sock->mreq.imr_multiaddr.s_addr == INADDR_NONE)
         return;
     if(setsockopt(sock->fd, IPPROTO_IP, IP_DROP_MEMBERSHIP
                   , (void *)&sock->mreq, sizeof(sock->mreq)) == -1)
     {
-        log_error(MSG("failed to leave multicast \"%s\" (%s)")
-                  , inet_ntoa(sock->mreq.imr_multiaddr), socket_error());
+        asc_log_error(MSG("failed to leave multicast \"%s\" (%s)")
+                  , inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
     }
 }
 
-void socket_multicast_renew(socket_t *sock)
+void asc_socket_multicast_renew(asc_socket_t *sock)
 {
     if(sock->mreq.imr_multiaddr.s_addr == INADDR_NONE)
         return;
@@ -602,7 +606,7 @@ void socket_multicast_renew(socket_t *sock)
        || setsockopt(sock->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP
                      , (void *)&sock->mreq, sizeof(sock->mreq)) == -1)
     {
-        log_error(MSG("failed to renew multicast \"%s\" (%s)")
-                  , inet_ntoa(sock->mreq.imr_multiaddr), socket_error());
+        asc_log_error(MSG("failed to renew multicast \"%s\" (%s)")
+                  , inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
     }
 }

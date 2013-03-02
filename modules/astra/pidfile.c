@@ -38,7 +38,7 @@ static void module_init(module_data_t *mod)
     const char *value = luaL_checkstring(lua, idx_value);
     if(filename)
     {
-        log_error("[pidfile %s] already created in %s", value, filename);
+        asc_log_error("[pidfile %s] already created in %s", value, filename);
         astra_abort();
     }
 
@@ -53,7 +53,8 @@ static void module_init(module_data_t *mod)
     int fd = mkstemp(tmp_pidfile);
     if(fd == -1)
     {
-        log_error("[pidfile %s] failed to create temporary file [%s]", filename, strerror(errno));
+        asc_log_error("[pidfile %s] failed to create temporary file [%s]"
+                      , filename, strerror(errno));
         free(filename);
         astra_abort();
     }
@@ -69,7 +70,7 @@ static void module_init(module_data_t *mod)
     unlink(tmp_pidfile);
     if(link_ret == -1)
     {
-        log_error("[pidfile %s] filed to create pidfile [%s]", filename, strerror(errno));
+        asc_log_error("[pidfile %s] filed to create pidfile [%s]", filename, strerror(errno));
         free(filename);
         astra_abort();
     }

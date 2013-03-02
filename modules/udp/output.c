@@ -38,7 +38,7 @@ struct module_data_t
     int is_rtp;
     uint16_t rtpseq;
 
-    socket_t *sock;
+    asc_socket_t *sock;
 
     size_t buffer_skip;
     uint8_t buffer[UDP_BUFFER_SIZE];
@@ -50,8 +50,8 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     {
         if(mod->buffer_skip == 0)
             return;
-        if(socket_sendto(mod->sock, mod->buffer, mod->buffer_skip) == -1)
-            log_warning("[udp_output %s:%d] error on send [%s]", "", 0, socket_error());
+        if(asc_socket_sendto(mod->sock, mod->buffer, mod->buffer_skip) == -1)
+            asc_log_warning("[udp_output %s:%d] error on send [%s]", "", 0, asc_socket_error());
 
         mod->buffer_skip = 0;
     }
@@ -88,7 +88,7 @@ static void module_init(module_data_t *mod)
     const int addr_len = module_option_string("addr", &addr);
     if(!addr)
     {
-        log_error("[udp_output] option 'addr' is required");
+        asc_log_error("[udp_output] option 'addr' is required");
         astra_abort();
     }
     mod->addr = malloc(addr_len + 1);
@@ -116,33 +116,33 @@ static void module_init(module_data_t *mod)
         buffer[11] = (rtpssrc      ) & 0xFF;
     }
 
-    mod->sock = socket_open_udp4();
-    socket_set_reuseaddr(mod->sock, 1);
-    if(!socket_bind(mod->sock, NULL, 0))
+    mod->sock = asc_socket_open_udp4();
+    asc_socket_set_reuseaddr(mod->sock, 1);
+    if(!asc_socket_bind(mod->sock, NULL, 0))
         ;
 
     int value;
     if(module_option_number("socket_size", &value))
-        socket_set_buffer(mod->sock, 0, value);
+        asc_socket_set_buffer(mod->sock, 0, value);
 
     const char *localaddr = NULL;
     module_option_string("localaddr", &localaddr);
     if(localaddr)
-        socket_set_multicast_if(mod->sock, localaddr);
+        asc_socket_set_multicast_if(mod->sock, localaddr);
 
     value = 32;
     module_option_number("ttl", &value);
-    socket_set_multicast_ttl(mod->sock, value);
+    asc_socket_set_multicast_ttl(mod->sock, value);
 
-    socket_multicast_join(mod->sock, mod->addr, NULL);
-    socket_set_sockaddr(mod->sock, mod->addr, mod->port);
+    asc_socket_multicast_join(mod->sock, mod->addr, NULL);
+    asc_socket_set_sockaddr(mod->sock, mod->addr, mod->port);
 }
 
 static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
 
-    socket_close(mod->sock);
+    asc_socket_close(mod->sock);
 }
 
 MODULE_STREAM_METHODS()

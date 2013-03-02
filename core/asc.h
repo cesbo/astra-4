@@ -22,8 +22,8 @@
 #include <unistd.h>
 #include <errno.h>
 
-#define ARRAY_SIZE(_a) (sizeof(_a)/sizeof(_a[0]))
-#define UNUSED_ARG(_x) (void)_x
+#define ASC_ARRAY_SIZE(_a) (sizeof(_a)/sizeof(_a[0]))
+#define __uarg(_x) (void)_x
 
 #ifndef __wur
 #   define __wur __attribute__(( __warn_unused_result__ ))
@@ -31,161 +31,155 @@
 
 /* event.c */
 
-typedef struct event_s event_t;
+typedef struct asc_event_t asc_event_t;
 
-typedef enum
-{
-    EVENT_NONE      = 0x00,
-    EVENT_READ      = 0x01,
-    EVENT_WRITE     = 0x02,
-    EVENT_ERROR     = 0xF0
-} event_type_t;
+void asc_event_core_init(void);
+void asc_event_core_loop(void);
+void asc_event_core_destroy(void);
 
-void event_core_init(void);
-void event_core_loop(void);
-void event_core_destroy(void);
-
-event_t * event_attach(int fd, event_type_t type, void (*callback)(void *, int), void *arg) __wur;
-void event_detach(event_t *event);
+asc_event_t * asc_event_on_read(int fd, void (*callback)(void *, int), void *arg) __wur;
+asc_event_t * asc_event_on_write(int fd, void (*callback)(void *, int), void *arg) __wur;
+void asc_event_close(asc_event_t *event);
 
 /* timer.c */
 
-typedef struct timer_s timer_t;
+typedef struct asc_timer_t asc_timer_t;
 
-void timer_core_init(void);
-void timer_core_loop(void);
-void timer_core_destroy(void);
+void asc_timer_core_init(void);
+void asc_timer_core_loop(void);
+void asc_timer_core_destroy(void);
 
-void timer_one_shot(unsigned int ms, void (*callback)(void *), void *arg);
+void asc_timer_one_shot(unsigned int ms, void (*callback)(void *), void *arg);
 
-timer_t * timer_attach(unsigned int ms, void (*callback)(void *), void *arg) __wur;
-void timer_detach(timer_t *timer);
+asc_timer_t * asc_timer_init(unsigned int ms, void (*callback)(void *), void *arg) __wur;
+void asc_timer_destroy(asc_timer_t *timer);
 
 /* list.c */
 
-typedef struct list_s list_t;
+typedef struct asc_list_t asc_list_t;
 
-list_t * list_init(void) __wur;
-void list_destroy(list_t *list);
+asc_list_t * asc_list_init(void) __wur;
+void asc_list_destroy(asc_list_t *list);
 
-void list_first(list_t *list);
-void list_next(list_t *list);
-int list_is_data(list_t *list) __wur;
-void * list_data(list_t *list) __wur;
+void asc_list_first(asc_list_t *list);
+void asc_list_next(asc_list_t *list);
+int asc_list_eol(asc_list_t *list) __wur;
+void * asc_list_data(asc_list_t *list) __wur;
 
-void list_insert_head(list_t *list, void *data);
-void list_insert_tail(list_t *list, void *data);
+void asc_list_insert_head(asc_list_t *list, void *data);
+void asc_list_insert_tail(asc_list_t *list, void *data);
 
-void list_remove_current(list_t *list);
-void list_remove_item(list_t *list, void *data);
+void asc_list_remove_current(asc_list_t *list);
+void asc_list_remove_item(asc_list_t *list, void *data);
 
-#define list_for(__list) for(list_first(__list); list_is_data(__list); list_next(__list))
+#define asc_list_for(__list) \
+    for(asc_list_first(__list); asc_list_eol(__list); asc_list_next(__list))
 
 /* log.c */
 
-void log_set_stdout(int);
-void log_set_debug(int);
-void log_set_file(const char *);
+void asc_log_set_stdout(int);
+void asc_log_set_debug(int);
+void asc_log_set_file(const char *);
 #ifndef _WIN32
-void log_set_syslog(const char *);
+void asc_log_set_syslog(const char *);
 #endif
 
-void log_hup(void);
-void log_destroy(void);
+void asc_log_hup(void);
+void asc_log_core_destroy(void);
 
-void log_info(const char *, ...);
-void log_error(const char *, ...);
-void log_warning(const char *, ...);
-void log_debug(const char *, ...);
+void asc_log_info(const char *, ...);
+void asc_log_error(const char *, ...);
+void asc_log_warning(const char *, ...);
+void asc_log_debug(const char *, ...);
 
 /* socket.c */
 
-typedef struct socket_s socket_t;
+typedef struct asc_socket_t asc_socket_t;
 
-void socket_core_init(void);
-void socket_core_destroy(void);
+void asc_socket_core_init(void);
+void asc_socket_core_destroy(void);
 
-const char * socket_error(void);
+const char * asc_socket_error(void);
 
-socket_t * socket_open_tcp4(void) __wur;
-socket_t * socket_open_udp4(void) __wur;
+asc_socket_t * asc_socket_open_tcp4(void) __wur;
+asc_socket_t * asc_socket_open_udp4(void) __wur;
 
-void socket_shutdown_recv(socket_t *sock);
-void socket_shutdown_send(socket_t *sock);
-void socket_shutdown_both(socket_t *sock);
-void socket_close(socket_t *sock);
+void asc_socket_shutdown_recv(asc_socket_t *sock);
+void asc_socket_shutdown_send(asc_socket_t *sock);
+void asc_socket_shutdown_both(asc_socket_t *sock);
+void asc_socket_close(asc_socket_t *sock);
 
-int socket_bind(socket_t *sock, const char *addr, int port) __wur;
-int socket_accept(socket_t *sock, socket_t **client_ptr) __wur;
-int socket_connect(socket_t *sock, const char *addr, int port) __wur;
+int asc_socket_bind(asc_socket_t *sock, const char *addr, int port) __wur;
+int asc_socket_accept(asc_socket_t *sock, asc_socket_t **client_ptr) __wur;
+int asc_socket_connect(asc_socket_t *sock, const char *addr, int port) __wur;
 
-ssize_t socket_recv(socket_t *sock, void *buffer, size_t size) __wur;
-ssize_t socket_recvfrom(socket_t *sock, void *buffer, size_t size) __wur;
+ssize_t asc_socket_recv(asc_socket_t *sock, void *buffer, size_t size) __wur;
+ssize_t asc_socket_recvfrom(asc_socket_t *sock, void *buffer, size_t size) __wur;
 
-ssize_t socket_send(socket_t *sock, const void *buffer, size_t size) __wur;
-ssize_t socket_sendto(socket_t *sock, const void *buffer, size_t size) __wur;
+ssize_t asc_socket_send(asc_socket_t *sock, const void *buffer, size_t size) __wur;
+ssize_t asc_socket_sendto(asc_socket_t *sock, const void *buffer, size_t size) __wur;
 
-int socket_fd(socket_t *sock) __wur;
-const char * socket_addr(socket_t *sock) __wur;
-int socket_port(socket_t *sock) __wur;
+int asc_socket_fd(asc_socket_t *sock) __wur;
+const char * asc_socket_addr(asc_socket_t *sock) __wur;
+int asc_socket_port(asc_socket_t *sock) __wur;
 
-int socket_event_on_accept(socket_t *sock, void (*callback)(void *, int), void *arg);
-int socket_event_on_read(socket_t *sock, void (*callback)(void *, int), void *arg);
-int socket_event_on_connect(socket_t *sock, void (*callback)(void *, int), void *arg);
+int asc_socket_event_on_accept(asc_socket_t *sock, void (*callback)(void *, int), void *arg);
+int asc_socket_event_on_read(asc_socket_t *sock, void (*callback)(void *, int), void *arg);
+int asc_socket_event_on_connect(asc_socket_t *sock, void (*callback)(void *, int), void *arg);
 
-void socket_set_sockaddr(socket_t *sock, const char *addr, int port);
-void socket_set_nonblock(socket_t *sock, int is_nonblock);
-void socket_set_reuseaddr(socket_t *sock, int is_on);
-void socket_set_non_delay(socket_t *sock, int is_on);
-void socket_set_keep_alive(socket_t *sock, int is_on);
-void socket_set_broadcast(socket_t *sock, int is_on);
-void socket_set_timeout(socket_t *sock, int rcvmsec, int sndmsec);
-void socket_set_buffer(socket_t *sock, int rcvbuf, int sndbuf);
+void asc_socket_set_sockaddr(asc_socket_t *sock, const char *addr, int port);
+void asc_socket_set_nonblock(asc_socket_t *sock, int is_nonblock);
+void asc_socket_set_reuseaddr(asc_socket_t *sock, int is_on);
+void asc_socket_set_non_delay(asc_socket_t *sock, int is_on);
+void asc_socket_set_keep_alive(asc_socket_t *sock, int is_on);
+void asc_socket_set_broadcast(asc_socket_t *sock, int is_on);
+void asc_socket_set_timeout(asc_socket_t *sock, int rcvmsec, int sndmsec);
+void asc_socket_set_buffer(asc_socket_t *sock, int rcvbuf, int sndbuf);
 
-void socket_set_multicast_if(socket_t *sock, const char *addr);
-void socket_set_multicast_ttl(socket_t *sock, int ttl);
-void socket_set_multicast_loop(socket_t *sock, int is_on);
-void socket_multicast_join(socket_t *sock, const char *addr, const char *localaddr);
-void socket_multicast_leave(socket_t *sock);
-void socket_multicast_renew(socket_t *sock);
+void asc_socket_set_multicast_if(asc_socket_t *sock, const char *addr);
+void asc_socket_set_multicast_ttl(asc_socket_t *sock, int ttl);
+void asc_socket_set_multicast_loop(asc_socket_t *sock, int is_on);
+void asc_socket_multicast_join(asc_socket_t *sock, const char *addr, const char *localaddr);
+void asc_socket_multicast_leave(asc_socket_t *sock);
+void asc_socket_multicast_renew(asc_socket_t *sock);
 
 /* thread.c */
 
-typedef struct thread_s thread_t;
+typedef struct asc_thread_t asc_thread_t;
 
 #ifndef _WIN32
 jmp_buf * __thread_getjmp(void);
-void __thread_setjmp(thread_t *thread);
-#   define thread_while(_thread)                                            \
-        const int __thread_loop = setjmp(*__thread_getjmp());               \
-        if(!__thread_loop) __thread_setjmp(_thread);                        \
+void __thread_setjmp(asc_thread_t *thread);
+#   define asc_thread_while(_thread)                                                            \
+        const int __thread_loop = setjmp(*__thread_getjmp());                                   \
+        if(!__thread_loop) __thread_setjmp(_thread);                                            \
         while(!__thread_loop)
 #else
 #   define thread_while() while(1)
 #endif
 
-void thread_init(thread_t **thread_ptr, void (*loop)(void *), void *arg);
-void thread_destroy(thread_t **thread_ptr);
+void asc_thread_init(asc_thread_t **thread_ptr, void (*loop)(void *), void *arg);
+void asc_thread_destroy(asc_thread_t **thread_ptr);
 
 /* */
 
-#define ASC_INIT()                                                          \
-    timer_core_init();                                                      \
-    socket_core_init();                                                     \
-    event_core_init();
+#define ASC_INIT()                                                                              \
+    asc_timer_core_init();                                                                      \
+    asc_socket_core_init();                                                                     \
+    asc_event_core_init();
 
-#define ASC_LOOP()                                                          \
-    while(1)                                                                \
-    {                                                                       \
-        event_core_loop();                                                  \
-        timer_core_loop();                                                  \
+#define ASC_LOOP()                                                                              \
+    while(1)                                                                                    \
+    {                                                                                           \
+        asc_event_core_loop();                                                                  \
+        asc_timer_core_loop();                                                                  \
     }
 
-#define ASC_DESTROY()                                                       \
-    event_core_destroy();                                                   \
-    socket_core_destroy();                                                  \
-    timer_core_destroy();                                                   \
-    log_info("[main] exit");                                                \
-    log_destroy();
+#define ASC_DESTROY()                                                                           \
+    asc_event_core_destroy();                                                                   \
+    asc_socket_core_destroy();                                                                  \
+    asc_timer_core_destroy();                                                                   \
+    asc_log_info("[main] exit");                                                                \
+    asc_log_core_destroy();
 
 #endif /* _ASC_H_ */
