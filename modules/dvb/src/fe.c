@@ -130,7 +130,7 @@ static void fe_event(module_data_t *mod)
 static void fe_status(module_data_t *mod)
 {
     fe_status_t fe_status;
-    if(ioctl(mod->fe_fd, FE_READ_STATUS, &mod->status.fe) != 0)
+    if(ioctl(mod->fe_fd, FE_READ_STATUS, &fe_status) != 0)
     {
         asc_log_error(MSG("FE_READ_STATUS failed [%s]"), strerror(errno));
         astra_abort();

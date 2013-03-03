@@ -279,7 +279,7 @@ select_modules()
     echo "$ARG_MODULES" | tr ':' '\n' | while read M ; do
         if [ -z "$M" ] ; then
             :
-        elif [ "$M" == "*" ] ; then
+        elif [ "$M" = "*" ] ; then
             ls -d $SRCDIR/modules/* | while read M ; do
                 if [ -f "$M/module.mk" ] ; then
                     echo "$M"
