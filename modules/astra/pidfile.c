@@ -34,6 +34,8 @@ static char *filename = NULL;
 
 static void module_init(module_data_t *mod)
 {
+    __uarg(mod);
+
     const int idx_value = 2;
     const char *value = luaL_checkstring(lua, idx_value);
     if(filename)
@@ -53,16 +55,18 @@ static void module_init(module_data_t *mod)
     int fd = mkstemp(tmp_pidfile);
     if(fd == -1)
     {
-        asc_log_error("[pidfile %s] failed to create temporary file [%s]"
-                      , filename, strerror(errno));
-        free(filename);
+        asc_log_error("[pidfile %s] mkstemp() failed [%s]", filename, strerror(errno));
         astra_abort();
     }
 
     static char pid[8];
     int size = snprintf(pid, sizeof(pid), "%d\n", getpid());
     if(write(fd, pid, size) == -1)
-        ;
+    {
+        fprintf(stderr, "[pidfile %s] write() failed [%s]\n", filename, strerror(errno));
+        astra_abort();
+    }
+
     fchmod(fd, 0644);
     close(fd);
 
@@ -70,14 +74,15 @@ static void module_init(module_data_t *mod)
     unlink(tmp_pidfile);
     if(link_ret == -1)
     {
-        asc_log_error("[pidfile %s] filed to create pidfile [%s]", filename, strerror(errno));
-        free(filename);
+        asc_log_error("[pidfile %s] link() failed [%s]", filename, strerror(errno));
         astra_abort();
     }
 }
 
 static void module_destroy(module_data_t *mod)
 {
+    __uarg(mod);
+
     if(!access(filename, W_OK))
         unlink(filename);
 

@@ -22,6 +22,8 @@
 #define DVB_API ((DVB_API_VERSION * 100) + DVB_API_VERSION_MINOR)
 #define DVR_BUFFER_SIZE (1022 * TS_PACKET_SIZE)
 
+#define FE_MODULATION_NONE 0xFFFF
+
 typedef enum
 {
     DVB_TYPE_UNKNOWN = 0,
@@ -80,12 +82,23 @@ struct module_data_t
     int snr;
     int ber;
     int unc;
+
+    /* DMX config */
+    int dmx_budget;
+
+    /* DMX Base */
+    char dmx_dev_name[32];
+    int *dmx_fd_list;
 };
 
 #define MSG(_msg) "[dvb_input %d:%d] " _msg, mod->adapter, mod->device
 
-void frontend_open(module_data_t *mod);
-void frontend_close(module_data_t *mod);
+void fe_open(module_data_t *mod);
+void fe_close(module_data_t *mod);
 
 void dvr_open(module_data_t *mod);
 void dvr_close(module_data_t *mod);
+
+void dmx_open(module_data_t *mod);
+void dmx_close(module_data_t *mod);
+void dmx_set_pid(module_data_t *mod, uint16_t pid, int is_set);

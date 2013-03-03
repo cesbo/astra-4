@@ -117,7 +117,7 @@ void mpegts_desc_to_string(char *str, uint32_t len, const uint8_t *desc)
             if(ca_info_size > 0)
             {
                 skip += snprintf(&str[skip], len - skip, " data:");
-                if((ca_info_size * 2 + 1) > (len - skip))
+                if((uint32_t)(ca_info_size * 2 + 1) > (len - skip))
                     snprintf(&str[skip], len - skip, "ERR (is too long)");
                 else
                     hex_to_str(&str[skip], &desc[6], ca_info_size);
@@ -149,7 +149,7 @@ void mpegts_desc_to_string(char *str, uint32_t len, const uint8_t *desc)
         default:
         {
             skip = snprintf(str, len, "descriptor:0x%02X size:%d data:0x", desc[0], desc[1]);
-            if((desc[1] * 2 + 1) > (len - skip))
+            if((uint32_t)(desc[1] * 2 + 1) > (len - skip))
                 snprintf(&str[skip], len - skip, "ERR (is too long)");
             else
                 hex_to_str(&str[skip], &desc[2], desc[1]);

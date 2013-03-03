@@ -23,7 +23,7 @@
 #include <errno.h>
 
 #define ASC_ARRAY_SIZE(_a) (sizeof(_a)/sizeof(_a[0]))
-#define __uarg(_x) (void)_x
+#define __uarg(_x) {(void)_x;}
 
 #ifndef __wur
 #   define __wur __attribute__(( __warn_unused_result__ ))

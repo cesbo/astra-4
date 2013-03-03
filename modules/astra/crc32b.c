@@ -34,7 +34,7 @@ static void _init_crc32(void)
 #undef POLY
 }
 
-uint32_t crc32b(const uint8_t *buffer, size_t size)
+uint32_t crc32b(const uint8_t *buffer, int size)
 {
     if(!crc32_table[1])
         _init_crc32();

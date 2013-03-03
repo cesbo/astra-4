@@ -94,10 +94,10 @@ static void _log(int type, const char *msg, va_list ap)
     ++len_2;
 
     if(__log.sout && write(1, buffer, len_2) == -1)
-        ;
+        fprintf(stderr, "[log] failed to write to the stdout [%s]\n", strerror(errno));
 
     if(__log.fd && write(__log.fd, buffer, len_2) == -1)
-        ;
+        fprintf(stderr, "[log] failed to write to the file [%s]\n", strerror(errno));
 }
 
 void asc_log_info(const char *msg, ...)
@@ -159,8 +159,7 @@ void asc_log_hup(void)
     {
         __log.fd = 0;
         __log.sout = 1;
-        asc_log_error("[core/log] failed to open %s (%s)"
-                      , __log.filename, strerror(errno));
+        asc_log_error("[core/log] failed to open %s (%s)", __log.filename, strerror(errno));
     }
 }
 

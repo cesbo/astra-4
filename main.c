@@ -85,11 +85,11 @@ static void astra_init(int argc, const char **argv)
     lua_pop(lua, 1);
 }
 
-void astra_do_file(int argc, const char **argv, const char *file)
+void astra_do_file(int argc, const char **argv, const char *filename)
 {
-    if(file[0] == '-' && file[1] == '\0')
-        file = NULL;
-    else if(!access(file, R_OK))
+    if(filename[0] == '-' && filename[1] == '\0')
+        filename = NULL;
+    else if(!access(filename, R_OK))
         ;
     else
     {
@@ -98,11 +98,11 @@ void astra_do_file(int argc, const char **argv, const char *file)
     }
 
     astra_init(argc, argv);
+    if(luaL_dofile(lua, filename))
+        luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
 
     if(!setjmp(main_loop))
     {
-        if(luaL_dofile(lua, file))
-            luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
         ASC_LOOP();
     }
 

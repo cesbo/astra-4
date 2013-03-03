@@ -5,7 +5,7 @@
 
 #include "base.h"
 
-char * hex_to_str(char *str, const uint8_t *data, size_t size)
+char * hex_to_str(char *str, const uint8_t *data, int size)
 {
     static const char char_str[] = "0123456789ABCDEF";
     for(int i = 0; i < size; i++)
@@ -34,7 +34,7 @@ inline static uint8_t char_to_hex(const char *c)
     return (single_char_to_hex(c[0]) << 4) | single_char_to_hex(c[1]);
 }
 
-uint8_t * str_to_hex(const char *str, uint8_t *data, size_t size)
+uint8_t * str_to_hex(const char *str, uint8_t *data, int size)
 {
     if(!size)
         size = ~0;

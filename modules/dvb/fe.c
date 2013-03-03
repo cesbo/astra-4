@@ -22,7 +22,7 @@
 
 #endif
 
-static void frontend_clear(module_data_t *mod)
+static void fe_clear(module_data_t *mod)
 {
 #if DVB_API_VERSION >= 5
     static struct dtv_property clear[] = { { .cmd = DTV_CLEAR } };
@@ -47,7 +47,7 @@ static void frontend_clear(module_data_t *mod)
  *
  */
 
-static void frontend_event(module_data_t *mod)
+static void fe_event(module_data_t *mod)
 {
     struct dvb_frontend_event dvb_fe_event;
     fe_status_t fe_status, fe_status_diff;
@@ -96,12 +96,12 @@ static void frontend_event(module_data_t *mod)
                 if(ioctl(mod->fe_fd, FE_READ_UNCORRECTED_BLOCKS, &mod->unc) != 0)
                     mod->unc = -2;
 
-                asc_log_info(MSG("frontend has lock. signal:%d%% snr:%d%% ber:%d unc:%d")
+                asc_log_info(MSG("fe has lock. signal:%d%% snr:%d%% ber:%d unc:%d")
                              , mod->signal, mod->snr, mod->ber, mod->unc);
             }
             else
             {
-                asc_log_warning(MSG("frontend has lost lock"));
+                asc_log_warning(MSG("fe has lost lock"));
                 // TODO: set flag to retune
             }
         }
@@ -110,8 +110,8 @@ static void frontend_event(module_data_t *mod)
         {
             if(fe_status & FE_REINIT)
             {
-                asc_log_warning(MSG("frontend was reinitialized"));
-                frontend_clear(mod);
+                asc_log_warning(MSG("fe was reinitialized"));
+                fe_clear(mod);
                 // TODO: set flag to retune
             }
         }
@@ -189,7 +189,7 @@ static void diseqc_setup(module_data_t *mod, int voltage, int tone)
  *
  */
 
-static void frontend_tune_s(module_data_t *mod)
+static void fe_tune_s(module_data_t *mod)
 {
     int freq = mod->frequency;
 
@@ -219,7 +219,7 @@ static void frontend_tune_s(module_data_t *mod)
             diseqc_setup(mod, voltage, tone);
     }
 
-    frontend_clear(mod);
+    fe_clear(mod);
 
     if(mod->type == DVB_TYPE_S)
     {
@@ -263,7 +263,7 @@ static void frontend_tune_s(module_data_t *mod)
         DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_SYMBOL_RATE,       mod->symbolrate);
         DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INNER_FEC,         mod->fec);
         DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INVERSION,         INVERSION_AUTO);
-        if(mod->modulation != -1)
+        if(mod->modulation != FE_MODULATION_NONE)
         {
             DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,    mod->modulation);
             DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_ROLLOFF,       mod->rolloff);
@@ -294,7 +294,7 @@ static void frontend_tune_s(module_data_t *mod)
  *
  */
 
-void frontend_tune(module_data_t *mod)
+void fe_tune(module_data_t *mod)
 {
     switch(mod->type)
     {
@@ -302,7 +302,7 @@ void frontend_tune(module_data_t *mod)
 #if DVB_API_VERSION >= 5
         case DVB_TYPE_S2:
 #endif
-            frontend_tune_s(mod);
+            fe_tune_s(mod);
             break;
         default:
             asc_log_error(MSG("unknown dvb type"));
@@ -310,7 +310,7 @@ void frontend_tune(module_data_t *mod)
     }
 }
 
-void frontend_thread(void *arg)
+void fe_thread(void *arg)
 {
     module_data_t *mod = arg;
 
@@ -341,7 +341,7 @@ void frontend_thread(void *arg)
         else if(ret > 0)
         {
             if(FD_ISSET(mod->fe_fd, &read_fd))
-                frontend_event(mod);
+                fe_event(mod);
         }
     }
 
@@ -349,12 +349,12 @@ void frontend_thread(void *arg)
         close(mod->fe_fd);
 }
 
-void frontend_open(module_data_t *mod)
+void fe_open(module_data_t *mod)
 {
-    asc_thread_init(&mod->fe_thread, frontend_thread, mod);
+    asc_thread_init(&mod->fe_thread, fe_thread, mod);
 }
 
-void frontend_close(module_data_t *mod)
+void fe_close(module_data_t *mod)
 {
     asc_thread_destroy(&mod->fe_thread);
 }

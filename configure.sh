@@ -89,7 +89,7 @@ if ! which $APP_C >/dev/null ; then
     exit 1
 fi
 
-CFLAGS="-g -O3 -I. -Wall -pedantic \
+CFLAGS="-g -O3 -I. -Wall -Wextra -Werror -pedantic \
 -fno-builtin -funit-at-a-time -ffast-math"
 
 # -fforce-addr -fexpensive-optimizations
@@ -153,7 +153,7 @@ if [ -n "$ARG_LDFLAGS" ] ; then
     LDFLAGS="$LDFLAGS $ARG_LDFLAGS"
 fi
 
-APP_CFLAGS="$CFLAGS -Wstrict-prototypes -std=iso9899:1999"
+APP_CFLAGS="$CFLAGS -Wstrict-prototypes -std=iso9899:1999 -D_GNU_SOURCE"
 APP_LDFLAGS="$LDFLAGS"
 
 if [ -n "$ARG_MODULE_PACK" ] ;  then

@@ -119,7 +119,7 @@ static void module_options_s(module_data_t *mod)
     module_option_number(__tone, &mod->force_tone);
 
 #if DVB_API_VERSION >= 5
-    if(mod->type == DVB_TYPE_S2 && mod->modulation != -1)
+    if(mod->type == DVB_TYPE_S2 && mod->modulation != FE_MODULATION_NONE)
     {
         if(module_option_string(__rolloff, &string_val))
         {
@@ -181,7 +181,7 @@ static void module_options(module_data_t *mod)
 
     if(module_option_string(__modulation, &string_val))
     {
-        if(!strcasecmp(string_val, "NONE")) mod->modulation = -1;
+        if(!strcasecmp(string_val, "NONE")) mod->modulation = FE_MODULATION_NONE;
         else if(!strcasecmp(string_val, "QPSK")) mod->modulation = QPSK;
         else if(!strcasecmp(string_val, "QAM16")) mod->modulation = QAM_16;
         else if(!strcasecmp(string_val, "QAM32")) mod->modulation = QAM_32;
@@ -204,7 +204,7 @@ static void module_options(module_data_t *mod)
         }
     }
     else
-        mod->modulation = -1;
+        mod->modulation = FE_MODULATION_NONE;
 
     if(mod->type == DVB_TYPE_S || mod->type == DVB_TYPE_S2)
         module_options_s(mod);
@@ -221,12 +221,12 @@ static void module_options(module_data_t *mod)
 
 static void join_pid(module_data_t *mod, uint16_t pid)
 {
-    ;
+    dmx_set_pid(mod, pid, 1);
 }
 
 static void leave_pid(module_data_t *mod, uint16_t pid)
 {
-    ;
+    dmx_set_pid(mod, pid, 0);
 }
 
 static void module_init(module_data_t *mod)
@@ -236,8 +236,9 @@ static void module_init(module_data_t *mod)
 
     module_options(mod);
 
-    frontend_open(mod);
+    fe_open(mod);
     dvr_open(mod);
+    dmx_open(mod);
 }
 
 static void module_destroy(module_data_t *mod)
@@ -245,8 +246,9 @@ static void module_destroy(module_data_t *mod)
     module_stream_destroy(mod);
     module_demux_destroy(mod);
 
-    frontend_close(mod);
+    dmx_close(mod);
     dvr_close(mod);
+    fe_close(mod);
 }
 
 MODULE_STREAM_METHODS()
