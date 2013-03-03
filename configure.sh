@@ -90,8 +90,7 @@ if ! which $APP_C >/dev/null ; then
 fi
 
 CFLAGS="-g -O3 -I. -Wall -Wextra -pedantic \
--fno-builtin -funit-at-a-time -ffast-math \
--fforce-addr -fexpensive-optimizations"
+-fno-builtin -funit-at-a-time -ffast-math"
 
 if [ $ARG_CC -eq 0 -a -z "$ARG_MODULE_PACK" ]; then
    CHECKCPU_APP="$SRCDIR/cpucheck"

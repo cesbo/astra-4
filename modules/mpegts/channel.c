@@ -64,7 +64,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     {
         const uint16_t pnr = PAT_ITEMS_GET_PNR(psi, pointer);
         const uint16_t pid = PAT_ITEMS_GET_PID(psi, pointer);
-        if(pnr)
+        if(pnr == mod->pnr)
         {
             demux_join_pid(mod, pid);
             mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_PMT, pid);
