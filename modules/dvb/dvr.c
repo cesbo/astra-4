@@ -63,9 +63,9 @@ void dvr_close(module_data_t *mod)
 
     if(mod->dvr_fd > 0)
     {
-        close(mod->dvr_fd);
-        mod->dvr_fd = 0;
         asc_event_close(mod->dvr_event);
         mod->dvr_event = NULL;
+        close(mod->dvr_fd);
+        mod->dvr_fd = 0;
     }
 }

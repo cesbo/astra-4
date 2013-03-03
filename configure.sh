@@ -89,18 +89,21 @@ if ! which $APP_C >/dev/null ; then
     exit 1
 fi
 
-CFLAGS="-g -O3 -I. -Wall -Wextra -Werror -pedantic \
--fno-builtin -funit-at-a-time -ffast-math"
-
-# -fforce-addr -fexpensive-optimizations
+CFLAGS="-g -O3 -I. -Wall -Wextra -pedantic \
+-fno-builtin -funit-at-a-time -ffast-math \
+-fforce-addr -fexpensive-optimizations"
 
 if [ $ARG_CC -eq 0 -a -z "$ARG_MODULE_PACK" ]; then
    CHECKCPU_APP="$SRCDIR/cpucheck"
    $APP_C -o $CHECKCPU_APP $SRCDIR/cpucheck.c
-   if [ $? -eq 0 ]; then
+   if [ $? -eq 0 ] ; then
        CPUFLAGS=`$CHECKCPU_APP`
-       CFLAGS="$CFLAGS $CPUFLAGS"
        rm $CHECKCPU_APP
+
+       $APP_C $CPUFLAGS -E -x c /dev/null >/dev/null 2>&1
+       if [ $? -eq 0 ] ; then
+           CFLAGS="$CFLAGS $CPUFLAGS"
+       fi
    else
        echo "Warning: failed to check CPU flags"
    fi

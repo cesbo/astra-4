@@ -8,6 +8,7 @@
 #if defined(__i386__) || defined(__x86_64__)
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #define GCC_VERSION (__GNUC__ * 10000 + (__GNUC_MINOR__ * 100) + __GNUC_PATCHLEVEL__)
 
@@ -62,7 +63,7 @@ static cpu_arch_t intel_list[] =
 static cpu_arch_t amd_list[] =
 {
       { "k6-2", {5,8}, {0,0} } // my first x86 pc :)
-    , { NULL, 0, 0, 0 }
+    , { NULL, {0,0}, {0,0} }
 };
 
 const char * cpu_arch_get(cpu_arch_t *list, int family, int model)
@@ -80,10 +81,11 @@ const char * cpu_arch_get(cpu_arch_t *list, int family, int model)
         }
         ++list;
     }
+    return NULL;
 }
 
 typedef struct { unsigned int eax, ebx, ecx, edx; } regs_t;
-static inline cpuid(regs_t *regs, unsigned int op)
+static inline void cpuid(regs_t *regs, unsigned int op)
 {
     __asm__ __volatile__ (  "cpuid"
                           : "=a" (regs->eax)

@@ -8,6 +8,7 @@
 
 #include "dvb.h"
 #include <fcntl.h>
+#include <poll.h>
 
 #if DVB_API_VERSION >= 5
 
@@ -324,24 +325,30 @@ void fe_thread(void *arg)
         astra_abort();
     }
 
-    fd_set read_fd;
-    FD_ZERO(&read_fd);
-    FD_SET(mod->fe_fd, &read_fd);
+    fe_tune(mod);
 
-    static struct timeval timeout = { .tv_sec = 1, .tv_usec = 0 };
+    struct pollfd fds[1];
+    fds[0].fd = mod->fe_fd;
+    fds[0].events = POLLIN;
+    fds[0].revents = 0;
 
     asc_thread_while(mod->fe_thread)
     {
-        const int ret = select(mod->fe_fd + 1, &read_fd, NULL, NULL, &timeout);
-        if(ret == -1)
+        const int ret = poll(fds, 1, 1000);
+        if(ret > 0)
+        {
+            if(fds[0].revents & POLLIN)
+                fe_event(mod);
+        }
+        else if(ret == 0)
+        {
+            // TODO: get stat
+            // TODO: retune if needed
+        }
+        else /* ret == -1 */
         {
             asc_log_error(MSG("select() failed [%s]"), strerror(errno));
             astra_abort();
-        }
-        else if(ret > 0)
-        {
-            if(FD_ISSET(mod->fe_fd, &read_fd))
-                fe_event(mod);
         }
     }
 
