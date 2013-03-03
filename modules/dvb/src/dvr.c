@@ -6,7 +6,7 @@
  * Licensed under the MIT license.
  */
 
-#include "dvb.h"
+#include "../dvb.h"
 #include <fcntl.h>
 
 static void dvr_on_read(void *arg, int is_data)
@@ -17,7 +17,6 @@ static void dvr_on_read(void *arg, int is_data)
     {
         asc_log_error(MSG("dvr read error, try to reopen [%s]"), strerror(errno));
         dvr_close(mod);
-        // TODO: reopen
         return;
     }
 

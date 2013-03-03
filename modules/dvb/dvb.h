@@ -75,6 +75,8 @@ struct module_data_t
     int fe_fd;
     asc_thread_t *fe_thread;
 
+    int do_retune;
+
     /* FE Status */
     fe_status_t fe_status;
     int lock;
@@ -101,4 +103,5 @@ void dvr_close(module_data_t *mod);
 
 void dmx_open(module_data_t *mod);
 void dmx_close(module_data_t *mod);
+void dmx_bounce(module_data_t *mod);
 void dmx_set_pid(module_data_t *mod, uint16_t pid, int is_set);

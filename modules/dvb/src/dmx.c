@@ -6,7 +6,7 @@
  * Licensed under the MIT license.
  */
 
-#include "dvb.h"
+#include "../dvb.h"
 #include <fcntl.h>
 
 static void __dmx_join_pid(module_data_t *mod, int fd, uint16_t pid)
@@ -62,6 +62,19 @@ void dmx_set_pid(module_data_t *mod, uint16_t pid, int is_set)
         {
             close(mod->dmx_fd_list[pid]);
             mod->dmx_fd_list[pid] = 0;
+        }
+    }
+}
+
+void dmx_bounce(module_data_t *mod)
+{
+    const int fd_max = (mod->dmx_budget) ? 1 : MAX_PID;
+    for(int i = 0; i < fd_max; ++i)
+    {
+        if(mod->dmx_fd_list[i])
+        {
+            ioctl(mod->dmx_fd_list[i], DMX_STOP);
+            ioctl(mod->dmx_fd_list[i], DMX_START);
         }
     }
 }

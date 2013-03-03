@@ -6,7 +6,7 @@
  * Licensed under the MIT license.
  */
 
-#include "dvb.h"
+#include "../dvb.h"
 #include <fcntl.h>
 #include <poll.h>
 
@@ -72,15 +72,12 @@ static void fe_event(module_data_t *mod)
         const char sv = (fe_status & FE_HAS_VITERBI) ? 'V' : '_';
         const char sy = (fe_status & FE_HAS_SYNC) ? 'Y' : '_';
         const char sl = (fe_status & FE_HAS_LOCK) ? 'L' : '_';
-        asc_log_debug(MSG("%s() status:%c%c%c%c%c"), __FUNCTION__, ss, sc, sv, sy, sl);
 
         if(fe_status_diff & FE_HAS_LOCK)
         {
             mod->lock = fe_status & FE_HAS_LOCK;
             if(mod->lock)
             {
-                // TODO: set timeout
-
                 if(ioctl(mod->fe_fd, FE_READ_SIGNAL_STRENGTH, &mod->signal) != 0)
                     mod->signal = -2;
                 else
@@ -97,13 +94,15 @@ static void fe_event(module_data_t *mod)
                 if(ioctl(mod->fe_fd, FE_READ_UNCORRECTED_BLOCKS, &mod->unc) != 0)
                     mod->unc = -2;
 
-                asc_log_info(MSG("fe has lock. signal:%d%% snr:%d%% ber:%d unc:%d")
-                             , mod->signal, mod->snr, mod->ber, mod->unc);
+                asc_log_info(MSG("fe has lock. status:%c%c%c%c%c signal:%d%% snr:%d%%")
+                             , ss, sc, sv, sy, sl
+                             , mod->signal, mod->snr);
             }
             else
             {
-                asc_log_warning(MSG("fe has lost lock"));
-                // TODO: set flag to retune
+                asc_log_warning(MSG("fe has lost lock. status:%c%c%c%c%c")
+                                , ss, sc, sv, sy, sl);
+                mod->do_retune = 1;
             }
         }
 
@@ -113,10 +112,52 @@ static void fe_event(module_data_t *mod)
             {
                 asc_log_warning(MSG("fe was reinitialized"));
                 fe_clear(mod);
-                // TODO: set flag to retune
+                mod->do_retune = 1;
             }
         }
     }
+}
+
+/*
+ *  oooooooo8 ooooooooooo   o   ooooooooooo ooooo  oooo oooooooo8
+ * 888        88  888  88  888  88  888  88  888    88 888
+ *  888oooooo     888     8  88     888      888    88  888oooooo
+ *         888    888    8oooo88    888      888    88         888
+ * o88oooo888    o888o o88o  o888o o888o      888oo88  o88oooo888
+ *
+ */
+
+static void fe_status(module_data_t *mod)
+{
+    fe_status_t fe_status;
+    if(ioctl(mod->fe_fd, FE_READ_STATUS, &mod->status.fe) != 0)
+    {
+        asc_log_error(MSG("FE_READ_STATUS failed [%s]"), strerror(errno));
+        astra_abort();
+    }
+
+    mod->lock = fe_status & FE_HAS_LOCK;
+    if(!mod->lock)
+    {
+        mod->do_retune = 1;
+        return;
+    }
+
+    if(ioctl(mod->fe_fd, FE_READ_SIGNAL_STRENGTH, &mod->signal) != 0)
+        mod->signal = -2;
+    else
+        mod->signal = (mod->signal * 100) / 0xFFFF;
+
+    if(ioctl(mod->fe_fd, FE_READ_SNR, &mod->snr) != 0)
+        mod->snr = -2;
+    else
+        mod->snr = (mod->snr * 100) / 0xFFFF;
+
+    if(ioctl(mod->fe_fd, FE_READ_BER, &mod->ber) != 0)
+        mod->ber = -2;
+
+    if(ioctl(mod->fe_fd, FE_READ_UNCORRECTED_BLOCKS, &mod->unc) != 0)
+        mod->unc = -2;
 }
 
 /*
@@ -342,8 +383,15 @@ void fe_thread(void *arg)
         }
         else if(ret == 0)
         {
-            // TODO: get stat
-            // TODO: retune if needed
+            if(!mod->do_retune)
+                fe_status(mod);
+
+            if(mod->do_retune)
+            {
+                mod->do_retune = 0;
+                fe_tune(mod);
+                sleep(2);
+            }
         }
         else /* ret == -1 */
         {
