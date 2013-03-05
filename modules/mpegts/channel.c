@@ -15,6 +15,8 @@
  *      demux       - object, demux instance returned by module_instance:demux()
  *      pnr         - number, join PID related to the program number
  *      caid        - number, CAID to join CAS PID (CAT,EMM,ECM)
+ *      sdt         - boolean, join SDT table
+ *      eit         - boolean, join EIT table
  */
 
 #include <astra.h>
@@ -24,11 +26,21 @@ struct module_data_t
     MODULE_STREAM_DATA();
     MODULE_DEMUX_DATA();
 
+    /* Options */
     char *name;
     int pnr;
     int caid;
+    int sdt;
+    int eit;
+
+    /* */
+    int send_eit;
 
     mpegts_psi_t *stream[MAX_PID];
+
+    int tsid;
+    mpegts_psi_t *custom_pat;
+    mpegts_psi_t *custom_sdt;
 };
 
 #define MSG(_msg) "[analyze %s] " _msg, mod->name
@@ -48,8 +60,13 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 
     // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
-    if(crc32 == psi->crc32)
+    if(crc32 == psi->crc32 && mod->custom_pat->buffer_size > 0)
+    {
+        mpegts_psi_demux(mod->custom_pat
+                         , (void (*)(void *, const uint8_t *))__module_stream_send
+                         , &mod->__stream);
         return;
+    }
 
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
@@ -59,8 +76,14 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     }
     psi->crc32 = crc32;
 
+    mod->tsid = PAT_GET_TSID(psi);
+    const uint8_t pat_version = PAT_GET_VERSION(mod->custom_pat) + 1;
+
+    PAT_INIT(mod->custom_pat, mod->tsid, pat_version);
+    uint8_t *cpointer = PAT_ITEMS_FIRST(mod->custom_pat);
+
     const uint8_t *pointer = PAT_ITEMS_FIRST(psi);
-    while(!PAT_ITEMS_EOF(psi, pointer))
+    while(!PAT_ITEMS_EOL(psi, pointer))
     {
         const uint16_t pnr = PAT_ITEMS_GET_PNR(psi, pointer);
         const uint16_t pid = PAT_ITEMS_GET_PID(psi, pointer);
@@ -68,10 +91,18 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         {
             demux_join_pid(mod, pid);
             mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_PMT, pid);
+
+            PAT_ITEMS_APPEND(mod->custom_pat, cpointer, pnr, pid);
+            PAT_ITEMS_NEXT(mod->custom_pat, cpointer);
         }
 
         PAT_ITEMS_NEXT(psi, pointer);
     }
+
+    PSI_SET_CRC32(mod->custom_pat);
+    mpegts_psi_demux(mod->custom_pat
+                     , (void (*)(void *, const uint8_t *))__module_stream_send
+                     , &mod->__stream);
 }
 
 /*
@@ -103,7 +134,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     const uint8_t *desc, *desc_pointer;
     desc = CAT_GET_DESC(psi);
     desc_pointer = DESC_ITEMS_FIRST(desc);
-    while(!DESC_ITEMS_EOF(desc, desc_pointer))
+    while(!DESC_ITEMS_EOL(desc, desc_pointer))
     {
         if(desc_pointer[0] == 0x09 && DESC_CA_CAID(desc_pointer) == mod->caid)
             demux_join_pid(mod, DESC_CA_PID(desc_pointer));
@@ -148,7 +179,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     {
         desc = PMT_GET_DESC(psi);
         desc_pointer = DESC_ITEMS_FIRST(desc);
-        while(!DESC_ITEMS_EOF(desc, desc_pointer))
+        while(!DESC_ITEMS_EOL(desc, desc_pointer))
         {
             if(desc_pointer[0] == 0x09 && DESC_CA_CAID(desc_pointer) == mod->caid)
                 demux_join_pid(mod, DESC_CA_PID(desc_pointer));
@@ -158,7 +189,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     }
 
     const uint8_t *pointer = PMT_ITEMS_FIRST(psi);
-    while(!PMT_ITEMS_EOF(psi, pointer))
+    while(!PMT_ITEMS_EOL(psi, pointer))
     {
         const uint16_t pid = PMT_ITEMS_GET_PID(psi, pointer);
 
@@ -166,7 +197,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         {
             desc = PMT_ITEMS_GET_DESC(psi, pointer);
             desc_pointer = DESC_ITEMS_FIRST(desc);
-            while(!DESC_ITEMS_EOF(desc, desc_pointer))
+            while(!DESC_ITEMS_EOL(desc, desc_pointer))
             {
                 if(desc_pointer[0] == 0x09 && DESC_CA_CAID(desc_pointer) == mod->caid)
                     demux_join_pid(mod, DESC_CA_PID(desc_pointer));
@@ -178,6 +209,45 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         demux_join_pid(mod, pid);
 
         PMT_ITEMS_NEXT(psi, pointer);
+    }
+}
+
+/*
+ *  oooooooo8 ooooooooo   ooooooooooo
+ * 888         888    88o 88  888  88
+ *  888oooooo  888    888     888
+ *         888 888    888     888
+ * o88oooo888 o888ooo88      o888o
+ *
+ */
+
+static void on_sdt(void *arg, mpegts_psi_t *psi)
+{
+    module_data_t *mod = arg;
+
+    if(psi->buffer[0] != 0x42)
+        return;
+
+    if(mod->tsid != SDT_GET_TSID(psi))
+        return;
+
+    // check changes
+    const uint32_t crc32 = PSI_GET_CRC32(psi);
+    if(crc32 == psi->crc32)
+        return;
+
+    // check crc
+    if(crc32 != PSI_CALC_CRC32(psi))
+    {
+        asc_log_error(MSG("SDT checksum mismatch"));
+        return;
+    }
+    psi->crc32 = crc32;
+
+    const uint8_t *pointer = SDT_ITEMS_FIRST(psi);
+    while(!SDT_ITEMS_EOL(psi, pointer))
+    {
+        SDT_ITEMS_NEXT(psi, pointer);
     }
 }
 
@@ -196,6 +266,36 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     if(!demux_is_pid(mod, pid))
         return;
 
+    if(!mod->pnr)
+    {
+        module_stream_send(mod, ts);
+        return;
+    }
+
+    if(pid == 0x12)
+    {
+        if(!mod->eit)
+            return;
+
+        if(TS_PUSI(ts))
+        {
+            const uint8_t *payload = TS_PTR(ts);
+            payload = payload + payload[0] + 1;
+
+            mod->send_eit = 0;
+
+            const uint8_t table_id = payload[0];
+
+            if(table_id == 0x4E || (table_id >= 0x50 && table_id <= 0x5F))
+                mod->send_eit = (((payload[3] << 8) | payload[4]) == mod->pnr);
+        }
+
+        if(mod->send_eit)
+            module_stream_send(mod, ts);
+
+        return;
+    }
+
     mpegts_psi_t *psi = mod->stream[pid];
     if(psi)
     {
@@ -203,12 +303,15 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         {
             case MPEGTS_PACKET_PAT:
                 mpegts_psi_mux(psi, ts, on_pat, mod);
-                break;
+                return;
             case MPEGTS_PACKET_CAT:
                 mpegts_psi_mux(psi, ts, on_cat, mod);
                 break;
             case MPEGTS_PACKET_PMT:
                 mpegts_psi_mux(psi, ts, on_pmt, mod);
+                break;
+            case MPEGTS_PACKET_SDT:
+                mpegts_psi_mux(psi, ts, on_sdt, mod);
                 break;
             default:
                 break;
@@ -254,15 +357,26 @@ static void module_init(module_data_t *mod)
 
     if(module_option_number("pnr", &mod->pnr))
     {
+        mod->custom_pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
         mod->stream[0] = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
-        demux_join_pid(mod, 0);
+        demux_join_pid(mod, 0x00);
     }
 
     if(module_option_number("caid", &mod->caid) && mod->caid == 1)
     {
         mod->stream[1] = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
-        demux_join_pid(mod, 1);
+        demux_join_pid(mod, 0x01);
     }
+
+    if(module_option_number("sdt", &mod->sdt))
+    {
+        mod->custom_sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
+        mod->stream[0x11] = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
+        demux_join_pid(mod, 0x11);
+    }
+
+    if(module_option_number("eit", &mod->eit))
+        demux_join_pid(mod, 0x12);
 
     // TODO: parse options
 }
@@ -271,6 +385,11 @@ static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
     module_demux_destroy(mod);
+
+    if(mod->custom_pat)
+        mpegts_psi_destroy(mod->custom_pat);
+    if(mod->custom_sdt)
+        mpegts_psi_destroy(mod->custom_sdt);
 
     free(mod->name);
 }

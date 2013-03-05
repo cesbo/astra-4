@@ -48,7 +48,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 
     asc_log_info(MSG("PAT: stream_id:%d"), PAT_GET_TSID(psi));
     const uint8_t *pointer = PAT_ITEMS_FIRST(psi);
-    while(!PAT_ITEMS_EOF(psi, pointer))
+    while(!PAT_ITEMS_EOL(psi, pointer))
     {
         const uint16_t pnr = PAT_ITEMS_GET_PNR(psi, pointer);
         const uint16_t pid = PAT_ITEMS_GET_PID(psi, pointer);
@@ -86,7 +86,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     char desc_dump[256];
     const uint8_t *desc = CAT_GET_DESC(psi);
     const uint8_t *desc_pointer = DESC_ITEMS_FIRST(desc);
-    while(!DESC_ITEMS_EOF(desc, desc_pointer))
+    while(!DESC_ITEMS_EOL(desc, desc_pointer))
     {
         mpegts_desc_to_string(desc_dump, sizeof(desc_dump), desc_pointer);
         asc_log_info(MSG("CAT: %s"), desc_dump);
@@ -119,7 +119,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     char desc_dump[256];
     const uint8_t *desc = PMT_GET_DESC(psi);
     const uint8_t *desc_pointer = DESC_ITEMS_FIRST(desc);
-    while(!DESC_ITEMS_EOF(desc, desc_pointer))
+    while(!DESC_ITEMS_EOL(desc, desc_pointer))
     {
         mpegts_desc_to_string(desc_dump, sizeof(desc_dump), desc_pointer);
         asc_log_info(MSG("PMT:     %s"), desc_dump);
@@ -129,7 +129,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     asc_log_info(MSG("PMT: pid:%4d PCR"), PMT_GET_PCR(psi));
 
     const uint8_t *pointer = PMT_ITEMS_FIRST(psi);
-    while(!PMT_ITEMS_EOF(psi, pointer))
+    while(!PMT_ITEMS_EOL(psi, pointer))
     {
         const uint16_t pid = PMT_ITEMS_GET_PID(psi, pointer);
         const uint8_t type = PMT_ITEMS_GET_TYPE(psi, pointer);
@@ -138,7 +138,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
         desc = PMT_ITEMS_GET_DESC(psi, pointer);
         desc_pointer = DESC_ITEMS_FIRST(desc);
-        while(!DESC_ITEMS_EOF(desc, desc_pointer))
+        while(!DESC_ITEMS_EOL(desc, desc_pointer))
         {
             mpegts_desc_to_string(desc_dump, sizeof(desc_dump), desc_pointer);
             asc_log_info(MSG("PMT:     %s"), desc_dump);

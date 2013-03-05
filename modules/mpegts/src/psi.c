@@ -118,7 +118,7 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts
 } /* mpegts_psi_mux */
 
 void mpegts_psi_demux(mpegts_psi_t *psi
-                      , void (*callback)(void *, uint8_t *)
+                      , void (*callback)(void *, const uint8_t *)
                       , void *arg)
 {
     const size_t buffer_size = psi->buffer_size;
