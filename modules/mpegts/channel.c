@@ -131,15 +131,13 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     }
     psi->crc32 = crc32;
 
-    const uint8_t *desc, *desc_pointer;
-    desc = CAT_GET_DESC(psi);
-    desc_pointer = DESC_ITEMS_FIRST(desc);
-    while(!DESC_ITEMS_EOL(desc, desc_pointer))
+    const uint8_t *desc_pointer = CAT_DESC_FIRST(psi);
+    while(!CAT_DESC_EOL(psi, desc_pointer))
     {
         if(desc_pointer[0] == 0x09 && DESC_CA_CAID(desc_pointer) == mod->caid)
             demux_join_pid(mod, DESC_CA_PID(desc_pointer));
 
-        DESC_ITEMS_NEXT(desc, desc_pointer);
+        CAT_DESC_NEXT(psi, desc_pointer);
     }
 }
 
@@ -174,35 +172,32 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     }
     psi->crc32 = crc32;
 
-    const uint8_t *desc, *desc_pointer;
     if(mod->caid)
     {
-        desc = PMT_GET_DESC(psi);
-        desc_pointer = DESC_ITEMS_FIRST(desc);
-        while(!DESC_ITEMS_EOL(desc, desc_pointer))
+        const uint8_t *desc_pointer = PMT_DESC_FIRST(psi);
+        while(!PMT_DESC_EOL(psi, desc_pointer))
         {
             if(desc_pointer[0] == 0x09 && DESC_CA_CAID(desc_pointer) == mod->caid)
                 demux_join_pid(mod, DESC_CA_PID(desc_pointer));
 
-            DESC_ITEMS_NEXT(desc, desc_pointer);
+            PMT_DESC_NEXT(psi, desc_pointer);
         }
     }
 
     const uint8_t *pointer = PMT_ITEMS_FIRST(psi);
     while(!PMT_ITEMS_EOL(psi, pointer))
     {
-        const uint16_t pid = PMT_ITEMS_GET_PID(psi, pointer);
+        const uint16_t pid = PMT_ITEM_GET_PID(psi, pointer);
 
         if(mod->caid)
         {
-            desc = PMT_ITEMS_GET_DESC(psi, pointer);
-            desc_pointer = DESC_ITEMS_FIRST(desc);
-            while(!DESC_ITEMS_EOL(desc, desc_pointer))
+            const uint8_t *desc_pointer = PMT_ITEM_DESC_FIRST(pointer);
+            while(!PMT_ITEM_DESC_EOL(pointer, desc_pointer))
             {
                 if(desc_pointer[0] == 0x09 && DESC_CA_CAID(desc_pointer) == mod->caid)
                     demux_join_pid(mod, DESC_CA_PID(desc_pointer));
 
-                DESC_ITEMS_NEXT(desc, desc_pointer);
+                PMT_ITEM_DESC_NEXT(pointer, desc_pointer);
             }
         }
 
@@ -249,15 +244,14 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
     const uint8_t *pointer = SDT_ITEMS_FIRST(psi);
     while(!SDT_ITEMS_EOL(psi, pointer))
     {
-        const uint16_t sid = SDT_ITEMS_GET_SID(psi, pointer);
+        const uint16_t sid = SDT_ITEM_GET_SID(psi, pointer);
         asc_log_info(MSG("SDT: service_id:%d"), sid);
-        const uint8_t *desc = SDT_ITEMS_GET_DESC(psi, pointer);
-        const uint8_t *desc_pointer = DESC_ITEMS_FIRST(desc);
-        while(!DESC_ITEMS_EOL(desc, desc_pointer))
+        const uint8_t *desc_pointer = SDT_ITEM_DESC_FIRST(pointer);
+        while(!SDT_ITEM_DESC_EOL(pointer, desc_pointer))
         {
             mpegts_desc_to_string(desc_dump, sizeof(desc_dump), desc_pointer);
             asc_log_info(MSG("SDT:     %s"), desc_dump);
-            DESC_ITEMS_NEXT(desc, desc_pointer);
+            SDT_ITEM_DESC_NEXT(pointer, desc_pointer);
         }
         SDT_ITEMS_NEXT(psi, pointer);
     }

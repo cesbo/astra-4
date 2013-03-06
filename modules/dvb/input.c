@@ -21,6 +21,7 @@ static const char __adapter[] = "adapter";
 static const char __device[] = "device";
 static const char __type[] = "type";
 
+static const char __budget[] = "budget";
 static const char __buffer_size[] = "buffer_size";
 static const char __modulation[] = "modulation";
 
@@ -177,6 +178,7 @@ static void module_options(module_data_t *mod)
         astra_abort();
     }
 
+    module_option_number(__budget, &mod->dmx_budget);
     module_option_number(__buffer_size, &mod->dvr_buffer_size);
 
     if(module_option_string(__modulation, &string_val))
