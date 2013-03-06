@@ -43,7 +43,7 @@ struct module_data_t
     mpegts_psi_t *custom_sdt;
 };
 
-#define MSG(_msg) "[analyze %s] " _msg, mod->name
+#define MSG(_msg) "[channel %s] " _msg, mod->name
 
 /*
  * oooooooooo   o   ooooooooooo
@@ -244,11 +244,25 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
     }
     psi->crc32 = crc32;
 
+    asc_log_info(MSG("SDT: tsid:%d"), mod->tsid);
+    char desc_dump[256];
     const uint8_t *pointer = SDT_ITEMS_FIRST(psi);
     while(!SDT_ITEMS_EOL(psi, pointer))
     {
+        const uint16_t sid = SDT_ITEMS_GET_SID(psi, pointer);
+        asc_log_info(MSG("SDT: service_id:%d"), sid);
+        const uint8_t *desc = SDT_ITEMS_GET_DESC(psi, pointer);
+        const uint8_t *desc_pointer = DESC_ITEMS_FIRST(desc);
+        while(!DESC_ITEMS_EOL(desc, desc_pointer))
+        {
+            mpegts_desc_to_string(desc_dump, sizeof(desc_dump), desc_pointer);
+            asc_log_info(MSG("SDT:     %s"), desc_dump);
+            DESC_ITEMS_NEXT(desc, desc_pointer);
+        }
         SDT_ITEMS_NEXT(psi, pointer);
     }
+
+    asc_log_info(MSG("SDT: crc32:0x%08X"), crc32);
 }
 
 /*
