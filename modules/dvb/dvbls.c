@@ -84,6 +84,7 @@ static void check_device_net(module_data_t *mod)
     sprintf(mod->dev_name, "/dev/dvb/adapter%d/net%d", mod->adapter, mod->device);
 
     int fd = open(mod->dev_name, O_RDWR | O_NONBLOCK);
+    static char dvb_mac[] = "00:00:00:00:00:00";
 
     do
     {
@@ -93,7 +94,12 @@ static void check_device_net(module_data_t *mod)
             break;
         }
 
-        struct dvb_net_if net = { 0, 0 ,0 };
+        struct dvb_net_if net =
+        {
+            .pid = 0,
+            .if_num = 0,
+            .feedtype = 0
+        };
         if(ioctl(fd, NET_ADD_IF, &net) != 0)
         {
             lua_pushfstring(lua, "NET_ADD_IF failed [%s]", strerror(errno));
@@ -106,12 +112,13 @@ static void check_device_net(module_data_t *mod)
 
         int sock = socket(PF_INET, SOCK_DGRAM, 0);
         if(ioctl(sock, SIOCGIFHWADDR, &ifr) != 0)
-            lua_pushfstring(lua, "SIOCGIFHWADDR failed [%s]\n", strerror(errno));
+            lua_pushfstring(lua, "SIOCGIFHWADDR failed [%s]", strerror(errno));
         else
         {
-            const char *mac = ifr.ifr_hwaddr.sa_data;
-            lua_pushfstring(lua, "%02X:%02X:%02X:%02X:%02X:%02X"
-                            , mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            const uint8_t *mac = (uint8_t *)ifr.ifr_hwaddr.sa_data;
+            sprintf(dvb_mac, "%02X:%02X:%02X:%02X:%02X:%02X"
+                    , mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            lua_pushstring(lua, dvb_mac);
         }
         close(sock);
 

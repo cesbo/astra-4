@@ -2,7 +2,7 @@ SOURCES_CORE="lapi.c lauxlib.c lcode.c lctype.c ldebug.c ldo.c ldump.c lfunc.c l
 SOURCES_LIBS="lbaselib.c lbitlib.c lcorolib.c ldblib.c linit.c liolib.c lmathlib.c loslib.c lstrlib.c ltablib.c "
 SOURCES="$SOURCES_CORE $SOURCES_LIBS"
 
-case "$IN_TARGET" in
+case "$OS" in
 "linux")
     CFLAGS="-DLUA_USE_LINUX"
     LDFLAGS="-ldl -lm"
