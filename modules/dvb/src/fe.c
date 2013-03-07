@@ -328,6 +328,83 @@ static void fe_tune_s(module_data_t *mod)
 }
 
 /*
+ * ooooooooo  ooooo  oooo oooooooooo       ooooooooooo
+ *  888    88o 888    88   888    888      88  888  88
+ *  888    888  888  88    888oooo88 ooooooooo 888
+ *  888    888   88888     888    888          888
+ * o888ooo88      888     o888ooo888          o888o
+ *
+ */
+
+static void fe_tune_t(module_data_t *mod)
+{
+    fe_clear(mod);
+
+    if(mod->type == DVB_TYPE_T)
+    {
+        struct dvb_frontend_parameters feparams;
+
+        memset(&feparams, 0, sizeof(feparams));
+        feparams.frequency = mod->frequency;
+        feparams.inversion = INVERSION_AUTO;
+
+        feparams.u.ofdm.code_rate_HP = FEC_AUTO;
+        feparams.u.ofdm.code_rate_LP = FEC_AUTO;
+
+        feparams.u.ofdm.bandwidth = mod->bandwidth;
+        feparams.u.ofdm.constellation = mod->modulation;
+        feparams.u.ofdm.transmission_mode = mod->transmitmode;
+        feparams.u.ofdm.guard_interval = mod->guardinterval;
+        feparams.u.ofdm.hierarchy_information = mod->hierarchy;
+
+        if(ioctl(mod->fe_fd, FE_SET_FRONTEND, &feparams) != 0)
+        {
+            asc_log_error(MSG("FE_SET_FRONTEND failed [%s]"), strerror(errno));
+            astra_abort();
+        }
+    }
+#if DVB_API_VERSION >= 5
+    else
+    {
+        struct dtv_properties cmdseq;
+        struct dtv_property cmdlist[12];
+
+        DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   SYS_DVBT);
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_FREQUENCY,         mod->frequency);
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,        mod->modulation);
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INVERSION,         INVERSION_AUTO);
+
+        switch(mod->bandwidth)
+        {
+            case BANDWIDTH_7_MHZ:
+                DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 7000000);
+                break;
+            case BANDWIDTH_6_MHZ:
+                DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 6000000);
+                break;
+            default:
+                DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 8000000);
+                break;
+        }
+
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_CODE_RATE_HP,      FEC_AUTO);
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_CODE_RATE_LP,      FEC_AUTO);
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_GUARD_INTERVAL,    mod->guardinterval);
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TRANSMISSION_MODE, mod->transmitmode);
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_HIERARCHY,         mod->hierarchy);
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TUNE,              0);
+
+        if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
+        {
+            asc_log_error(MSG("FE_SET_PROPERTY DTV_TUNE failed [%s]"), strerror(errno));
+            astra_abort();
+        }
+    }
+#endif
+}
+
+/*
  * oooooooooo      o       oooooooo8 ooooooooooo
  *  888    888    888     888         888    88
  *  888oooo88    8  88     888oooooo  888ooo8

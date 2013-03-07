@@ -54,6 +54,7 @@ struct module_data_t
 
     /* FE Config */
     int frequency;
+    fe_modulation_t modulation;
 
     fe_sec_voltage_t polarization;
     int symbolrate;
@@ -65,11 +66,15 @@ struct module_data_t
     int diseqc;
     int force_tone;
 
-    fe_modulation_t modulation;
     fe_code_rate_t fec;
 #if DVB_API_VERSION >= 5
     fe_rolloff_t rolloff;
 #endif
+
+    fe_bandwidth_t bandwidth;
+    fe_guard_interval_t guardinterval;
+    fe_transmit_mode_t transmitmode;
+    fe_hierarchy_t hierarchy;
 
     /* FE Base */
     int fe_fd;

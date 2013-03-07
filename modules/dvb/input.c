@@ -17,38 +17,22 @@
  *
  */
 
-static const char __adapter[] = "adapter";
-static const char __device[] = "device";
-static const char __type[] = "type";
-
-static const char __budget[] = "budget";
-static const char __buffer_size[] = "buffer_size";
-static const char __modulation[] = "modulation";
-
-static const char __frequency[] = "frequency";
-static const char __polarization[] = "polarization";
-static const char __symbolrate[] = "symbolrate";
-
-static const char __lof1[] = "lof1";
-static const char __lof2[] = "lof2";
-static const char __slof[] = "slof";
-
-static const char __lnb_sharing[] = "lnb_sharing";
-static const char __diseqc[] = "diseqc";
-static const char __tone[] = "tone";
-
-static const char __rolloff[] = "rolloff";
-static const char __fec[] = "fec";
-
 static void option_required(module_data_t *mod, const char *name)
 {
     asc_log_error(MSG("option '%s' is required"), name);
     astra_abort();
 }
 
+static void option_unknown_type(module_data_t *mod, const char *name, const char *value)
+{
+    asc_log_error(MSG("unknown type of the '%s': %s"), name, value);
+    astra_abort();
+}
+
 static void module_option_fec(module_data_t *mod)
 {
     const char *string_val;
+    static const char __fec[] = "fec";
     if(module_option_string(__fec, &string_val))
     {
         if(!strcasecmp(string_val, "NONE")) mod->fec = FEC_NONE;
@@ -65,22 +49,19 @@ static void module_option_fec(module_data_t *mod)
         else if(!strcasecmp(string_val, "9/10")) mod->fec = FEC_9_10;
 #endif
         else
-        {
-            asc_log_error(MSG("unknown fec type: %s"), string_val);
-            astra_abort();
-        }
+            option_unknown_type(mod, __fec, string_val);
     }
     else
         mod->fec = FEC_AUTO;
 }
 
 /*
- * ooooooooo  ooooo  oooo oooooooooo           oooooooo8        o88 oooooooo8   ooooooo
- *  888    88o 888    88   888    888         888              o88 888        o88     888
- *  888    888  888  88    888oooo88 ooooooooo 888oooooo     o88    888oooooo       o888
- *  888    888   88888     888    888                 888  o88             888   o888   o
- * o888ooo88      888     o888ooo888          o88oooo888 o88       o88oooo888 o8888oooo88
- *                                                      o88
+ * ooooooooo  ooooo  oooo oooooooooo           oooooooo8
+ *  888    88o 888    88   888    888         888
+ *  888    888  888  88    888oooo88 ooooooooo 888oooooo
+ *  888    888   88888     888    888                 888
+ * o888ooo88      888     o888ooo888          o88oooo888
+ *
  */
 
 static void module_options_s(module_data_t *mod)
@@ -88,10 +69,9 @@ static void module_options_s(module_data_t *mod)
     const char *string_val;
 
     /* Transponder options */
-    if(!module_option_number(__frequency, &mod->frequency))
-        option_required(mod, __frequency);
     mod->frequency *= 1000;
 
+    static const char __polarization[] = "polarization";
     if(!module_option_string(__polarization, &string_val))
         option_required(mod, __polarization);
 
@@ -101,27 +81,30 @@ static void module_options_s(module_data_t *mod)
     else if(pol == 'H' || pol == 'L')
         mod->polarization = SEC_VOLTAGE_18;
 
+    static const char __symbolrate[] = "symbolrate";
     if(!module_option_number(__symbolrate, &mod->symbolrate))
         option_required(mod, __symbolrate);
     mod->symbolrate *= 1000;
 
     /* LNB options */
+    static const char __lof1[] = "lof1";
     if(!module_option_number(__lof1, &mod->lnb_lof1))
         option_required(mod, __lof1);
-    module_option_number(__lof2, &mod->lnb_lof2);
-    module_option_number(__slof, &mod->lnb_slof);
+    module_option_number("lof2", &mod->lnb_lof2);
+    module_option_number("slof", &mod->lnb_slof);
 
     mod->lnb_lof1 *= 1000;
     mod->lnb_lof2 *= 1000;
     mod->lnb_slof *= 1000;
 
-    module_option_number(__lnb_sharing, &mod->lnb_sharing);
-    module_option_number(__diseqc, &mod->diseqc);
-    module_option_number(__tone, &mod->force_tone);
+    module_option_number("lnb_sharing", &mod->lnb_sharing);
+    module_option_number("diseqc", &mod->diseqc);
+    module_option_number("tone", &mod->force_tone);
 
 #if DVB_API_VERSION >= 5
     if(mod->type == DVB_TYPE_S2 && mod->modulation != FE_MODULATION_NONE)
     {
+        static const char __rolloff[] = "rolloff";
         if(module_option_string(__rolloff, &string_val))
         {
             if(!strcasecmp(string_val, "AUTO")) mod->rolloff = ROLLOFF_AUTO;
@@ -129,10 +112,7 @@ static void module_options_s(module_data_t *mod)
             else if(!strcasecmp(string_val, "20")) mod->rolloff = ROLLOFF_20;
             else if(!strcasecmp(string_val, "25")) mod->rolloff = ROLLOFF_25;
             else
-            {
-                asc_log_error(MSG("unknown rolloff type: %s"), string_val);
-                astra_abort();
-            }
+                option_unknown_type(mod, __rolloff, string_val);
         }
         else
             mod->rolloff = ROLLOFF_35;
@@ -140,6 +120,79 @@ static void module_options_s(module_data_t *mod)
 #endif
 
     module_option_fec(mod);
+}
+
+/*
+ * ooooooooo  ooooo  oooo oooooooooo       ooooooooooo
+ *  888    88o 888    88   888    888      88  888  88
+ *  888    888  888  88    888oooo88 ooooooooo 888
+ *  888    888   88888     888    888          888
+ * o888ooo88      888     o888ooo888          o888o
+ *
+ */
+
+static void module_options_t(module_data_t *mod)
+{
+    const char *string_val;
+
+    /* Transponder options */
+    mod->frequency *= 1000000;
+
+    static const char __bandwidth[] = "bandwidth";
+    if(module_option_string(__bandwidth, &string_val))
+    {
+        if(!strcasecmp(string_val, "AUTO")) mod->bandwidth = BANDWIDTH_AUTO;
+        else if(!strcasecmp(string_val, "8MHZ")) mod->bandwidth = BANDWIDTH_8_MHZ;
+        else if(!strcasecmp(string_val, "7MHZ")) mod->bandwidth = BANDWIDTH_7_MHZ;
+        else if(!strcasecmp(string_val, "6MHZ")) mod->bandwidth = BANDWIDTH_6_MHZ;
+        else
+            option_unknown_type(mod, __bandwidth, string_val);
+    }
+    else
+        mod->bandwidth = BANDWIDTH_AUTO;
+
+    static const char __guardinterval[] = "guardinterval";
+    if(module_option_string(__guardinterval, &string_val))
+    {
+        if(!strcasecmp(string_val, "AUTO")) mod->guardinterval = GUARD_INTERVAL_AUTO;
+        else if(!strcasecmp(string_val, "1/32")) mod->guardinterval = GUARD_INTERVAL_1_32;
+        else if(!strcasecmp(string_val, "1/16")) mod->guardinterval = GUARD_INTERVAL_1_16;
+        else if(!strcasecmp(string_val, "1/8")) mod->guardinterval = GUARD_INTERVAL_1_8;
+        else if(!strcasestr(string_val, "1/4")) mod->guardinterval = GUARD_INTERVAL_1_4;
+        else
+            option_unknown_type(mod, __guardinterval, string_val);
+    }
+    else
+        mod->guardinterval = GUARD_INTERVAL_AUTO;
+
+    static const char __transmitmode[] = "transmitmode";
+    if(module_option_string(__transmitmode, &string_val))
+    {
+        if(!strcasecmp(string_val, "AUTO")) mod->transmitmode = TRANSMISSION_MODE_AUTO;
+        else if(!strcasecmp(string_val, "2K")) mod->transmitmode = TRANSMISSION_MODE_2K;
+        else if(!strcasecmp(string_val, "8K")) mod->transmitmode = TRANSMISSION_MODE_8K;
+#if DVB_API_VERSION >= 5
+        else if(!strcasecmp(string_val, "4K")) mod->transmitmode = TRANSMISSION_MODE_4K;
+#endif
+        else
+            option_unknown_type(mod, __transmitmode, string_val);
+    }
+    else
+        mod->transmitmode = TRANSMISSION_MODE_AUTO;
+
+    static const char __hierarchy[] = "hierarchy";
+    if(module_option_string(__hierarchy, &string_val))
+    {
+        if(!strcasecmp(string_val, "AUTO")) mod->hierarchy = HIERARCHY_AUTO;
+        else if(!strcasecmp(string_val, "NONE")) mod->hierarchy = HIERARCHY_NONE;
+        else if(!strcasecmp(string_val, "1")) mod->hierarchy = HIERARCHY_1;
+        else if(!strcasecmp(string_val, "2")) mod->hierarchy = HIERARCHY_2;
+        else if(!strcasecmp(string_val, "4")) mod->hierarchy = HIERARCHY_4;
+        else
+            option_unknown_type(mod, __hierarchy, string_val);
+    }
+    else
+        mod->hierarchy = HIERARCHY_AUTO;
 }
 
 /*
@@ -153,13 +206,14 @@ static void module_options_s(module_data_t *mod)
 
 static void module_options(module_data_t *mod)
 {
-
+    static const char __adapter[] = "adapter";
     if(!module_option_number(__adapter, &mod->adapter))
         option_required(mod, __adapter);
-    module_option_number(__device, &mod->device);
+    module_option_number("device", &mod->device);
 
     const char *string_val = NULL;
 
+    static const char __type[] = "type";
     if(!module_option_string(__type, &string_val))
         option_required(mod, __type);
 
@@ -173,14 +227,16 @@ static void module_options(module_data_t *mod)
 #endif
 #endif
     else
-    {
-        asc_log_error(MSG("unknown adapter type: %s"), string_val);
-        astra_abort();
-    }
+        option_unknown_type(mod, __adapter, string_val);
 
-    module_option_number(__budget, &mod->dmx_budget);
-    module_option_number(__buffer_size, &mod->dvr_buffer_size);
+    static const char __frequency[] = "frequency";
+    if(!module_option_number(__frequency, &mod->frequency))
+        option_required(mod, __frequency);
 
+    module_option_number("budget", &mod->dmx_budget);
+    module_option_number("buffer_size", &mod->dvr_buffer_size);
+
+    static const char __modulation[] = "modulation";
     if(module_option_string(__modulation, &string_val))
     {
         if(!strcasecmp(string_val, "NONE")) mod->modulation = FE_MODULATION_NONE;
@@ -200,16 +256,24 @@ static void module_options(module_data_t *mod)
         else if(!strcasecmp(string_val, "DQPSK")) mod->modulation = DQPSK;
 #endif
         else
-        {
-            asc_log_error(MSG("unknown modulation type: %s"), string_val);
-            astra_abort();
-        }
+            option_unknown_type(mod, __modulation, string_val);
     }
     else
         mod->modulation = FE_MODULATION_NONE;
 
-    if(mod->type == DVB_TYPE_S || mod->type == DVB_TYPE_S2)
-        module_options_s(mod);
+    switch(mod->type)
+    {
+        case DVB_TYPE_S:
+        case DVB_TYPE_S2:
+            module_options_s(mod);
+            break;
+        case DVB_TYPE_T:
+        case DVB_TYPE_T2:
+            module_options_t(mod);
+            break;
+        default:
+            break;
+    }
 }
 
 /*
