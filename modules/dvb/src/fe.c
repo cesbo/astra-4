@@ -377,6 +377,9 @@ static void fe_tune_t(module_data_t *mod)
 
         switch(mod->bandwidth)
         {
+            case BANDWIDTH_8_MHZ:
+                DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 8000000);
+                break;
             case BANDWIDTH_7_MHZ:
                 DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 7000000);
                 break;
@@ -384,7 +387,7 @@ static void fe_tune_t(module_data_t *mod)
                 DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 6000000);
                 break;
             default:
-                DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 8000000);
+                DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 0);
                 break;
         }
 
@@ -405,6 +408,33 @@ static void fe_tune_t(module_data_t *mod)
 }
 
 /*
+ * ooooooooo  ooooo  oooo oooooooooo             oooooooo8
+ *  888    88o 888    88   888    888          o888     88
+ *  888    888  888  88    888oooo88 ooooooooo 888
+ *  888    888   88888     888    888          888o     oo
+ * o888ooo88      888     o888ooo888            888oooo88
+ *
+ */
+
+static void fe_tune_c(module_data_t *mod)
+{
+    struct dvb_frontend_parameters feparams;
+
+    memset(&feparams, 0, sizeof(feparams));
+    feparams.frequency = mod->frequency;
+    feparams.inversion = INVERSION_AUTO;
+    feparams.u.qam.symbol_rate = mod->symbolrate;
+    feparams.u.qam.modulation = mod->modulation;
+    feparams.u.qam.fec_inner = mod->fec;
+
+    if(ioctl(mod->fe_fd, FE_SET_FRONTEND, &feparams) != 0)
+    {
+        asc_log_error(MSG("FE_SET_FRONTEND failed [%s]"), strerror(errno));
+        astra_abort();
+    }
+}
+
+/*
  * oooooooooo      o       oooooooo8 ooooooooooo
  *  888    888    888     888         888    88
  *  888oooo88    8  88     888oooooo  888ooo8
@@ -418,13 +448,17 @@ void fe_tune(module_data_t *mod)
     switch(mod->type)
     {
         case DVB_TYPE_S:
-#if DVB_API_VERSION >= 5
         case DVB_TYPE_S2:
-#endif
             fe_tune_s(mod);
             break;
+        case DVB_TYPE_T:
+        case DVB_TYPE_T2:
+            fe_tune_t(mod);
+            break;
+        case DVB_TYPE_C:
+            fe_tune_c(mod);
+            break;
         default:
-            asc_log_error(MSG("unknown dvb type"));
             astra_abort();
     }
 }

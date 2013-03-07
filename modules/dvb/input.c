@@ -135,7 +135,6 @@ static void module_options_t(module_data_t *mod)
 {
     const char *string_val;
 
-    /* Transponder options */
     mod->frequency *= 1000000;
 
     static const char __bandwidth[] = "bandwidth";
@@ -196,6 +195,28 @@ static void module_options_t(module_data_t *mod)
 }
 
 /*
+ * ooooooooo  ooooo  oooo oooooooooo             oooooooo8
+ *  888    88o 888    88   888    888          o888     88
+ *  888    888  888  88    888oooo88 ooooooooo 888
+ *  888    888   88888     888    888          888o     oo
+ * o888ooo88      888     o888ooo888            888oooo88
+ *
+ */
+
+
+static void module_options_c(module_data_t *mod)
+{
+    mod->frequency *= 1000000;
+
+    static const char __symbolrate[] = "symbolrate";
+    if(!module_option_number(__symbolrate, &mod->symbolrate))
+        option_required(mod, __symbolrate);
+    mod->symbolrate *= 1000;
+
+    module_option_fec(mod);
+}
+
+/*
  * oooooooooo      o       oooooooo8 ooooooooooo
  *  888    888    888     888         888    88
  *  888oooo88    8  88     888oooooo  888ooo8
@@ -220,9 +241,9 @@ static void module_options(module_data_t *mod)
     if(!strcasecmp(string_val, "S")) mod->type = DVB_TYPE_S;
     else if(!strcasecmp(string_val, "T")) mod->type = DVB_TYPE_T;
     else if(!strcasecmp(string_val, "C")) mod->type = DVB_TYPE_C;
-#if DVB_API_VERSION >= 5
+#if DVB_API >= 500
     else if(!strcasecmp(string_val, "S2")) mod->type = DVB_TYPE_S2;
-#if DVB_API_VERSION_MINOR >= 5
+#if DVB_API >= 505
     else if(!strcasecmp(string_val, "T2")) mod->type = DVB_TYPE_T2;
 #endif
 #endif
