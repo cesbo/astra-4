@@ -253,19 +253,6 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
 #define PAT_ITEMS_GET_PNR(_psi, _pointer) ((_pointer[0] << 8) | _pointer[1])
 #define PAT_ITEMS_GET_PID(_psi, _pointer) (((_pointer[2] & 0x1F) << 8) | _pointer[3])
 
-#define PAT_ITEMS_APPEND(_psi, _pointer, _pnr, _pid)                                            \
-    {                                                                                           \
-        const uint16_t __pnr = _pnr;                                                            \
-        _pointer[0] = __pnr >> 8;                                                               \
-        _pointer[1] = __pnr & 0xFF;                                                             \
-        const uint16_t __pid = _pid;                                                            \
-        _pointer[2] = (__pid >> 8) & 0x1F;                                                      \
-        _pointer[3] = __pid & 0xFF;                                                             \
-        _pointer += 4;                                                                          \
-        _psi->buffer_size = _pointer - _psi->buffer + CRC32_SIZE;                               \
-        PSI_SET_SIZE(_psi);                                                                     \
-    }
-
 /*
  *   oooooooo8     o   ooooooooooo
  * o888     88    888  88  888  88

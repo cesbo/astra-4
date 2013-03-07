@@ -38,7 +38,7 @@ struct module_data_t
 
     mpegts_psi_t *stream[MAX_PID];
 
-    int tsid;
+    uint16_t tsid;
     mpegts_psi_t *custom_pat;
     mpegts_psi_t *custom_sdt;
 };
@@ -77,10 +77,6 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     psi->crc32 = crc32;
 
     mod->tsid = PAT_GET_TSID(psi);
-    const uint8_t pat_version = PAT_GET_VERSION(mod->custom_pat) + 1;
-
-    PAT_INIT(mod->custom_pat, mod->tsid, pat_version);
-    uint8_t *cpointer = PAT_ITEMS_FIRST(mod->custom_pat);
 
     const uint8_t *pointer = PAT_ITEMS_FIRST(psi);
     while(!PAT_ITEMS_EOL(psi, pointer))
@@ -91,15 +87,26 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         {
             demux_join_pid(mod, pid);
             mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_PMT, pid);
-
-            PAT_ITEMS_APPEND(mod->custom_pat, cpointer, pnr, pid);
-            PAT_ITEMS_NEXT(mod->custom_pat, cpointer);
+            break;
         }
 
         PAT_ITEMS_NEXT(psi, pointer);
     }
 
+    if(PAT_ITEMS_EOL(psi, pointer))
+    {
+        mod->custom_pat->buffer_size = 0;
+        asc_log_error(MSG("PAT: stream with id %d is not found"), mod->pnr);
+        return;
+    }
+
+    const uint8_t pat_version = PAT_GET_VERSION(mod->custom_pat) + 1;
+    PAT_INIT(mod->custom_pat, mod->tsid, pat_version);
+    memcpy(PAT_ITEMS_FIRST(mod->custom_pat), pointer, 4);
+    mod->custom_pat->buffer_size = 8 + 4 + CRC32_SIZE;
+    PSI_SET_SIZE(mod->custom_pat);
     PSI_SET_CRC32(mod->custom_pat);
+
     mpegts_psi_demux(mod->custom_pat
                      , (void (*)(void *, const uint8_t *))__module_stream_send
                      , &mod->__stream);
@@ -228,8 +235,13 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
 
     // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
-    if(crc32 == psi->crc32)
+    if(crc32 == psi->crc32 && mod->custom_sdt->buffer_size > 0)
+    {
+        mpegts_psi_demux(mod->custom_sdt
+                         , (void (*)(void *, const uint8_t *))__module_stream_send
+                         , &mod->__stream);
         return;
+    }
 
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
@@ -239,24 +251,33 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
     }
     psi->crc32 = crc32;
 
-    asc_log_info(MSG("SDT: tsid:%d"), mod->tsid);
-    char desc_dump[256];
     const uint8_t *pointer = SDT_ITEMS_FIRST(psi);
     while(!SDT_ITEMS_EOL(psi, pointer))
     {
-        const uint16_t sid = SDT_ITEM_GET_SID(psi, pointer);
-        asc_log_info(MSG("SDT: service_id:%d"), sid);
-        const uint8_t *desc_pointer = SDT_ITEM_DESC_FIRST(pointer);
-        while(!SDT_ITEM_DESC_EOL(pointer, desc_pointer))
-        {
-            mpegts_desc_to_string(desc_dump, sizeof(desc_dump), desc_pointer);
-            asc_log_info(MSG("SDT:     %s"), desc_dump);
-            SDT_ITEM_DESC_NEXT(pointer, desc_pointer);
-        }
+        if(SDT_ITEM_GET_SID(psi, pointer) == mod->pnr)
+            break;
+
         SDT_ITEMS_NEXT(psi, pointer);
     }
 
-    asc_log_info(MSG("SDT: crc32:0x%08X"), crc32);
+    if(SDT_ITEMS_EOL(psi, pointer))
+    {
+        mod->custom_sdt->buffer_size = 0;
+        asc_log_error(MSG("SDT: stream with id %d is not found"), mod->pnr);
+        return;
+    }
+
+    memcpy(mod->custom_sdt->buffer, psi->buffer, 11);
+    const uint16_t item_length = __SDT_ITEM_DESC_SIZE(pointer) + 5;
+    memcpy(&mod->custom_sdt->buffer[11], pointer, item_length);
+    const uint16_t section_length = item_length + 8 + CRC32_SIZE;
+    mod->custom_sdt->buffer_size = 3 + section_length;
+    PSI_SET_SIZE(mod->custom_sdt);
+    PSI_SET_CRC32(mod->custom_sdt);
+
+    mpegts_psi_demux(mod->custom_sdt
+                     , (void (*)(void *, const uint8_t *))__module_stream_send
+                     , &mod->__stream);
 }
 
 /*

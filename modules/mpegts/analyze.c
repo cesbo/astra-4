@@ -23,10 +23,21 @@ struct module_data_t
 
     char *name;
 
+    uint16_t tsid;
+
     mpegts_psi_t *stream[MAX_PID];
 };
 
 #define MSG(_msg) "[analyze %s] " _msg, mod->name
+
+/*
+ * oooooooooo   o   ooooooooooo
+ *  888    888 888  88  888  88
+ *  888oooo88 8  88     888
+ *  888      8oooo88    888
+ * o888o   o88o  o888o o888o
+ *
+ */
 
 static void on_pat(void *arg, mpegts_psi_t *psi)
 {
@@ -46,7 +57,9 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 
     psi->crc32 = crc32;
 
-    asc_log_info(MSG("PAT: stream_id:%d"), PAT_GET_TSID(psi));
+    mod->tsid = PAT_GET_TSID(psi);
+
+    asc_log_info(MSG("PAT: tsid:%d"), mod->tsid);
     const uint8_t *pointer = PAT_ITEMS_FIRST(psi);
     while(!PAT_ITEMS_EOL(psi, pointer))
     {
@@ -65,6 +78,15 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 
     asc_log_info(MSG("PAT: crc32:0x%08X"), crc32);
 }
+
+/*
+ *   oooooooo8     o   ooooooooooo
+ * o888     88    888  88  888  88
+ * 888           8  88     888
+ * 888o     oo  8oooo88    888
+ *  888oooo88 o88o  o888o o888o
+ *
+ */
 
 static void on_cat(void *arg, mpegts_psi_t *psi)
 {
@@ -94,6 +116,15 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
 
     asc_log_info(MSG("CAT: crc32:0x%08X"), crc32);
 }
+
+/*
+ * oooooooooo oooo     oooo ooooooooooo
+ *  888    888 8888o   888  88  888  88
+ *  888oooo88  88 888o8 88      888
+ *  888        88  888  88      888
+ * o888o      o88o  8  o88o    o888o
+ *
+ */
 
 static void on_pmt(void *arg, mpegts_psi_t *psi)
 {
@@ -148,6 +179,67 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     asc_log_info(MSG("PMT: crc32:0x%08X"), crc32);
 }
 
+/*
+ *  oooooooo8 ooooooooo   ooooooooooo
+ * 888         888    88o 88  888  88
+ *  888oooooo  888    888     888
+ *         888 888    888     888
+ * o88oooo888 o888ooo88      o888o
+ *
+ */
+
+static void on_sdt(void *arg, mpegts_psi_t *psi)
+{
+    module_data_t *mod = arg;
+
+    if(psi->buffer[0] != 0x42)
+        return;
+
+    if(mod->tsid != SDT_GET_TSID(psi))
+        return;
+
+    // check changes
+    const uint32_t crc32 = PSI_GET_CRC32(psi);
+    if(crc32 == psi->crc32)
+        return;
+
+    // check crc
+    if(crc32 != PSI_CALC_CRC32(psi))
+    {
+        asc_log_error(MSG("SDT checksum mismatch"));
+        return;
+    }
+    psi->crc32 = crc32;
+
+    asc_log_info(MSG("SDT: tsid:%d"), mod->tsid);
+    char desc_dump[256];
+    const uint8_t *pointer = SDT_ITEMS_FIRST(psi);
+    while(!SDT_ITEMS_EOL(psi, pointer))
+    {
+        const uint16_t sid = SDT_ITEM_GET_SID(psi, pointer);
+        asc_log_info(MSG("SDT: service_id:%d"), sid);
+        const uint8_t *desc_pointer = SDT_ITEM_DESC_FIRST(pointer);
+        while(!SDT_ITEM_DESC_EOL(pointer, desc_pointer))
+        {
+            mpegts_desc_to_string(desc_dump, sizeof(desc_dump), desc_pointer);
+            asc_log_info(MSG("SDT:     %s"), desc_dump);
+            SDT_ITEM_DESC_NEXT(pointer, desc_pointer);
+        }
+        SDT_ITEMS_NEXT(psi, pointer);
+    }
+
+    asc_log_info(MSG("SDT: crc32:0x%08X"), crc32);
+}
+
+/*
+ * ooooooooooo  oooooooo8
+ * 88  888  88 888
+ *     888      888oooooo
+ *     888             888
+ *    o888o    o88oooo888
+ *
+ */
+
 static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
     const uint16_t pid = TS_PID(ts);
@@ -165,13 +257,23 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             case MPEGTS_PACKET_PMT:
                 mpegts_psi_mux(psi, ts, on_pmt, mod);
                 break;
+            case MPEGTS_PACKET_SDT:
+                mpegts_psi_mux(psi, ts, on_sdt, mod);
+                break;
             default:
                 break;
         }
     }
 }
 
-/* module */
+/*
+ * oooo     oooo  ooooooo  ooooooooo  ooooo  oooo ooooo       ooooooooooo
+ *  8888o   888 o888   888o 888    88o 888    88   888         888    88
+ *  88 888o8 88 888     888 888    888 888    88   888         888ooo8
+ *  88  888  88 888o   o888 888    888 888    88   888      o  888    oo
+ * o88o  8  o88o  88ooo88  o888ooo88    888oo88   o888ooooo88 o888ooo8888
+ *
+ */
 
 static void module_init(module_data_t *mod)
 {
@@ -187,8 +289,9 @@ static void module_init(module_data_t *mod)
 
     module_stream_init(mod, on_ts);
 
-    mod->stream[0] = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
-    mod->stream[1] = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
+    mod->stream[0x00] = mpegts_psi_init(MPEGTS_PACKET_PAT, 0x00);
+    mod->stream[0x01] = mpegts_psi_init(MPEGTS_PACKET_CAT, 0x01);
+    mod->stream[0x11] = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
 }
 
 static void module_destroy(module_data_t *mod)
