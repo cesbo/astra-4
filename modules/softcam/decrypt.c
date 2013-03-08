@@ -25,9 +25,11 @@
  * Module Options:
  *      upstream    - object, stream instance returned by module_instance:stream()
  *      biss        - string, BISS key, 16 chars length. example: biss = "1122330044556600"
+ *      cam         - object, cam instance returned by cam_module_instance:cam()
  */
 
 #include <astra.h>
+#include "module_cam.h"
 #include "FFdecsa/FFdecsa.h"
 
 struct module_data_t
@@ -36,7 +38,6 @@ struct module_data_t
 
     /* Config */
     char *name;
-    int caid;
 
     /* Buffer */
     uint8_t *buffer; // r_buffer + s_buffer
@@ -59,6 +60,8 @@ struct module_data_t
 
     int pmt_pnr;
     int pmt_pid;
+
+    cam_t *cam;
 };
 
 #define MSG(_msg) "[decrypt %s] " _msg, mod->name
@@ -287,6 +290,18 @@ static void module_init(module_data_t *mod)
         mod->is_keys = 1;
     }
     set_control_words(mod->ffdecsa, first_key, first_key);
+
+    lua_getfield(lua, 2, "cam");
+    if(!lua_isnil(lua, -1))
+    {
+        if(lua_type(lua, -1) != LUA_TLIGHTUSERDATA)
+        {
+            asc_log_error(MSG("option 'cam' required cam-module instance"));
+            astra_abort();
+        }
+        mod->cam = lua_touserdata(lua, -1);
+    }
+    lua_pop(lua, 1); // cam
 
     mod->buffer = malloc(mod->cluster_size_bytes * 2);
     mod->r_buffer = mod->buffer; // s_buffer = NULL

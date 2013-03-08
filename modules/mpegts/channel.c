@@ -141,8 +141,11 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     const uint8_t *desc_pointer = CAT_DESC_FIRST(psi);
     while(!CAT_DESC_EOL(psi, desc_pointer))
     {
-        if(desc_pointer[0] == 0x09 && DESC_CA_CAID(desc_pointer) == mod->caid)
+        if(desc_pointer[0] == 0x09
+           && (mod->caid == 0xFFFF || DESC_CA_CAID(desc_pointer) == mod->caid))
+        {
             demux_join_pid(mod, DESC_CA_PID(desc_pointer));
+        }
 
         CAT_DESC_NEXT(psi, desc_pointer);
     }
@@ -184,8 +187,11 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         const uint8_t *desc_pointer = PMT_DESC_FIRST(psi);
         while(!PMT_DESC_EOL(psi, desc_pointer))
         {
-            if(desc_pointer[0] == 0x09 && DESC_CA_CAID(desc_pointer) == mod->caid)
+            if(desc_pointer[0] == 0x09
+               && (mod->caid == 0xFFFF || DESC_CA_CAID(desc_pointer) == mod->caid))
+            {
                 demux_join_pid(mod, DESC_CA_PID(desc_pointer));
+            }
 
             PMT_DESC_NEXT(psi, desc_pointer);
         }
@@ -201,8 +207,11 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
             const uint8_t *desc_pointer = PMT_ITEM_DESC_FIRST(pointer);
             while(!PMT_ITEM_DESC_EOL(pointer, desc_pointer))
             {
-                if(desc_pointer[0] == 0x09 && DESC_CA_CAID(desc_pointer) == mod->caid)
+                if(desc_pointer[0] == 0x09
+                   && (mod->caid == 0xFFFF || DESC_CA_CAID(desc_pointer) == mod->caid))
+                {
                     demux_join_pid(mod, DESC_CA_PID(desc_pointer));
+                }
 
                 PMT_ITEM_DESC_NEXT(pointer, desc_pointer);
             }
