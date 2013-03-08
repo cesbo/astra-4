@@ -18,6 +18,7 @@
 #include <linux/dvb/version.h>
 #include <linux/dvb/frontend.h>
 #include <linux/dvb/dmx.h>
+#include <linux/dvb/ca.h>
 
 #define DVB_API ((DVB_API_VERSION * 100) + DVB_API_VERSION_MINOR)
 #define DVR_BUFFER_SIZE (1022 * TS_PACKET_SIZE)
@@ -96,6 +97,9 @@ struct module_data_t
     /* DMX Base */
     char dmx_dev_name[32];
     int *dmx_fd_list;
+
+    /* CA Base */
+    int ca_fd;
 };
 
 #define MSG(_msg) "[dvb_input %d:%d] " _msg, mod->adapter, mod->device
@@ -110,3 +114,6 @@ void dmx_open(module_data_t *mod);
 void dmx_close(module_data_t *mod);
 void dmx_bounce(module_data_t *mod);
 void dmx_set_pid(module_data_t *mod, uint16_t pid, int is_set);
+
+void ca_open(module_data_t *mod);
+void ca_close(module_data_t *mod);

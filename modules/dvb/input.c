@@ -292,6 +292,9 @@ static void module_options(module_data_t *mod)
         case DVB_TYPE_T2:
             module_options_t(mod);
             break;
+        case DVB_TYPE_C:
+            module_options_c(mod);
+            break;
         default:
             break;
     }
@@ -326,6 +329,7 @@ static void module_init(module_data_t *mod)
     fe_open(mod);
     dvr_open(mod);
     dmx_open(mod);
+    ca_open(mod);
 }
 
 static void module_destroy(module_data_t *mod)
@@ -333,6 +337,7 @@ static void module_destroy(module_data_t *mod)
     module_stream_destroy(mod);
     module_demux_destroy(mod);
 
+    ca_close(mod);
     dmx_close(mod);
     dvr_close(mod);
     fe_close(mod);
