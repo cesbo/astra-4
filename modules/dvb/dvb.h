@@ -43,6 +43,9 @@ struct module_data_t
     int adapter;
     int device;
 
+    /* Base */
+    asc_thread_t *thread;
+
     /* DVR Config */
     int dvr_buffer_size;
 
@@ -79,7 +82,6 @@ struct module_data_t
 
     /* FE Base */
     int fe_fd;
-    asc_thread_t *fe_thread;
 
     int do_retune;
 
@@ -104,8 +106,12 @@ struct module_data_t
 
 #define MSG(_msg) "[dvb_input %d:%d] " _msg, mod->adapter, mod->device
 
+void dvb_thread_open(module_data_t *mod);
+void dvb_thread_close(module_data_t *mod);
+
 void fe_open(module_data_t *mod);
 void fe_close(module_data_t *mod);
+void fe_loop(module_data_t *mod, int is_data);
 
 void dvr_open(module_data_t *mod);
 void dvr_close(module_data_t *mod);

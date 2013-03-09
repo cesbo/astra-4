@@ -443,7 +443,7 @@ static void fe_tune_c(module_data_t *mod)
  *
  */
 
-void fe_tune(module_data_t *mod)
+static void fe_tune(module_data_t *mod)
 {
     switch(mod->type)
     {
@@ -463,10 +463,8 @@ void fe_tune(module_data_t *mod)
     }
 }
 
-void fe_thread(void *arg)
+void fe_open(module_data_t *mod)
 {
-    module_data_t *mod = arg;
-
     char dev_name[32];
     sprintf(dev_name, "/dev/dvb/adapter%d/frontend%d", mod->adapter, mod->device);
 
@@ -478,49 +476,29 @@ void fe_thread(void *arg)
     }
 
     fe_tune(mod);
-
-    struct pollfd fds[1];
-    fds[0].fd = mod->fe_fd;
-    fds[0].events = POLLIN;
-    fds[0].revents = 0;
-
-    asc_thread_while(mod->fe_thread)
-    {
-        const int ret = poll(fds, 1, 1000);
-        if(ret > 0)
-        {
-            if(fds[0].revents & POLLIN)
-                fe_event(mod);
-        }
-        else if(ret == 0)
-        {
-            if(!mod->do_retune)
-                fe_status(mod);
-
-            if(mod->do_retune)
-            {
-                mod->do_retune = 0;
-                fe_tune(mod);
-                sleep(2);
-            }
-        }
-        else /* ret == -1 */
-        {
-            asc_log_error(MSG("select() failed [%s]"), strerror(errno));
-            astra_abort();
-        }
-    }
-
-    if(mod->fe_fd > 0)
-        close(mod->fe_fd);
-}
-
-void fe_open(module_data_t *mod)
-{
-    asc_thread_init(&mod->fe_thread, fe_thread, mod);
 }
 
 void fe_close(module_data_t *mod)
 {
-    asc_thread_destroy(&mod->fe_thread);
+    if(mod->fe_fd > 0)
+        close(mod->fe_fd);
+}
+
+void fe_loop(module_data_t *mod, int is_data)
+{
+    if(is_data)
+    {
+        fe_event(mod);
+        return;
+    }
+
+    if(!mod->do_retune)
+        fe_status(mod);
+
+    if(mod->do_retune)
+    {
+        mod->do_retune = 0;
+        fe_tune(mod);
+        sleep(2);
+    }
 }

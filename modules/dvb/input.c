@@ -326,10 +326,9 @@ static void module_init(module_data_t *mod)
 
     module_options(mod);
 
-    fe_open(mod);
+    dvb_thread_open(mod);
     dvr_open(mod);
     dmx_open(mod);
-    ca_open(mod);
 }
 
 static void module_destroy(module_data_t *mod)
@@ -337,10 +336,9 @@ static void module_destroy(module_data_t *mod)
     module_stream_destroy(mod);
     module_demux_destroy(mod);
 
-    ca_close(mod);
     dmx_close(mod);
     dvr_close(mod);
-    fe_close(mod);
+    dvb_thread_close(mod);
 }
 
 MODULE_STREAM_METHODS()
