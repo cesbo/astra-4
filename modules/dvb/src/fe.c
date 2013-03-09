@@ -53,7 +53,7 @@ static void fe_event(module_data_t *mod)
     struct dvb_frontend_event dvb_fe_event;
     fe_status_t fe_status, fe_status_diff;
 
-    while(1)
+    while(1) /* read all events */
     {
         if(ioctl(mod->fe_fd, FE_GET_EVENT, &dvb_fe_event) != 0)
         {

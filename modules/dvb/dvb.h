@@ -28,10 +28,15 @@
 typedef enum
 {
     DVB_TYPE_UNKNOWN = 0,
-    DVB_TYPE_S, DVB_TYPE_T, DVB_TYPE_C,
-    DVB_TYPE_S2,
-    DVB_TYPE_T2
+    DVB_TYPE_S, DVB_TYPE_S2,
+    DVB_TYPE_T, DVB_TYPE_T2,
+    DVB_TYPE_C
 } dvb_type_t;
+
+typedef struct
+{
+    int is_active;
+} ca_slot_t;
 
 struct module_data_t
 {
@@ -102,6 +107,7 @@ struct module_data_t
 
     /* CA Base */
     int ca_fd;
+    ca_slot_t *ca;
 };
 
 #define MSG(_msg) "[dvb_input %d:%d] " _msg, mod->adapter, mod->device
@@ -113,6 +119,10 @@ void fe_open(module_data_t *mod);
 void fe_close(module_data_t *mod);
 void fe_loop(module_data_t *mod, int is_data);
 
+void ca_open(module_data_t *mod);
+void ca_close(module_data_t *mod);
+void ca_loop(module_data_t *mod, int is_data);
+
 void dvr_open(module_data_t *mod);
 void dvr_close(module_data_t *mod);
 
@@ -120,6 +130,3 @@ void dmx_open(module_data_t *mod);
 void dmx_close(module_data_t *mod);
 void dmx_bounce(module_data_t *mod);
 void dmx_set_pid(module_data_t *mod, uint16_t pid, int is_set);
-
-void ca_open(module_data_t *mod);
-void ca_close(module_data_t *mod);

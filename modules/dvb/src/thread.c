@@ -39,10 +39,13 @@ static void dvb_thread_loop(void *arg)
         {
             if(fds[0].revents)
                 fe_loop(mod, 1);
+            if(fds[1].revents)
+                ca_loop(mod, 1);
         }
         else if(ret == 0)
         {
             fe_loop(mod, 0);
+            ca_loop(mod, 0);
         }
         else
         {
