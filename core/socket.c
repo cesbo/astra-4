@@ -187,7 +187,9 @@ int asc_socket_bind(asc_socket_t *sock, const char *addr, int port)
     if(addr) // INADDR_ANY by default
         sock->addr.sin_addr.s_addr = inet_addr(addr);
 
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(__FreeBSD__)
+    sock->addr.sin_len = sizeof(struct sockaddr_in);
+
     if(sock->type == SOCK_DGRAM)
     {
         const int optval = 1;
