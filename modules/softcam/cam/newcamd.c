@@ -254,11 +254,11 @@ static uint8_t xor_sum(const uint8_t *mem, int len)
 }
 
 /*
- * ooooooooooo o88                                                   o8
- * 88  888  88 oooo  oo ooo oooo   ooooooooo8  ooooooo  oooo  oooo o888oo
- *     888      888   888 888 888 888oooooo8 888     888 888   888  888
- *     888      888   888 888 888 888        888     888 888   888  888
- *    o888o    o888o o888o888o888o  88oooo888  88ooo88    888o88 8o  888o
+ * ooooooooooo ooooo oooo     oooo ooooooooooo  ooooooo  ooooo  oooo ooooooooooo
+ * 88  888  88  888   8888o   888   888    88 o888   888o 888    88  88  888  88
+ *     888      888   88 888o8 88   888ooo8   888     888 888    88      888
+ *     888      888   88  888  88   888    oo 888o   o888 888    88      888
+ *    o888o    o888o o88o  8  o88o o888ooo8888  88ooo88    888oo88      o888o
  *
  */
 
@@ -310,11 +310,11 @@ static void newcamd_timeout_unset(module_data_t *mod)
 }
 
 /*
- *  oooooooo8                                oooo
- * 888          ooooooooo8 oo oooooo    ooooo888
- *  888oooooo  888oooooo8   888   888 888    888
- *         888 888          888   888 888    888
- * o88oooo888    88oooo888 o888o o888o  88ooo888o
+ *  oooooooo8 ooooooooooo oooo   oooo ooooooooo
+ * 888         888    88   8888o  88   888    88o
+ *  888oooooo  888ooo8     88 888o88   888    888
+ *         888 888    oo   88   8888   888    888
+ * o88oooo888 o888ooo8888 o88o    88  o888ooo88
  *
  */
 
@@ -400,11 +400,11 @@ static int newcamd_send_cmd(module_data_t *mod, newcamd_cmd_t cmd)
 }
 
 /*
- * oooooooooo
- *  888    888 ooooooooo8  ooooooo  oooo   oooo
- *  888oooo88 888oooooo8 888     888 888   888
- *  888  88o  888        888          888 888
- * o888o  88o8  88oooo888  88ooo888     888
+ * oooooooooo  ooooooooooo  oooooooo8 ooooo  oooo
+ *  888    888  888    88 o888     88  888    88
+ *  888oooo88   888ooo8   888           888  88
+ *  888  88o    888    oo 888o     oo    88888
+ * o888o  88o8 o888ooo8888 888oooo88      888
  *
  */
 
@@ -480,12 +480,12 @@ static newcamd_cmd_t newcamd_recv_cmd(module_data_t *mod)
 }
 
 /*
- * ooooo                               o88
- *  888          ooooooo     oooooooo8 oooo  oo oooooo
- *  888        888     888 888    88o   888   888   888
- *  888      o 888     888  888oo888o   888   888   888
- * o888ooooo88   88ooo88   888     888 o888o o888o o888o
- *                          888ooo888
+ * ooooo         ooooooo     ooooooo8 ooooo oooo   oooo
+ *  888        o888   888o o888    88  888   8888o  88
+ *  888        888     888 888         888   88 888o88
+ *  888      o 888o   o888 888o   oooo 888   88   8888
+ * o888ooooo88   88ooo88    888ooo888 o888o o88o    88
+ *
  */
 
 static int newcamd_login_1(module_data_t *mod)
@@ -693,11 +693,11 @@ static void newcamd_on_connect(void *arg, int is_data)
 }
 
 /*
- *   oooooooo8                                                           o8
- * o888     88   ooooooo  oo oooooo   oo oooooo   ooooooooo8  ooooooo  o888oo
- * 888         888     888 888   888   888   888 888oooooo8 888     888 888
- * 888o     oo 888     888 888   888   888   888 888        888         888
- *  888oooo88    88ooo88  o888o o888o o888o o888o  88oooo888  88ooo888   888o
+ *   oooooooo8   ooooooo  oooo   oooo oooo   oooo ooooooooooo  oooooooo8 ooooooooooo
+ * o888     88 o888   888o 8888o  88   8888o  88   888    88 o888     88 88  888  88
+ * 888         888     888 88 888o88   88 888o88   888ooo8   888             888
+ * 888o     oo 888o   o888 88   8888   88   8888   888    oo 888o     oo     888
+ *  888oooo88    88ooo88  o88o    88  o88o    88  o888ooo8888 888oooo88     o888o
  *
  */
 

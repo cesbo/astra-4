@@ -467,6 +467,12 @@ void asc_socket_set_broadcast(asc_socket_t *sock, int is_on)
 
 void asc_socket_set_timeout(asc_socket_t *sock, int rcvmsec, int sndmsec)
 {
+#ifdef _WIN32
+    if(rcvmsec > 0)
+        setsockopt(sock->fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&rcvmsec, sizeof(rcvmsec));
+    if(sndmsec > 0)
+        setsockopt(sock->fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&sndmsec, sizeof(sndmsec));
+#else
     struct timeval tv;
 
     if(rcvmsec > 0)
@@ -485,6 +491,7 @@ void asc_socket_set_timeout(asc_socket_t *sock, int rcvmsec, int sndmsec)
         }
         setsockopt(sock->fd, SOL_SOCKET, SO_SNDTIMEO, (void *)&tv, sizeof(tv));
     }
+#endif
 }
 
 static int _socket_set_buffer(int fd, int type, int size)
