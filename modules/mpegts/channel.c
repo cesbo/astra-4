@@ -27,7 +27,7 @@ struct module_data_t
     MODULE_DEMUX_DATA();
 
     /* Options */
-    char *name;
+    const char *name;
     int pnr;
     int caid;
     int sdt;
@@ -373,16 +373,12 @@ static void module_init(module_data_t *mod)
     module_stream_init(mod, on_ts);
     module_demux_init(mod, NULL, NULL);
 
-    const char *string_value = NULL;
-
-    const int name_length = module_option_string("name", &string_value);
-    if(!string_value)
+    module_option_string("name", &mod->name);
+    if(!mod->name)
     {
         asc_log_error("[channel] option 'name' is required");
         astra_abort();
     }
-    mod->name = malloc(name_length + 1);
-    strcpy(mod->name, string_value);
 
     lua_getfield(lua, MODULE_OPTIONS_IDX, "demux");
     if(lua_type(lua, -1) != LUA_TLIGHTUSERDATA)
@@ -428,8 +424,6 @@ static void module_destroy(module_data_t *mod)
         mpegts_psi_destroy(mod->custom_pat);
     if(mod->custom_sdt)
         mpegts_psi_destroy(mod->custom_sdt);
-
-    free(mod->name);
 }
 
 MODULE_STREAM_METHODS()

@@ -21,7 +21,7 @@ struct module_data_t
 {
     MODULE_STREAM_DATA();
 
-    char *name;
+    const char *name;
 
     uint16_t tsid;
 
@@ -277,15 +277,12 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 
 static void module_init(module_data_t *mod)
 {
-    const char *value = NULL;
-    const int name_length = module_option_string("name", &value);
-    if(!value)
+    module_option_string("name", &mod->name);
+    if(!mod->name)
     {
         asc_log_error("[analyze] option 'name' is required");
         astra_abort();
     }
-    mod->name = malloc(name_length + 1);
-    strcpy(mod->name, value);
 
     module_stream_init(mod, on_ts);
 
@@ -303,8 +300,6 @@ static void module_destroy(module_data_t *mod)
         if(mod->stream[i])
             mpegts_psi_destroy(mod->stream[i]);
     }
-
-    free(mod->name);
 }
 
 MODULE_STREAM_METHODS()

@@ -24,30 +24,50 @@ typedef struct
 
 #define MODULE_LUA_REGISTER(_name)                                          \
     static const char __module_name[] = #_name;                             \
+    typedef struct { int ref; module_data_t mod; } __module_data_t;         \
     static int __module_new(lua_State *L)                                   \
     {                                                                       \
-        module_data_t *mod = lua_newuserdata(L, sizeof(module_data_t));     \
-        memset(mod, 0, sizeof(module_data_t));                              \
+        __module_data_t *mod = lua_newuserdata(L, sizeof(__module_data_t)); \
+        memset(mod, 0, sizeof(__module_data_t));                            \
         lua_getmetatable(L, 1);                                             \
         lua_setmetatable(L, -2);                                            \
-        module_init(mod);                                                   \
+        if(lua_gettop(L) >= 3)                                              \
+        {                                                                   \
+            lua_pushvalue(L, 2);                                            \
+            mod->ref = luaL_ref(L, LUA_REGISTRYINDEX);                      \
+        }                                                                   \
+        module_init(&mod->mod);                                             \
         return 1;                                                           \
     }                                                                       \
     static int __module_delete(lua_State *L)                                \
     {                                                                       \
-        module_data_t *mod = luaL_checkudata(L, 1, __module_name);          \
-        module_destroy(mod);                                                \
+        __module_data_t *mod = luaL_checkudata(L, 1, __module_name);        \
+        module_destroy(&mod->mod);                                          \
+        if(mod->ref)                                                        \
+        {                                                                   \
+            luaL_unref(L, LUA_REGISTRYINDEX, mod->ref);                     \
+            mod->ref = 0;                                                   \
+        }                                                                   \
         return 0;                                                           \
     }                                                                       \
     static int __module_thunk(lua_State *L)                                 \
     {                                                                       \
-        module_data_t *mod = luaL_checkudata(L, 1, __module_name);          \
+        __module_data_t *mod = luaL_checkudata(L, 1, __module_name);        \
         module_lua_method_t *m = lua_touserdata(L, lua_upvalueindex(1));    \
-        return m->method(mod);                                              \
+        return m->method(&mod->mod);                                        \
     }                                                                       \
     static int __module_tostring(lua_State *L)                              \
     {                                                                       \
         lua_pushstring(L, __module_name);                                   \
+        return 1;                                                           \
+    }                                                                       \
+    static int __module_config(lua_State *L)                                \
+    {                                                                       \
+        __module_data_t *mod = luaL_checkudata(L, 1, __module_name);        \
+        if(mod->ref)                                                        \
+            lua_rawgeti(L, LUA_REGISTRYINDEX, mod->ref);                    \
+        else                                                                \
+            lua_pushnil(L);                                                 \
         return 1;                                                           \
     }                                                                       \
     LUA_API int luaopen_##_name(lua_State *L)                               \
@@ -80,6 +100,8 @@ typedef struct
                 lua_settable(L, module_table);                              \
             }                                                               \
         }                                                                   \
+        lua_pushcclosure(L, __module_config, 0);                            \
+        lua_setfield(L, module_table, "config");                            \
         lua_setglobal(L, __module_name);                                    \
         return 1;                                                           \
     }

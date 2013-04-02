@@ -28,7 +28,7 @@ struct module_data_t
     int _empty;
 };
 
-static char *filename = NULL;
+static const char *filename = NULL;
 
 /* required */
 
@@ -36,16 +36,13 @@ static void module_init(module_data_t *mod)
 {
     __uarg(mod);
 
-    const int idx_value = 2;
-    const char *value = luaL_checkstring(lua, idx_value);
     if(filename)
     {
-        asc_log_error("[pidfile %s] already created in %s", value, filename);
+        asc_log_error("[pidfile] already created in %s", filename);
         astra_abort();
     }
 
-    filename = malloc(luaL_len(lua, idx_value) + 1);
-    strcpy(filename, value);
+    filename = luaL_checkstring(lua, MODULE_OPTIONS_IDX);
 
     if(!access(filename, W_OK))
         unlink(filename);
@@ -86,7 +83,6 @@ static void module_destroy(module_data_t *mod)
     if(!access(filename, W_OK))
         unlink(filename);
 
-    free(filename);
     filename = NULL;
 }
 
