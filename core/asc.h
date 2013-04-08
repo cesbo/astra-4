@@ -29,6 +29,14 @@
 #   define __wur __attribute__(( __warn_unused_result__ ))
 #endif
 
+#ifndef O_BINARY
+#   ifdef _O_BINARY
+#       define O_BINARY _O_BINARY
+#   else
+#       define O_BINARY 0
+#   endif
+#endif
+
 /* event.c */
 
 typedef struct asc_event_t asc_event_t;
@@ -125,6 +133,7 @@ int asc_socket_port(asc_socket_t *sock) __wur;
 
 int asc_socket_event_on_accept(asc_socket_t *sock, void (*callback)(void *, int), void *arg);
 int asc_socket_event_on_read(asc_socket_t *sock, void (*callback)(void *, int), void *arg);
+int asc_socket_event_on_write(asc_socket_t *sock, void (*callback)(void *, int), void *arg);
 int asc_socket_event_on_connect(asc_socket_t *sock, void (*callback)(void *, int), void *arg);
 
 void asc_socket_set_sockaddr(asc_socket_t *sock, const char *addr, int port);

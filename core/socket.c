@@ -401,6 +401,11 @@ int asc_socket_event_on_read(asc_socket_t *sock, void (*callback)(void *, int), 
     return __socket_event(sock, callback, arg, 1);
 }
 
+int asc_socket_event_on_write(asc_socket_t *sock, void (*callback)(void *, int), void *arg)
+{
+    return __socket_event(sock, callback, arg, 0);
+}
+
 int asc_socket_event_on_connect(asc_socket_t *sock, void (*callback)(void *, int), void *arg)
 {
     return __socket_event(sock, callback, arg, 0);

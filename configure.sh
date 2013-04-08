@@ -455,7 +455,7 @@ STRIP       = $APP_STRIP
 
 \$(APP): $APP_OBJS \$(CORE_OBJS) \$(MODS_OBJS)
 	@echo "BUILD: \$@"
-	@\$(LD) -o \$@ \$(LDFLAGS) $APP_MODULES_A \$^
+	@\$(LD) \$^$APP_MODULES_A -o \$@ \$(LDFLAGS)
 	@\$(STRIP) \$@
 
 \$(APP)-clean:
