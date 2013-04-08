@@ -1,142 +1,503 @@
 /*
- * For more information, visit https://cesbo.com
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra HTTP Server Module
+ * http://cesbo.com/
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
+ */
+
+/*
+ * Module Name:
+ *      http_server
+ *
+ * Module Options:
+ *      addr        - string, server IP address
+ *      port        - number, server port
+ *      callback    - function,
  */
 
 #include <astra.h>
+#include "parser.h"
 
-#define LOG_MSG(_msg) "[http_server %s:%d] " _msg \
-        , mod->config.addr, mod->config.port
+#define MSG(_msg) "[http_server %s:%d] " _msg, mod->addr, mod->port
 
-struct module_data_s
+#define HTTP_BUFFER_SIZE 4096
+
+typedef struct
 {
-    MODULE_BASE();
+    module_data_t *mod;
 
-    struct
-    {
-        const char *addr;
-        int port;
-    } config;
+    asc_socket_t *sock;
+
+    int idx_request;
+
+    int ready_state; // 0 - not, 1 request, 2 - headers, 3 - content
+
+    int is_close;
+    int is_keep_alive;
+    int content_length;
+
+    char buffer[HTTP_BUFFER_SIZE];
+} http_client_t;
+
+struct module_data_t
+{
+    const char *addr;
+    int port;
 
     int idx_self;
+    int idx_callback;
 
-    int sock;
+    asc_socket_t *sock;
+    asc_list_t *clients;
 };
 
-static const char __callback[] = "callback";
+/*
+ *   oooooooo8 ooooo       ooooo ooooooooooo oooo   oooo ooooooooooo
+ * o888     88  888         888   888    88   8888o  88  88  888  88
+ * 888          888         888   888ooo8     88 888o88      888
+ * 888o     oo  888      o  888   888    oo   88   8888      888
+ *  888oooo88  o888ooooo88 o888o o888ooo8888 o88o    88     o888o
+ *
+ */
 
-/* callbacks */
-
-static int method_close(module_data_t *);
-
-static void accept_callback(void *arg, int event)
+static void on_read(void *arg, int is_data)
 {
-    module_data_t *mod = arg;
+    http_client_t *client = arg;
+    module_data_t *mod = client->mod;
 
-    if(event == EVENT_ERROR)
+    if(!is_data)
     {
-        method_close(mod);
+        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+        lua_pushlightuserdata(lua, client);
+        lua_pushnil(lua);
+        lua_call(lua, 3, 0);
+
+        if(client->idx_request)
+        {
+            luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
+            client->idx_request = 0;
+        }
+
+        asc_list_remove_item(mod->clients, client);
+        asc_socket_close(client->sock);
+        free(client);
         return;
     }
 
-    char addr[16];
-    int port;
-    int csock = socket_accept(mod->sock, addr, &port);
-    if(!csock)
+    int r = asc_socket_recv(client->sock, client->buffer, HTTP_BUFFER_SIZE);
+    if(r <= 0)
+    {
+        printf("%s: %d\n", __FUNCTION__, r);
+        on_read(mod, 0);
         return;
+    }
 
-    lua_State *L = LUA_STATE(mod);
+    int request = 0;
+    int skip = 0;
 
-    lua_rawgeti(L, LUA_REGISTRYINDEX, mod->__idx_options);
-    const int options = lua_gettop(L);
+    parse_match_t m[4];
 
-    lua_getglobal(L, "http_client");
-    lua_newtable(L);
-    lua_getfield(L, options, __callback);
-    lua_setfield(L, -2, __callback);
-    lua_pushnumber(L, csock);
-    lua_setfield(L, -2, "fd");
-    lua_rawgeti(L, LUA_REGISTRYINDEX, mod->idx_self);
-    lua_setfield(L, -2, "server");
-    lua_pushstring(L, addr);
-    lua_setfield(L, -2, "addr");
-    lua_pushnumber(L, port);
-    lua_setfield(L, -2, "port");
-    lua_call(L, 1, 0);
+    // parse request
+    if(client->ready_state == 0)
+    {
+        if(client->idx_request)
+        {
+            luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
+            client->idx_request = 0;
+        }
+        client->is_close = 0;
+        client->is_keep_alive = 0;
+        client->content_length = 0;
 
-    lua_pop(L, 1); // options
+        if(!http_parse_request(client->buffer, m))
+        {
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+            lua_pushlightuserdata(lua, client);
+            lua_newtable(lua);
+            lua_pushstring(lua, "failed to parse http request");
+            lua_setfield(lua, -2, "message");
+            lua_call(lua, 3, 0);
+            return;
+        }
+
+        lua_newtable(lua);
+        request = lua_gettop(lua);
+        lua_pushvalue(lua, -1); // duplicate table
+        client->idx_request = luaL_ref(lua, LUA_REGISTRYINDEX);
+
+        lua_pushlstring(lua, &client->buffer[m[1].so], m[1].eo - m[1].so);
+        lua_setfield(lua, request, "method");
+        lua_pushlstring(lua, &client->buffer[m[2].so], m[2].eo - m[2].so);
+        lua_setfield(lua, request, "uri");
+        lua_pushlstring(lua, &client->buffer[m[3].so], m[3].eo - m[3].so);
+        lua_setfield(lua, request, "version");
+
+        lua_pushstring(lua, asc_socket_addr(client->sock));
+        lua_setfield(lua, request, "addr");
+        lua_pushnumber(lua, asc_socket_port(client->sock));
+        lua_setfield(lua, request, "port");
+
+        skip = m[0].eo;
+        client->ready_state = 1;
+
+        if(skip >= r)
+            return;
+    }
+
+    // parse headers
+    if(client->ready_state == 1)
+    {
+        if(!request)
+        {
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_request);
+            request = lua_gettop(lua);
+        }
+
+        int headers_count = 0;
+        static const char __headers[] = "headers";
+        lua_getfield(lua, request, __headers);
+        if(lua_isnil(lua, -1))
+        {
+            lua_pop(lua, 1);
+            lua_newtable(lua);
+            lua_pushvalue(lua, -1);
+            lua_setfield(lua, request, __headers);
+        }
+        else
+            headers_count = luaL_len(lua, -1);
+
+        const int headers = lua_gettop(lua);
+
+        while(skip < r && http_parse_header(&client->buffer[skip], m))
+        {
+            const int so = m[1].so;
+            const int length = m[1].eo - so;
+            if(!length)
+            {
+                skip += m[0].eo;
+                client->ready_state = 2;
+                break;
+            }
+            const char *header = &client->buffer[skip + so];
+
+            static const char __content_length[] = "Content-Length: ";
+            static const char __connection[] = "Connection: ";
+            static const char __close[] = "close";
+            static const char __keep_alive[] = "keep-alive";
+            if(!strncasecmp(header, __connection, sizeof(__connection) - 1))
+            {
+                const char *val = &header[sizeof(__connection) - 1];
+                if(!strncasecmp(val, __close, sizeof(__close) - 1))
+                    client->is_close = 1;
+                else if(!strncasecmp(val, __keep_alive, sizeof(__keep_alive) - 1))
+                    client->is_keep_alive = 1;
+            }
+            else if(!strncasecmp(header, __content_length, sizeof(__content_length) - 1))
+            {
+                const char *val = &header[sizeof(__content_length) - 1];
+                client->content_length = strtoul(val, NULL, 10);
+            }
+
+            ++headers_count;
+            lua_pushnumber(lua, headers_count);
+            lua_pushlstring(lua, header, length);
+            lua_settable(lua, headers);
+            skip += m[0].eo;
+        }
+        lua_pop(lua, 1); // headers
+
+        if(client->ready_state == 2)
+        {
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+            lua_pushlightuserdata(lua, client);
+            lua_pushvalue(lua, request);
+            lua_call(lua, 3, 0);
+
+            luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
+            client->idx_request = 0;
+        }
+
+        lua_pop(lua, 1); // request
+
+        if(skip >= r)
+            return;
+    }
+
+    // content
+    if(client->ready_state == 2)
+    {
+        // Content-Length
+        if(client->content_length)
+        {
+            if(client->content_length > 0)
+            {
+                const int r_skip = r - skip;
+                lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+                lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+                lua_pushlightuserdata(lua, client);
+
+                if(client->content_length > r_skip)
+                {
+                    lua_pushlstring(lua, &client->buffer[skip], r_skip);
+                    lua_call(lua, 3, 0);
+                    client->content_length -= r_skip;
+                }
+                else
+                {
+                    lua_pushlstring(lua, &client->buffer[skip], client->content_length);
+                    lua_call(lua, 3, 0);
+                    client->content_length = -1;
+
+                    // content is done
+                    client->ready_state = 0;
+                }
+            }
+        }
+
+        // Stream
+        else
+        {
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+            lua_pushlightuserdata(lua, client);
+            lua_pushlstring(lua, &client->buffer[skip], r - skip);
+            lua_call(lua, 3, 0);
+        }
+    }
 }
 
-/* methods */
-
-static int method_close(module_data_t *mod)
+static void buffer_set_text(char **buffer, int capacity
+                            , const char *default_value, int default_len
+                            , int is_end)
 {
-    if(mod->sock > 0)
+    // TODO: check capacity
+    __uarg(capacity);
+
+    char *ptr = *buffer;
+    if(!lua_isnil(lua, -1))
     {
-        event_detach(mod->sock);
-        socket_close(mod->sock);
-        mod->sock = 0;
+        default_value = lua_tostring(lua, -1);
+        default_len = luaL_len(lua, -1);
+    }
+    if(default_len > 0)
+    {
+        strcpy(ptr, default_value);
+        ptr += default_len;
+    }
+    if(is_end)
+    {
+        ptr[0] = '\r';
+        ptr[1] = '\n';
+        ptr += 2;
+    }
+    else
+    {
+        ptr[0] = ' ';
+        ptr += 1;
+    }
+    *buffer = ptr;
+}
+
+static int method_send(module_data_t *mod)
+{
+    if(lua_type(lua, 2) != LUA_TLIGHTUSERDATA)
+    {
+        asc_log_error(MSG(":send() client instance is required"));
+        astra_abort();
+    }
+    http_client_t *client = lua_touserdata(lua, 2);
+
+    if(lua_type(lua, 3) != LUA_TTABLE)
+    {
+        asc_log_error(MSG(":send() table is required"));
+        astra_abort();
     }
 
-    if(mod->idx_self > 0)
+    char *buffer = client->buffer;
+    char * const buffer_tail = buffer + HTTP_BUFFER_SIZE;
+
+    lua_getfield(lua, 3, "version");
+    static const char d_version[] = "HTTP/1.1";
+    buffer_set_text(&buffer, buffer_tail - buffer, d_version, sizeof(d_version) - 1, 0);
+    lua_pop(lua, 1); // version
+
+    lua_getfield(lua, 3, "code");
+    static const char d_code[] = "200";
+    buffer_set_text(&buffer, buffer_tail - buffer, d_code, sizeof(d_code) - 1, 0);
+    lua_pop(lua, 1); // code
+
+    lua_getfield(lua, 3, "message");
+    static const char d_message[] = "OK";
+    buffer_set_text(&buffer, buffer_tail - buffer, d_message, sizeof(d_message) - 1, 1);
+    lua_pop(lua, 1); // message
+
+    lua_getfield(lua, 3, "headers");
+    if(lua_type(lua, -1) == LUA_TTABLE)
     {
-        lua_State *L = LUA_STATE(mod);
-        luaL_unref(L, LUA_REGISTRYINDEX, mod->idx_self);
-        mod->idx_self = 0;
+        for(lua_pushnil(lua); lua_next(lua, -2); lua_pop(lua, 1))
+            buffer_set_text(&buffer, buffer_tail - buffer, "", 0, 1);
     }
+    lua_pop(lua, 1); // headers
+
+    lua_pushnil(lua);
+    buffer_set_text(&buffer, buffer_tail - buffer, "", 0, 1);
+    lua_pop(lua, 1); // empty line
+
+    const int header_size = buffer - client->buffer;
+    if(!asc_socket_send(client->sock, client->buffer, header_size))
+    {
+        asc_log_error(MSG("failed to send response to client:%d"), asc_socket_fd(client->sock));
+        return 0;
+    }
+
+    lua_getfield(lua, 3, "content");
+    if(!lua_isnil(lua, -1))
+    {
+        const int content_size = luaL_len(lua, -1);
+        const char *content = lua_tostring(lua, -1);
+        if(!asc_socket_send(client->sock, (void *)content, content_size))
+        {
+            asc_log_error(MSG("failed to send data to client:%d"), asc_socket_fd(client->sock));
+            return 0;
+        }
+    }
+    lua_pop(lua, 1); // content
+
+    client->ready_state = 0;
 
     return 0;
 }
 
-static int method_port(module_data_t *mod)
+/*
+ *  oooooooo8 ooooooooooo oooooooooo ooooo  oooo ooooooooooo oooooooooo
+ * 888         888    88   888    888 888    88   888    88   888    888
+ *  888oooooo  888ooo8     888oooo88   888  88    888ooo8     888oooo88
+ *         888 888    oo   888  88o     88888     888    oo   888  88o
+ * o88oooo888 o888ooo8888 o888o  88o8    888     o888ooo8888 o888o  88o8
+ *
+ */
+
+static int method_close(module_data_t *mod)
 {
-    int port = socket_port(mod->sock);
-    lua_State *L = LUA_STATE(mod);
-    lua_pushnumber(L, port);
-    return 1;
-}
-
-/* required */
-
-static void module_configure(module_data_t *mod)
-{
-    /*
-     * OPTIONS:
-     *   addr, port, callback
-     */
-
-    module_set_string(mod, "addr", 0, "0.0.0.0", &mod->config.addr);
-    module_set_number(mod, "port", 0, 80, &mod->config.port);
-
-    lua_State *L = LUA_STATE(mod);
-    lua_getfield(L, 2, "callback");
-    if(lua_type(L, -1) != LUA_TFUNCTION)
+    if(lua_gettop(lua) == 2)
     {
-        log_error(LOG_MSG("option \"callback\" is required"));
-        abort();
+        // close client
+        if(lua_type(lua, 2) != LUA_TLIGHTUSERDATA)
+        {
+            asc_log_error(MSG(":close() client instance required"));
+            astra_abort();
+        }
+
+        on_read(lua_touserdata(lua, 2), 0);
+        return 0;
     }
-    lua_pop(L, 1);
+
+    for(asc_list_first(mod->clients)
+        ; asc_list_eol(mod->clients)
+        ; asc_list_first(mod->clients))
+    {
+        http_client_t *client = asc_list_data(mod->clients);
+        asc_socket_close(client->sock);
+        free(client);
+        asc_list_remove_current(mod->clients);
+    }
+
+    asc_socket_close(mod->sock);
+    mod->sock = NULL;
+
+    if(mod->idx_self)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_self);
+        mod->idx_self = 0;
+    }
+
+    if(mod->idx_callback)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+        mod->idx_callback = 0;
+    }
+
+    asc_list_destroy(mod->clients);
+    mod->clients = NULL;
+
+    return 0;
 }
 
-static void module_initialize(module_data_t *mod)
+static void on_accept(void *arg, int is_data)
 {
-    module_configure(mod);
+    module_data_t *mod = arg;
 
-    lua_State *L = LUA_STATE(mod);
-
-    // store self in registry
-    lua_pushvalue(L, -1);
-    mod->idx_self = luaL_ref(L, LUA_REGISTRYINDEX);
-
-    mod->sock = socket_open(SOCKET_BIND | SOCKET_REUSEADDR | SOCKET_NO_DELAY
-                            , mod->config.addr, mod->config.port);
-    if(!mod->sock)
+    if(!is_data)
     {
         method_close(mod);
         return;
     }
-    event_attach(mod->sock, accept_callback, mod, EVENT_READ);
-    log_debug(LOG_MSG("fd=%d"), mod->sock);
+
+    http_client_t *client = calloc(1, sizeof(http_client_t));
+    if(!asc_socket_accept(mod->sock, &client->sock))
+    {
+        free(client);
+        on_accept(mod, 0);
+        return;
+    }
+    client->mod = mod;
+    asc_list_insert_tail(mod->clients, client);
+
+    asc_socket_event_on_read(client->sock, on_read, client);
+}
+
+static int method_port(module_data_t *mod)
+{
+    const int port = asc_socket_port(mod->sock);
+    lua_pushnumber(lua, port);
+    return 1;
+}
+
+/*
+ * oooo     oooo  ooooooo  ooooooooo  ooooo  oooo ooooo       ooooooooooo
+ *  8888o   888 o888   888o 888    88o 888    88   888         888    88
+ *  88 888o8 88 888     888 888    888 888    88   888         888ooo8
+ *  88  888  88 888o   o888 888    888 888    88   888      o  888    oo
+ * o88o  8  o88o  88ooo88  o888ooo88    888oo88   o888ooooo88 o888ooo8888
+ *
+ */
+
+static void module_init(module_data_t *mod)
+{
+    if(!module_option_string("addr", &mod->addr))
+        mod->addr = "0.0.0.0";
+    if(!module_option_number("port", &mod->port))
+        mod->port = 80;
+
+    // store self in registry
+    lua_pushvalue(lua, 3);
+    mod->idx_self = luaL_ref(lua, LUA_REGISTRYINDEX);
+
+    // store callback in registry
+    lua_getfield(lua, 2, "callback");
+    if(lua_type(lua, -1) != LUA_TFUNCTION)
+    {
+        asc_log_error(MSG("option 'callback' is required"));
+        astra_abort();
+    }
+    mod->idx_callback = luaL_ref(lua, LUA_REGISTRYINDEX);
+
+    mod->clients = asc_list_init();
+
+    mod->sock = asc_socket_open_tcp4();
+    asc_socket_set_reuseaddr(mod->sock, 1);
+    asc_socket_set_non_delay(mod->sock, 1);
+    if(!asc_socket_bind(mod->sock, mod->addr, mod->port))
+    {
+        method_close(mod);
+        astra_abort();
+    }
+
+    asc_socket_event_on_accept(mod->sock, on_accept, mod);
 }
 
 static void module_destroy(module_data_t *mod)
@@ -144,10 +505,11 @@ static void module_destroy(module_data_t *mod)
     method_close(mod);
 }
 
-MODULE_METHODS()
+MODULE_LUA_METHODS()
 {
-    METHOD(close)
-    METHOD(port)
+    { "port", method_port },
+    { "close", method_close },
+    { "send", method_send }
 };
 
-MODULE(http_server)
+MODULE_LUA_REGISTER(http_server)
