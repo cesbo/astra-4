@@ -59,12 +59,7 @@ cat >version.h <<EOF
 #endif /* _VERSION_H_ */
 EOF
 
-if [ $ASTRA_VERSION_DEV -eq 0 ] ; then
-    VERSION="v.$ASTRA_VERSION_MAJOR.$ASTRA_VERSION_MINOR"
-    MSG="$VERSION $1"
-else
-    MSG="$1"
-fi
+MSG="$1"
 shift
 
 GITRET=1
@@ -82,6 +77,7 @@ if [ $GITRET -ne 0 ] ; then
 fi
 
 if [ $ASTRA_VERSION_DEV -eq 0 ] ; then
+    VERSION="v.$ASTRA_VERSION_MAJOR.$ASTRA_VERSION_MINOR"
     git checkout master
     git merge --no-ff -m "$VERSION merge" dev
     git tag "$VERSION"
