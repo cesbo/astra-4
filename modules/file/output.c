@@ -1,6 +1,23 @@
 /*
- * For more information, visit https://cesbo.com
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra File Module
+ * http://cesbo.com/
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
+ */
+
+/*
+ * Module Name:
+ *      file_output
+ *
+ * Module Options:
+ *      filename    - string, output file name
+ *      m2ts        - boolean, use m2ts file format
+ *      buffer_size - number, output buffer size. in kilobytes. by default: 32
+ *
+ * Module Methods:
+ *      status      - return table with items:
+ *                    size      - number, current file size
  */
 
 #include <astra.h>
@@ -9,43 +26,35 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define TS_PACKET_SIZE 188
+#define FILE_BUFFER_SIZE 32
 
-#define TIMESTAMP_SIZE 4
-#define M2TS_PACKET_SIZE (TS_PACKET_SIZE + TIMESTAMP_SIZE)
+#define MSG(_msg) "[file_output %s] " _msg, mod->filename
 
-#define FILE_BUFFER_SIZE 0xFFFF
-
-#define LOG_MSG(_msg) "[file_output %s] " _msg, mod->config.filename
-
-struct module_data_s
+struct module_data_t
 {
-    MODULE_BASE();
+    MODULE_STREAM_DATA();
 
-    struct
-    {
-        const char *filename;
-        int m2ts;
-    } config;
+    const char *filename;
+    int m2ts;
 
     int fd;
 
     size_t file_size;
 
+    size_t buffer_size;
     size_t buffer_skip;
-    uint8_t buffer[FILE_BUFFER_SIZE]; // write buffer
+    uint8_t *buffer; // write buffer
 };
 
 /* stream_ts callbacks */
 
-static void callback_send_ts_188(module_data_t *mod, uint8_t *ts)
+static void on_ts_188(module_data_t *mod, const uint8_t *ts)
 {
-    if(mod->buffer_skip > FILE_BUFFER_SIZE - TS_PACKET_SIZE)
+    if(mod->buffer_skip > mod->buffer_size - TS_PACKET_SIZE)
     {
         if(mod->buffer_skip == 0)
             return;
-        if(write(mod->fd, mod->buffer, mod->buffer_skip)
-           != mod->buffer_skip)
+        if(write(mod->fd, mod->buffer, mod->buffer_skip) != mod->buffer_skip)
         {
             // TODO: check error
         }
@@ -56,14 +65,13 @@ static void callback_send_ts_188(module_data_t *mod, uint8_t *ts)
     mod->buffer_skip += TS_PACKET_SIZE;
 }
 
-static void callback_send_ts_192(module_data_t *mod, uint8_t *ts)
+static void on_ts_192(module_data_t *mod, const uint8_t *ts)
 {
-    if(mod->buffer_skip > FILE_BUFFER_SIZE - M2TS_PACKET_SIZE)
+    if(mod->buffer_skip > mod->buffer_size - M2TS_PACKET_SIZE)
     {
         if(mod->buffer_skip == 0)
             return;
-        if(write(mod->fd, mod->buffer, mod->buffer_skip)
-           != mod->buffer_skip)
+        if(write(mod->fd, mod->buffer, mod->buffer_skip) != mod->buffer_skip)
         {
             // TODO: check error
         }
@@ -71,7 +79,7 @@ static void callback_send_ts_192(module_data_t *mod, uint8_t *ts)
         mod->buffer_skip = 0;
     }
     uint8_t *dst = &mod->buffer[mod->buffer_skip];
-    memcpy(&dst[TIMESTAMP_SIZE], ts, TS_PACKET_SIZE);
+    memcpy(&dst[4], ts, TS_PACKET_SIZE);
     mod->buffer_skip += M2TS_PACKET_SIZE;
 
     struct timeval tv;
@@ -87,48 +95,76 @@ static void callback_send_ts_192(module_data_t *mod, uint8_t *ts)
 
 static int method_status(module_data_t *mod)
 {
-    lua_State *L = LUA_STATE(mod);
-    lua_newtable(L);
+    lua_newtable(lua);
 
-    lua_pushnumber(L, mod->file_size);
-    lua_setfield(L, -2, "size");
+    lua_pushnumber(lua, mod->file_size);
+    lua_setfield(lua, -2, "size");
 
     return 1;
 }
 
 /* required */
 
-static void module_initialize(module_data_t *mod)
+static void module_init(module_data_t *mod)
 {
-    module_set_string(mod, "filename", 1, NULL, &mod->config.filename);
-    module_set_number(mod, "m2ts", 0, 0, &mod->config.m2ts);
+    module_option_string("filename", &mod->filename);
+    if(!mod->filename)
+    {
+        asc_log_error("[file_output] option 'filename' is required");
+        astra_abort();
+    }
 
-    if(mod->config.m2ts)
-        stream_ts_init(mod, callback_send_ts_192, NULL, NULL, NULL, NULL);
+    module_option_number("m2ts", &mod->m2ts);
+
+    int buffer_size = 0;
+    if(!module_option_number("buffer_size", &buffer_size))
+        mod->buffer_size = FILE_BUFFER_SIZE * 1024;
     else
-        stream_ts_init(mod, callback_send_ts_188, NULL, NULL, NULL, NULL);
+        mod->buffer_size = buffer_size * 1024;
 
-    mod->fd = open(mod->config.filename, O_CREAT | O_APPEND | O_RDWR
+    mod->buffer = malloc(mod->buffer_size);
+
+    if(mod->m2ts)
+    {
+        module_stream_init(mod, on_ts_192);
+    }
+    else
+    {
+        module_stream_init(mod, on_ts_188);
+    }
+
+    mod->fd = open(mod->filename, O_CREAT | O_APPEND | O_RDWR
 #ifndef _WIN32
+                   | O_BINARY
                    , S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 #else
                    , S_IRUSR | S_IWUSR);
 #endif
-    if(mod->fd < 0)
-        log_error(LOG_MSG("can't open file [%s]"), strerror(errno));
+
+    struct stat st;
+    fstat(mod->fd, &st);
+    mod->file_size = st.st_size;
+
+    if(mod->fd <= 0)
+    {
+        asc_log_error(MSG("failed to open file [%s]"), strerror(errno));
+        astra_abort();
+    }
 }
 
 static void module_destroy(module_data_t *mod)
 {
-    stream_ts_destroy(mod);
+    module_stream_destroy(mod);
 
     if(mod->fd > 0)
         close(mod->fd);
+
+    free(mod->buffer);
 }
 
-MODULE_METHODS()
+MODULE_LUA_METHODS()
 {
-    METHOD(status)
+    { "status", method_status }
 };
 
-MODULE(file_output)
+MODULE_LUA_REGISTER(file_output)
