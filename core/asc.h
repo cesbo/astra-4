@@ -100,6 +100,8 @@ void asc_log_error(const char *, ...);
 void asc_log_warning(const char *, ...);
 void asc_log_debug(const char *, ...);
 
+int asc_log_is_debug(void);
+
 /* socket.c */
 
 typedef struct asc_socket_t asc_socket_t;

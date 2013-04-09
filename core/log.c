@@ -135,7 +135,10 @@ void asc_log_debug(const char *msg, ...)
     va_end(ap);
 }
 
-/* API */
+int asc_log_is_debug(void)
+{
+    return __log.debug;
+}
 
 void asc_log_hup(void)
 {
