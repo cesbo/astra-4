@@ -548,6 +548,12 @@ static int method_close(module_data_t *mod)
         mod->idx_self = 0;
     }
 
+    if(mod->idx_options > 0)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_options);
+        mod->idx_options = 0;
+    }
+
     return 0;
 }
 
