@@ -98,11 +98,12 @@ void astra_do_file(int argc, const char **argv, const char *filename)
     }
 
     astra_init(argc, argv);
-    if(luaL_dofile(lua, filename))
-        luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
 
     if(!setjmp(main_loop))
     {
+        if(luaL_dofile(lua, filename))
+            luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
+
         ASC_LOOP();
     }
 
@@ -116,11 +117,9 @@ void astra_do_text(int argc, const char **argv, const char *text, size_t size)
 
     if(!setjmp(main_loop))
     {
-        if(luaL_loadbuffer(lua, text, size, "=inscript")
-           || lua_pcall(lua, 0, LUA_MULTRET, 0))
-        {
+        if(luaL_loadbuffer(lua, text, size, "=inscript") || lua_pcall(lua, 0, LUA_MULTRET, 0))
             luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
-        }
+
         ASC_LOOP();
     }
 
