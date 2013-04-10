@@ -41,8 +41,8 @@ struct module_data_t
 
     size_t file_size;
 
-    size_t buffer_size;
-    size_t buffer_skip;
+    ssize_t buffer_size;
+    ssize_t buffer_skip;
     uint8_t *buffer; // write buffer
 };
 

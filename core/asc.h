@@ -172,6 +172,15 @@ void __thread_setjmp(asc_thread_t *thread);
 void asc_thread_init(asc_thread_t **thread_ptr, void (*loop)(void *), void *arg);
 void asc_thread_destroy(asc_thread_t **thread_ptr);
 
+/* stream.c */
+
+typedef struct asc_stream_t asc_stream_t;
+
+asc_stream_t * asc_stream_init(void (*callback)(void *), void *arg);
+void asc_stream_destroy(asc_stream_t *s);
+ssize_t asc_stream_send(asc_stream_t *s, void *data, size_t size);
+ssize_t asc_stream_recv(asc_stream_t *s, void *data, size_t size);
+
 /* */
 
 #define ASC_INIT()                                                                              \

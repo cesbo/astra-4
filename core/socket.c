@@ -440,7 +440,7 @@ void asc_socket_set_nonblock(asc_socket_t *sock, int is_nonblock)
         flags |= O_NONBLOCK;
     else
         flags &= ~O_NONBLOCK;
-    if(fcntl(sock->fd, F_SETFL, flags & ~O_NONBLOCK) == -1)
+    if(fcntl(sock->fd, F_SETFL, flags) == -1)
 #endif
     {
         const char *msg = (is_nonblock) ? "failed to set NONBLOCK" : "failed to unset NONBLOCK";

@@ -1,35 +1,44 @@
 /*
- * For more information, visit https://cesbo.com
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra File Module
+ * http://cesbo.com/
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
+ */
+
+/*
+ * Module Name:
+ *      file_input
+ *
+ * Module Options:
+ *      filename    - string, input file name
+ *      lock        - string, lock file name (to store reading position)
+ *      loop        - boolean, start from beginning of the file after end
+ *      callback    - function, call function on EOF
  */
 
 #include <astra.h>
-
-#include <modules/mpegts/mpegts.h>
 
 #include <fcntl.h>
 
 #define BUFFER_SIZE (188 * 8000)
 
-#define LOG_MSG(_msg) "[file_intput %s] " _msg, mod->config.filename
+#define MSG(_msg) "[file_intput %s] " _msg, mod->filename
 
-struct module_data_s
+struct module_data_t
 {
-    MODULE_BASE();
+    MODULE_STREAM_DATA();
 
-    struct
-    {
-        const char *filename;
-        const char *lock;
-        // int loop;
-    } config;
+    const char *filename;
+    const char *lock;
+    int loop;
 
-    thread_t *thread;
-    stream_t *thread_stream;
+    asc_stream_t *stream;
+    asc_thread_t *thread;
 
     int fd;
     size_t skip;
-    void *timer_skip;
+    asc_timer_t *timer_skip;
 
     uint64_t pcr;
 
@@ -109,7 +118,7 @@ static int open_file(module_data_t *mod)
         close(mod->fd);
     }
 
-    mod->fd = open(mod->config.filename, O_RDONLY);
+    mod->fd = open(mod->filename, O_RDONLY);
     if(mod->fd <= 0)
     {
         mod->fd = 0;
@@ -134,7 +143,7 @@ static int open_file(module_data_t *mod)
         ;
     if(i == TS_PACKET_SIZE)
     {
-        log_error(LOG_MSG("failed to sync file"));
+        asc_log_error(MSG("failed to sync file"));
         close(mod->fd);
         mod->fd = 0;
         return 0;
@@ -149,7 +158,7 @@ static int open_file(module_data_t *mod)
     mod->buffer.ptr = seek_pcr(mod->buffer.data, mod->buffer.end);
     if(!mod->buffer.ptr)
     {
-        log_error(LOG_MSG("first PCR is not found"));
+        asc_log_error(MSG("first PCR is not found"));
         close(mod->fd);
         mod->fd = 0;
         return 0;
@@ -177,7 +186,7 @@ static void thread_loop(void *arg)
     double ts_sync_accuracy = 0;
     struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
 
-    while(thread_is_started(mod->thread))
+    asc_thread_while(mod->thread)
     {
         mod->buffer.block_end = seek_pcr(mod->buffer.ptr, mod->buffer.end);
         if(!mod->buffer.block_end)
@@ -194,8 +203,8 @@ static void thread_loop(void *arg)
             mod->buffer.ptr = mod->buffer.data;
             mod->buffer.end = dst;
             const size_t buffer_size = mod->buffer.end - mod->buffer.ptr;
-            const size_t read_size = BUFFER_SIZE - buffer_size;
-            const ssize_t rlen = read(mod->fd, mod->buffer.end, read_size);
+            const int read_size = BUFFER_SIZE - buffer_size;
+            const int rlen = read(mod->fd, mod->buffer.end, read_size);
             if(rlen != read_size)
             {
                 // TODO: mod->config.loop
@@ -208,8 +217,10 @@ static void thread_loop(void *arg)
             mod->buffer.block_end = seek_pcr(dst, mod->buffer.end);
             if(!mod->buffer.block_end)
             {
-                log_warning(LOG_MSG("PCR is not found. reopen file"));
-                // TODO: mod->config.loop
+                asc_log_warning(MSG("PCR is not found. reopen file"));
+                if(mod->loop)
+                    break;
+
                 if(!open_file(mod))
                     break;
                 continue;
@@ -232,7 +243,7 @@ static void thread_loop(void *arg)
         uint8_t *const ptr_end = mod->buffer.block_end;
         while(mod->buffer.ptr < ptr_end)
         {
-            stream_send(mod->thread_stream, mod->buffer.ptr, TS_PACKET_SIZE);
+            asc_stream_send(mod->stream, mod->buffer.ptr, TS_PACKET_SIZE);
             mod->buffer.ptr += TS_PACKET_SIZE;
 
             nanosleep(&ts_sync, NULL);
@@ -247,21 +258,21 @@ static void thread_loop(void *arg)
     close(mod->fd);
 }
 
-static void thread_callback(void *arg)
+static void on_thread_read(void *arg)
 {
     module_data_t *mod = arg;
 
     uint8_t ts[TS_PACKET_SIZE];
-    ssize_t len = stream_recv(mod->thread_stream, ts, sizeof(ts));
+    ssize_t len = asc_stream_recv(mod->stream, ts, sizeof(ts));
     if(len == sizeof(ts))
-        stream_ts_send(mod, ts);
+        module_stream_send(mod, ts);
 }
 
 static void timer_skip_set(void *arg)
 {
     module_data_t *mod = arg;
     char skip_str[64];
-    int fd = open(mod->config.lock, O_CREAT | O_WRONLY | O_TRUNC
+    int fd = open(mod->lock, O_CREAT | O_WRONLY | O_TRUNC
                   , S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if(fd > 0)
     {
@@ -272,32 +283,24 @@ static void timer_skip_set(void *arg)
     }
 }
 
-/* methods */
-
-static int method_attach(module_data_t *mod)
-{
-    stream_ts_attach(mod);
-    return 0;
-}
-
-static int method_detach(module_data_t *mod)
-{
-    stream_ts_detach(mod);
-    return 0;
-}
-
 /* required */
 
-static void module_initialize(module_data_t *mod)
+static void module_init(module_data_t *mod)
 {
-    module_set_string(mod, "filename", 1, NULL, &mod->config.filename);
-    module_set_string(mod, "lock", 0, NULL, &mod->config.lock);
-
-    stream_ts_init(mod, NULL, NULL, NULL, NULL, NULL);
-
-    if(mod->config.lock)
+    module_option_string("filename", &mod->filename);
+    if(!mod->filename)
     {
-        int fd = open(mod->config.lock, O_RDONLY);
+        asc_log_error(MSG("option 'filename' is required"));
+        astra_abort();
+    }
+    module_option_string("lock", &mod->lock);
+    module_option_number("loop", &mod->loop);
+
+    module_stream_init(mod, NULL);
+
+    if(mod->lock)
+    {
+        int fd = open(mod->lock, O_RDONLY);
         if(fd)
         {
             char skip_str[64];
@@ -306,26 +309,26 @@ static void module_initialize(module_data_t *mod)
                 mod->skip = strtoul(skip_str, NULL, 10);
             close(fd);
         }
-        mod->timer_skip = timer_attach(2000, timer_skip_set, mod);
+        mod->timer_skip = asc_timer_init(2000, timer_skip_set, mod);
     }
 
-    mod->thread_stream = stream_init(thread_callback, mod);
-    thread_init(&mod->thread, thread_loop, mod);
+    mod->stream = asc_stream_init(on_thread_read, mod);
+    asc_thread_init(&mod->thread, thread_loop, mod);
 }
 
 static void module_destroy(module_data_t *mod)
 {
-    timer_detach(mod->timer_skip);
-    thread_destroy(&mod->thread);
-    stream_destroy(mod->thread_stream);
+    asc_timer_destroy(mod->timer_skip);
+    asc_thread_destroy(&mod->thread);
+    asc_stream_destroy(mod->stream);
 
-    stream_ts_destroy(mod);
+    module_stream_destroy(mod);
 }
 
-MODULE_METHODS()
+MODULE_STREAM_METHODS()
+MODULE_LUA_METHODS()
 {
-    METHOD(attach)
-    METHOD(detach)
+    MODULE_STREAM_METHODS_REF()
 };
 
-MODULE(file_input)
+MODULE_LUA_REGISTER(file_input)

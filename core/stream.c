@@ -1,8 +1,8 @@
 /*
- * AsC Framework
- * http://cesbo.com
+ * Astra Core
+ * http://cesbo.com/astra
  *
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  * Licensed under the MIT license.
  */
 
@@ -16,11 +16,14 @@
 #   include <ws2tcpip.h>
 #else
 #   include <sys/socket.h>
+#   include <fcntl.h>
 #endif
 
-struct stream_s
+struct asc_stream_t
 {
     int gate[2];
+
+    asc_event_t *event;
 
     void (*callback)(void *);
     void *arg;
@@ -28,7 +31,7 @@ struct stream_s
 
 #ifdef WIN32
 /* Copyright 2007 by Nathan C. Myers <ncm@cantrip.org> */
-static int stream_gate_open(int socks[2])
+static int asc_stream_open(int socks[2])
 {
     union
     {
@@ -83,8 +86,9 @@ static int stream_gate_open(int socks[2])
         closesocket(listener);
 
         // nonblock
-        socket_options_set(socks[0], 0);
-        socket_options_set(socks[1], 0);
+        unsigned long nonblock = 1;
+        ioctlsocket(socks[0], FIONBIO, &nonblock);
+        ioctlsocket(socks[1], FIONBIO, &nonblock);
 
         return 1;
 
@@ -98,75 +102,82 @@ static int stream_gate_open(int socks[2])
     return 0;
 }
 #else
-static int stream_gate_open(int socks[2])
+static int asc_stream_open(int socks[2])
 {
     if(socketpair(AF_LOCAL, SOCK_STREAM, 0, socks) == 0)
     {
         // nonblock
-        socket_options_set(socks[0], 0);
-        socket_options_set(socks[1], 0);
+        int flags = fcntl(socks[0], F_GETFL) | O_NONBLOCK;
+        fcntl(socks[0], F_SETFL, flags);
+        fcntl(socks[1], F_SETFL, flags);
         return 1;
     }
     return 0;
 }
 #endif
 
-static void stream_gate_close(int socks[2])
+static void asc_stream_close(int socks[2])
 {
     if(socks[0] > 0)
     {
-        socket_close(socks[0]);
+#ifdef _WIN32
+        closesocket(socks[0]);
+#else
+        close(socks[0]);
+#endif
         socks[0] = 0;
     }
     if(socks[1] > 0)
     {
-        socket_close(socks[1]);
+#ifdef _WIN32
+        closesocket(socks[1]);
+#else
+        close(socks[1]);
+#endif
         socks[1] = 0;
     }
 }
 
-static void stream_event(void *arg, int event)
+static void asc_stream_event(void *arg, int is_data)
 {
-    if(event == EVENT_ERROR)
-    {
+    if(!is_data)
         return;
-    }
 
-    stream_t *s = (stream_t *)arg;
+    asc_stream_t *s = (asc_stream_t *)arg;
     s->callback(s->arg);
 }
 
-stream_t * stream_init(void (*callback)(void *), void *arg)
+asc_stream_t * asc_stream_init(void (*callback)(void *), void *arg)
 {
-    stream_t *s = (stream_t *)calloc(1, sizeof(stream_t));
+    asc_stream_t *s = (asc_stream_t *)calloc(1, sizeof(asc_stream_t));
 
-    if(!stream_gate_open(s->gate))
+    if(!asc_stream_open(s->gate))
     {
         free(s);
         return NULL;
     }
     s->callback = callback;
     s->arg = arg;
-    event_attach(s->gate[1], stream_event, s, EVENT_READ);
+    s->event = asc_event_on_read(s->gate[1], asc_stream_event, s);
 
     return s;
 }
 
-void stream_destroy(stream_t *s)
+void asc_stream_destroy(asc_stream_t *s)
 {
     if(!s)
         return;
-    event_detach(s->gate[1]);
-    stream_gate_close(s->gate);
+    asc_event_close(s->event);
+    asc_stream_close(s->gate);
     free(s);
 }
 
-ssize_t stream_send(stream_t *s, void *data, size_t size)
+ssize_t asc_stream_send(asc_stream_t *s, void *data, size_t size)
 {
-    return socket_send(s->gate[0], data, size);
+    return send(s->gate[0], data, size, 0);
 }
 
-ssize_t stream_recv(stream_t *s, void *data, size_t size)
+ssize_t asc_stream_recv(asc_stream_t *s, void *data, size_t size)
 {
-    return socket_recv(s->gate[1], data, size);
+    return recv(s->gate[1], data, size, 0);
 }
