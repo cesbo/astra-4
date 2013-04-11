@@ -101,7 +101,6 @@ while i <= #argv do
     if not options[argv[i]] then
         print("unknown option: " .. argv[i])
         usage()
-        astra.exit()
     end
     i = options[argv[i]](i)
 end

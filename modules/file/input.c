@@ -235,6 +235,9 @@ static void thread_loop(void *arg)
 {
     module_data_t *mod = arg;
 
+    if(!open_file(mod))
+        return;
+
     // pause
     const struct timespec ts_pause = { .tv_sec = 0, .tv_nsec = 500000 };
     struct timeval pause_start;
@@ -262,6 +265,9 @@ static void thread_loop(void *arg)
             mod->buffer.block_end = seek_pcr_188(mod->buffer.ptr, mod->buffer.end);
             if(!mod->buffer.block_end)
             {
+                if(!mod->loop)
+                    break;
+
                 mod->buffer.ptr = mod->buffer.begin;
                 reset_buffer(mod);
                 continue;
@@ -304,6 +310,9 @@ static void thread_loop(void *arg)
             mod->buffer.block_end = seek_pcr_192(mod->buffer.ptr, mod->buffer.end);
             if(!mod->buffer.block_end)
             {
+                if(!mod->loop)
+                    break;
+
                 mod->buffer.ptr = mod->buffer.begin;
                 reset_buffer(mod);
                 continue;
@@ -354,6 +363,8 @@ static void thread_loop(void *arg)
                 ts_accuracy -= 0.01;
         }
     }
+
+    close_file(mod);
 }
 
 static void thread_callback(void *arg)
@@ -443,9 +454,6 @@ static void module_init(module_data_t *mod)
 
     module_stream_init(mod, NULL);
 
-    if(!open_file(mod))
-        return;
-
     if(mod->lock)
     {
         int fd = open(mod->lock, O_RDONLY);
@@ -469,8 +477,6 @@ static void module_destroy(module_data_t *mod)
     asc_timer_destroy(mod->timer_skip);
     asc_thread_destroy(&mod->thread);
     asc_stream_destroy(mod->stream);
-
-    close_file(mod);
 
     module_stream_destroy(mod);
 }

@@ -78,6 +78,7 @@ typedef struct
     EV_OTYPE ed_list[EV_LIST_SIZE];
 
     int fd_count;
+    int detach_count;
     asc_list_t *event_list;
 } event_observer_t;
 
@@ -166,10 +167,33 @@ void asc_event_core_loop(void)
         const int ev_check_ok = (!(ed->events & EPOLLERR) && ed->events & (EPOLLIN | EPOLLOUT));
         const int ev_check_err = (!ev_check_ok && (ed->events & ~(EPOLLIN | EPOLLOUT)));
 #endif
-        if(ev_check_ok)
-            event->callback(event->arg, 1);
-        if(ev_check_err)
-            event->callback(event->arg, 0);
+        if(event->callback)
+        {
+            if(ev_check_ok)
+                event->callback(event->arg, 1);
+            if(ev_check_err)
+                event->callback(event->arg, 0);
+        }
+    }
+
+    if(event_observer.detach_count > 0)
+    {
+        asc_list_first(event_observer.event_list);
+        while(asc_list_eol(event_observer.event_list))
+        {
+            asc_event_t *event = asc_list_data(event_observer.event_list);
+            if(!event->callback)
+            {
+                asc_list_remove_current(event_observer.event_list);
+                free(event);
+                --event_observer.detach_count;
+                if(!event_observer.detach_count)
+                    break;
+            }
+            else
+                asc_list_next(event_observer.event_list);
+        }
+        event_observer.detach_count = 0;
     }
 }
 
@@ -178,7 +202,7 @@ static asc_event_t * __asc_event_attach(int fd
                                         , int is_event_read)
 {
 #ifdef DEBUG
-    log_debug(MSG("attach fd=%d"), fd);
+    asc_log_debug(MSG("attach fd=%d"), fd);
 #endif
 
     asc_event_t *event = malloc(sizeof(asc_event_t));
@@ -229,7 +253,7 @@ void asc_event_close(asc_event_t *event)
         return;
 
 #ifdef DEBUG
-    log_debug(MSG("detach fd=%d"), event->fd);
+    asc_log_debug(MSG("detach fd=%d"), event->fd);
 #endif
 
     int ret;
@@ -245,8 +269,9 @@ void asc_event_close(asc_event_t *event)
     if(ret == -1)
         asc_log_error(MSG("failed to detach fd=%d [%s]"), event->fd, strerror(errno));
 
-    asc_list_remove_item(event_observer.event_list, event);
-    free(event);
+    event->callback = NULL;
+    ++event_observer.detach_count;
+
     --event_observer.fd_count;
 }
 
@@ -361,7 +386,7 @@ static asc_event_t * __asc_event_attach(int fd
                                         , int is_event_read)
 {
 #ifdef DEBUG
-    log_debug(MSG("attach fd=%d"), fd);
+    asc_log_debug(MSG("attach fd=%d"), fd);
 #endif
 
     if(event_observer.fd_count >= event_observer.fd_max)
@@ -393,7 +418,7 @@ void asc_event_close(asc_event_t *event)
         return;
 
 #ifdef DEBUG
-    log_debug(MSG("detach fd=%d"), event->fd);
+    asc_log_debug(MSG("detach fd=%d"), event->fd);
 #endif
 
     for(int i = 0; i < event_observer.fd_count; ++i)
@@ -527,7 +552,7 @@ static asc_event_t * __asc_event_attach(int fd
                                         , int is_event_read)
 {
 #ifdef DEBUG
-    log_debug(MSG("attach fd=%d"), fd);
+    asc_log_debug(MSG("attach fd=%d"), fd);
 #endif
 
     asc_event_t *event = malloc(sizeof(asc_event_t));
@@ -556,7 +581,7 @@ void asc_event_close(asc_event_t *event)
         return;
 
 #ifdef DEBUG
-    log_debug(MSG("detach fd=%d"), event->fd);
+    asc_log_debug(MSG("detach fd=%d"), event->fd);
 #endif
 
     const int fd = event->fd;

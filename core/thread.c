@@ -39,6 +39,7 @@ DWORD WINAPI thread_loop(void *arg)
 {
     asc_thread_t *thread = arg;
     thread->loop(thread->arg);
+    thread->loop = NULL;
     return 0;
 }
 
@@ -74,7 +75,8 @@ static void * thread_loop(void *arg)
 {
     asc_thread_t *thread = arg;
     thread->loop(thread->arg);
-    return NULL;
+    thread->loop = NULL;
+    pthread_exit(NULL);
 }
 
 #endif /* ! _WIN32 */
@@ -115,17 +117,21 @@ void asc_thread_destroy(asc_thread_t **thread_ptr)
     if(!thread)
         return;
 
-#ifdef _WIN32
-    TerminateThread(thread->thread, 0);
-    CloseHandle(thread->thread);
-#else
-    if(thread->is_set_jmp)
+    if(thread->loop)
     {
-        memcpy(&global_jmp, &thread->jmp, sizeof(jmp_buf));
-        pthread_kill(thread->thread, SIGUSR1);
-    }
-    pthread_join(thread->thread, NULL);
+#ifdef _WIN32
+        TerminateThread(thread->thread, 0);
+        CloseHandle(thread->thread);
+#else
+        if(thread->is_set_jmp)
+        {
+            memcpy(&global_jmp, &thread->jmp, sizeof(jmp_buf));
+            pthread_kill(thread->thread, SIGUSR1);
+        }
+        pthread_join(thread->thread, NULL);
 #endif
+        thread->loop = NULL;
+    }
 
     free(thread);
     *thread_ptr = NULL;
