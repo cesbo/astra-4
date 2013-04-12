@@ -53,7 +53,7 @@ ffmpeg_configure()
 
     if ! check_ldflags "$CFLAGS" ; then
         if [ -d "$FFMPEG_CONTRIB" ] ; then
-            LIBS="$FFMPEG_CONTRIB/libavcodec/libavcodec.a $FFMPEG_CONTRIB/libavutil/libavutil.a"
+            LDFLAGS="$FFMPEG_CONTRIB/libavcodec/libavcodec.a $FFMPEG_CONTRIB/libavutil/libavutil.a"
         elif check_pkg_config ; then
             LDFLAGS=`pkg-config --libs libavcodec`
         else
