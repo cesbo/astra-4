@@ -7,7 +7,7 @@
 
 #define SEEK(_m, _min_l, _max_l, _check_char)                               \
 {                                                                           \
-    size_t __l##_m = 0;                                                     \
+    int __l##_m = 0;                                                        \
     match[_m].so = i;                                                       \
     while(1)                                                                \
     {                                                                       \

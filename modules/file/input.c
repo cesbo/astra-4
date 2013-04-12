@@ -387,7 +387,7 @@ static void timer_skip_set(void *arg)
     {
         const int l = sprintf(skip_str, "%lu", mod->skip);
         if(write(fd, skip_str, l) <= 0)
-            ;
+            {};
         close(fd);
     }
 }
