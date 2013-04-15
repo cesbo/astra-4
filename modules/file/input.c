@@ -14,7 +14,7 @@
  *      filename    - string, input file name
  *      lock        - string, lock file name (to store reading position)
  *      loop        - boolean, if true play a file in an infinite loop
- *      callback    - function, call function on EOF
+ *      callback    - function, call function on EOF, without parameters
  */
 
 #include <astra.h>
@@ -41,6 +41,7 @@ struct module_data_t
 
     int fd;
     size_t skip;
+    int idx_callback;
 
     int ts_size; // 188 - TS, 192 - M2TS
     uint32_t start_time;
@@ -266,7 +267,14 @@ static void thread_loop(void *arg)
             if(!mod->buffer.block_end)
             {
                 if(!mod->loop)
+                {
+                    if(mod->idx_callback)
+                    {
+                        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+                        lua_call(lua, 0, 0);
+                    }
                     break;
+                }
 
                 mod->buffer.ptr = mod->buffer.begin;
                 reset_buffer(mod);
@@ -311,7 +319,14 @@ static void thread_loop(void *arg)
             if(!mod->buffer.block_end)
             {
                 if(!mod->loop)
+                {
+                    if(mod->idx_callback)
+                    {
+                        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+                        lua_call(lua, 0, 0);
+                    }
                     break;
+                }
 
                 mod->buffer.ptr = mod->buffer.begin;
                 reset_buffer(mod);
@@ -452,6 +467,15 @@ static void module_init(module_data_t *mod)
     module_option_number("loop", &mod->loop);
     module_option_number("pause", &mod->pause);
 
+    // store callback in registry
+    lua_getfield(lua, 2, "callback");
+    if(lua_type(lua, -1) != LUA_TFUNCTION)
+    {
+        asc_log_error(MSG("option 'callback' is required"));
+        astra_abort();
+    }
+    mod->idx_callback = luaL_ref(lua, LUA_REGISTRYINDEX);
+
     module_stream_init(mod, NULL);
 
     if(mod->lock)
@@ -477,6 +501,12 @@ static void module_destroy(module_data_t *mod)
     asc_timer_destroy(mod->timer_skip);
     asc_thread_destroy(&mod->thread);
     asc_stream_destroy(mod->stream);
+
+    if(mod->idx_callback)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+        mod->idx_callback = 0;
+    }
 
     module_stream_destroy(mod);
 }
