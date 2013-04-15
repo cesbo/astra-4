@@ -108,8 +108,9 @@ static void on_read(void *arg, int is_data)
     int r = asc_socket_recv(client->sock, client->buffer, HTTP_BUFFER_SIZE);
     if(r <= 0)
     {
-        asc_log_error(MSG("failed to read a request"));
-        on_read(mod, 0);
+        if(r == -1)
+            asc_log_error(MSG("failed to read a request [%s]"), strerror(errno));
+        on_read(client, 0);
         return;
     }
 

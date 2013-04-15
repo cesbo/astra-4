@@ -118,7 +118,12 @@ void asc_event_core_destroy(void)
             asc_log_error(MSG("infinite loop on observer destroing [event:%p]"), (void *)event);
             abort();
         }
-        event->callback(event->arg, 0);
+
+        if(event->callback)
+            event->callback(event->arg, 0);
+
+        asc_list_remove_current(event_observer.event_list);
+        free(event);
     }
 
     if(event_observer.fd > 0)
