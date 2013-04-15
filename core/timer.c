@@ -1,12 +1,13 @@
 /*
  * Astra Core
- * http://cesbo.com/astra
+ * http://cesbo.com
  *
  * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  * Licensed under the MIT license.
  */
 
-#include "asc.h"
+#include "timer.h"
+#include "list.h"
 
 struct asc_timer_t
 {

@@ -1,13 +1,13 @@
 /*
  * Astra Core
- * http://cesbo.com/astra
+ * http://cesbo.com
  *
  * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  * Licensed under the MIT license.
  */
 
-#define ASC
-#include "asc.h"
+#include "thread.h"
+#include "log.h"
 
 #ifdef _WIN32
 #   include <windows.h>

@@ -1,12 +1,14 @@
 /*
  * Astra Core
- * http://cesbo.com/astra
+ * http://cesbo.com
  *
  * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  * Licensed under the MIT license.
  */
 
-#include "asc.h"
+#include "event.h"
+#include "log.h"
+#include "list.h"
 
 #if defined(WITH_POLL)
 #   define EV_TYPE_POLL

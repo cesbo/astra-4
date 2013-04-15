@@ -1,13 +1,13 @@
 /*
  * Astra Core
- * http://cesbo.com/astra
+ * http://cesbo.com
  *
  * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  * Licensed under the MIT license.
  */
 
-#define ASC
-#include "asc.h"
+#include "stream.h"
+#include "event.h"
 
 #ifdef _WIN32
 #   define _WIN32_WINNT 0x0501
