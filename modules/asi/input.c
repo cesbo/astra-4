@@ -1,108 +1,117 @@
+/*
+ * Astra DVB-ASI Module
+ * http://cesbo.com
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
+ */
 
 #include <astra.h>
-
-#include <modules/mpegts/mpegts.h>
 
 #include <sys/ioctl.h>
 #include <fcntl.h>
 #include <unistd.h>
 
-#define LOG_MSG(_msg) "[asi_input %d] " _msg, mod->config.adapter
+#define MSG(_msg) "[asi_input %d] " _msg, mod->adapter
 
-struct module_data_s
-{
-    MODULE_BASE();
-
-    struct
-    {
-        int adapter;
-        int budget;
-    } config;
-
-    int fd;
-    uint8_t filter[MAX_PID / 8];
-};
-
+#define ASI_BUFFER_SIZE (1022 * TS_PACKET_SIZE)
 #define ASI_IOC_RXSETPF _IOW('?', 76, unsigned int [256])
 
+struct module_data_t
+{
+    MODULE_STREAM_DATA();
+    MODULE_DEMUX_DATA();
 
-static void asi_read_callback(void *arg, int event)
+    int adapter;
+    int budget;
+
+    int fd;
+    asc_event_t *event;
+    uint8_t filter[MAX_PID / 8];
+
+    uint8_t buffer[ASI_BUFFER_SIZE];
+};
+
+static void asi_on_read(void *arg, int is_data)
 {
     module_data_t *mod = arg;
 
-    if(event == EVENT_ERROR)
+    if(!is_data)
     {
-        event_detach(mod->fd);
+        asc_log_error(MSG("asi read error [%s]"), strerror(errno));
+        asc_event_close(mod->event);
         close(mod->fd);
-        mod->fd = 0;
+        astra_abort();
         return;
     }
 
-    // TODO: continue here ...
+    const ssize_t len = read(mod->fd, mod->buffer, ASI_BUFFER_SIZE);
+    if(len <= 0)
+    {
+        asi_on_read(mod, 0);
+        return;
+    }
+
+    for(int i = 0; i < len; i += TS_PACKET_SIZE)
+        module_stream_send(mod, &mod->buffer[i]);
 }
 
-static void callback_join_pid(module_data_t *mod
-                              , module_data_t *child
-                              , uint16_t pid)
+
+static void set_pid(module_data_t *mod, uint16_t pid, int is_set)
 {
-    if(mod->config.budget)
+    if(mod->budget)
         return;
 
-    mod->filter[pid / 8] |= (0x01 << (pid % 8));
+    if(pid >= MAX_PID)
+    {
+        asc_log_error(MSG("PID value must be less then %d"), __FUNCTION__, MAX_PID);
+        astra_abort();
+    }
+
+    if(is_set)
+        mod->filter[pid / 8] |= (0x01 << (pid % 8));
+    else
+        mod->filter[pid / 8] &= ~(0x01 << (pid % 8));
+
     if(ioctl(mod->fd, ASI_IOC_RXSETPF, mod->filter) < 0)
     {
-        log_error(LOG_MSG("failed to set PES filter [%s]")
-                  , strerror(errno));
+        asc_log_error(MSG("failed to set PES filter [%s]"), strerror(errno));
     }
 }
 
-static void callback_leave_pid(module_data_t *mod
-                               , module_data_t *child
-                               , uint16_t pid)
+static void join_pid(module_data_t *mod, uint16_t pid)
 {
-    if(mod->config.budget)
-        return;
+    set_pid(mod, pid, 1);
+}
 
-    mod->filter[pid / 8] &= ~(0x01 << (pid % 8));
-    if(ioctl(mod->fd, ASI_IOC_RXSETPF, mod->filter) < 0)
+static void leave_pid(module_data_t *mod, uint16_t pid)
+{
+    set_pid(mod, pid, 0);
+}
+
+static void module_init(module_data_t *mod)
+{
+    module_stream_init(mod, NULL);
+    module_demux_init(mod, join_pid, leave_pid);
+
+    if(!module_option_number("adapter", &mod->adapter))
     {
-        log_error(LOG_MSG("failed to set PES filter [%s]")
-                  , strerror(errno));
+        asc_log_error("[asi_input] option 'adapter' is required");
+        astra_abort();
     }
-}
-
-static int method_attach(module_data_t *mod)
-{
-    stream_ts_attach(mod);
-    return 0;
-}
-
-static int method_detach(module_data_t *mod)
-{
-    stream_ts_detach(mod);
-    return 0;
-}
-
-static void module_initialize(module_data_t *mod)
-{
-    stream_ts_init(mod, NULL, NULL, NULL
-                   , callback_join_pid, callback_leave_pid);
-
-    module_set_number(mod, "adapter", 1, 0, &mod->config.adapter);
-    module_set_number(mod, "budget", 0, 0, &mod->config.budget);
+    module_option_number("budget", &mod->budget);
 
     char dev_name[16];
-    sprintf(dev_name, "/dev/asirx%d", mod->config.adapter);
+    sprintf(dev_name, "/dev/asirx%d", mod->adapter);
     mod->fd = open(dev_name, O_RDONLY);
     if(mod->fd <= 0)
     {
-        log_error(LOG_MSG("failed to open device %s [%s]")
-                  , dev_name, strerror(errno));
+        asc_log_error(MSG("failed to open device %s [%s]"), dev_name, strerror(errno));
         mod->fd = 0;
         return;
     }
 
-    if(!mod->config.budget)
+    if(!mod->budget)
     { /* hw filtering */
         memset(mod->filter, 0x00, sizeof(mod->filter));
     }
@@ -111,32 +120,33 @@ static void module_initialize(module_data_t *mod)
         memset(mod->filter, 0xFF, sizeof(mod->filter));
         mod->filter[NULL_TS_PID / 8] &= ~(0x01 << (NULL_TS_PID % 8));
     }
+
     if(ioctl(mod->fd, ASI_IOC_RXSETPF, mod->filter) < 0)
-    {
-        log_error(LOG_MSG("failed to set PES filter [%s]")
-                  , strerror(errno));
-    }
+        asc_log_error(MSG("failed to set PES filter [%s]"), strerror(errno));
 
     fsync(mod->fd);
 
-    event_attach(mod->fd, asi_read_callback, mod, EVENT_READ);
+    mod->event = asc_event_on_read(mod->fd, asi_on_read, mod);
 }
 
 static void module_destroy(module_data_t *mod)
 {
-    stream_ts_destroy(mod);
+    module_stream_destroy(mod);
+    module_demux_destroy(mod);
 
+    asc_event_close(mod->event);
     if(mod->fd)
-    {
-        event_detach(mod->fd);
         close(mod->fd);
-    }
 }
 
-MODULE_METHODS()
+
+MODULE_STREAM_METHODS()
+MODULE_DEMUX_METHODS()
+
+MODULE_LUA_METHODS()
 {
-    METHOD(attach)
-    METHOD(detach)
+    MODULE_STREAM_METHODS_REF(),
+    MODULE_DEMUX_METHODS_REF()
 };
 
-MODULE(asi_input)
+MODULE_LUA_REGISTER(asi_input)
