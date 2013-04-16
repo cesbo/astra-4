@@ -1,524 +1,310 @@
 /*
- * For more information, visit https://cesbo.com
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra MPEG-TS Analyze Module
+ * http://cesbo.com/astra
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
+ */
+
+/*
+ * Module Name:
+ *      analyze
+ *
+ * Module Options:
+ *      upstream    - object, stream instance returned by module_instance:stream()
+ *      name        - string, analyzer name
  */
 
 #include <astra.h>
-#include "mpegts.h"
 
-#include <sys/time.h>
-
-#define LOG_MSG(_msg) "[analyze %s] " _msg, mod->config.name
-#define UPDATING_INTERVAL 1000
-
-typedef struct
+struct module_data_t
 {
-    mpegts_packet_type_t type;
+    MODULE_STREAM_DATA();
 
-    uint8_t cc;
+    const char *name;
 
-    uint32_t scrambled;
-    uint32_t cc_error;
-    uint32_t pes_error;
+    uint16_t tsid;
 
-    uint32_t total_cc_error;
-    uint32_t total_pes_error;
-
-    uint32_t pcount;
-    uint32_t bitrate;
-} analyze_item_t;
-
-struct module_data_s
-{
-    MODULE_BASE();
-    MODULE_EVENT_BASE();
-
-    struct
-    {
-        const char *name;
-    } config;
-
-    int stream_reload;
-    mpegts_stream_t stream;
-    analyze_item_t items[MAX_PID];
-
-    uint32_t bitrate;
-    uint32_t average_bitrate;
-    uint32_t ts_error;
-
-    int is_ready;
-    int is_bitrate;
-    int is_ts_error;
-    int is_cc_error;
-    int is_pes_error;
-    int is_scrambled;
-
-    void *rate_timer;
+    mpegts_psi_t *stream[MAX_PID];
 };
 
-static void scan_pat(module_data_t *mod, mpegts_psi_t *psi)
-{
-    if(mod->stream_reload)
-        return;
-    mpegts_pat_parse(psi);
-    switch(psi->status)
-    {
-        case MPEGTS_UNCHANGED:
-            return;
-        case MPEGTS_ERROR_NONE:
-            break;
-        case MPEGTS_CRC32_CHANGED:
-            log_info(LOG_MSG("PAT changed, reload stream info"));
-            mod->stream_reload = 1;
-            return;
-        default:
-            log_error(LOG_MSG("PAT parse error %d"), psi->status);
-            return;
-    }
+#define MSG(_msg) "[analyze %s] " _msg, mod->name
 
-    mpegts_pat_dump(psi, mod->config.name);
+/*
+ * oooooooooo   o   ooooooooooo
+ *  888    888 888  88  888  88
+ *  888oooo88 8  88     888
+ *  888      8oooo88    888
+ * o888o   o88o  o888o o888o
+ *
+ */
 
-    mpegts_pat_t *pat = psi->data;
-    list_t *i = list_get_first(pat->items);
-    while(i)
-    {
-        mpegts_pat_item_t *item = list_get_data(i);
-        if(item->pnr > 0)
-        {
-            mod->items[item->pid].type = MPEGTS_PACKET_PMT;
-            mod->stream[item->pid] = mpegts_pmt_init(item->pid);
-        }
-        else
-        {
-            mod->items[item->pid].type = MPEGTS_PACKET_NIT;
-        }
-        i = list_get_next(i);
-    }
-} /* scan_pat */
-
-static void __check_desc(module_data_t *mod, mpegts_desc_t *desc, int is_pmt)
-{
-    if(!desc)
-        return;
-
-    const mpegts_packet_type_t type = (is_pmt)
-                                    ? MPEGTS_PACKET_ECM
-                                    : MPEGTS_PACKET_EMM;
-
-    list_t *i = list_get_first(desc->items);
-    while(i)
-    {
-        uint8_t *b = list_get_data(i);
-        if(b[0] == 0x09)
-        {
-            const uint16_t cas_pid = ((b[4] & 0x1F) << 8) | b[5];
-            mod->items[cas_pid].type = type;
-        }
-        i = list_get_next(i);
-    }
-}
-
-static void scan_cat(module_data_t *mod, mpegts_psi_t *psi)
-{
-    if(mod->stream_reload)
-        return;
-    mpegts_cat_parse(psi);
-    switch(psi->status)
-    {
-        case MPEGTS_UNCHANGED:
-            return;
-        case MPEGTS_ERROR_NONE:
-            break;
-        case MPEGTS_CRC32_CHANGED:
-            log_info(LOG_MSG("CAT changed, reload stream info"));
-            mod->stream_reload = 1;
-            return;
-        default:
-            log_error(LOG_MSG("CAT parse error %d"), psi->status);
-            return;
-    }
-
-    mpegts_cat_dump(psi, mod->config.name);
-
-    mpegts_cat_t *cat = psi->data;
-    __check_desc(mod, cat->desc, 0);
-}
-
-static void scan_pmt(module_data_t *mod, mpegts_psi_t *psi)
-{
-    if(mod->stream_reload)
-        return;
-    mpegts_pmt_parse(psi);
-    switch(psi->status)
-    {
-        case MPEGTS_UNCHANGED:
-            return;
-        case MPEGTS_ERROR_NONE:
-            break;
-        case MPEGTS_CRC32_CHANGED:
-            log_info(LOG_MSG("PMT changed, reload stream info"));
-            mod->stream_reload = 1;
-            return;
-        default:
-            log_error(LOG_MSG("PMT parse error %d"), psi->status);
-            return;
-    }
-
-    mpegts_pmt_dump(psi, mod->config.name);
-
-    mpegts_pmt_t *pmt = psi->data;
-
-    __check_desc(mod, pmt->desc, 1);
-
-    list_t *i = list_get_first(pmt->items);
-    while(i)
-    {
-        mpegts_pmt_item_t *item = list_get_data(i);
-
-        analyze_item_t *aitem = &mod->items[item->pid];
-        aitem->type = mpegts_pes_type(item->type);
-
-        __check_desc(mod, item->desc, 1);
-
-        i = list_get_next(i);
-    }
-
-    mod->is_ready = 1;
-} /* scan_pmt */
-
-#if DEBUG
-static void scan_sdt(module_data_t *mod, mpegts_psi_t *psi)
-{
-    if(mod->stream_reload)
-        return;
-    mpegts_sdt_parse(psi);
-
-    switch(psi->status)
-    {
-        case MPEGTS_UNCHANGED:
-            return;
-        case MPEGTS_ERROR_NONE:
-            break;
-        case MPEGTS_CRC32_CHANGED:
-            log_info(LOG_MSG("SDT changed, reload stream info"));
-            mod->stream_reload = 1;
-            return;
-        default:
-            log_error(LOG_MSG("SDT parse error %d"), psi->status);
-            return;
-    }
-
-    mpegts_sdt_dump(psi, mod->config.name);
-} /* scan_sdt */
-#endif
-
-void rate_timer_callback(void *arg)
+static void on_pat(void *arg, mpegts_psi_t *psi)
 {
     module_data_t *mod = arg;
 
-    int do_event = 0;
+    // check changes
+    const uint32_t crc32 = PSI_GET_CRC32(psi);
+    if(crc32 == psi->crc32)
+        return;
 
-    int ts_error = 0;
-    int cc_error = 0;
-    int scrambled = 0;
-    int pes_error = 0;
-
-    mod->bitrate = 0;
-
-    if(mod->ts_error)
+    // check crc
+    if(crc32 != PSI_CALC_CRC32(psi))
     {
-        mod->bitrate = mod->ts_error * TS_PACKET_SIZE * 8;
-        mod->ts_error = 0;
-        ts_error = 1;
-    }
-
-    /* all constants it's magic */
-    for(int i = 0; i < MAX_PID; ++i)
-    {
-        analyze_item_t *item = &mod->items[i];
-        const uint32_t pcount = item->pcount;
-        item->pcount = 0;
-
-        // analyze bitrate
-        if(!pcount)
-        {
-            item->bitrate = 0;
-            continue;
-        }
-        item->bitrate = pcount * TS_PACKET_SIZE * 8;
-        mod->bitrate += item->bitrate;
-
-        if(i == NULL_TS_PID)
-            break;
-
-        // analyze cc errors
-        if(item->cc_error)
-        {
-            if(item->cc_error > (pcount / 5))
-                cc_error = 1;
-            item->total_cc_error += item->cc_error;
-            item->cc_error = 0;
-        }
-
-        // analyze scrambled status
-        if(item->scrambled)
-        {
-            if(item->scrambled == pcount)
-                scrambled = 1;
-            item->scrambled = 0;
-        }
-
-        // analyze pes-header errors
-        if(item->pes_error)
-        {
-            if(item->pes_error > 2)
-                pes_error = 1;
-            item->total_pes_error += item->pes_error;
-            item->pes_error = 0;
-        }
-    }
-
-    if(!mod->bitrate || mod->bitrate < (mod->average_bitrate / 10))
-    {
-        if(mod->is_bitrate)
-        {
-            log_info(LOG_MSG("bitrate: ERROR %uKbit/s"), mod->bitrate / 1000);
-            mod->is_bitrate = 0;
-            module_event_call(mod);
-        }
+        asc_log_error(MSG("PAT checksum mismatch"));
         return;
     }
-    else if(mod->bitrate > (mod->average_bitrate / 2))
-    {
-        mod->average_bitrate = (mod->average_bitrate + mod->bitrate) / 2;
 
-        if(!mod->is_bitrate)
+    psi->crc32 = crc32;
+
+    mod->tsid = PAT_GET_TSID(psi);
+
+    asc_log_info(MSG("PAT: tsid:%d"), mod->tsid);
+    const uint8_t *pointer = PAT_ITEMS_FIRST(psi);
+    while(!PAT_ITEMS_EOL(psi, pointer))
+    {
+        const uint16_t pnr = PAT_ITEMS_GET_PNR(psi, pointer);
+        const uint16_t pid = PAT_ITEMS_GET_PID(psi, pointer);
+        if(!pnr)
+            asc_log_info(MSG("PAT: pid:%4d NIT"), pid);
+        else
         {
-            log_info(LOG_MSG("bitrate: OK %uKbit/s"), mod->bitrate / 1000);
-            mod->is_bitrate = 1;
-            do_event = 1;
+            asc_log_info(MSG("PAT: pid:%4d PMT pnr:%4d"), pid, pnr);
+            mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_PMT, pid);
         }
+
+        PAT_ITEMS_NEXT(psi, pointer);
     }
 
-    if(ts_error != mod->is_ts_error)
-    {
-        do_event = 1;
-        log_info(LOG_MSG("TS header: %s"), (ts_error) ? "ERROR" : "OK");
-        mod->is_ts_error = ts_error;
-    }
-
-    if(cc_error != mod->is_cc_error)
-    {
-        do_event = 1;
-        log_info(LOG_MSG("CC: %s"), (cc_error) ? "ERROR" : "OK");
-        mod->is_cc_error = cc_error;
-    }
-
-    if(scrambled != mod->is_scrambled)
-    {
-        do_event = 1;
-        log_info(LOG_MSG("Scrambled: %s"), (scrambled) ? "YES" : "NO");
-        mod->is_scrambled = scrambled;
-    }
-
-    if(pes_error != mod->is_pes_error)
-    {
-        do_event = 1;
-        log_info(LOG_MSG("PES header: %s"), (pes_error) ? "ERROR" : "OK");
-        mod->is_pes_error = pes_error;
-    }
-
-    if(do_event)
-        module_event_call(mod);
+    asc_log_info(MSG("PAT: crc32:0x%08X"), crc32);
 }
 
-/* stream_ts callbacks */
+/*
+ *   oooooooo8     o   ooooooooooo
+ * o888     88    888  88  888  88
+ * 888           8  88     888
+ * 888o     oo  8oooo88    888
+ *  888oooo88 o88o  o888o o888o
+ *
+ */
 
-static void callback_send_ts(module_data_t *mod, uint8_t *ts)
+static void on_cat(void *arg, mpegts_psi_t *psi)
 {
-    if(ts[0] != 0x47)
+    module_data_t *mod = arg;
+
+    // check changes
+    const uint32_t crc32 = PSI_GET_CRC32(psi);
+    if(crc32 == psi->crc32)
+        return;
+
+    // check crc
+    if(crc32 != PSI_CALC_CRC32(psi))
     {
-        ++mod->ts_error;
+        asc_log_error(MSG("CAT checksum mismatch"));
         return;
     }
+    psi->crc32 = crc32;
 
+    char desc_dump[256];
+    const uint8_t *desc_pointer = CAT_DESC_FIRST(psi);
+    while(!CAT_DESC_EOL(psi, desc_pointer))
+    {
+        mpegts_desc_to_string(desc_dump, sizeof(desc_dump), desc_pointer);
+        asc_log_info(MSG("CAT: %s"), desc_dump);
+        CAT_DESC_NEXT(psi, desc_pointer);
+    }
+
+    asc_log_info(MSG("CAT: crc32:0x%08X"), crc32);
+}
+
+/*
+ * oooooooooo oooo     oooo ooooooooooo
+ *  888    888 8888o   888  88  888  88
+ *  888oooo88  88 888o8 88      888
+ *  888        88  888  88      888
+ * o888o      o88o  8  o88o    o888o
+ *
+ */
+
+static void on_pmt(void *arg, mpegts_psi_t *psi)
+{
+    module_data_t *mod = arg;
+
+    // check changes
+    const uint32_t crc32 = PSI_GET_CRC32(psi);
+    if(crc32 == psi->crc32)
+        return;
+
+    // check crc
+    if(crc32 != PSI_CALC_CRC32(psi))
+    {
+        asc_log_error(MSG("PMT checksum mismatch"));
+        return;
+    }
+    psi->crc32 = crc32;
+
+    const uint16_t pnr = PMT_GET_PNR(psi);
+    asc_log_info(MSG("PMT: pnr:%d"), pnr);
+
+    char desc_dump[256];
+    const uint8_t *desc_pointer = PMT_DESC_FIRST(psi);
+    while(!PMT_DESC_EOL(psi, desc_pointer))
+    {
+        mpegts_desc_to_string(desc_dump, sizeof(desc_dump), desc_pointer);
+        asc_log_info(MSG("PMT:     %s"), desc_dump);
+        PMT_DESC_NEXT(psi, desc_pointer);
+    }
+
+    asc_log_info(MSG("PMT: pid:%4d PCR"), PMT_GET_PCR(psi));
+
+    const uint8_t *pointer = PMT_ITEMS_FIRST(psi);
+    while(!PMT_ITEMS_EOL(psi, pointer))
+    {
+        const uint16_t pid = PMT_ITEM_GET_PID(psi, pointer);
+        const uint8_t type = PMT_ITEM_GET_TYPE(psi, pointer);
+        asc_log_info(MSG("PMT: pid:%4d %s:0x%02X")
+                     , pid, mpegts_type_name(mpegts_pes_type(type)), type);
+
+        const uint8_t *desc_pointer = PMT_ITEM_DESC_FIRST(pointer);
+        while(!PMT_ITEM_DESC_EOL(pointer, desc_pointer))
+        {
+            mpegts_desc_to_string(desc_dump, sizeof(desc_dump), desc_pointer);
+            asc_log_info(MSG("PMT:     %s"), desc_dump);
+            PMT_ITEM_DESC_NEXT(pointer, desc_pointer);
+        }
+
+        PMT_ITEMS_NEXT(psi, pointer);
+    }
+
+    asc_log_info(MSG("PMT: crc32:0x%08X"), crc32);
+}
+
+/*
+ *  oooooooo8 ooooooooo   ooooooooooo
+ * 888         888    88o 88  888  88
+ *  888oooooo  888    888     888
+ *         888 888    888     888
+ * o88oooo888 o888ooo88      o888o
+ *
+ */
+
+static void on_sdt(void *arg, mpegts_psi_t *psi)
+{
+    module_data_t *mod = arg;
+
+    if(psi->buffer[0] != 0x42)
+        return;
+
+    if(mod->tsid != SDT_GET_TSID(psi))
+        return;
+
+    // check changes
+    const uint32_t crc32 = PSI_GET_CRC32(psi);
+    if(crc32 == psi->crc32)
+        return;
+
+    // check crc
+    if(crc32 != PSI_CALC_CRC32(psi))
+    {
+        asc_log_error(MSG("SDT checksum mismatch"));
+        return;
+    }
+    psi->crc32 = crc32;
+
+    asc_log_info(MSG("SDT: tsid:%d"), mod->tsid);
+    char desc_dump[256];
+    const uint8_t *pointer = SDT_ITEMS_FIRST(psi);
+    while(!SDT_ITEMS_EOL(psi, pointer))
+    {
+        const uint16_t sid = SDT_ITEM_GET_SID(psi, pointer);
+        asc_log_info(MSG("SDT: service_id:%d"), sid);
+        const uint8_t *desc_pointer = SDT_ITEM_DESC_FIRST(pointer);
+        while(!SDT_ITEM_DESC_EOL(pointer, desc_pointer))
+        {
+            mpegts_desc_to_string(desc_dump, sizeof(desc_dump), desc_pointer);
+            asc_log_info(MSG("SDT:     %s"), desc_dump);
+            SDT_ITEM_DESC_NEXT(pointer, desc_pointer);
+        }
+        SDT_ITEMS_NEXT(psi, pointer);
+    }
+
+    asc_log_info(MSG("SDT: crc32:0x%08X"), crc32);
+}
+
+/*
+ * ooooooooooo  oooooooo8
+ * 88  888  88 888
+ *     888      888oooooo
+ *     888             888
+ *    o888o    o88oooo888
+ *
+ */
+
+static void on_ts(module_data_t *mod, const uint8_t *ts)
+{
     const uint16_t pid = TS_PID(ts);
-    analyze_item_t *item = &mod->items[pid];
-    ++item->pcount;
-
-    if(pid == NULL_TS_PID)
-        return;
-
-    if(mod->stream_reload)
-    {
-        mpegts_stream_destroy(mod->stream);
-        mod->stream[0] = mpegts_pat_init();
-        mod->stream_reload = 0;
-        mod->is_ready = 0;
-        module_event_call(mod);
-    }
-
     mpegts_psi_t *psi = mod->stream[pid];
     if(psi)
     {
         switch(psi->type)
         {
             case MPEGTS_PACKET_PAT:
-                mpegts_psi_mux(psi, ts, scan_pat, mod);
+                mpegts_psi_mux(psi, ts, on_pat, mod);
                 break;
             case MPEGTS_PACKET_CAT:
-                mpegts_psi_mux(psi, ts, scan_cat, mod);
+                mpegts_psi_mux(psi, ts, on_cat, mod);
                 break;
             case MPEGTS_PACKET_PMT:
-                mpegts_psi_mux(psi, ts, scan_pmt, mod);
+                mpegts_psi_mux(psi, ts, on_pmt, mod);
                 break;
             case MPEGTS_PACKET_SDT:
-#if DEBUG
-                mpegts_psi_mux(psi, ts, scan_sdt, mod);
-#endif
+                mpegts_psi_mux(psi, ts, on_sdt, mod);
                 break;
             default:
                 break;
         }
     }
-
-    const uint8_t af = TS_AF(ts);
-
-    // skip packets without payload
-    if(!(af & 0x10))
-        return;
-
-    const uint8_t cc = TS_CC(ts);
-    const uint8_t last_cc = (item->cc + 1) & 0x0F;
-    item->cc = cc;
-    if(cc != last_cc)
-        ++item->cc_error;
-
-    if(TS_SC(ts))
-    {
-        ++item->scrambled;
-        return;
-    }
-
-    if(!(item->type & MPEGTS_PACKET_PES))
-        return;
-
-    if(TS_PUSI(ts))
-    {
-        uint8_t *payload = ts + 4;
-        if(af == 0x30)
-            payload += (ts[4] + 1);
-
-        if(PES_HEADER(payload) != 0x000001)
-            ++item->pes_error;
-    }
 }
 
-/* methods */
+/*
+ * oooo     oooo  ooooooo  ooooooooo  ooooo  oooo ooooo       ooooooooooo
+ *  8888o   888 o888   888o 888    88o 888    88   888         888    88
+ *  88 888o8 88 888     888 888    888 888    88   888         888ooo8
+ *  88  888  88 888o   o888 888    888 888    88   888      o  888    oo
+ * o88o  8  o88o  88ooo88  o888ooo88    888oo88   o888ooooo88 o888ooo8888
+ *
+ */
 
-static int method_status(module_data_t *mod)
+static void module_init(module_data_t *mod)
 {
-    static char __bitrate[] = "bitrate";
-    static char __scrambled[] = "scrambled";
-    static char __pes_error[] = "pes_error";
-    static char __cc_error[] = "cc_error";
-
-    lua_State *L = LUA_STATE(mod);
-    lua_newtable(L);
-
-    lua_pushboolean(L, mod->is_ready);
-    lua_setfield(L, -2, "ready");
-    lua_pushnumber(L, mod->bitrate / 1000);
-    lua_setfield(L, -2, __bitrate);
-    lua_pushboolean(L, mod->is_bitrate);
-    lua_setfield(L, -2, "onair");
-
-    uint32_t total_cc_error = 0;
-    uint32_t total_pes_error = 0;
-
-    lua_newtable(L);
-    for(int i = 0; i < MAX_PID; ++i)
+    module_option_string("name", &mod->name);
+    if(!mod->name)
     {
-        analyze_item_t *item = &mod->items[i];
-        if(!(item->type || item->bitrate))
-            continue;
-
-        lua_pushnumber(L, i);
-        lua_newtable(L);
-
-        lua_pushnumber(L, item->type);
-        lua_setfield(L, -2, "type");
-
-        lua_pushnumber(L, item->bitrate);
-        lua_setfield(L, -2, __bitrate);
-
-        lua_pushnumber(L, item->total_cc_error);
-        lua_setfield(L, -2, __cc_error);
-        total_cc_error += item->total_cc_error;
-
-        lua_pushnumber(L, item->total_pes_error);
-        lua_setfield(L, -2, __pes_error);
-        total_pes_error += item->total_pes_error;
-
-        lua_pushboolean(L, item->scrambled);
-        lua_setfield(L, -2, __scrambled);
-
-        lua_settable(L, -3);
+        asc_log_error("[analyze] option 'name' is required");
+        astra_abort();
     }
-    lua_setfield(L, -2, "stream");
 
-    lua_pushnumber(L, total_cc_error);
-    lua_setfield(L, -2, __cc_error);
-    lua_pushnumber(L, total_pes_error);
-    lua_setfield(L, -2, __pes_error);
-    lua_pushboolean(L, mod->is_scrambled);
-    lua_setfield(L, -2, __scrambled);
+    module_stream_init(mod, on_ts);
 
-    return 1;
-}
-
-static int method_event(module_data_t *mod)
-{
-    module_event_set(mod);
-    return 0;
-}
-
-/* required */
-
-static void module_initialize(module_data_t *mod)
-{
-    module_set_string(mod, "name", 1, NULL, &mod->config.name);
-
-    stream_ts_init(mod, callback_send_ts, NULL, NULL, NULL, NULL);
-
-    mod->rate_timer = timer_attach(UPDATING_INTERVAL, rate_timer_callback, mod);
-
-    mod->is_bitrate = -1;
-    mod->is_ts_error = -1;
-    mod->is_scrambled = -1;
-
-    mod->stream[0] = mpegts_pat_init();
-    mod->items[0].type = MPEGTS_PACKET_PAT;
-    mod->stream[1] = mpegts_cat_init();
-    mod->items[1].type = MPEGTS_PACKET_CAT;
-    mod->stream[17] = mpegts_sdt_init();
-    mod->items[17].type = MPEGTS_PACKET_SDT;
+    mod->stream[0x00] = mpegts_psi_init(MPEGTS_PACKET_PAT, 0x00);
+    mod->stream[0x01] = mpegts_psi_init(MPEGTS_PACKET_CAT, 0x01);
+    mod->stream[0x11] = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
 }
 
 static void module_destroy(module_data_t *mod)
 {
-    stream_ts_destroy(mod);
-    module_event_destroy(mod);
+    module_stream_destroy(mod);
 
-    timer_detach(mod->rate_timer);
-
-    mpegts_stream_destroy(mod->stream);
+    for(int i = 0; i < MAX_PID; ++i)
+    {
+        if(mod->stream[i])
+            mpegts_psi_destroy(mod->stream[i]);
+    }
 }
 
-MODULE_METHODS()
+MODULE_STREAM_METHODS()
+MODULE_LUA_METHODS()
 {
-    METHOD(status)
-    METHOD(event)
+    MODULE_STREAM_METHODS_REF()
 };
-
-MODULE(analyze)
+MODULE_LUA_REGISTER(analyze)

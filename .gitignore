@@ -1,9 +1,8 @@
 *.a
 *.o
 *.orig
-astra
-temp
-Makefile
-config.h
-
-.hg*
+/astra
+/temp
+/Makefile
+/config.h
+*.sublime-workspace

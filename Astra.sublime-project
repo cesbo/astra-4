@@ -1,0 +1,55 @@
+{
+	"folders":
+	[
+		{
+			"file_exclude_patterns":
+			[
+				".hg*",
+				".git*",
+				"Astra.sublime-*"
+			],
+			"path": "/Volumes/Projects/Astra/Public"
+		}
+	],
+	"settings":
+	{
+		"sublimeclang_options":
+		[
+			"-I${folder:${project_path:main.c}}/asc",
+			"-I${folder:${project_path:main.c}}/lua",
+			"-I${folder:${project_path:main.c}}",
+			"-I${folder:${project_path:main.c}}/contrib/build/ffmpeg",
+			"-Wno-deprecated-declarations",
+			"-std=iso9899:1999"
+		],
+		"rulers": [ 101 ],
+		"wrap_width": 100
+	},
+	"build_systems":
+	[
+		{
+			"name": "Astra",
+			"working_dir": "${project_path}",
+			"cmd": [ "make" ],
+			"variants":
+			[
+				{
+					"name": "Configure",
+					"cmd": [ "${project_path}/configure.sh" ]
+				},
+				{
+					"name": "Deploy",
+					"cmd": [ "/Volumes/Projects/deploy.sh", "${project_path}", "$file" ]
+				},
+				{
+					"name": "Clean",
+					"cmd": [ "make", "clean" ]
+				},
+				{
+					"name": "DistClean",
+					"cmd": [ "make", "distclean" ]
+				}
+			]
+		}
+	]
+}

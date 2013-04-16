@@ -1,6 +1,8 @@
 /*
- * Astra SoftCAM module
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra SoftCAM Module
+ * http://cesbo.com/astra
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  *
  * This module is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -14,20 +16,16 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this module.  If not, see <http://www.gnu.org/licenses/>.
- *
- * For more information, visit http://cesbo.com
  */
 
-#include "../softcam.h"
-#include <modules/utils/utils.h>
+#include <astra.h>
+#include "../module_cam.h"
 
 #include <openssl/des.h>
 #include <openssl/md5.h>
 
-#define LOG_MSG(_msg) "[newcamd %s] " _msg, mod->__cam_module.name
-
 #define NEWCAMD_HEADER_SIZE 12
-#define NEWCAMD_MSG_SIZE 400
+#define NEWCAMD_MSG_SIZE EM_MAX_SIZE
 #define MAX_PROV_COUNT 16
 
 typedef enum
@@ -40,25 +38,27 @@ typedef enum
     NEWCAMD_STOPPED,
 } newcamd_status_t;
 
-struct module_data_s
+struct module_data_t
 {
-    CAM_MODULE_BASE();
+    MODULE_CAM_DATA();
 
-    struct
-    {
-        const char *host;
-        int port;
-        const char *user;
-        const char *pass;
-        uint8_t key[14];
-        int timeout;
-    } config;
+    /* Config */
+    char *name;
 
+    char *host;
+    int port;
+    int timeout;
+
+    char *user;
+    char *pass;
+    uint8_t key[14];
+
+    /* Base */
     char password_md5[36];
 
-    int sock;
+    asc_socket_t *sock;
     newcamd_status_t status;
-    void *timeout_timer;
+    asc_timer_t *timeout_timer;
 
     uint8_t *prov_buffer;
 
@@ -69,19 +69,15 @@ struct module_data_s
         DES_key_schedule ks2;
     } triple_des;
 
-    uint16_t msg_id; // last message id
-
-    uint64_t last_key[2]; // NDS
+    uint16_t msg_id;        // curren message id
+    em_packet_t *packet;    // current packet
+    uint64_t last_key[2];   // NDS
 
     size_t buffer_size;
     uint8_t buffer[NEWCAMD_MSG_SIZE];
 };
 
-// to get data from cas_data_t
-struct cas_data_s
-{
-    CAS_MODULE_BASE();
-};
+#define MSG(_msg) "[newcamd %s] " _msg, mod->name
 
 typedef enum {
     NEWCAMD_MSG_ERROR = 0,
@@ -93,8 +89,6 @@ typedef enum {
     NEWCAMD_MSG_CARD_DATA,
 } newcamd_cmd_t;
 
-/* module code */
-
 /*
  * ooooooooooo ooooooooo  ooooooooooo      o
  * 88  888  88  888    88o 888    88      888
@@ -104,12 +98,10 @@ typedef enum {
  *
  */
 
-static void triple_des_set_key(module_data_t *mod
-                               , uint8_t *key
-                               , size_t key_size)
+static void triple_des_set_key(module_data_t *mod, uint8_t *key, size_t key_size)
 {
     uint8_t tmp_key[14];
-    memcpy(tmp_key, mod->config.key, sizeof(tmp_key));
+    memcpy(tmp_key, mod->key, sizeof(tmp_key));
 
     // set key
     for(size_t i = 0; i < key_size; ++i)
@@ -149,6 +141,15 @@ static void md5_to64(char *s, uint64_t v, int n)
         v >>= 6;
     }
 }
+
+/*
+ * oooo     oooo ooooooooo   oooooooooo
+ *  8888o   888   888    88o 888
+ *  88 888o8 88   888    888 888888888o
+ *  88  888  88   888    888 ooo    o888
+ * o88o  8  o88o o888ooo88     88ooo88
+ *
+ */
 
 // From FreeBSD
 static void md5_crypt(const char *pw, const char *salt, char *passwd)
@@ -253,11 +254,11 @@ static uint8_t xor_sum(const uint8_t *mem, int len)
 }
 
 /*
- * ooooooooooo o88                                                   o8
- * 88  888  88 oooo  oo ooo oooo   ooooooooo8  ooooooo  oooo  oooo o888oo
- *     888      888   888 888 888 888oooooo8 888     888 888   888  888
- *     888      888   888 888 888 888        888     888 888   888  888
- *    o888o    o888o o888o888o888o  88oooo888  88ooo88    888o88 8o  888o
+ * ooooooooooo ooooo oooo     oooo ooooooooooo  ooooooo  ooooo  oooo ooooooooooo
+ * 88  888  88  888   8888o   888   888    88 o888   888o 888    88  88  888  88
+ *     888      888   88 888o8 88   888ooo8   888     888 888    88      888
+ *     888      888   88  888  88   888    oo 888o   o888 888    88      888
+ *    o888o    o888o o88o  8  o88o o888ooo8888  88ooo88    888oo88      o888o
  *
  */
 
@@ -268,29 +269,23 @@ static void timeout_timer_callback(void *arg)
 {
     module_data_t *mod = arg;
 
-    timer_detach(mod->timeout_timer);
+    asc_timer_destroy(mod->timeout_timer);
     mod->timeout_timer = NULL;
 
     switch(mod->status)
     {
         case NEWCAMD_UNKNOWN:
         case NEWCAMD_STARTED:
-            log_error(LOG_MSG("connection timeout. try again"));
+            asc_log_error(MSG("connection timeout. try again"));
             break;
         case NEWCAMD_READY:
         {
-            log_warning(LOG_MSG("receiving timeout. drop packet"));
-            cam_packet_t *packet
-                = list_get_data(mod->__cam_module.queue.head);
-            // drop packet in cam_callback
-            packet->keys[0] = packet->payload[0];
-            packet->keys[1] = 0x00;
-            packet->keys[2] = 0x00;
-            cam_callback(mod, packet);
+            asc_log_warning(MSG("receiving timeout. drop packet"));
+            // TODO: drop packet...
             return;
         }
         default:
-            log_error(LOG_MSG("receiving timeout. reconnect"));
+            asc_log_error(MSG("receiving timeout. reconnect"));
             break;
     }
 
@@ -302,29 +297,28 @@ static void newcamd_timeout_set(module_data_t *mod)
 {
     if(mod->timeout_timer)
         return;
-    mod->timeout_timer
-        = timer_attach(mod->config.timeout, timeout_timer_callback, mod);
+    mod->timeout_timer = asc_timer_init(mod->timeout, timeout_timer_callback, mod);
 }
 
 static void newcamd_timeout_unset(module_data_t *mod)
 {
     if(mod->timeout_timer)
     {
-        timer_detach(mod->timeout_timer);
+        asc_timer_destroy(mod->timeout_timer);
         mod->timeout_timer = NULL;
     }
 }
 
 /*
- *  oooooooo8                                oooo
- * 888          ooooooooo8 oo oooooo    ooooo888
- *  888oooooo  888oooooo8   888   888 888    888
- *         888 888          888   888 888    888
- * o88oooo888    88oooo888 o888o o888o  88ooo888o
+ *  oooooooo8 ooooooooooo oooo   oooo ooooooooo
+ * 888         888    88   8888o  88   888    88o
+ *  888oooooo  888ooo8     88 888o88   888    888
+ *         888 888    oo   88   8888   888    888
+ * o88oooo888 o888ooo8888 o88o    88  o888ooo88
  *
  */
 
-static int newcamd_send_msg(module_data_t *mod, cam_packet_t *packet)
+static int newcamd_send_msg(module_data_t *mod, em_packet_t *packet)
 {
     // packet header
     const size_t buffer_size = mod->buffer_size;
@@ -333,15 +327,13 @@ static int newcamd_send_msg(module_data_t *mod, cam_packet_t *packet)
     memset(&buffer[2], 0, NEWCAMD_HEADER_SIZE - 2);
     if(packet)
     {
-        const uint16_t pnr = packet->cas->__cas_module.pnr;
+        const uint16_t pnr = packet->pnr;
         buffer[4] = pnr >> 8;
         buffer[5] = pnr & 0xff;
 
         ++mod->msg_id;
         buffer[2] = mod->msg_id >> 8;
         buffer[3] = mod->msg_id & 0xff;
-
-        packet->id = mod->msg_id;
     }
 
     // packet content
@@ -353,7 +345,7 @@ static int newcamd_send_msg(module_data_t *mod, cam_packet_t *packet)
     const uint8_t no_pad_bytes= (8 - ((packet_size - 1) % 8)) % 8;
     if((packet_size + no_pad_bytes + 1) >= (NEWCAMD_MSG_SIZE - 8))
     {
-        log_error(LOG_MSG("send: failed to pad message"));
+        asc_log_error(MSG("send: failed to pad message"));
         return 0;
     }
 
@@ -369,7 +361,7 @@ static int newcamd_send_msg(module_data_t *mod, cam_packet_t *packet)
     DES_random_key((DES_cblock *)ivec);
     if(packet_size + sizeof(ivec) >= NEWCAMD_MSG_SIZE)
     {
-        log_error(LOG_MSG("send: failed to encrypt"));
+        asc_log_error(MSG("send: failed to encrypt"));
         return 0;
     }
     memcpy(&buffer[packet_size], ivec, sizeof(ivec));
@@ -381,13 +373,13 @@ static int newcamd_send_msg(module_data_t *mod, cam_packet_t *packet)
     buffer[0] = (packet_size - 2) >> 8;
     buffer[1] = (packet_size - 2) & 0xff;
 
-    if(socket_send(mod->sock, buffer, packet_size) != packet_size)
+    if(asc_socket_send(mod->sock, buffer, packet_size) != packet_size)
     {
-        log_error(LOG_MSG("send: failed [%d]"), errno);
+        asc_log_error(MSG("send: failed [%d]"), errno);
         if(packet)
         {
-            packet->keys[2] = 0x00;
-            cam_callback(mod, packet);
+            packet->buffer[2] = 0x00;
+            // TODO: cam_callback(mod, packet);
             --mod->msg_id;
         }
         return 0;
@@ -408,15 +400,15 @@ static int newcamd_send_cmd(module_data_t *mod, newcamd_cmd_t cmd)
 }
 
 /*
- * oooooooooo
- *  888    888 ooooooooo8  ooooooo  oooo   oooo
- *  888oooo88 888oooooo8 888     888 888   888
- *  888  88o  888        888          888 888
- * o888o  88o8  88oooo888  88ooo888     888
+ * oooooooooo  ooooooooooo  oooooooo8 ooooo  oooo
+ *  888    888  888    88 o888     88  888    88
+ *  888oooo88   888ooo8   888           888  88
+ *  888  88o    888    oo 888o     oo    88888
+ * o888o  88o8 o888ooo8888 888oooo88      888
  *
  */
 
-int newcamd_recv_msg(module_data_t *mod, cam_packet_t **packet)
+int newcamd_recv_msg(module_data_t *mod, em_packet_t *packet)
 {
     if(mod->status != NEWCAMD_READY)
         newcamd_timeout_unset(mod);
@@ -426,24 +418,22 @@ int newcamd_recv_msg(module_data_t *mod, cam_packet_t **packet)
 
     uint16_t packet_size = 0;
 
-    if(socket_recv(mod->sock, buffer, 2) != 2)
+    if(asc_socket_recv(mod->sock, buffer, 2) != 2)
     {
-        log_error(LOG_MSG("recv: failed to read the length of message [%s]")
-                  , strerror(errno));
+        asc_log_error(MSG("recv: failed to read the length of message [%s]"), strerror(errno));
         return 0;
     }
     packet_size = (buffer[0] << 8) | buffer[1];
     if(packet_size > (NEWCAMD_MSG_SIZE - 2))
     {
-        log_error(LOG_MSG("recv: message size %d is greater than %d")
-                  , packet_size, NEWCAMD_MSG_SIZE);
+        asc_log_error(MSG("recv: message size %d is greater than %d")
+                      , packet_size, NEWCAMD_MSG_SIZE);
         return 0;
     }
-    const ssize_t read_size = socket_recv(mod->sock, &buffer[2], packet_size);
+    const ssize_t read_size = asc_socket_recv(mod->sock, &buffer[2], packet_size);
     if(read_size != packet_size)
     {
-        log_error(LOG_MSG("recv: failed to read message [%s]")
-                  , strerror(errno));
+        asc_log_error(MSG("recv: failed to read message [%s]"), strerror(errno));
         return 0;
     }
 
@@ -459,7 +449,7 @@ int newcamd_recv_msg(module_data_t *mod, cam_packet_t **packet)
     }
     if(xor_sum(&buffer[2], packet_size))
     {
-        log_error(LOG_MSG("recv: bad checksum"), NULL);
+        asc_log_error(MSG("recv: bad checksum"), NULL);
         return 0;
     }
 
@@ -467,19 +457,10 @@ int newcamd_recv_msg(module_data_t *mod, cam_packet_t **packet)
     if(packet && msg_type >= 0x80 && msg_type <= 0x8F)
     {
         const uint16_t msg_id = (buffer[2] << 8) | buffer[3];
-        cam_packet_t *p = NULL;
-        if(mod->__cam_module.queue.head)
-            p = list_get_data(mod->__cam_module.queue.head);
-        if(p && p->id == msg_id)
+        if(msg_id != mod->msg_id)
         {
-            *packet = p;
-            newcamd_timeout_unset(mod);
-        }
-        else
-        {
-            *packet = NULL;
-            log_warning(LOG_MSG("packet with id %d is not found [type:0x%02X]")
-                        , msg_id, msg_type);
+            asc_log_warning(MSG("wrong message id. required:%d receive:%d"), mod->msg_id, msg_id);
+            return 0;
         }
     }
 
@@ -499,12 +480,12 @@ static newcamd_cmd_t newcamd_recv_cmd(module_data_t *mod)
 }
 
 /*
- * ooooo                               o88
- *  888          ooooooo     oooooooo8 oooo  oo oooooo
- *  888        888     888 888    88o   888   888   888
- *  888      o 888     888  888oo888o   888   888   888
- * o888ooooo88   88ooo88   888     888 o888o o888o o888o
- *                          888ooo888
+ * ooooo         ooooooo     ooooooo8 ooooo oooo   oooo
+ *  888        o888   888o o888    88  888   8888o  88
+ *  888        888     888 888         888   88 888o88
+ *  888      o 888o   o888 888o   oooo 888   88   8888
+ * o888ooooo88   88ooo88    888ooo888 o888o o88o    88
+ *
  */
 
 static int newcamd_login_1(module_data_t *mod)
@@ -513,20 +494,19 @@ static int newcamd_login_1(module_data_t *mod)
 
     mod->msg_id = 0;
     uint8_t rnd_data[14];
-    const ssize_t len = socket_recv(mod->sock, rnd_data, sizeof(rnd_data));
+    const ssize_t len = asc_socket_recv(mod->sock, rnd_data, sizeof(rnd_data));
     if(len != sizeof(rnd_data))
     {
-        log_error(LOG_MSG("%s(): len=%d [%s]"), __FUNCTION__, len
-                  , strerror(errno));
+        asc_log_error(MSG("%s(): len=%d [%s]"), __FUNCTION__, len, strerror(errno));
         return 0;
     }
     triple_des_set_key(mod, rnd_data, sizeof(rnd_data));
 
     uint8_t *buffer = &mod->buffer[NEWCAMD_HEADER_SIZE];
 
-    const size_t u_len = strlen(mod->config.user) + 1;
-    memcpy(&buffer[3], mod->config.user, u_len);
-    md5_crypt(mod->config.pass, "$1$abcdefgh$", mod->password_md5);
+    const size_t u_len = strlen(mod->user) + 1;
+    memcpy(&buffer[3], mod->user, u_len);
+    md5_crypt(mod->pass, "$1$abcdefgh$", mod->password_md5);
     const size_t p_len = 35; /* strlen(mod->password_md5) */
     memcpy(&buffer[3 + u_len], mod->password_md5, p_len);
     buffer[0] = NEWCAMD_MSG_CLIENT_2_SERVER_LOGIN;
@@ -544,7 +524,7 @@ static int newcamd_login_2(module_data_t *mod)
 
     if(newcamd_recv_cmd(mod) != NEWCAMD_MSG_CLIENT_2_SERVER_LOGIN_ACK)
     {
-        log_error(LOG_MSG("login failed [0x%02X]"), buffer[0]);
+        asc_log_error(MSG("login failed [0x%02X]"), buffer[0]);
         return 0;
     }
 
@@ -563,25 +543,23 @@ static int newcamd_login_3(module_data_t *mod)
         return 0;
     if(buffer[0] != NEWCAMD_MSG_CARD_DATA)
     {
-        log_error(LOG_MSG("NEWCAMD_MSG_CARD_DATA"));
+        asc_log_error(MSG("NEWCAMD_MSG_CARD_DATA"));
         return 0;
     }
 
-    mod->__cam_module.caid = (buffer[4] << 8) | buffer[5];
-    memcpy(mod->__cam_module.ua, &buffer[6], 8);
+    mod->__cam.caid = (buffer[4] << 8) | buffer[5];
+    memcpy(mod->__cam.ua, &buffer[6], 8);
 
     char hex_str[32];
-    log_info(LOG_MSG("CaID=0x%04X admin=%s UA=%s")
-             , mod->__cam_module.caid
-             , (buffer[3] == 1) ? "YES" : "NO"
-             , hex_to_str(hex_str, mod->__cam_module.ua, 8));
+    asc_log_info(MSG("CaID=0x%04X au=%s UA=%s")
+                 , mod->__cam.caid
+                 , (buffer[3] == 1) ? "YES" : "NO"
+                 , hex_to_str(hex_str, mod->__cam.ua, 8));
 
     if(buffer[3] != 1) // disable emm if not admin
-        mod->__cam_module.disable_emm = 1;
+        mod->__cam.disable_emm = 1;
 
-    const int prov_count = (buffer[14] <= MAX_PROV_COUNT)
-                         ? buffer[14]
-                         : MAX_PROV_COUNT;
+    const int prov_count = (buffer[14] <= MAX_PROV_COUNT) ? buffer[14] : MAX_PROV_COUNT;
 
     static const int info_size = 3 + 8; /* ident + sa */
     mod->prov_buffer = malloc(prov_count * info_size);
@@ -591,38 +569,35 @@ static int newcamd_login_3(module_data_t *mod)
         uint8_t *p = &mod->prov_buffer[i * info_size];
         memcpy(&p[0], &buffer[15 + (11 * i)], 3);
         memcpy(&p[3], &buffer[18 + (11 * i)], 8);
-        mod->__cam_module.prov_list
-            = list_append(mod->__cam_module.prov_list, p);
-        log_info(LOG_MSG("Prov:%d ID:%s SA:%s"), i
-                  , hex_to_str(hex_str, &p[0], 3)
-                  , hex_to_str(&hex_str[8], &p[3], 8));
+        // TODO: append to the prov_list
+        asc_log_info(MSG("Prov:%d ID:%s SA:%s"), i
+                     , hex_to_str(hex_str, &p[0], 3)
+                     , hex_to_str(&hex_str[8], &p[3], 8));
     }
 
     mod->status = NEWCAMD_READY;
-    decrypt_module_cam_status(mod, 1);
     return 1;
 }
 
 /*
- * oooooooooo
- *  888    888 oo oooooo     ooooooo     ooooooo
- *  888oooo88   888    888 888     888 888     888
- *  888         888        888     888 888
- * o888o       o888o         88ooo88     88ooo888
+ * oooooooooo  ooooooooooo  oooooooo8 oooooooooo    ooooooo  oooo   oooo oooooooo8 ooooooooooo
+ *  888    888  888    88  888         888    888 o888   888o 8888o  88 888         888    88
+ *  888oooo88   888ooo8     888oooooo  888oooo88  888     888 88 888o88  888oooooo  888ooo8
+ *  888  88o    888    oo          888 888        888o   o888 88   8888         888 888    oo
+ * o888o  88o8 o888ooo8888 o88oooo888 o888o         88ooo88  o88o    88 o88oooo888 o888ooo8888
  *
  */
 
-static int newcamd_process(module_data_t *mod)
+static int newcamd_response(module_data_t *mod)
 {
-    cam_packet_t *packet = NULL;
-    const int len = newcamd_recv_msg(mod, &packet);
-    if(packet)
+    const int len = newcamd_recv_msg(mod, mod->packet);
+    if(len)
     {
         uint8_t *buffer = &mod->buffer[NEWCAMD_HEADER_SIZE];
 
-        const uint16_t pnr = packet->cas->__cas_module.pnr;
         if(len == 19)
         {
+            // NDS
             uint64_t *key_0 = (uint64_t *)&buffer[3];
             uint64_t *key_1 = (uint64_t *)&buffer[11];
             if(!(*key_0))
@@ -636,22 +611,22 @@ static int newcamd_process(module_data_t *mod)
                 mod->last_key[0] = *key_0;
             }
 
-            memcpy(packet->keys, buffer, 19);
+            memcpy(mod->packet->buffer, buffer, 19);
+            mod->packet->buffer_size = 19;
         }
         else if(len >= 3)
         {
-            memcpy(packet->keys, buffer, 3);
+            memcpy(mod->packet->buffer, buffer, 3);
+            mod->packet->buffer_size = 3;
         }
         else
         {
-            packet->keys[0] = packet->payload[0];
-            packet->keys[2] = 0x00;
-            log_error(LOG_MSG("%s PNR:%d incorrect message length [%d]")
-                      , (packet->type == MPEGTS_PACKET_ECM) ? "ECM" : "EMM"
-                      , pnr, len);
+            mod->packet->buffer[2] = 0x00;
+            asc_log_error(MSG("pnr:%d incorrect message length %d"), mod->packet->pnr, len);
+            mod->packet->buffer_size = 3;
         }
 
-        cam_callback(mod, packet);
+        // cam_callback(mod, packet);
     }
 
     return len;
@@ -666,12 +641,12 @@ static int newcamd_process(module_data_t *mod)
  *            o88
  */
 
-static void newcamd_read_cb(void *arg, int event)
+static void newcamd_on_read(void *arg, int is_data)
 {
     module_data_t *mod = arg;
-    if(event == EVENT_ERROR)
+    if(!is_data)
     {
-        log_error(LOG_MSG("failed to read from socket [%s]"), strerror(errno));
+        asc_log_error(MSG("failed to read from socket [%s]"), strerror(errno));
         newcamd_disconnect(mod, 0);
         newcamd_timeout_set(mod);
         return;
@@ -689,7 +664,7 @@ static void newcamd_read_cb(void *arg, int event)
             ret = newcamd_login_3(mod);
             break;
         case NEWCAMD_READY:
-            ret = newcamd_process(mod);
+            ret = newcamd_response(mod);
             break;
         case NEWCAMD_STOPPED:
             break;
@@ -699,31 +674,30 @@ static void newcamd_read_cb(void *arg, int event)
     }
 
     if(ret <= 0)
-        newcamd_read_cb(arg, EVENT_ERROR);
+        newcamd_on_read(arg, 0);
 }
 
-static void newcamd_write_cb(void *arg, int event)
+static void newcamd_on_connect(void *arg, int is_data)
 {
     module_data_t *mod = arg;
-    if(event == EVENT_ERROR)
+    if(!is_data)
     {
-        log_error(LOG_MSG("socket not ready [%s]"), socket_error());
+        asc_log_error(MSG("socket not ready [%s]"), asc_socket_error());
         newcamd_disconnect(mod, 0);
         newcamd_timeout_set(mod);
         return;
     }
 
-    event_detach(mod->sock);
     mod->status = NEWCAMD_STARTED;
-    event_attach(mod->sock, newcamd_read_cb, mod, EVENT_READ);
+    asc_socket_event_on_read(mod->sock, newcamd_on_read, mod);
 }
 
 /*
- *   oooooooo8                                                           o8
- * o888     88   ooooooo  oo oooooo   oo oooooo   ooooooooo8  ooooooo  o888oo
- * 888         888     888 888   888   888   888 888oooooo8 888     888 888
- * 888o     oo 888     888 888   888   888   888 888        888         888
- *  888oooo88    88ooo88  o888o o888o o888o o888o  88oooo888  88ooo888   888o
+ *   oooooooo8   ooooooo  oooo   oooo oooo   oooo ooooooooooo  oooooooo8 ooooooooooo
+ * o888     88 o888   888o 8888o  88   8888o  88   888    88 o888     88 88  888  88
+ * 888         888     888 88 888o88   88 888o88   888ooo8   888             888
+ * 888o     oo 888o   o888 88   8888   88   8888   888    oo 888o     oo     888
+ *  888oooo88    88ooo88  o88o    88  o88o    88  o888ooo8888 888oooo88     o888o
  *
  */
 
@@ -731,14 +705,14 @@ static void newcamd_connect(void *arg)
 {
     module_data_t *mod = arg;
 
-    mod->sock = socket_open(SOCKET_PROTO_TCP | SOCKET_CONNECT
-                            , mod->config.host, mod->config.port);
-    newcamd_timeout_set(mod);
-
-    if(mod->sock <= 0)
+    mod->sock = asc_socket_open_tcp4();
+    if(!asc_socket_connect(mod->sock, mod->host, mod->port))
+    {
+        newcamd_timeout_set(mod);
         return;
+    }
 
-    event_attach(mod->sock, newcamd_write_cb, mod, EVENT_WRITE);
+    asc_socket_event_on_connect(mod->sock, newcamd_on_connect, mod);
 }
 
 static void newcamd_disconnect(module_data_t *mod, int status)
@@ -747,91 +721,29 @@ static void newcamd_disconnect(module_data_t *mod, int status)
 
     if(mod->sock)
     {
-        event_detach(mod->sock);
-        socket_close(mod->sock);
-        mod->sock = 0;
+        asc_socket_close(mod->sock);
+        mod->sock = NULL;
     }
     mod->status = NEWCAMD_UNKNOWN;
 
-    cam_queue_flush(mod, NULL);
-    decrypt_module_cam_status(mod, status);
-
-    list_t *i = mod->__cam_module.prov_list;
-    while(i)
-        i = list_delete(i, NULL);
-    mod->__cam_module.prov_list = NULL;
+    // list_t *i = mod->__cam_module.prov_list;
+    // while(i)
+    //     i = list_delete(i, NULL);
+    // mod->__cam_module.prov_list = NULL;
 }
 
-/*
- * oooo     oooo                   oooo            o888
- *  8888o   888   ooooooo     ooooo888 oooo  oooo   888  ooooooooo8
- *  88 888o8 88 888     888 888    888  888   888   888 888oooooo8
- *  88  888  88 888     888 888    888  888   888   888 888
- * o88o  8  o88o  88ooo88     88ooo888o  888o88 8o o888o  88oooo888
- *
- */
-
-static void interface_send_em(module_data_t *mod)
+static void module_init(module_data_t *mod)
 {
-    cam_packet_t *packet = list_get_data(mod->__cam_module.queue.head);
-    uint8_t *buffer = &mod->buffer[NEWCAMD_HEADER_SIZE];
-    memcpy(buffer, packet->payload, packet->size);
-    mod->buffer_size = packet->size;
-    newcamd_send_msg(mod, packet);
-}
 
-static void interface_activate(module_data_t *mod, int is_active)
-{
-    if(is_active)
-        newcamd_connect(mod);
-    else
-        newcamd_disconnect(mod, -1);
-}
-
-static void module_configure(module_data_t *mod)
-{
-    /*
-     * OPTIONS:
-     *   name, host, port, user, pass, key,
-     *   disable_emm, cas_data, timeout
-     */
-
-    module_set_string(mod, "name", 1, NULL, &mod->__cam_module.name);
-    module_set_string(mod, "host", 1, NULL, &mod->config.host);
-    module_set_number(mod, "port", 1, 0, &mod->config.port);
-    module_set_string(mod, "user", 1, NULL, &mod->config.user);
-    module_set_string(mod, "pass", 1, NULL, &mod->config.pass);
-
-    const char *key = NULL;
-    module_set_string(mod, "key", 1, NULL, &key);
-    str_to_hex(key, mod->config.key, sizeof(mod->config.key));
-
-    module_set_number(mod, "disable_emm", 0, 0
-                      , &mod->__cam_module.disable_emm);
-
-    const char *cas_data = NULL;
-    if(module_set_string(mod, "cas_data", 0, NULL, &cas_data))
-        cam_set_cas_data(mod, cas_data);
-
-    module_set_number(mod, "timeout", 0, 8, &mod->config.timeout);
-    mod->config.timeout *= 1000;
-}
-
-static void module_initialize(module_data_t *mod)
-{
-    module_configure(mod);
-
-    CAM_INTERFACE();
 }
 
 static void module_destroy(module_data_t *mod)
 {
-    newcamd_disconnect(mod, -1);
 
-    if(mod->prov_buffer)
-        free(mod->prov_buffer);
 }
 
-MODULE_METHODS_EMPTY();
-
-MODULE(newcamd)
+MODULE_LUA_METHODS()
+{
+    { NULL, NULL }
+};
+MODULE_LUA_REGISTER(newcamd)

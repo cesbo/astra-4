@@ -1,6 +1,9 @@
 /*
- * For more information, visit https://cesbo.com
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra Main App
+ * http://cesbo.com/astra
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
  */
 
 #include <astra.h>
@@ -11,40 +14,30 @@
 
 #include "config.h"
 
-static const char __version[] = ASTRA_VERSION_STR;
 static jmp_buf main_loop;
 
-static int astra_exit(lua_State *L)
+lua_State *lua;
+
+void astra_exit(void)
 {
     longjmp(main_loop, 1);
-    return 0;
 }
 
-static int astra_abort(lua_State *L)
+void astra_abort(void)
 {
     lua_Debug ar;
-    lua_getstack(L, 1, &ar);
-    lua_getinfo(L, "nSl", &ar);
-    log_error("[main] abort execution. line:%d source:%s"
-              , ar.currentline, ar.source);
+    lua_getstack(lua, 1, &ar);
+    lua_getinfo(lua, "nSl", &ar);
+    asc_log_error("[main] abort execution. line:%d source:%s", ar.currentline, ar.source);
     abort();
-
-    return 0;
 }
-
-static luaL_Reg astra_api[] =
-{
-    { "exit", astra_exit },
-    { "abort", astra_abort },
-    { NULL, NULL }
-};
 
 static void signal_handler(int signum)
 {
 #ifndef _WIN32
     if(signum == SIGHUP)
     {
-        log_hup();
+        asc_log_hup();
         return;
     }
 #endif
@@ -56,7 +49,7 @@ static void signal_handler(int signum)
     longjmp(main_loop, 1);
 }
 
-static lua_State * astra_init(int argc, const char **argv)
+static void astra_init(int argc, const char **argv)
 {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
@@ -67,53 +60,36 @@ static lua_State * astra_init(int argc, const char **argv)
 
     ASC_INIT();
 
-    lua_State *L = luaL_newstate();
-    luaL_openlibs(L);
-
-    // astra
-    luaL_newlib(L, astra_api);
-
-#ifdef DEBUG
-    lua_pushboolean(L, 1);
-#else
-    lua_pushboolean(L, 0);
-#endif
-    lua_setfield(L, -2, "debug");
-
-    lua_pushstring(L, __version);
-    lua_setfield(L, -2, "version");
-
-    lua_setglobal(L, "astra");
+    lua = luaL_newstate();
+    luaL_openlibs(lua);
 
     for(int i = 0; astra_mods[i]; i++)
-        astra_mods[i](L);
+        astra_mods[i](lua);
 
     /* argv table */
-    lua_newtable(L);
+    lua_newtable(lua);
     for(int i = 0; i < argc; i++)
     {
-        lua_pushinteger(L, i + 1);
-        lua_pushstring(L, argv[i]);
-        lua_settable(L, -3);
+        lua_pushinteger(lua, i + 1);
+        lua_pushstring(lua, argv[i]);
+        lua_settable(lua, -3);
     }
-    lua_setglobal(L, "argv");
+    lua_setglobal(lua, "argv");
 
     /* change package.path */
-    lua_getglobal(L, "package");
-    lua_pushstring(L, "/etc/astra/helpers/?.lua;./?.lua");
-    lua_setfield(L, -2, "path");
-    lua_pushstring(L, "");
-    lua_setfield(L, -2, "cpath");
-    lua_pop(L, 1);
-
-    return L;
+    lua_getglobal(lua, "package");
+    lua_pushstring(lua, "/etc/astra/helpers/?.lua;./?.lua");
+    lua_setfield(lua, -2, "path");
+    lua_pushstring(lua, "");
+    lua_setfield(lua, -2, "cpath");
+    lua_pop(lua, 1);
 }
 
-void astra_do_file(int argc, const char **argv, const char *file)
+void astra_do_file(int argc, const char **argv, const char *filename)
 {
-    if(file[0] == '-' && file[1] == '\0')
-        file = NULL;
-    else if(!access(file, R_OK))
+    if(filename[0] == '-' && filename[1] == '\0')
+        filename = NULL;
+    else if(!access(filename, R_OK))
         ;
     else
     {
@@ -121,34 +97,33 @@ void astra_do_file(int argc, const char **argv, const char *file)
         return;
     }
 
-    lua_State *L = astra_init(argc, argv);
+    astra_init(argc, argv);
 
     if(!setjmp(main_loop))
     {
-        if(luaL_dofile(L, file))
-            luaL_error(L, "[main] %s", lua_tostring(L, -1));
+        if(luaL_dofile(lua, filename))
+            luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
+
         ASC_LOOP();
     }
 
-    lua_close(L);
+    lua_close(lua);
     ASC_DESTROY();
 }
 
 void astra_do_text(int argc, const char **argv, const char *text, size_t size)
 {
-    lua_State *L = astra_init(argc, argv);
+    astra_init(argc, argv);
 
     if(!setjmp(main_loop))
     {
-        if(luaL_loadbuffer(L, text, size, "=inscript")
-           || lua_pcall(L, 0, LUA_MULTRET, 0))
-        {
-            luaL_error(L, "[main] %s", lua_tostring(L, -1));
-        }
+        if(luaL_loadbuffer(lua, text, size, "=inscript") || lua_pcall(lua, 0, LUA_MULTRET, 0))
+            luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
+
         ASC_LOOP();
     }
 
-    lua_close(L);
+    lua_close(lua);
     ASC_DESTROY();
 }
 
@@ -157,9 +132,9 @@ int main(int argc, const char **argv)
 {
     if(argc < 2)
     {
-        printf("Astra %s\n"
+        printf("Astra " ASTRA_VERSION_STR "\n"
                "Usage: %s script [argv]\n"
-               , __version, argv[0]);
+               , argv[0]);
         return 1;
     }
 

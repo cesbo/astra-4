@@ -1,2 +1,2 @@
-SOURCES="parser.c request.c server.c client.c"
-MODULES="http_request http_server http_client"
+SOURCES="parser.c server.c request.c"
+MODULES="http_server http_request"

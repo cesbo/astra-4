@@ -1,7 +1,7 @@
-SOURCES="input.c"
-MODULES="dvb_input"
+SOURCES="src/thread.c src/fe.c src/dvr.c src/dmx.c src/ca.c"
+SOURCES="$SOURCES input.c dvbls.c"
+MODULES="dvb_input dvbls"
 
-if [ "$IN_TARGET" != "linux" ] ; then
-    echo "ERROR: [dvb] module for linux only"
-    IS_ERROR=1
+if [ "$OS" != "linux" ] ; then
+    ERROR="Linux required"
 fi

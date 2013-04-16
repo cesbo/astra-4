@@ -1,6 +1,23 @@
 /*
- * For more information, visit https://cesbo.com
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra UDP Module
+ * http://cesbo.com/astra
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
+ */
+
+/*
+ * Module Name:
+ *      udp_output
+ *
+ * Module Options:
+ *      upstream    - object, stream instance returned by module_instance:stream()
+ *      addr        - string, source IP address
+ *      port        - number, source UDP port
+ *      ttl         - number, time to live
+ *      localaddr   - string, IP address of the local interface
+ *      socket_size - number, socket buffer size
+ *      rtp         - boolean, use RTP instad RAW UDP
  */
 
 #include <astra.h>
@@ -11,46 +28,35 @@
 #define UDP_BUFFER_SIZE 1460
 #define TS_PACKET_SIZE 188
 
-#define LOG_MSG(_msg) "[udp_output %s:%d] " _msg \
-                      , mod->config.addr, mod->config.port
-
-struct module_data_s
+struct module_data_t
 {
-    MODULE_BASE();
+    MODULE_STREAM_DATA();
 
-    struct
-    {
-        const char *addr;
-        int port;
-        int ttl;
-        const char *localaddr;
-        int socket_size;
-        int rtp;
-    } config;
+    char *addr;
+    int port;
 
+    int is_rtp;
     uint16_t rtpseq;
 
-    int sock;
+    asc_socket_t *sock;
 
     size_t buffer_skip;
     uint8_t buffer[UDP_BUFFER_SIZE];
 };
 
-/* stream_ts callbacks */
-
-static void callback_send_ts(module_data_t *mod, uint8_t *ts)
+static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
     if(mod->buffer_skip > UDP_BUFFER_SIZE - TS_PACKET_SIZE)
     {
         if(mod->buffer_skip == 0)
             return;
-        if(socket_send(mod->sock, mod->buffer, mod->buffer_skip) == -1)
-            log_warning(LOG_MSG("error on send [%s]"), socket_error());
+        if(asc_socket_sendto(mod->sock, mod->buffer, mod->buffer_skip) == -1)
+            asc_log_warning("[udp_output %s:%d] error on send [%s]", "", 0, asc_socket_error());
 
         mod->buffer_skip = 0;
     }
 
-    if(mod->buffer_skip == 0 && mod->config.rtp)
+    if(mod->buffer_skip == 0 && mod->is_rtp)
     {
         struct timeval tv;
         gettimeofday(&tv, NULL);
@@ -74,25 +80,25 @@ static void callback_send_ts(module_data_t *mod, uint8_t *ts)
     mod->buffer_skip += TS_PACKET_SIZE;
 }
 
-/* required */
-
-static void module_configure(module_data_t *mod)
+static void module_init(module_data_t *mod)
 {
-    module_set_string(mod, "addr", 1, NULL, &mod->config.addr);
-    module_set_number(mod, "port", 0, 1234, &mod->config.port);
-    module_set_number(mod, "ttl", 0, 0, &mod->config.ttl);
-    module_set_string(mod, "localaddr", 0, NULL, &mod->config.localaddr);
-    module_set_number(mod, "socket_size", 0, 0, &mod->config.socket_size);
-    module_set_number(mod, "rtp", 0, 0, &mod->config.rtp);
-}
+    module_stream_init(mod, on_ts);
 
-static void module_initialize(module_data_t *mod)
-{
-    module_configure(mod);
+    const char *addr = NULL;
+    const int addr_len = module_option_string("addr", &addr);
+    if(!addr)
+    {
+        asc_log_error("[udp_output] option 'addr' is required");
+        astra_abort();
+    }
+    mod->addr = malloc(addr_len + 1);
+    strcpy(mod->addr, addr);
 
-    stream_ts_init(mod, callback_send_ts, NULL, NULL, NULL, NULL);
+    mod->port = 1234;
+    module_option_number("port", &mod->port);
 
-    if(mod->config.rtp)
+    module_option_number("rtp", &mod->is_rtp);
+    if(mod->is_rtp)
     {
         srand((uint32_t)time(NULL));
         const uint32_t rtpssrc = (uint32_t)rand();
@@ -110,22 +116,38 @@ static void module_initialize(module_data_t *mod)
         buffer[11] = (rtpssrc      ) & 0xFF;
     }
 
-    mod->sock = socket_open(SOCKET_PROTO_UDP | SOCKET_CONNECT
-                            , mod->config.addr, mod->config.port);
-    if(mod->config.socket_size > 0)
-        socket_set_buffer(mod->sock, 0, mod->config.socket_size);
-    socket_multicast_set_if(mod->sock, mod->config.localaddr);
-    socket_multicast_set_ttl(mod->sock, mod->config.ttl);
-    socket_multicast_join(mod->sock, mod->config.addr, NULL);
+    mod->sock = asc_socket_open_udp4();
+    asc_socket_set_reuseaddr(mod->sock, 1);
+    if(!asc_socket_bind(mod->sock, NULL, 0))
+        astra_abort();
+
+    int value;
+    if(module_option_number("socket_size", &value))
+        asc_socket_set_buffer(mod->sock, 0, value);
+
+    const char *localaddr = NULL;
+    module_option_string("localaddr", &localaddr);
+    if(localaddr)
+        asc_socket_set_multicast_if(mod->sock, localaddr);
+
+    value = 32;
+    module_option_number("ttl", &value);
+    asc_socket_set_multicast_ttl(mod->sock, value);
+
+    asc_socket_multicast_join(mod->sock, mod->addr, NULL);
+    asc_socket_set_sockaddr(mod->sock, mod->addr, mod->port);
 }
 
 static void module_destroy(module_data_t *mod)
 {
-    stream_ts_destroy(mod);
+    module_stream_destroy(mod);
 
-    socket_close(mod->sock);
+    asc_socket_close(mod->sock);
 }
 
-MODULE_METHODS_EMPTY();
-
-MODULE(udp_output)
+MODULE_STREAM_METHODS()
+MODULE_LUA_METHODS()
+{
+    MODULE_STREAM_METHODS_REF()
+};
+MODULE_LUA_REGISTER(udp_output)

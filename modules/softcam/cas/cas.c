@@ -1,6 +1,8 @@
 /*
- * Astra SoftCAM module
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra SoftCAM Module
+ * http://cesbo.com/astra
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  *
  * This module is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -14,90 +16,46 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this module.  If not, see <http://www.gnu.org/licenses/>.
- *
- * For more information, visit http://cesbo.com
  */
 
-#include "../softcam.h"
-#include <modules/utils/utils.h>
+#include "../module_cam.h"
 
-extern const cas_module_t cas_module_biss
-                        , cas_module_viaccess
-                        , cas_module_dre
-                        , cas_module_irdeto
-                        , cas_module_conax
-                        , cas_module_mediaguard
-                        , cas_module_nagra
-                        , cas_module_bulcrypt
-                        , cas_module_cryptoworks
-                        , cas_module_videoguard
-                        ;
+extern cas_t * template_cas_init(uint16_t caid, uint16_t pnr);
 
-static const cas_module_t *cas_module_list[] =
+typedef cas_t *(*cas_init_t)(uint16_t caid, uint16_t pnr);
+static const cas_init_t cas_init_list[] =
 {
-    &cas_module_biss
-    , &cas_module_viaccess
-    , &cas_module_dre
-    , &cas_module_irdeto
-    , &cas_module_conax
-    , &cas_module_mediaguard
-    , &cas_module_nagra
-    , &cas_module_bulcrypt
-    , &cas_module_cryptoworks
-    , &cas_module_videoguard
+    template_cas_init,
+    NULL
 };
 
-struct cas_data_s
+cas_t * cas_init(uint16_t caid, uint16_t pnr)
 {
-    CAS_MODULE_BASE();
-};
-
-struct module_data_s
-{
-    CAM_MODULE_BASE();
-};
-
-cas_data_t * cas_init(module_data_t *decrypt, module_data_t *cam, uint16_t pnr)
-{
-    const cas_module_t *cas_mod = NULL;
-
-    for(int i = 0; i < ARRAY_SIZE(cas_module_list); ++i)
+    for(int i = 0; cas_init_list[i]; ++i)
     {
-        cas_mod = cas_module_list[i];
-        if(cas_mod->check_caid(cam->__cam_module.caid))
-            break;
-        cas_mod = NULL;
+        cas_t *cas = cas_init_list[i](caid, pnr);
+        if(cas)
+            return cas;
     }
-    if(!cas_mod)
-        return NULL;
-
-    cas_data_t *cas = calloc(1, cas_mod->datasize);
-    cas->__cas_module.cas = cas_mod;
-    cas->__cas_module.decrypt = decrypt;
-    cas->__cas_module.cam = cam;
-    cas->__cas_module.pnr = pnr;
-
-    return (cas_data_t *)cas;
+    return NULL;
 }
 
-void cas_destroy(cas_data_t *cas)
+struct cas_t
 {
-    cam_queue_flush(cas->__cas_module.cam, cas);
+    CAS_DATA();
+};
 
-    if(cas)
-        free(cas);
+inline void cas_destroy(cas_t *cas)
+{
+    cas->__cas.destroy(cas);
 }
 
-inline const char * cas_name(cas_data_t *cas)
+inline int cas_check_em(cas_t *cas, em_packet_t *packet)
 {
-    return cas->__cas_module.cas->name;
+    return cas->__cas.check_em(cas, packet);
 }
 
-uint16_t cas_check_descriptor(cas_data_t *cas, const uint8_t *desc)
+inline int cas_check_keys(cas_t *cas, em_packet_t *packet)
 {
-    if(desc[0] != 0x09)
-        return 0;
-    if(CA_DESC_CAID(desc) != CAS2CAM(cas).caid)
-        return 0;
-    return cas->__cas_module.cas->check_desc(cas, desc);
+    return cas->__cas.check_keys(cas, packet);
 }

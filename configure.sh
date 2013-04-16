@@ -5,13 +5,17 @@ usage()
     cat <<EOF
 Usage: $0 [OPTIONS]
     --help
-    --debug                     - build version for debug
+    --with-modules=PATH[:PATH]  - list of modules (by default: *)
+                                  * - include all defaults modules
+                                  For example, to append custom module, use:
+                                  --with-modules=*:path/to/custom/module
+
+    --with-main-app=FILE        - build with a custom main app
     --cc=GCC                    - custom C compiler (cross-compile)
-    --with-modules=PATH[:PATH]  - build with a listed modules
     --build-static              - build static binary
-    --with-main-app=FILE        - build custom app
-    --without-modules           - build astra core, without modules
-    --without-lua               - build astra core, without lua
+
+    --module-pack=PATH          - build module package
+
     CFLAGS="..."                - custom compiler flags
     LDFLAGS="..."               - custom linker flags
     LIBS="..."                  - static linked libraries
@@ -19,32 +23,28 @@ EOF
     exit 0
 }
 
-CDIR=`pwd`
-cd `dirname $0`
-SRCDIR=`pwd`
-cd $CDIR
+SRCDIR=`dirname $0`
 
-ARGS="$*"
-ARG_DEBUG=0
-ARG_CC=""
-ARG_MODULES=""
-ARG_BUILD_STATIC=0
+MAKEFILE=$SRCDIR/Makefile
+CONFFILE=$SRCDIR/config.h
+
+APP="astra"
+APP_C="gcc"
+APP_STRIP="strip"
+
+ARG_CC=0
+ARG_MODULES="*"
 ARG_MAIN_APP=""
-ARG_WITHOUT_LUA=0
+ARG_BUILD_STATIC=0
 ARG_CFLAGS=""
 ARG_LDFLAGS=""
-ARG_LIBS=""
-
-IN_CC="gcc"
-IN_LD="gcc"
-IN_STRIP="strip"
+ARG_MODULE_PACK=""
 
 set_cc()
 {
-    ARG_CC="$1"
-    IN_CC="$1"
-    IN_LD="$1"
-    IN_STRIP=`echo $1 | sed 's/-gcc$/-strip/'`
+    ARG_CC=1
+    APP_C="$1"
+    APP_STRIP=`echo $1 | sed 's/-gcc$/-strip/'`
 }
 
 while [ $# -ne 0 ] ; do
@@ -52,343 +52,455 @@ while [ $# -ne 0 ] ; do
     shift
 
     case "$OPT" in
-"--help") usage ;;
-"--debug") ARG_DEBUG=1 ;;
-"--cc="*) set_cc `echo $OPT | sed 's/^--cc=//'` ;;
-"--with-modules="*) ARG_MODULES=`echo $OPT | sed -e 's/^[a-z-]*=//' -e 's/\/*:/ /g' -e 's/\/$//'` ;;
-"--build-static") ARG_BUILD_STATIC=1 ;;
-"--with-main-app="*) ARG_MAIN_APP=`echo $OPT | sed -e 's/^[a-z-]*=//'` ;;
-"--without-modules") ARG_MODULES="_" ;;
-"--without-lua") ARG_WITHOUT_LUA=1 ;;
-"CFLAGS="*) ARG_CFLAGS=`echo $OPT | sed -e 's/^[A-Z]*=//'` ;;
-"LDFLAGS="*) ARG_LDFLAGS=`echo $OPT | sed -e 's/^[A-Z]*=//'` ;;
-"LIBS="*) ARG_LIBS=`echo $OPT | sed -e 's/^[A-Z]*=//'` ;;
-*) echo "Unknown option: $OPT"; usage ;;
+        "--help")
+            usage
+            ;;
+        "--with-modules="*)
+            ARG_MODULES=`echo $OPT | sed -e 's/^[a-z-]*=//'`
+            ;;
+        "--with-main-app="*)
+            ARG_MAIN_APP=`echo $OPT | sed -e 's/^[a-z-]*=//'`
+            ;;
+        "--cc="*)
+            set_cc `echo $OPT | sed 's/^--cc=//'`
+            ;;
+        "--build-static")
+            ARG_BUILD_STATIC=1
+            ;;
+        "CFLAGS="*)
+            ARG_CFLAGS=`echo $OPT | sed -e 's/^[A-Z]*=//'`
+            ;;
+        "LDFLAGS="*)
+            ARG_LDFLAGS=`echo $OPT | sed -e 's/^[A-Z]*=//'`
+            ;;
+        "--module-pack="*)
+            ARG_MODULE_PACK=`echo $OPT | sed -e 's/^[a-z-]*=//'`
+            ;;
+        *)
+            echo "Unknown option: $OPT"
+            echo "For more information see: $0 --help"
+            exit 1
+            ;;
     esac
 done
 
-if ! which $IN_CC >/dev/null ; then
-    echo "C Compiler not found :$IN_CC"
+if ! which $APP_C >/dev/null ; then
+    echo "C Compiler is not found :$APP_C"
     exit 1
 fi
 
-IN_CFLAGS=""
+CFLAGS="-g -O3 -I. -Wall -Wextra -pedantic \
+-fno-builtin -funit-at-a-time -ffast-math"
 
-if [ -z "$ARG_CC" ]; then
-   CHECK_CPU_APP="$SRCDIR/cpucheck"
-   $IN_CC -o $CHECK_CPU_APP cpucheck.c
-   if [ $? -eq 0 ]; then
-       IN_CFLAGS=`$CHECK_CPU_APP`
-       rm $CHECK_CPU_APP
+if [ $ARG_CC -eq 0 -a -z "$ARG_MODULE_PACK" ]; then
+   CHECKCPU_APP="$SRCDIR/cpucheck"
+   $APP_C -o $CHECKCPU_APP $SRCDIR/cpucheck.c
+   if [ $? -eq 0 ] ; then
+       CPUFLAGS=`$CHECKCPU_APP`
+       rm $CHECKCPU_APP
+
+       $APP_C $CPUFLAGS -E -x c /dev/null >/dev/null 2>&1
+       if [ $? -eq 0 ] ; then
+           CFLAGS="$CFLAGS $CPUFLAGS"
+       fi
    else
-       echo "Warning: CPU flags check error"
+       echo "Warning: failed to check CPU flags"
    fi
 fi
 
-if [ -z "$IN_CFLAGS" ]; then
-    if $IN_CC -march=native -x c -E /dev/null >/dev/null 2>&1 ; then
-        IN_CFLAGS="-march=native"
+CRT1=`$APP_C -print-file-name=crt1.o`
+CCSYSTEM=`$APP_C -dumpmachine`
+case "$CCSYSTEM" in
+*"linux"*)
+    OS="linux"
+    CFLAGS="$CFLAGS -fPIC -pthread"
+    CRTI=`$APP_C -print-file-name=crti.o`
+    CRTN=`$APP_C -print-file-name=crtn.o`
+    LDFLAGS="-nostdlib $CRT1 $CRTI -lc $CRTN -ldl -lm -lpthread"
+    ;;
+*"freebsd"*)
+    OS="freebsd"
+    CFLAGS="$CFLAGS -fPIC -pthread"
+    LDFLAGS="-nostdlib $CRT1 -lc -lm -lpthread"
+    ;;
+*"darwin"*)
+    OS="darwin"
+    CFLAGS="$CFLAGS -fPIC -pthread"
+    LDFLAGS="-nostdlib $CRT1 -lc"
+    ;;
+*"mingw"*)
+    OS="mingw"
+    WS32=`$APP_C -print-file-name=libws2_32.a`
+    LDFLAGS="-nostdlib $CRT1 -lc $WS32"
+    ;;
+*)
+    echo "Unknown OS type \"$CCSYSTEM\""
+    exit 1
+    ;;
+esac
+
+if [ -n "$ARG_CFLAGS" ] ; then
+    CFLAGS="$CFLAGS $ARG_CFLAGS"
+fi
+
+if [ -n "$ARG_MAIN_APP" ] ; then
+    CFLAGS="$CFLAGS -DASTRA_SHELL=1"
+fi
+
+if [ $ARG_BUILD_STATIC -eq 1 ] ; then
+    LDFLAGS="$LDFLAGS -static"
+fi
+
+if [ -n "$ARG_LDFLAGS" ] ; then
+    LDFLAGS="$LDFLAGS $ARG_LDFLAGS"
+fi
+
+APP_CFLAGS="$CFLAGS -Wstrict-prototypes -std=iso9899:1999 -D_GNU_SOURCE"
+APP_LDFLAGS="$LDFLAGS"
+
+if [ -n "$ARG_MODULE_PACK" ] ;  then
+    APP="module-pack"
+    ARG_MODULES="$ARG_MODULE_PACK"
+    if [ ! -f "$ARG_MODULE_PACK/module-pack.mk" ] ; then
+        echo "Error: module-pack.mk required to build package" >&2
+        exit 1
     fi
 fi
 
-if [ $ARG_DEBUG -eq 1 ]; then
-    IN_CFLAGS="$IN_CFLAGS -O2 -g -DDEBUG=1 -pedantic"
-    IN_STRIP=":"
-else
-    IN_CFLAGS="$IN_CFLAGS -O3 -fexpensive-optimizations"
+# temporary file
+
+TMP_MODULE_MK="/tmp"
+if [ ! -d "/tmp" ] ; then
+    TMP_MODULE_MK="."
 fi
-
-if [ $ARG_WITHOUT_LUA -eq 1 ]; then
-    IN_CFLAGS="$IN_CFLAGS -DWITHOUT_LUA"
+TMP_MODULE_MK="$TMP_MODULE_MK/$APP_module.mk-$RANDOM"
+touch $TMP_MODULE_MK 2>/dev/null
+if [ $? -ne 0 ] ; then
+    echo "ERROR: failed to build tmp file ($TMP_MODULE_MK)"
+    exit 1
 fi
+rm -f $TMP_MODULE_MK
 
-if [ "$ARG_MODULES" = "_" ]; then
-    IN_CFLAGS="$IN_CFLAGS -DWITHOUT_MODULES"
-fi
+#
 
-IN_THREAD_MODEL=`LC_ALL='en' $IN_CC -E -v -x c /dev/null 2>&1 | grep 'Thread model:' | cut -d ' ' -f 3`
+cat >&2 <<EOF
+Compiler Flags:
+  TARGET: $CCSYSTEM
+      CC: $APP_C
+  CFLAGS: $APP_CFLAGS
 
-IN_TARGET_GCC=`$IN_CC -dumpmachine`
-IN_TARGET=""
-case "$IN_TARGET_GCC" in
-    *"linux"*)
-        IN_TARGET="linux"
-        IN_CFLAGS="$IN_CFLAGS -fPIC"
-        IN_APP_EXTENSION=""
-        IN_LIB_EXTENSION=".so"
-        ;;
-    *"freebsd"*)
-        IN_TARGET="freebsd"
-        IN_CFLAGS="$IN_CFLAGS -fPIC"
-        IN_LDFLAGS="-lm"
-        IN_APP_EXTENSION=""
-        IN_LIB_EXTENSION=".so"
-        ;;
-    *"darwin"*)
-        IN_TARGET="darwin"
-        IN_CFLAGS="$IN_CFLAGS -fPIC"
-        IN_APP_EXTENSION=""
-        IN_LIB_EXTENSION=".dylib"
-        ;;
-    *"mingw"*)
-        IN_TARGET="mingw"
-        IN_APP_EXTENSION=".exe"
-        IN_LIB_EXTENSION=".dll"
-        ;;
-    *)
-        echo "ERROR: failed to detect target [$IN_TARGET_GCC]"
+EOF
+
+# makefile
+
+rm -f $MAKEFILE
+exec 5>$MAKEFILE
+
+cat >&5 <<EOF
+# generated by configure.sh
+
+MAKEFLAGS = -rR --no-print-directory
+
+APP         = $APP
+C           = $APP_C
+CFLAGS      = $APP_CFLAGS
+OS          = $OS
+
+CORE_OBJS   =
+MODS_OBJS   =
+
+.PHONY: all clean distclean
+all: \$(APP)
+
+clean: \$(APP)-clean
+
+distclean: \$(APP)-distclean
+	@rm -f Makefile config.h
+EOF
+
+echo "Check modules:" >&2
+
+# main app
+
+APP_SOURCES="$SRCDIR/main.c"
+APP_OBJS=""
+
+__check_main_app()
+{
+    if [ -n "$ARG_MAIN_APP" ] ; then
+        APP_SOURCES="$APP_SOURCES $ARG_MAIN_APP"
+    fi
+
+    for S in $APP_SOURCES ; do
+        O=`echo $S | sed -e 's/.c$/.o/' -e 's/.cpp$/.o/'`
+        APP_OBJS="$APP_OBJS $O"
+        $APP_C $APP_CFLAGS -MT $O -MM $S 2>$TMP_MODULE_MK
+        if [ $? -ne 0 ] ; then
+            return 1
+        fi
+        cat <<EOF
+	@echo "   CC: \$@"
+	@\$(CC) \$(CFLAGS) -o \$@ -c \$<
+EOF
+    done
+
+    return 0
+}
+
+check_main_app()
+{
+    touch $CONFFILE
+    __check_main_app >&5
+    if [ $? -ne 0 ] ; then
+        echo "  ERROR: $APP_SOURCES" >&2
+        if [ -f $TMP_MODULE_MK ] ; then
+            cat $TMP_MODULE_MK >&2
+            rm -f $TMP_MODULE_MK
+        fi
+        exec 5>&-
+        rm -f $MAKEFILE
+        exec 6>&-
+        rm -f $CONFFILE
         exit 1
-        ;;
-esac
+    else
+        echo "     OK: $APP_SOURCES"
+    fi
+    echo "" >&5
+}
 
-IN_OUT="astra$IN_APP_EXTENSION"
+if [ -z "$ARG_MODULE_PACK" ] ; then
+    check_main_app
+fi
 
-IN_CFLAGS="$IN_CFLAGS \
--Wall -Wstrict-prototypes -std=gnu99 \
--fno-builtin -funit-at-a-time -ffast-math -fforce-addr \
--I$SRCDIR -I$SRCDIR/asc -I$SRCDIR/lua $ARG_CFLAGS"
+#
 
-echo "Check modules:"
+select_modules()
+{
+    echo "$ARG_MODULES" | tr ':' '\n' | while read M ; do
+        if [ -z "$M" ] ; then
+            :
+        elif [ "$M" = "*" ] ; then
+            ls -d $SRCDIR/modules/* | while read M ; do
+                if [ -f "$M/module.mk" ] ; then
+                    echo "$M"
+                fi
+            done
+        else
+            echo "$M" | sed 's/\/$//'
+        fi
+    done
+}
 
-IN_LDFLAGS="$IN_LDFLAGS $ARG_LDFLAGS"
-IN_LIBS="$ARG_LIBS"
-IN_OBJECTS=""
+APP_MODULES_LIST=`select_modules`
 
-case "$IN_THREAD_MODEL" in
-    "posix")
-        IN_CFLAGS="$IN_CFLAGS -pthread"
-        IN_LDFLAGS="$IN_LDFLAGS -lpthread"
-        ;;
-    "win32")
-        ;;
-    *)
-        echo "ERROR: unknown thread model $IN_THREAD_MODEL"
-        ;;
-esac
+# modules checking
 
-:>config.h
-exec 5>$SRCDIR/__modules.mk
-exec 6>$SRCDIR/__config_1.h
-exec 7>$SRCDIR/__config_2.h
+APP_MODULES_CONF=""
+APP_MODULES_A=""
 
-check_module() {
-    MODDIR="$1"
+__check_module()
+{
+    MODULE="$1"
+    OGROUP="$2"
+
     SOURCES=""
     MODULES=""
     CFLAGS=""
     LDFLAGS=""
-    LIBS=""
-    IS_ERROR=0
-    if [ -d "$MODDIR" -a -f "$MODDIR/module.mk" ] ; then
-        . $MODDIR/module.mk
-        if [ $IS_ERROR -ne 0 ] ; then
-            echo "    ERR: $MODDIR"
-        elif [ -n "$SOURCES" ] ; then
-            IN_IS_ERR=0
-            IN_OBJECTS_TMP=""
-            exec 8>$MODDIR/__module.mk
-            for S in $SOURCES ; do
-                O=`echo $S | sed 's/.c$/.o/'`
+    ERROR=""
 
-                IN_OBJECTS_TMP="$IN_OBJECTS_TMP $MODDIR/$O"
-                $IN_CC $IN_CFLAGS $CFLAGS -MT $MODDIR/$O -MM $MODDIR/$S >&8
-                [ $? -ne 0 ] && IN_IS_ERR=1 && break
-                cat >&8 <<EOF
-	@echo Compiling: $MODDIR/$S
-	@\$(CC) \$(CFLAGS) $CFLAGS -c $MODDIR/$S -o \$@
+    OBJECTS=""
+
+    . $MODULE/module.mk
+
+    if [ -n "$ERROR" ] ; then
+        echo "$MODULE/module.mk: error: $ERROR" >$TMP_MODULE_MK
+        return 1
+    fi
+
+    if [ -n "$LDFLAGS" ] ; then
+        APP_LDFLAGS="$APP_LDFLAGS $LDFLAGS"
+    fi
+
+    if [ -z "$SOURCES" ] ; then
+        if [ -f "$MODULE/module.a" ] ; then
+            APP_MODULES_A="$APP_MODULES_A $MODULE/module.a"
+            if [ -n "MODULES" ] ; then
+                APP_MODULES_CONF="$APP_MODULES_CONF $MODULES"
+            fi
+            return 0
+        fi
+        echo "$MODULE/module.mk: SOURCES is not defined" >$TMP_MODULE_MK
+        return 1
+    fi
+
+    echo "${MODULE}_CFLAGS = $CFLAGS"
+    echo ""
+
+    for S in $SOURCES ; do
+        O=`echo $S | sed -e 's/.c$/.o/' -e 's/.cpp$/.o/'`
+        OBJECTS="$OBJECTS $MODULE/$O"
+        $APP_C $APP_CFLAGS $CFLAGS -MT $MODULE/$O -MM $MODULE/$S 2>$TMP_MODULE_MK
+        if [ $? -ne 0 ] ; then
+            return 1
+        fi
+        cat <<EOF
+	@echo "   CC: \$@"
+	@\$(CC) \$(CFLAGS) \$(${MODULE}_CFLAGS) -o \$@ -c \$<
+EOF
+    done
+
+    cat <<EOF
+
+${MODULE}_OBJECTS = $OBJECTS
+${OGROUP} += \$(${MODULE}_OBJECTS)
 
 EOF
-            done
-            exec 8>&-
-            if [ $IN_IS_ERR -eq 0 ] ; then
-                echo "     OK: $MODDIR"
-                IN_OBJECTS="$IN_OBJECTS $IN_OBJECTS_TMP"
-                cat $MODDIR/__module.mk >&5
-                if [ -n "$MODULES" ] ; then
-                    for M in $MODULES ; do
-                        echo "extern int luaopen_$M(lua_State *);" >&6
-                        echo "    luaopen_$M," >&7
-                    done
-                fi
-                if [ -n "$LDFLAGS" ] ; then
-                    IN_LDFLAGS="$IN_LDFLAGS $LDFLAGS"
-                fi
-                if [ -n "$LIBS" ] ; then
-                    IN_LIBS="$IN_LIBS $LIBS"
-                fi
-            else
-                echo "   SKIP: $MODDIR"
-            fi
-            rm $MODDIR/__module.mk
-        fi
+
+    if [ -n "MODULES" ] ; then
+        APP_MODULES_CONF="$APP_MODULES_CONF $MODULES"
+    fi
+
+    return 0
+}
+
+check_module()
+{
+    MODULE="$1"
+    OGROUP="$2"
+
+    __check_module $MODULE $OGROUP >&5
+    if [ $? -eq 0 ] ; then
+        echo "     OK: $MODULE" >&2
+    else
+        echo "   SKIP: $MODULE" >&2
+    fi
+    if [ -f $TMP_MODULE_MK ] ; then
+        cat $TMP_MODULE_MK >&2
+        rm -f $TMP_MODULE_MK
     fi
 }
 
-IN_OBJECTS_APP=""
-
-IN_CFLAGS_APP=""
-if [ -n "$ARG_MAIN_APP" ] ; then
-    IN_CFLAGS_APP="-DASTRA_SHELL=1"
-fi
-
-S="$SRCDIR/main.c"
-O=`echo $S | sed 's/.c$/.o/'`
-CC_RET=`$IN_CC $IN_CFLAGS $IN_CFLAGS_APP -MT $O -MM $S`
-if [ $? -eq 0 ] ; then
-    echo "     OK: $S"
-    cat >&5 <<EOF
-${CC_RET}
-	@echo Compiling: $S
-	@\$(CC) \$(CFLAGS) $IN_CFLAGS_APP -c $S -o \$@
-
-EOF
-    IN_OBJECTS_APP="$O"
-else
-    echo "    ERR: $S"
-    exec 5>&-
-    exec 6>&-
-    exec 7>&-
-    rm -f $SRCDIR/__modules.mk $SRCDIR/__config_1.h $SRCDIR/__config_2.h
-    exit 1
-fi
-
-if [ -n "$ARG_MAIN_APP" ] ; then
-    O=`echo $ARG_MAIN_APP | sed 's/.c$/.o/'`
-    CC_RET=`$IN_CC $IN_CFLAGS -MT $O -MM $ARG_MAIN_APP`
-    if [ $? -eq 0 ] ; then
-        echo "     OK: $ARG_MAIN_APP"
-        cat >&5 <<EOF
-${CC_RET}
-	@echo Compiling: $ARG_MAIN_APP
-	@\$(CC) \$(CFLAGS) -c $ARG_MAIN_APP -o \$@
-
-EOF
-        IN_OBJECTS_APP="$IN_OBJECTS_APP $O"
-    else
-        echo "    ERR: $ARG_MAIN_APP"
-        exec 5>&-
-        exec 6>&-
-        exec 7>&-
-        rm -f $SRCDIR/__modules.mk $SRCDIR/__config_1.h $SRCDIR/__config_2.h
-        exit 1
-    fi
-fi
-
-check_module $SRCDIR/asc
-IN_OBJECTS_CORE="$IN_OBJECTS_APP $IN_OBJECTS"
-IN_OBJECTS=""
-
-IN_OBJECTS_LUA=""
-if [ $ARG_WITHOUT_LUA -ne 1 ] ; then
-    check_module $SRCDIR/lua
-    IN_OBJECTS_LUA=$IN_OBJECTS
-    IN_OBJECTS=""
-fi
-
-if [ -z "$ARG_MODULES" ] ; then
-    ARG_MODULES=`ls -d $SRCDIR/modules/*`
-fi
-
-if [ "$ARG_MODULES" != "_" ] ; then
-    for M in $ARG_MODULES ; do
-        check_module "$M"
+check_core()
+{
+    for M in $SRCDIR/core $SRCDIR/lua ; do
+        check_module $M "CORE_OBJS"
     done
+}
+
+check_modules()
+{
+    for M in $APP_MODULES_LIST ; do
+        check_module $M "MODS_OBJS"
+    done
+
+    # config.h
+
+    rm -f $CONFFILE
+    exec 6>$CONFFILE
+
+    cat >&6 <<EOF
+/* generated by configure.sh */
+#ifndef _CONFIG_H_
+#define _CONFIG_H_
+
+EOF
+
+    for M in $APP_MODULES_CONF ; do
+        echo "extern int luaopen_$M(lua_State *);" >&6
+    done
+
+    cat >&6 <<EOF
+
+int (*astra_mods[])(lua_State *) =
+{
+EOF
+
+    for M in $APP_MODULES_CONF ; do
+        echo "    luaopen_$M," >&6
+    done
+
+    cat >&6 <<EOF
+    NULL
+};
+
+#endif /* _CONFIG_H_ */
+EOF
+
+    exec 6>&-
+}
+
+if [ -z "$ARG_MODULE_PACK" ] ; then
+    check_core
+    check_modules
+else
+    check_module $APP_MODULES_LIST "MODS_OBJS"
+fi
+
+#
+
+makefile_linker()
+{
+    cat >&2 <<EOF
+
+Linker Flags:
+     OUT: $APP
+ LDFLAGS: $APP_LDFLAGS
+EOF
+
+    cat >&5 <<EOF
+LD          = $APP_C
+LDFLAGS     = $APP_LDFLAGS
+STRIP       = $APP_STRIP
+
+\$(APP): $APP_OBJS \$(CORE_OBJS) \$(MODS_OBJS)
+	@echo "BUILD: \$@"
+	@\$(LD) \$^$APP_MODULES_A -o \$@ \$(LDFLAGS)
+	@\$(STRIP) \$@
+
+\$(APP)-clean:
+	@echo "CLEAN: \$(APP)"
+	@rm -f \$(APP) $APP_OBJS \$(MODS_OBJS)
+
+\$(APP)-distclean: \$(APP)-clean
+	@rm -f \$(CORE_OBJS)
+EOF
+}
+
+makefile_module_pack()
+{
+    PACKNAME=`basename $APP_MODULES_LIST`
+    PACKDIR=.pack-$RANDOM
+
+    cat >&5 <<EOF
+
+pack: \$(MODS_OBJS)
+	@echo "  ZIP: $PACKNAME.zip"
+	@mkdir -p $PACKDIR/$PACKNAME
+	@ar rcs $PACKDIR/$PACKNAME/module.a \$^
+	@cp $APP_MODULES_LIST/module-pack.mk $PACKDIR/$PACKNAME/module.mk
+	@cd $PACKDIR && zip -qr ../$PACKNAME.zip ./$PACKNAME
+	@cd ..
+	@rm -rf $PACKDIR
+
+\$(APP)-clean:
+	@rm -f \$(MODS_OBJS)
+
+\$(APP)-distclean: \$(APP)-clean
+	@rm -f $PACKNAME.zip
+
+EOF
+
+    cat >&2 <<EOF
+
+To build module package use: make pack
+EOF
+}
+
+if [ -z "$ARG_MODULE_PACK" ] ; then
+    makefile_linker
+else
+    makefile_module_pack
 fi
 
 exec 5>&-
-exec 6>&-
-exec 7>&-
-
-{
-    echo "/* generated by configure.sh */"
-    echo "#ifndef _CONFIG_H_"
-    echo "#define _CONFIG_H_"
-    cat $SRCDIR/__config_1.h
-    echo "int (*astra_mods[])(lua_State *) ="
-    echo "{"
-    cat $SRCDIR/__config_2.h
-    echo "    NULL"
-    echo "};"
-    echo "#endif /* _CONFIG_H_ */"
-} >$SRCDIR/config.h
-rm -f $SRCDIR/__config_1.h $SRCDIR/__config_2.h
-
-cat <<EOF
-
-Build flags:
-    OUT: $IN_OUT
- TARGET: $IN_TARGET_GCC
-     CC: $IN_CC
- CFLAGS: $IN_CFLAGS
-LDFLAGS: $IN_LDFLAGS
-   LIBS: $IN_LIBS
-EOF
-
-{
-cat <<EOF
-# generated by configure.sh
-# $ARGS
-
-MAKEFLAGS = -rR --no-print-directory
-
-CC = $IN_CC
-LD = $IN_LD
-STRIP = $IN_STRIP
-
-CFLAGS = $IN_CFLAGS
-LDFLAGS = $IN_LDFLAGS
-LIBS = $IN_LIBS
-
-OBJS_CORE = $IN_OBJECTS_CORE
-OBJS_LUA = $IN_OBJECTS_LUA
-OBJS_MODULES = $IN_OBJECTS
-OBJS = \$(OBJS_CORE) \$(OBJS_LUA) \$(OBJS_MODULES)
-
-.PHONY: all clean distclean
-
-all: $IN_OUT
-
-EOF
-cat $SRCDIR/__modules.mk
-
-cat <<EOF
-
-$IN_OUT: \$(OBJS)
-	@echo Link: \$@
-	@\$(LD) \$(OBJS) \$(LIBS) -o \$@ \$(LDFLAGS)
-	@\$(STRIP) \$@
-
-install: $IN_OUT
-	@echo Install:
-	@rm -f /usr/bin/\$<
-	@cp -v \$< /usr/bin/
-	@mkdir -p /etc/astra/helpers
-	@cp -v $SRCDIR/helpers/base.lua /etc/astra/helpers/
-	@cp -v $SRCDIR/helpers/stream.lua /etc/astra/helpers/
-	@cp -v $SRCDIR/helpers/json.lua /etc/astra/helpers/
-	@cp -v $SRCDIR/helpers/event.lua /etc/astra/helpers/
-	@cp -v $SRCDIR/helpers/camgroup.lua /etc/astra/helpers/
-	@cp -v $SRCDIR/helpers/output_http.lua /etc/astra/helpers/
-
-uninstall:
-	@echo Uninstall:
-	@rm -v /usr/bin/$IN_OUT
-	@rm -v /etc/astra/helpers/base.lua
-	@rm -v /etc/astra/helpers/stream.lua
-	@rm -v /etc/astra/helpers/json.lua
-	@rm -v /etc/astra/helpers/event.lua
-	@rm -v /etc/astra/helpers/camgroup.lua
-	@rm -v /etc/astra/helpers/output_http.lua
-	@ls /etc/astra/helpers/* 1>/dev/null 2>&1 || rm -rfv /etc/astra/helpers
-	@ls /etc/astra/* 1>/dev/null 2>&1 || rm -rfv /etc/astra && echo "Please, check /etc/astra and remove manualy"
-
-clean:
-	@echo Clean
-	@rm -vf \$(OBJS_CORE) \$(OBJS_MODULES) $IN_OUT
-
-distclean: clean
-	@rm -vf \$(OBJS_LUA) Makefile config.h
-	@if test -d contrib/build ; then echo "contrib/build" && rm -rf contrib/build ; fi
-EOF
-} >$SRCDIR/Makefile
-rm $SRCDIR/__modules.mk

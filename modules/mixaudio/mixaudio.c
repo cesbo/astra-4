@@ -1,20 +1,31 @@
 /*
- * For more information, visit https://cesbo.com
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra MixAudio Module
+ * http://cesbo.com/astra
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
+ */
+
+/*
+ * Module Name:
+ *      mixaudio
+ *
+ * Module Options:
+ *      pid         - number, PID of the audio stream
+ *      direction   - string, audio channel copying direction,
+ *                    "LL" (by default) replace right channel to the left
+ *                    "RR" replace left channel to the right
  */
 
 #include <astra.h>
-#include <modules/mpegts/mpegts.h>
-
-#include <libavcodec/avcodec.h>
-
-#if defined(LIBAVCODEC_VERSION_INT) \
-    && LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(53,23,0)
-
 #include <time.h>
 #include <fcntl.h>
 
-#define LOG_MSG(_msg) "[mixaudio] " _msg
+#include <libavcodec/avcodec.h>
+
+#if defined(LIBAVCODEC_VERSION_INT) && LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(53,23,0)
+
+#define MSG(_msg) "[mixaudio] " _msg
 
 typedef enum
 {
@@ -23,16 +34,11 @@ typedef enum
     MIXAUDIO_DIRECTION_RR = 2,
 } mixaudio_direction_t;
 
-struct module_data_s
+struct module_data_t
 {
-    MODULE_BASE();
+    MODULE_STREAM_DATA();
 
-    struct
-    {
-        int pid;
-        const char *direction;
-    } config;
-
+    int pid;
     mixaudio_direction_t direction;
 
     // ffmpeg
@@ -64,7 +70,7 @@ struct module_data_s
 // buffer16[i  ] - L
 // buffer16[i+1] - R
 
-void mix_buffer_ll(uint8_t *buffer, size_t buffer_size)
+void mix_buffer_ll(uint8_t *buffer, int buffer_size)
 {
     uint16_t *buffer16 = (uint16_t *)buffer;
     buffer_size /= 2;
@@ -73,7 +79,7 @@ void mix_buffer_ll(uint8_t *buffer, size_t buffer_size)
         buffer16[i+1] = buffer16[i];
 }
 
-void mix_buffer_rr(uint8_t *buffer, size_t buffer_size)
+void mix_buffer_rr(uint8_t *buffer, int buffer_size)
 {
     uint16_t *buffer16 = (uint16_t *)buffer;
     buffer_size /= 2;
@@ -100,7 +106,9 @@ static void pack_es(module_data_t *mod, uint8_t *data, size_t size)
 
     if(mod->count == mod->max_count)
     {
-        mpegts_pes_demux(mod->pes_o, stream_ts_send, mod);
+        mpegts_pes_demux(mod->pes_o
+                         , (void (*)(void *, uint8_t *))__module_stream_send
+                         , &mod->__stream);
         mod->pes_o->buffer_size = 0;
         mod->count = 0;
     }
@@ -120,7 +128,10 @@ static void transcode(module_data_t *mod, const uint8_t *data)
                                                 , &got_frame, &mod->davpkt);
         if(len_d < 0)
         {
-            log_error(LOG_MSG("error while decoding"));
+            avcodec_flush_buffers(mod->ctx_decode);
+            av_free_packet(&mod->davpkt);
+            av_init_packet(&mod->davpkt);
+            asc_log_error(MSG("error while decoding"));
             return;
         }
         if(got_frame)
@@ -184,8 +195,10 @@ const uint16_t mpeg_srate[4][4] = {
 /*   1 */ { 44100, 48000, 32000, 0 }
 };
 
-static void mux_pes(module_data_t *mod, mpegts_pes_t *pes)
+static void mux_pes(void *arg, mpegts_pes_t *pes)
 {
+    module_data_t *mod = arg;
+
     const size_t pes_hdr = 6 + 3 + pes->buffer[8];
     const size_t es_size = pes->buffer_size - pes_hdr;
 
@@ -211,7 +224,7 @@ static void mux_pes(module_data_t *mod, mpegts_pes_t *pes)
            && ptr[fsize] == 0xFF
            && (ptr[fsize + 1] & 0xF0) == 0xF0)
         {
-            log_debug(LOG_MSG("set frame size = %lu"), fsize);
+            asc_log_debug(MSG("set frame size = %lu"), fsize);
             mod->fsize = fsize;
             if(!(es_size % fsize))
                 mod->max_count = es_size / fsize;
@@ -243,7 +256,7 @@ static void mux_pes(module_data_t *mod, mpegts_pes_t *pes)
                 mod->decoder = avcodec_find_decoder(codec_id);
                 if(!mod->decoder)
                 {
-                    log_error(LOG_MSG("mp3 decoder is not found"));
+                    asc_log_error(MSG("mp3 decoder is not found"));
                     break;
                 }
 
@@ -251,7 +264,7 @@ static void mux_pes(module_data_t *mod, mpegts_pes_t *pes)
                 if(avcodec_open2(mod->ctx_decode, mod->decoder, NULL) < 0)
                 {
                     mod->decoder = NULL;
-                    log_error(LOG_MSG("failed to open mp3 decoder"));
+                    asc_log_error(MSG("failed to open mp3 decoder"));
                     break;
                 }
 
@@ -297,47 +310,39 @@ static void mux_pes(module_data_t *mod, mpegts_pes_t *pes)
     }
 }
 
-static void callback_send_ts(module_data_t *mod, uint8_t *ts)
+static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
     if(mod->direction == MIXAUDIO_DIRECTION_NONE)
     {
-        stream_ts_send(mod, ts);
+        module_stream_send(mod, ts);
         return;
     }
 
     const uint16_t pid = TS_PID(ts);
-    if(pid == mod->config.pid)
+    if(pid == mod->pid)
         mpegts_pes_mux(mod->pes_i, ts, mux_pes, mod);
     else
-        stream_ts_send(mod, ts);
-}
-
-/* methods */
-
-static int method_attach(module_data_t *mod)
-{
-    stream_ts_attach(mod);
-    return 0;
-}
-
-static int method_detach(module_data_t *mod)
-{
-    stream_ts_detach(mod);
-    return 0;
+        module_stream_send(mod, ts);
 }
 
 /* required */
 
-static void module_initialize(module_data_t *mod)
+static void module_init(module_data_t *mod)
 {
-    module_set_number(mod, "pid", 1, 0, &mod->config.pid);
-    module_set_string(mod, "direction", 0, "LL", &mod->config.direction);
+    module_stream_init(mod, on_ts);
 
-    stream_ts_init(mod, callback_send_ts, NULL, NULL, NULL, NULL);
+    if(!module_option_number("pid", &mod->pid) || mod->pid <= 0)
+    {
+        asc_log_error(MSG("option 'pid' is required"));
+        astra_abort();
+    }
+    const char *direction = NULL;
+    if(!module_option_string("direction", &direction))
+        direction = "LL";
 
-    if(!strcasecmp(mod->config.direction, "LL"))
+    if(!strcasecmp(direction, "LL"))
         mod->direction = MIXAUDIO_DIRECTION_LL;
-    else if(!strcasecmp(mod->config.direction, "RR"))
+    else if(!strcasecmp(direction, "RR"))
         mod->direction = MIXAUDIO_DIRECTION_RR;
 
     avcodec_register_all();
@@ -346,7 +351,7 @@ static void module_initialize(module_data_t *mod)
         mod->encoder = avcodec_find_encoder(CODEC_ID_MP2);
         if(!mod->encoder)
         {
-            log_error(LOG_MSG("mp3 encoder is not found"));
+            asc_log_error(MSG("mp3 encoder is not found"));
             break;
         }
         mod->ctx_encode = avcodec_alloc_context3(mod->encoder);
@@ -357,7 +362,7 @@ static void module_initialize(module_data_t *mod)
         mod->ctx_encode->channel_layout = av_get_channel_layout("stereo");
         if(avcodec_open2(mod->ctx_encode, mod->encoder, NULL) < 0)
         {
-            log_error(LOG_MSG("failed to open mp3 encoder"));
+            asc_log_error(MSG("failed to open mp3 encoder"));
             break;
         }
 
@@ -365,15 +370,15 @@ static void module_initialize(module_data_t *mod)
 
         av_init_packet(&mod->davpkt);
 
-        mod->pes_i = mpegts_pes_init(MPEGTS_PACKET_AUDIO, mod->config.pid);
-        mod->pes_o = mpegts_pes_init(MPEGTS_PACKET_AUDIO, mod->config.pid);
+        mod->pes_i = mpegts_pes_init(MPEGTS_PACKET_AUDIO, mod->pid);
+        mod->pes_o = mpegts_pes_init(MPEGTS_PACKET_AUDIO, mod->pid);
         mod->pes_o->pts = 1;
     } while(0);
 }
 
 static void module_destroy(module_data_t *mod)
 {
-    stream_ts_destroy(mod);
+    module_stream_destroy(mod);
 
     if(mod->ctx_encode)
         avcodec_close(mod->ctx_encode);
@@ -389,13 +394,14 @@ static void module_destroy(module_data_t *mod)
         mpegts_pes_destroy(mod->pes_o);
 }
 
-MODULE_METHODS()
+MODULE_STREAM_METHODS()
+
+MODULE_LUA_METHODS()
 {
-    METHOD(attach)
-    METHOD(detach)
+    MODULE_STREAM_METHODS_REF()
 };
 
-MODULE(mixaudio)
+MODULE_LUA_REGISTER(mixaudio)
 
 #else
 #   error "libavcodec >=53.23.0 required"
