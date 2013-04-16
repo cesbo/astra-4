@@ -12,12 +12,7 @@
  *
  * Module Options:
  *      interval    - number, sets the interval between triggers, in seconds
- *      callback(instance)
- *                  - function, handler is called when the timer is triggered
- *
- * Module Methods:
- *      close(instance)
- *                  - stop timer
+ *      callback    - function, handler is called when the timer is triggered
  */
 
 #include <astra.h>
@@ -36,22 +31,6 @@ static void timer_callback(void *arg)
     module_data_t *mod = arg;
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_cb);
     lua_call(lua, 0, 0);
-}
-
-/* methods */
-
-static int method_close(module_data_t *mod)
-{
-    if(mod->timer)
-    {
-        asc_timer_destroy(mod->timer);
-        mod->timer = NULL;
-    }
-
-    luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_cb);
-    mod->idx_cb = 0;
-
-    return 0;
 }
 
 /* required */
@@ -78,12 +57,18 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    asc_log_info("[timer] %s()", __FUNCTION__);
-    method_close(mod);
+    if(mod->timer)
+    {
+        asc_timer_destroy(mod->timer);
+        mod->timer = NULL;
+    }
+
+    luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_cb);
+    mod->idx_cb = 0;
 }
 
 MODULE_LUA_METHODS()
 {
-    { "close", method_close }
+    { NULL, NULL }
 };
 MODULE_LUA_REGISTER(timer)
