@@ -91,6 +91,7 @@ void asc_list_remove_current(asc_list_t *list)
     }
     item_t *next = TAILQ_NEXT(list->current, entries);
     TAILQ_REMOVE(&list->list, list->current, entries);
+    free(list->current);
     list->current = next;
 }
 
