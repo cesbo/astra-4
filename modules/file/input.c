@@ -412,12 +412,9 @@ static void timer_skip_set(void *arg)
 static int method_length(module_data_t *mod)
 {
     if(!mod->fd)
-    {
-        lua_pushnil(lua);
-        return 1;
-    }
-
-    lua_pushnumber(lua, mod->length);
+        lua_pushnumber(lua, 0);
+    else
+        lua_pushnumber(lua, mod->length);
     return 1;
 }
 
@@ -469,12 +466,10 @@ static void module_init(module_data_t *mod)
 
     // store callback in registry
     lua_getfield(lua, 2, "callback");
-    if(lua_type(lua, -1) != LUA_TFUNCTION)
-    {
-        asc_log_error(MSG("option 'callback' is required"));
-        astra_abort();
-    }
-    mod->idx_callback = luaL_ref(lua, LUA_REGISTRYINDEX);
+    if(lua_type(lua, -1) == LUA_TFUNCTION)
+        mod->idx_callback = luaL_ref(lua, LUA_REGISTRYINDEX);
+    else
+        lua_pop(lua, 1);
 
     module_stream_init(mod, NULL);
 
