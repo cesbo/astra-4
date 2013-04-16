@@ -56,7 +56,7 @@ inline void asc_list_next(asc_list_t *list)
 
 inline int asc_list_eol(asc_list_t *list)
 {
-    return (list->current != NULL);
+    return (list->current == NULL);
 }
 
 inline void * asc_list_data(asc_list_t *list)
@@ -97,7 +97,7 @@ void asc_list_remove_current(asc_list_t *list)
 
 void asc_list_remove_item(asc_list_t *list, void *data)
 {
-    for(asc_list_first(list); asc_list_eol(list); asc_list_next(list))
+    for(asc_list_first(list); !asc_list_eol(list); asc_list_next(list))
     {
         if(data == asc_list_data(list))
         {

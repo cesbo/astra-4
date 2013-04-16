@@ -40,7 +40,7 @@ void asc_timer_core_init(void)
 void asc_timer_core_destroy(void)
 {
     asc_list_first(timer_list);
-    while(asc_list_eol(timer_list))
+    while(!asc_list_eol(timer_list))
     {
         free(asc_list_data(timer_list));
         asc_list_remove_current(timer_list);
@@ -83,7 +83,7 @@ void asc_timer_core_loop(void)
         return;
 
     asc_list_first(timer_list);
-    while(asc_list_eol(timer_list))
+    while(!asc_list_eol(timer_list))
     {
         asc_timer_t *timer = asc_list_data(timer_list);
         if(timer->callback)

@@ -111,7 +111,7 @@ void asc_event_core_destroy(void)
 
     asc_event_t *previous_event = NULL;
     for(asc_list_first(event_observer.event_list)
-        ; asc_list_eol(event_observer.event_list)
+        ; !asc_list_eol(event_observer.event_list)
         ; asc_list_first(event_observer.event_list))
     {
         asc_event_t *event = asc_list_data(event_observer.event_list);
@@ -186,7 +186,7 @@ void asc_event_core_loop(void)
     if(event_observer.detach_count > 0)
     {
         asc_list_first(event_observer.event_list);
-        while(asc_list_eol(event_observer.event_list))
+        while(!asc_list_eol(event_observer.event_list))
         {
             asc_event_t *event = asc_list_data(event_observer.event_list);
             if(!event->callback)
@@ -482,7 +482,7 @@ void asc_event_core_destroy(void)
     }
 
     asc_list_first(event_observer.event_list);
-    while(asc_list_eol(event_observer.event_list))
+    while(!asc_list_eol(event_observer.event_list))
     {
         free(asc_list_data(event_observer.event_list));
         asc_list_remove_current(event_observer.event_list);
@@ -541,7 +541,7 @@ void asc_event_core_loop(void)
     }
 
     asc_list_first(event_observer.event_list);
-    while(asc_list_eol(event_observer.event_list))
+    while(!asc_list_eol(event_observer.event_list))
     {
         asc_event_t *event = asc_list_data(event_observer.event_list);
         if(!event->fd)

@@ -28,6 +28,6 @@ void asc_list_remove_current(asc_list_t *list);
 void asc_list_remove_item(asc_list_t *list, void *data);
 
 #define asc_list_for(__list) \
-    for(asc_list_first(__list); asc_list_eol(__list); asc_list_next(__list))
+    for(asc_list_first(__list); !asc_list_eol(__list); asc_list_next(__list))
 
 #endif /* _LIST_H_ */

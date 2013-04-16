@@ -530,7 +530,7 @@ static int method_close(module_data_t *mod)
 static void server_close(module_data_t *mod)
 {
     for(asc_list_first(mod->clients)
-        ; asc_list_eol(mod->clients)
+        ; !asc_list_eol(mod->clients)
         ; asc_list_first(mod->clients))
     {
         http_client_t *client = asc_list_data(mod->clients);
