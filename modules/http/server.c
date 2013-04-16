@@ -52,7 +52,6 @@ struct module_data_t
     const char *addr;
     int port;
 
-    int idx_self;
     int idx_callback;
 
     asc_socket_t *sock;
@@ -76,10 +75,9 @@ static void on_read(void *arg, int is_data)
     if(!is_data)
     {
         lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
-        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
         lua_pushlightuserdata(lua, client);
         lua_pushnil(lua);
-        lua_call(lua, 3, 0);
+        lua_call(lua, 2, 0);
 
         if(client->idx_request)
         {
@@ -134,12 +132,11 @@ static void on_read(void *arg, int is_data)
         if(!http_parse_request(client->buffer, m))
         {
             lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
-            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
             lua_pushlightuserdata(lua, client);
             lua_newtable(lua);
             lua_pushstring(lua, "failed to parse http request");
             lua_setfield(lua, -2, "message");
-            lua_call(lua, 3, 0);
+            lua_call(lua, 2, 0);
             return;
         }
 
@@ -232,10 +229,9 @@ static void on_read(void *arg, int is_data)
         if(client->ready_state == 2)
         {
             lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
-            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
             lua_pushlightuserdata(lua, client);
             lua_pushvalue(lua, request);
-            lua_call(lua, 3, 0);
+            lua_call(lua, 2, 0);
 
             luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
             client->idx_request = 0;
@@ -257,19 +253,18 @@ static void on_read(void *arg, int is_data)
             {
                 const int r_skip = r - skip;
                 lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
-                lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
                 lua_pushlightuserdata(lua, client);
 
                 if(client->content_length > r_skip)
                 {
                     lua_pushlstring(lua, &client->buffer[skip], r_skip);
-                    lua_call(lua, 3, 0);
+                    lua_call(lua, 2, 0);
                     client->content_length -= r_skip;
                 }
                 else
                 {
                     lua_pushlstring(lua, &client->buffer[skip], client->content_length);
-                    lua_call(lua, 3, 0);
+                    lua_call(lua, 2, 0);
                     client->content_length = -1;
 
                     // content is done
@@ -282,10 +277,9 @@ static void on_read(void *arg, int is_data)
         else
         {
             lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
-            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
             lua_pushlightuserdata(lua, client);
             lua_pushlstring(lua, &client->buffer[skip], r - skip);
-            lua_call(lua, 3, 0);
+            lua_call(lua, 2, 0);
         }
     }
 }
@@ -515,19 +509,26 @@ static int method_data(module_data_t *mod)
 
 static int method_close(module_data_t *mod)
 {
-    if(lua_gettop(lua) == 2)
+    if(lua_type(lua, 2) != LUA_TLIGHTUSERDATA)
     {
-        // close client
-        if(lua_type(lua, 2) != LUA_TLIGHTUSERDATA)
-        {
-            asc_log_error(MSG(":close() client instance required"));
-            astra_abort();
-        }
-
-        on_read(lua_touserdata(lua, 2), 0);
-        return 0;
+        asc_log_error(MSG(":close() client instance required"));
+        astra_abort();
     }
 
+    // close client
+    if(lua_type(lua, 2) != LUA_TLIGHTUSERDATA)
+    {
+        asc_log_error(MSG(":close() client instance required"));
+        astra_abort();
+    }
+
+    on_read(lua_touserdata(lua, 2), 0);
+
+    return 0;
+}
+
+static void server_close(module_data_t *mod)
+{
     for(asc_list_first(mod->clients)
         ; asc_list_eol(mod->clients)
         ; asc_list_first(mod->clients))
@@ -541,12 +542,6 @@ static int method_close(module_data_t *mod)
     asc_socket_close(mod->sock);
     mod->sock = NULL;
 
-    if(mod->idx_self)
-    {
-        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_self);
-        mod->idx_self = 0;
-    }
-
     if(mod->idx_callback)
     {
         luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_callback);
@@ -555,8 +550,6 @@ static int method_close(module_data_t *mod)
 
     asc_list_destroy(mod->clients);
     mod->clients = NULL;
-
-    return 0;
 }
 
 static void on_accept(void *arg, int is_data)
@@ -565,7 +558,7 @@ static void on_accept(void *arg, int is_data)
 
     if(!is_data)
     {
-        method_close(mod);
+        server_close(mod);
         return;
     }
 
@@ -611,10 +604,6 @@ static void module_init(module_data_t *mod)
     if(!module_option_number("port", &mod->port))
         mod->port = 80;
 
-    // store self in registry
-    lua_pushvalue(lua, 3);
-    mod->idx_self = luaL_ref(lua, LUA_REGISTRYINDEX);
-
     // store callback in registry
     lua_getfield(lua, 2, "callback");
     if(lua_type(lua, -1) != LUA_TFUNCTION)
@@ -631,7 +620,7 @@ static void module_init(module_data_t *mod)
     asc_socket_set_non_delay(mod->sock, 1);
     if(!asc_socket_bind(mod->sock, mod->addr, mod->port))
     {
-        method_close(mod);
+        server_close(mod);
         astra_abort();
     }
 
@@ -640,7 +629,7 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    method_close(mod);
+    server_close(mod);
 }
 
 MODULE_LUA_METHODS()

@@ -1,5 +1,7 @@
 #!/usr/bin/env astra
 
+server = nil
+
 mime_types =
 {
     ["html"] = "text/html",
@@ -14,21 +16,21 @@ mime_types =
 function get_mime_type(uri)
     local ext = string.match(uri, ".+%.(%a+)$")
     if ext then
-        local mime = mime_list[ext]
+        local mime = mime_types[ext]
         if mime then
-            return mime_list[ext]
+            return mime_types[ext]
         end
     end
     return "text/plain"
 end
 
-function send_404(self, client)
+function send_404(client)
     local content = "<html>" ..
                     "<center><h1>Not Found</h1></center>" ..
                     "<hr />" ..
                     "<small>Astra</small>" ..
                     "</html>"
-    self:send(client, {
+    server:send(client, {
         code = 404,
         message = "Not Found",
         headers = {
@@ -40,22 +42,22 @@ function send_404(self, client)
     })
 end
 
-function on_http_read(self, client, data)
-    local client_data = self:data(client)
+function on_http_read(client, data)
+    local client_data = server:data(client)
 
     if type(data) == 'table' then
         client_data.file = io.open("." .. data.uri, "rb")
 
         if not client_data.file then
-            send_404(self, client)
-            self:close(client)
+            send_404(client)
+            server:close(client)
             return
         end
 
         local file_size = client_data.file:seek("end")
         client_data.file:seek("set")
 
-        self:send(client, {
+        server:send(client, {
             headers = {
                 "Server: Astra",
                 "Content-Type: " .. get_mime_type(data.uri),
@@ -68,7 +70,7 @@ function on_http_read(self, client, data)
     end
 end
 
-http_server({
+server = http_server({
     addr = "127.0.0.1",
     port = 5000,
     callback = on_http_read
