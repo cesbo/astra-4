@@ -25,7 +25,6 @@
 struct module_data_t
 {
     int idx_cb;
-    int idx_self;
 
     asc_timer_t *timer;
 };
@@ -36,8 +35,7 @@ static void timer_callback(void *arg)
 {
     module_data_t *mod = arg;
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_cb);
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
-    lua_call(lua, 1, 0);
+    lua_call(lua, 0, 0);
 }
 
 /* methods */
@@ -50,8 +48,6 @@ static int method_close(module_data_t *mod)
         mod->timer = NULL;
     }
 
-    luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_self);
-    mod->idx_self = 0;
     luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_cb);
     mod->idx_cb = 0;
 
@@ -77,14 +73,12 @@ static void module_init(module_data_t *mod)
     }
     mod->idx_cb = luaL_ref(lua, LUA_REGISTRYINDEX);
 
-    lua_pushvalue(lua, -1);
-    mod->idx_self = luaL_ref(lua, LUA_REGISTRYINDEX);
-
     mod->timer = asc_timer_init(interval * 1000, timer_callback, mod);
 }
 
 static void module_destroy(module_data_t *mod)
 {
+    asc_log_info("[timer] %s()", __FUNCTION__);
     method_close(mod);
 }
 
