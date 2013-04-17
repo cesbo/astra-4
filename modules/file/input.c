@@ -245,9 +245,6 @@ static void thread_loop(void *arg)
     struct timeval pause_stop;
     double pause_total = 0;
 
-    while(mod->pause)
-        nanosleep(&ts_pause, NULL);
-
     // block sync
     struct timeval time_sync[2];
     struct timeval *time_sync_b = &time_sync[0]; // begin
