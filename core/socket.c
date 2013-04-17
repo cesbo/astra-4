@@ -6,6 +6,7 @@
  * Licensed under the MIT license.
  */
 
+#include "assert.h"
 #include "socket.h"
 #include "event.h"
 #include "log.h"
@@ -53,13 +54,9 @@ void asc_socket_core_init(void)
 #ifdef _WIN32
     WSADATA wsaData;
     int err = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if(err != 0)
-    {
-        asc_log_error("[core/socket] WSAStartup failed %d", err);
-        abort();
-    }
+    asc_assert(err == 0, "[core/socket] WSAStartup failed %d", err);
 #else
-    ;
+    (void)0;
 #endif
 }
 
@@ -108,11 +105,7 @@ const char * asc_socket_error(void)
 static asc_socket_t * __socket_open(int family, int type)
 {
     const int fd = socket(family, type, 0);
-    if(fd == -1)
-    {
-        asc_log_error("[core/socket] failed to open socket [%s]", asc_socket_error());
-        return NULL;
-    }
+    asc_assert(fd != -1, "[core/socket] failed to open socket [%s]", asc_socket_error());
     asc_socket_t *sock = calloc(1, sizeof(asc_socket_t));
     sock->fd = fd;
     sock->mreq.imr_multiaddr.s_addr = INADDR_NONE;
@@ -608,7 +601,7 @@ void asc_socket_multicast_leave(asc_socket_t *sock)
                   , (void *)&sock->mreq, sizeof(sock->mreq)) == -1)
     {
         asc_log_error(MSG("failed to leave multicast \"%s\" (%s)")
-                  , inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
+                      , inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
     }
 }
 
@@ -623,6 +616,6 @@ void asc_socket_multicast_renew(asc_socket_t *sock)
                      , (void *)&sock->mreq, sizeof(sock->mreq)) == -1)
     {
         asc_log_error(MSG("failed to renew multicast \"%s\" (%s)")
-                  , inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
+                      , inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
     }
 }

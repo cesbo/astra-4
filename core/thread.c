@@ -6,6 +6,7 @@
  * Licensed under the MIT license.
  */
 
+#include "assert.h"
 #include "thread.h"
 #include "log.h"
 
@@ -64,11 +65,8 @@ void __thread_setjmp(asc_thread_t *thread)
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = thread_handler;
-    if(sigaction(SIGUSR1, &sa, NULL) < 0)
-    {
-        asc_log_error("[core/thread] sigaction() failed\n");
-        abort();
-    }
+    const int r = sigaction(SIGUSR1, &sa, NULL);
+    asc_assert(r == 0, "[core/thread] sigaction() failed");
 }
 
 static void * thread_loop(void *arg)
@@ -105,8 +103,7 @@ void asc_thread_init(asc_thread_t **thread_ptr, void (*loop)(void *), void *arg)
 
     *thread_ptr = NULL;
     free(thread);
-    asc_log_error("[core/thread] failed to start thread");
-    abort();
+    asc_assert(0, "[core/thread] failed to start thread");
 }
 
 void asc_thread_destroy(asc_thread_t **thread_ptr)

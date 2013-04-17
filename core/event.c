@@ -6,6 +6,7 @@
  * Licensed under the MIT license.
  */
 
+#include "assert.h"
 #include "event.h"
 #include "log.h"
 #include "list.h"
@@ -97,11 +98,8 @@ void asc_event_core_init(void)
     event_observer.fd = epoll_create(1024);
 #endif
 
-    if(event_observer.fd == -1)
-    {
-        asc_log_error(MSG("failed to init event observer [%s]"), strerror(errno));
-        abort();
-    }
+    asc_assert(event_observer.fd != -1
+               , MSG("failed to init event observer [%s]"), strerror(errno));
 }
 
 void asc_event_core_destroy(void)
@@ -115,11 +113,8 @@ void asc_event_core_destroy(void)
         ; asc_list_first(event_observer.event_list))
     {
         asc_event_t *event = asc_list_data(event_observer.event_list);
-        if(event == previous_event)
-        {
-            asc_log_error(MSG("infinite loop on observer destroing [event:%p]"), (void *)event);
-            abort();
-        }
+        asc_assert(event != previous_event
+                   , MSG("infinite loop on observer destroing [event:%p]"), (void *)event);
 
         if(event->callback)
             event->callback(event->arg, 0);
@@ -154,11 +149,8 @@ void asc_event_core_loop(void)
 
     if(ret == -1)
     {
-        if(errno == EINTR)
-            return;
-
-        asc_log_error(MSG("event observer critical error [%s]"), strerror(errno));
-        abort();
+        asc_assert(errno == EINTR, MSG("event observer critical error [%s]"), strerror(errno));
+        return;
     }
 
     for(int i = 0; i < ret; ++i)
@@ -239,12 +231,7 @@ static asc_event_t * __asc_event_attach(int fd
         ed.events = ev_filter | EV_FLAGS;
         ret = epoll_ctl(event_observer.fd, EPOLL_CTL_ADD, fd, &ed);
 #endif
-        if(ret == -1)
-        {
-            asc_log_error(MSG("failed to attach fd=%d [%s]"), fd, strerror(errno));
-            free(event);
-            return NULL;
-        }
+        asc_assert(ret != -1, MSG("failed to attach fd=%d [%s]"), fd, strerror(errno));
         break;
     } while(1);
 
@@ -273,8 +260,7 @@ void asc_event_close(asc_event_t *event)
     ret = epoll_ctl(event_observer.fd, EPOLL_CTL_DEL, event->fd, NULL);
 #endif
 
-    if(ret == -1)
-        asc_log_error(MSG("failed to detach fd=%d [%s]"), event->fd, strerror(errno));
+    asc_assert(ret != -1, MSG("failed to detach fd=%d [%s]"), event->fd, strerror(errno));
 
     event->callback = NULL;
     ++event_observer.detach_count;
@@ -342,11 +328,8 @@ void asc_event_core_loop(void)
     int ret = poll(event_observer.ed_list, event_observer.fd_count, 10);
     if(ret == -1)
     {
-        if(errno == EINTR)
-            return;
-
-        asc_log_error(MSG("event observer critical error [%s]"), strerror(errno));
-        abort();
+        asc_assert(errno == EINTR, MSG("event observer critical error [%s]"), strerror(errno));
+        return;
     }
 
     int i;
@@ -437,7 +420,7 @@ void asc_event_close(asc_event_t *event)
         }
     }
 
-    asc_log_error(MSG("failed to detach fd=%d [not found]"), event->fd);
+    asc_assert(0, MSG("failed to detach fd=%d [not found]"), event->fd);
 }
 
 #elif defined(EV_TYPE_SELECT)
@@ -514,11 +497,8 @@ void asc_event_core_loop(void)
     const int ret = select(event_observer.max_fd + 1, &rset, &wset, NULL, &timeout);
     if(ret == -1)
     {
-        if(errno == EINTR)
-            return;
-
-        asc_log_error(MSG("event observer critical error [%s]"), strerror(errno));
-        abort();
+        asc_assert(errno == EINTR, MSG("event observer critical error [%s]"), strerror(errno));
+        return;
     }
     else if(ret > 0)
     {

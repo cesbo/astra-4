@@ -22,14 +22,6 @@
 #include <unistd.h>
 #include <errno.h>
 
-#define __asc_assert(_cond, _file, _line, _msg...)                                              \
-    ( (void)printf("%s:%u: failed assertion `%s'\n", _file, _line, _cond)                       \
-    , (void)printf(_msg)                                                                        \
-    , putchar('\n')                                                                             \
-    , abort() )
-#define asc_assert(_cond, _msg...)                                                              \
-    ((void)((_condition) ? 0 : __asc_assert(#_cond, __FILE__, __LINE__, _msg)))
-
 #define ASC_ARRAY_SIZE(_a) (sizeof(_a)/sizeof(_a[0]))
 
 #define __uarg(_x) {(void)_x;}

@@ -6,12 +6,11 @@
  * Licensed under the MIT license.
  */
 
+#include "assert.h"
 #include "list.h"
 #include "log.h"
 
 #include <sys/queue.h>
-
-#define MSG() "[core/list] %s():%d", __FUNCTION__, __LINE__
 
 typedef struct item_s
 {
@@ -35,11 +34,7 @@ asc_list_t * asc_list_init(void)
 
 void asc_list_destroy(asc_list_t *list)
 {
-    if(list->current)
-    {
-        asc_log_error(MSG());
-        abort();
-    }
+    asc_assert(list->current == NULL, "[core/list] list is not empty");
     free(list);
 }
 
@@ -61,6 +56,7 @@ inline int asc_list_eol(asc_list_t *list)
 
 inline void * asc_list_data(asc_list_t *list)
 {
+    asc_assert(list->current != NULL, "[core/list] failed to get data");
     return list->current->data;
 }
 
@@ -84,11 +80,7 @@ void asc_list_insert_tail(asc_list_t *list, void *data)
 
 void asc_list_remove_current(asc_list_t *list)
 {
-    if(!list->current)
-    {
-        asc_log_error(MSG());
-        abort();
-    }
+    asc_assert(list->current != NULL, "[core/list] failed to remove item");
     item_t *next = TAILQ_NEXT(list->current, entries);
     TAILQ_REMOVE(&list->list, list->current, entries);
     free(list->current);

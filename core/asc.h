@@ -9,6 +9,7 @@
 #ifndef _ASC_H_
 #define _ASC_H_ 1
 
+#include "assert.h"
 #include "base.h"
 #include "event.h"
 #include "list.h"
