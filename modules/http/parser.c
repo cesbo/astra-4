@@ -89,7 +89,7 @@ int http_parse_request(const char *str, parse_match_t *match)
     match[0].so = 0;
 
     // metod
-    SEEK(1, 1, 16, (c >= 'A' && c <= 'Z'))
+    SEEK(1, 1, 16, ((c >= 'A' && c <= 'Z') || c == '_'))
     CHECK_SP()
 
     // uri
