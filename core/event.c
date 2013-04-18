@@ -221,19 +221,15 @@ static asc_event_t * __asc_event_attach(int fd
     const int ev_filter = (is_event_read) ? EPOLLIN : EPOLLOUT;
 #endif
 
-    do
-    {
 #if defined(EV_TYPE_KQUEUE)
-        EV_SET(&ed, fd, ev_filter, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, event);
-        ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
+    EV_SET(&ed, fd, ev_filter, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, event);
+    ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
 #else
-        ed.data.ptr = event;
-        ed.events = ev_filter | EV_FLAGS;
-        ret = epoll_ctl(event_observer.fd, EPOLL_CTL_ADD, fd, &ed);
+    ed.data.ptr = event;
+    ed.events = ev_filter | EV_FLAGS;
+    ret = epoll_ctl(event_observer.fd, EPOLL_CTL_ADD, fd, &ed);
 #endif
-        asc_assert(ret != -1, MSG("failed to attach fd=%d [%s]"), fd, strerror(errno));
-        break;
-    } while(1);
+    asc_assert(ret != -1, MSG("failed to attach fd=%d [%s]"), fd, strerror(errno));
 
     asc_list_insert_tail(event_observer.event_list, event);
     ++event_observer.fd_count;
