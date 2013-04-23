@@ -25,7 +25,7 @@
 
 struct module_data_t
 {
-    int _empty;
+    int idx_self;
 };
 
 static const char *filename = NULL;
@@ -74,16 +74,24 @@ static void module_init(module_data_t *mod)
         asc_log_error("[pidfile %s] link() failed [%s]", filename, strerror(errno));
         astra_abort();
     }
+
+    // store in registry to prevent the instance destroying
+    lua_pushvalue(lua, 3);
+    mod->idx_self = luaL_ref(lua, LUA_REGISTRYINDEX);
 }
 
 static void module_destroy(module_data_t *mod)
 {
+    asc_log_info("[pidfile %s] %s()", filename, __FUNCTION__);
+
     __uarg(mod);
 
     if(!access(filename, W_OK))
         unlink(filename);
 
     filename = NULL;
+
+    luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_self);
 }
 
 MODULE_LUA_METHODS()
