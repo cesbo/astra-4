@@ -18,9 +18,12 @@
  *      localaddr   - string, IP address of the local interface
  *      socket_size - number, socket buffer size
  *      rtp         - boolean, use RTP instad RAW UDP
+ *      sync        - number, buffer size in TS-packets, by default 0 - syncing is disabled
  */
 
 #include <astra.h>
+#include <time.h>
+#include <sys/time.h>
 
 #define MSG(_msg) "[udp_output %s:%d] " _msg, mod->addr, mod->port
 
@@ -28,20 +31,14 @@
 #define UDP_BUFFER_CAPACITY ((UDP_BUFFER_SIZE / TS_PACKET_SIZE) * TS_PACKET_SIZE)
 
 #ifndef _WIN32
-
-#include <time.h>
-#include <sys/time.h>
-#include <pthread.h>
-
-#define SYNC_BUFFER_SIZE_DEFAULT (TS_PACKET_SIZE * 40000)
-
+#   include <pthread.h>
 #endif
 
 struct module_data_t
 {
     MODULE_STREAM_DATA();
 
-    char *addr;
+    const char *addr;
     int port;
     int sync;
 
@@ -294,15 +291,8 @@ static void * thread_loop(void *arg)
 
 static void module_init(module_data_t *mod)
 {
-    const char *addr = NULL;
-    const int addr_len = module_option_string("addr", &addr);
-    if(!addr)
-    {
-        asc_log_error("[udp_output] option 'addr' is required");
-        astra_abort();
-    }
-    mod->addr = malloc(addr_len + 1);
-    strcpy(mod->addr, addr);
+    module_option_string("addr", &mod->addr);
+    asc_assert(mod->addr != NULL, "[udp_output] option 'addr' is required");
 
     mod->port = 1234;
     module_option_number("port", &mod->port);
@@ -310,7 +300,6 @@ static void module_init(module_data_t *mod)
     module_option_number("rtp", &mod->is_rtp);
     if(mod->is_rtp)
     {
-        srand((uint32_t)time(NULL));
         const uint32_t rtpssrc = (uint32_t)rand();
 
 #define RTP_PT_H261     31      /* RFC2032 */
@@ -350,11 +339,7 @@ static void module_init(module_data_t *mod)
     {
         module_stream_init(mod, sync_queue_push);
 
-        if(mod->sync == 1)
-            mod->sync_buffer_size = SYNC_BUFFER_SIZE_DEFAULT;
-        else
-            mod->sync_buffer_size = TS_PACKET_SIZE * mod->sync;
-
+        mod->sync_buffer_size = TS_PACKET_SIZE * mod->sync;
         mod->sync_buffer = malloc(mod->sync_buffer_size);
 
         mod->thread_loop = 1;

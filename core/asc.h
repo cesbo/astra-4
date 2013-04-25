@@ -20,6 +20,7 @@
 #include "timer.h"
 
 #define ASC_INIT()                                                                              \
+    srand((uint32_t)time(NULL));                                                                \
     asc_timer_core_init();                                                                      \
     asc_socket_core_init();                                                                     \
     asc_event_core_init();
