@@ -208,7 +208,7 @@ static void * thread_loop(void *arg)
         // flush
         mod->sync_buffer_count = 0;
 
-        while(mod->thread_loop && mod->sync_buffer_count < (mod->sync_buffer_size / 2))
+        while(mod->thread_loop && mod->sync_buffer_count < (mod->sync_buffer_size / 4))
         {
             nanosleep(&ts, NULL);
             continue;
