@@ -51,7 +51,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        asc_log_error(MSG("PAT checksum mismatch"));
+        asc_log_error(MSG("PAT checksum error"));
         return;
     }
 
@@ -100,7 +100,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        asc_log_error(MSG("CAT checksum mismatch"));
+        asc_log_error(MSG("CAT checksum error"));
         return;
     }
     psi->crc32 = crc32;
@@ -138,7 +138,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        asc_log_error(MSG("PMT checksum mismatch"));
+        asc_log_error(MSG("PMT checksum error"));
         return;
     }
     psi->crc32 = crc32;
@@ -206,7 +206,7 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        asc_log_error(MSG("SDT checksum mismatch"));
+        asc_log_error(MSG("SDT checksum error"));
         return;
     }
     psi->crc32 = crc32;
