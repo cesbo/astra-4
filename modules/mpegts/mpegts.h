@@ -40,7 +40,7 @@
 #define TS_CC(_ts) (_ts[3] & 0x0f)
 #define TS_PTR(_ts) ((TS_AF(_ts) == 0x10)                                                       \
                      ? &_ts[TS_HEADER_SIZE]                                                     \
-                     : ((TS_AF(_ts) == 0x30)                                                    \
+                     : ((TS_AF(_ts) == 0x30 && _ts[4] < (TS_BODY_SIZE - 1))                     \
                         ? (&_ts[TS_HEADER_SIZE] + _ts[4] + 1)                                   \
                         : NULL                                                                  \
                        )                                                                        \

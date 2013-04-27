@@ -33,15 +33,11 @@ void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts
                     , void (*callback)(void *, mpegts_pes_t *)
                     , void *arg)
 {
-    const uint8_t cc = TS_CC(ts);
-    const uint8_t *payload = &ts[TS_HEADER_SIZE];
-
-    const uint8_t af = TS_AF(ts);
-    if(!(af & 0x10)) // skip packet without payload (CC not incremented)
+    const uint8_t *payload = TS_PTR(ts);
+    if(!payload)
         return;
 
-    if(af == 0x30)
-        payload += (ts[4] + 1);
+    const uint8_t cc = TS_CC(ts);
 
     if(TS_PUSI(ts))
     {

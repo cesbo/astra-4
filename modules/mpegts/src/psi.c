@@ -35,6 +35,9 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts
                     , void *arg)
 {
     const uint8_t *payload = TS_PTR(ts);
+    if(!payload)
+        return;
+
     const uint8_t cc = TS_CC(ts);
 
     if(TS_PUSI(ts))
