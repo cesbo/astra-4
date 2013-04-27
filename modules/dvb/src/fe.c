@@ -102,6 +102,7 @@ static void fe_event(module_data_t *mod)
             {
                 asc_log_warning(MSG("fe has lost lock. status:%c%c%c%c%c")
                                 , ss, sc, sv, sy, sl);
+                fe_clear(mod);
                 mod->do_retune = 1;
             }
         }
