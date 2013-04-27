@@ -173,7 +173,7 @@ static void call_nil(int callback, int self)
     lua_call(lua, 2, 0);
 }
 
-static void event_callback_read(void *arg, int is_data)
+static void on_read(void *arg, int is_data)
 {
     module_data_t *mod = arg;
 
@@ -444,9 +444,9 @@ static void event_callback_read(void *arg, int is_data)
     }
 
     lua_pop(lua, 3); // self + options + callback
-} /* event_callback_read */
+} /* on_read */
 
-static void event_callback_write(void *arg, int is_data)
+static void on_connect(void *arg, int is_data)
 {
     module_data_t *mod = arg;
 
@@ -461,7 +461,7 @@ static void event_callback_write(void *arg, int is_data)
         return;
     }
 
-    asc_socket_event_on_read(mod->sock, event_callback_read, mod);
+    asc_socket_event_on_read(mod->sock, on_read, mod);
 
     mod->is_connected = 2;
     mod->timeout_timer = asc_timer_init(REQUEST_TIMEOUT_INTERVAL, timeout_callback, mod);
@@ -524,7 +524,7 @@ static void event_callback_write(void *arg, int is_data)
     lua_pop(lua, 1); // content
 
     lua_pop(lua, 1); // options
-} /* event_callback_write */
+} /* on_connect */
 
 /* methods */
 
@@ -603,10 +603,11 @@ static void module_init(module_data_t *mod)
     mod->idx_options = luaL_ref(lua, LUA_REGISTRYINDEX);
 
     mod->sock = asc_socket_open_tcp4();
+    asc_socket_set_nonblock(mod->sock, 1);
     if(mod->sock && asc_socket_connect(mod->sock, mod->addr, mod->port))
     {
         mod->timeout_timer = asc_timer_init(CONNECT_TIMEOUT_INTERVAL, timeout_callback, mod);
-        asc_socket_event_on_write(mod->sock, event_callback_write, mod);
+        asc_socket_event_on_connect(mod->sock, on_connect, mod);
     }
     else
         method_close(mod);
