@@ -14,6 +14,22 @@
  *      addr        - string, server IP address
  *      port        - number, server port
  *      callback    - function,
+ *
+ * Module Methods:
+ *      port()      - return number, server port
+ *      close(client)
+ *                  - close client connection
+ *      send(client, data)
+ *                  - stream response to client. data - table:
+ *                    * version - string, protocol version. default: "HTTP/1.1"
+ *                    * code - number, response code. default: 200
+ *                    * message - string, response code description. default: "OK"
+ *                    * headers - table (list of strings), response headers
+ *                    * content - string, response body from the string
+ *                    * file - string, full path to file, reponse body from the file
+ *                    * upstream - object, stream instance returned by module_instance:stream()
+ *      data(client)
+ *                  - return table, client data
  */
 
 #include <astra.h>
@@ -22,7 +38,7 @@
 
 #define MSG(_msg) "[http_server %s:%d] " _msg, mod->addr, mod->port
 
-#define HTTP_BUFFER_SIZE 8192
+#define HTTP_BUFFER_SIZE (64 * 1024)
 
 typedef struct
 {
@@ -333,12 +349,24 @@ static void on_ts(void *arg, const uint8_t *ts)
 
     if(client->buffer_skip >= HTTP_BUFFER_SIZE - TS_PACKET_SIZE)
     {
-        if(asc_socket_send(client->sock, client->buffer, client->buffer_skip)
-           != client->buffer_skip)
+        const int ret = asc_socket_send(client->sock, client->buffer, client->buffer_skip);
+        if(ret == client->buffer_skip)
+            client->buffer_skip = 0;
+        else if(ret == -1)
         {
-            asc_log_warning(MSG("failed to send ts to client:%d"), asc_socket_fd(client->sock));
+            asc_log_warning(MSG("failed to send ts to the client [%s]"), asc_socket_error());
+            on_read(client, 0);
+            return;
         }
-        client->buffer_skip = 0;
+        else
+        {
+            if(ret > 0)
+            {
+                asc_log_info(MSG("move memory"));
+                memmove(client->buffer, &client->buffer[ret], client->buffer_skip - ret);
+                client->buffer_skip -= ret;
+            }
+        }
     }
     memcpy(&client->buffer[client->buffer_skip], ts, TS_PACKET_SIZE);
     client->buffer_skip += TS_PACKET_SIZE;
@@ -468,7 +496,6 @@ static int method_send(module_data_t *mod)
         client->__stream.on_ts = (void (*)(module_data_t *, const uint8_t *))on_ts;
         __module_stream_init(&client->__stream);
         __module_stream_attach(lua_touserdata(lua, -1), &client->__stream);
-        asc_socket_event_on_read(client->sock, NULL, NULL);
     }
     lua_pop(lua, 1);
 
@@ -509,12 +536,6 @@ static int method_data(module_data_t *mod)
 
 static int method_close(module_data_t *mod)
 {
-    if(lua_type(lua, 2) != LUA_TLIGHTUSERDATA)
-    {
-        asc_log_error(MSG(":close() client instance required"));
-        astra_abort();
-    }
-
     // close client
     if(lua_type(lua, 2) != LUA_TLIGHTUSERDATA)
     {
@@ -618,6 +639,7 @@ static void module_init(module_data_t *mod)
     mod->sock = asc_socket_open_tcp4();
     asc_socket_set_reuseaddr(mod->sock, 1);
     asc_socket_set_non_delay(mod->sock, 1);
+    asc_socket_set_nonblock(mod->sock, 1);
     if(!asc_socket_bind(mod->sock, mod->addr, mod->port))
     {
         server_close(mod);
