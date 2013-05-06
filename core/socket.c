@@ -93,6 +93,24 @@ const char * asc_socket_error(void)
     return buffer;
 }
 
+static void asc_socket_set_nonblock(asc_socket_t *sock)
+{
+#ifdef _WIN32
+    unsigned long nonblock = 1;
+    if(ioctlsocket(sock->fd, FIONBIO, &nonblock) != NO_ERROR)
+#else
+    int flags = fcntl(sock->fd, F_GETFL);
+    if(flags & O_NONBLOCK)
+        return;
+
+    if(fcntl(sock->fd, F_SETFL, flags | O_NONBLOCK) == -1)
+#endif
+    {
+        asc_log_error(MSG("failed to set NONBLOCK [%s]"), asc_socket_error());
+        asc_socket_close(sock);
+    }
+}
+
 /*
  *   ooooooo  oooooooooo ooooooooooo oooo   oooo
  * o888   888o 888    888 888    88   8888o  88
@@ -111,6 +129,9 @@ static asc_socket_t * __socket_open(int family, int type)
     sock->mreq.imr_multiaddr.s_addr = INADDR_NONE;
     sock->family = family;
     sock->type = type;
+
+    asc_socket_set_nonblock(sock);
+
     return sock;
 }
 
@@ -241,6 +262,9 @@ int asc_socket_accept(asc_socket_t *sock, asc_socket_t **client_ptr)
         free(client);
         return 0;
     }
+
+    asc_socket_set_nonblock(client);
+
     *client_ptr = client;
     return 1;
 }
@@ -423,27 +447,6 @@ void asc_socket_set_sockaddr(asc_socket_t *sock, const char *addr, int port)
     sock->sockaddr.sin_addr.s_addr = (addr) ? inet_addr(addr) : INADDR_ANY;
     sock->sockaddr.sin_port = htons(port);
 }
-
-void asc_socket_set_nonblock(asc_socket_t *sock, int is_nonblock)
-{
-#ifdef _WIN32
-    unsigned long nonblock = is_nonblock;
-    if(ioctlsocket(sock->fd, FIONBIO, &nonblock) != NO_ERROR)
-#else
-    int flags = fcntl(sock->fd, F_GETFL);
-    if(is_nonblock)
-        flags |= O_NONBLOCK;
-    else
-        flags &= ~O_NONBLOCK;
-    if(fcntl(sock->fd, F_SETFL, flags) == -1)
-#endif
-    {
-        const char *msg = (is_nonblock) ? "failed to set NONBLOCK" : "failed to unset NONBLOCK";
-        asc_log_error(MSG("%s [%s]"), msg, asc_socket_error());
-        asc_socket_close(sock);
-    }
-}
-
 
 void asc_socket_set_reuseaddr(asc_socket_t *sock, int is_on)
 {

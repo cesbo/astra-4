@@ -639,7 +639,6 @@ static void module_init(module_data_t *mod)
     mod->sock = asc_socket_open_tcp4();
     asc_socket_set_reuseaddr(mod->sock, 1);
     asc_socket_set_non_delay(mod->sock, 1);
-    asc_socket_set_nonblock(mod->sock, 1);
     if(!asc_socket_bind(mod->sock, mod->addr, mod->port))
     {
         server_close(mod);

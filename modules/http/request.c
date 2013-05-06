@@ -603,7 +603,6 @@ static void module_init(module_data_t *mod)
     mod->idx_options = luaL_ref(lua, LUA_REGISTRYINDEX);
 
     mod->sock = asc_socket_open_tcp4();
-    asc_socket_set_nonblock(mod->sock, 1);
     if(mod->sock && asc_socket_connect(mod->sock, mod->addr, mod->port))
     {
         mod->timeout_timer = asc_timer_init(CONNECT_TIMEOUT_INTERVAL, timeout_callback, mod);

@@ -46,7 +46,6 @@ int asc_socket_event_on_write(asc_socket_t *sock, void (*callback)(void *, int),
 int asc_socket_event_on_connect(asc_socket_t *sock, void (*callback)(void *, int), void *arg);
 
 void asc_socket_set_sockaddr(asc_socket_t *sock, const char *addr, int port);
-void asc_socket_set_nonblock(asc_socket_t *sock, int is_nonblock);
 void asc_socket_set_reuseaddr(asc_socket_t *sock, int is_on);
 void asc_socket_set_non_delay(asc_socket_t *sock, int is_on);
 void asc_socket_set_keep_alive(asc_socket_t *sock, int is_on);
