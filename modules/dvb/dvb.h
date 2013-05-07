@@ -33,9 +33,25 @@ typedef enum
     DVB_TYPE_C
 } dvb_type_t;
 
+#define CA_MAX_CONNECTIONS 16
+
+typedef enum
+{
+    CA_CONN_IDLE    = 0x01,
+    CA_CONN_CREATE  = 0x02, /* awaiting c_t_c_reply TPDU */
+    CA_CONN_DELETE  = 0x04, /* awaiting d_t_c_reply TPDU */
+    CA_CONN_ACTIVE  = 0x08
+} ca_connection_state_t;
+
+typedef struct
+{
+    ca_connection_state_t state;
+} ca_connection_t;
+
 typedef struct
 {
     int is_active;
+    ca_connection_t connections[CA_MAX_CONNECTIONS];
 } ca_slot_t;
 
 struct module_data_t
@@ -107,7 +123,8 @@ struct module_data_t
 
     /* CA Base */
     int ca_fd;
-    ca_slot_t *ca;
+    int slots_num;
+    ca_slot_t *slots;
 };
 
 #define MSG(_msg) "[dvb_input %d:%d] " _msg, mod->adapter, mod->device

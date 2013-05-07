@@ -38,9 +38,9 @@ static void dvb_thread_loop(void *arg)
         if(ret > 0)
         {
             if(fds[0].revents)
-                fe_loop(mod, 1);
+                fe_loop(mod, fds[0].revents & (POLLPRI | POLLIN));
             if(fds[1].revents)
-                ca_loop(mod, 1);
+                ca_loop(mod, fds[1].revents & (POLLPRI | POLLIN));
         }
         else if(ret == 0)
         {
