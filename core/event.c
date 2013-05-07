@@ -11,6 +11,11 @@
 #include "log.h"
 #include "list.h"
 
+#ifdef _WIN32
+#   include <windows.h>
+#   include <winsock2.h>
+#endif
+
 #if defined(WITH_POLL)
 #   define EV_TYPE_POLL
 #   define MSG(_msg) "[core/event poll] " _msg
@@ -47,11 +52,6 @@
 #       define EV_LIST_SIZE 1024
 #   endif
 #   define MSG(_msg) "[core/event epoll] " _msg
-#endif
-#ifdef _WIN32
-#   include <windows.h>
-#   include <winsock2.h>
-#   define WITH_SELECT
 #endif
 
 struct asc_event_t
