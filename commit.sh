@@ -18,13 +18,6 @@ if [ ! -f "commit.sh" ] ; then
     exit 2
 fi
 
-BRANCH=`git branch | grep '^\*' | cut -d ' ' -f 2`
-# TODO: remove astra-4 checking
-if [ "$BRANCH" != "dev" -a "$BRANCH" != "astra-4" ] ; then
-    echo "Error: checkout to the dev branch"
-    exit 3
-fi
-
 ASTRA_VERSION_MAJOR=`cat version.h | grep "ASTRA_VERSION_MAJOR " | cut -d ' ' -f 3`
 ASTRA_VERSION_MINOR=`cat version.h | grep "ASTRA_VERSION_MINOR " | cut -d ' ' -f 3`
 ASTRA_VERSION_DEV=`cat version.h | grep "ASTRA_VERSION_DEV " | cut -d ' ' -f 3`
