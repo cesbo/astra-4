@@ -47,7 +47,8 @@
 #       define EV_LIST_SIZE 1024
 #   endif
 #   define MSG(_msg) "[core/event epoll] " _msg
-#else
+#endif
+#ifdef _WIN32
 #   include <windows.h>
 #   include <winsock2.h>
 #   define WITH_SELECT
