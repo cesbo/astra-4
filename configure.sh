@@ -129,6 +129,7 @@ case "$CCSYSTEM" in
     LDFLAGS="-nostdlib $CRT1 -lc"
     ;;
 *"mingw"*)
+    APP="$APP.exe"
     OS="mingw"
     WS32=`$APP_C -print-file-name=libws2_32.a`
     LDFLAGS="-nostdlib $CRT1 -lc $WS32"
