@@ -13,6 +13,7 @@
 #include "base.h"
 #include "event.h"
 #include "list.h"
+#include "vector.h"
 #include "log.h"
 #include "socket.h"
 #include "stream.h"
