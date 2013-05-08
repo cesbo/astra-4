@@ -57,7 +57,7 @@
 struct asc_event_t
 {
     int fd;
-    void (*callback)(void *, int);
+    event_callback_func_t callback;
     void *arg;
 
 #if defined(EV_TYPE_KQUEUE) || defined(EV_TYPE_SELECT)
@@ -198,7 +198,7 @@ void asc_event_core_loop(void)
 }
 
 static asc_event_t * __asc_event_attach(int fd
-                                        , void (*callback)(void *, int), void *arg
+                                        , event_callback_func_t callback, void *arg
                                         , int is_event_read)
 {
 #ifdef DEBUG
@@ -369,7 +369,7 @@ void asc_event_core_loop(void)
 }
 
 static asc_event_t * __asc_event_attach(int fd
-                                        , void (*callback)(void *, int), void *arg
+                                        , event_callback_func_t callback, void *arg
                                         , int is_event_read)
 {
 #ifdef DEBUG
@@ -532,7 +532,7 @@ void asc_event_core_loop(void)
 }
 
 static asc_event_t * __asc_event_attach(int fd
-                                        , void (*callback)(void *, int), void *arg
+                                        , event_callback_func_t callback, void *arg
                                         , int is_event_read)
 {
 #ifdef DEBUG
@@ -592,12 +592,12 @@ void asc_event_close(asc_event_t *event)
 
 #endif
 
-asc_event_t * asc_event_on_read(int fd, void (*callback)(void *, int), void *arg)
+asc_event_t * asc_event_on_read(int fd, event_callback_func_t callback, void *arg)
 {
     return __asc_event_attach(fd, callback, arg, 1);
 }
 
-asc_event_t * asc_event_on_write(int fd, void (*callback)(void *, int), void *arg)
+asc_event_t * asc_event_on_write(int fd, event_callback_func_t callback, void *arg)
 {
     return __asc_event_attach(fd, callback, arg, 0);
 }

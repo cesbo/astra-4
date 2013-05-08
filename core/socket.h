@@ -10,8 +10,10 @@
 #define _SOCKET_H_ 1
 
 #include "base.h"
+#include "event.h"
 
 typedef struct asc_socket_t asc_socket_t;
+
 
 void asc_socket_core_init(void);
 void asc_socket_core_destroy(void);
@@ -40,10 +42,11 @@ int asc_socket_fd(asc_socket_t *sock) __wur;
 const char * asc_socket_addr(asc_socket_t *sock) __wur;
 int asc_socket_port(asc_socket_t *sock) __wur;
 
-int asc_socket_event_on_accept(asc_socket_t *sock, void (*callback)(void *, int), void *arg);
-int asc_socket_event_on_read(asc_socket_t *sock, void (*callback)(void *, int), void *arg);
-int asc_socket_event_on_write(asc_socket_t *sock, void (*callback)(void *, int), void *arg);
-int asc_socket_event_on_connect(asc_socket_t *sock, void (*callback)(void *, int), void *arg);
+
+void asc_socket_event_on_accept(asc_socket_t *sock, event_callback_func_t callback, void *arg);
+void asc_socket_event_on_read(asc_socket_t *sock, event_callback_func_t callback, void *arg);
+void asc_socket_event_on_write(asc_socket_t *sock, event_callback_func_t callback, void *arg);
+void asc_socket_event_on_connect(asc_socket_t *sock, event_callback_func_t callback, void *arg);
 
 void asc_socket_set_sockaddr(asc_socket_t *sock, const char *addr, int port);
 void asc_socket_set_reuseaddr(asc_socket_t *sock, int is_on);
