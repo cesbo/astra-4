@@ -9,8 +9,7 @@
 #include "../dvb.h"
 #include <fcntl.h>
 
-#define MAX_TPDU_SIZE 2048
-
+/* en50221: A.4.1.13 List of transport tags */
 enum
 {
     TPDU_SB         = 0x80,
@@ -26,10 +25,29 @@ enum
     TPDU_DATA_MORE  = 0xA1,
 };
 
-#define MKRID(CLASS, TYPE, VERSION)                                     \
-    ((((CLASS)&0xffff)<<16) | (((TYPE)&0x3ff)<<6) | ((VERSION)&0x3f))
+/* en50221: 7.2.7 Coding of the session tags */
+enum
+{
+    SPDU_SESSION_NUMBER     = 0x90,
+    SPDU_OPEN_SESSION_REQ   = 0x91,
+    SPDU_OPEN_SESSION_RES   = 0x92,
+    SPDU_CREATE_SESSION     = 0x93,
+    SPDU_CREATE_SESSION_RES = 0x94,
+    SPDU_CLOSE_SESSION_REQ  = 0x95,
+    SPDU_CLOSE_SESSION_RES  = 0x96
+};
 
-#define EN50221_APP_AI_RESOURCEID MKRID(2,1,1)
+enum
+{
+    SPDU_STATUS_OPEN        = 0x00
+};
+
+typedef enum
+{
+    LLCI_CONNECT        = 0x01,
+    LLCI_CAM_CONNECT    = 0x02,
+    LLCI_CLOSE          = 0x03
+} llci_event_t;
 
 /*
  *      o       oooooooo8 oooo   oooo      oo
@@ -105,38 +123,127 @@ int asn_1_encode(uint16_t length, uint8_t *asn_1_array, uint32_t asn_1_array_len
 }
 
 /*
- * ooooooooooo ooooo  oooo ooooooooooo oooo   oooo ooooooooooo
- *  888    88   888    88   888    88   8888o  88  88  888  88
- *  888ooo8      888  88    888ooo8     88 888o88      888
- *  888    oo     88888     888    oo   88   8888      888
- * o888ooo8888     888     o888ooo8888 o88o    88     o888o
+ * ooooo       ooooo         oooooooo8 ooooo
+ *  888         888        o888     88  888
+ *  888         888        888          888
+ *  888      o  888      o 888o     oo  888
+ * o888ooooo88 o888ooooo88  888oooo88  o888o
  *
  */
 
-static const char conn_is_not_active[] = "connection is not active";
-
-static void ca_event(module_data_t *mod)
+static int llci_lookup(module_data_t *mod, uint32_t resource_id, uint32_t *connected_resource_id)
 {
-    uint8_t buffer[MAX_TPDU_SIZE];
-    int buffer_size = read(mod->ca_fd, buffer, sizeof(buffer));
+    return 0;
+}
+
+static void llci_session(module_data_t *mod, uint32_t resource_id, llci_event_t event
+                         , uint8_t slot_id, uint8_t conn_id)
+{
+
+}
+
+/*
+ *  oooooooo8 oooooooooo ooooooooo  ooooo  oooo
+ * 888         888    888 888    88o 888    88
+ *  888oooooo  888oooo88  888    888 888    88
+ *         888 888        888    888 888    88
+ * o88oooo888 o888o      o888ooo88    888oo88
+ *
+ */
+
+static void ca_session_data(module_data_t *mod, uint8_t slot_id, uint8_t conn_id)
+{
+    ca_connection_t *conn = &mod->slots[slot_id].connections[conn_id];
+
+    const uint8_t *buffer_ptr = conn->buffer;
+    uint16_t buffer_size = conn->buffer_size;
+    const uint8_t spdu_tag = buffer_ptr[0];
+    ++buffer_ptr;
+    --buffer_size;
+
+    asc_log_debug(MSG("en50221: conn_id:%d spdu_tag:0x%02X"), conn_id, spdu_tag);
+
+    switch(spdu_tag)
+    {
+        case SPDU_OPEN_SESSION_REQ:
+        {
+            if((buffer_size < 5) || (buffer_ptr[0] != 4))
+            {
+                asc_log_error(MSG("en50221: invalid SPDU length. slot:%d"), slot_id);
+                return;
+            }
+
+            const uint32_t resource_id = (buffer_ptr[1] << 24)
+                                       | (buffer_ptr[2] << 16)
+                                       | (buffer_ptr[3] << 8)
+                                       | (buffer_ptr[4]);
+
+            uint32_t connected_resource_id;
+            const int status = llci_lookup(mod, resource_id, &connected_resource_id);
+
+            // TODO: allocate session
+            // TODO: send response
+            // TODO: callback
+
+            break;
+        }
+        case SPDU_CLOSE_SESSION_REQ:
+        {
+            break;
+        }
+        case SPDU_SESSION_NUMBER:
+        {
+            break;
+        }
+        case SPDU_CREATE_SESSION_RES:
+        {
+            break;
+        }
+        case SPDU_CLOSE_SESSION_RES:
+        {
+            break;
+        }
+        default:
+            asc_log_error(MSG("en50221: unexpected TPDU tag 0x%02x. slot:%d")
+                          , spdu_tag, slot_id);
+            break;
+    }
+}
+
+/*
+ * ooooooooooo oooooooooo ooooooooo  ooooo  oooo
+ * 88  888  88  888    888 888    88o 888    88
+ *     888      888oooo88  888    888 888    88
+ *     888      888        888    888 888    88
+ *    o888o    o888o      o888ooo88    888oo88
+ *
+ */
+
+static void ca_transport_event(module_data_t *mod)
+{
+    static const char conn_is_not_active[] = "connection is not active";
+
+    int buffer_size = read(mod->ca_fd, mod->ca_buffer, MAX_TPDU_SIZE);
     if(buffer_size < 5)
     {
         asc_log_error(MSG("en50221: read() failed [%s]"), strerror(errno));
         return;
     }
 
-    const uint8_t slot_id = buffer[0];
+    const uint8_t slot_id = mod->ca_buffer[0];
     asc_log_debug(MSG("en50221: slot_id:%d"), slot_id);
 
-    const uint8_t *buffer_ptr = &buffer[2];
+    const uint8_t *buffer_ptr = &mod->ca_buffer[2];
     buffer_size -= 2;
 
     uint16_t asn_data_length;
     int length_field_size;
+    uint8_t hdr[6];
+    hdr[0] = slot_id;
 
     while(buffer_size > 0)
     {
-        const uint8_t tag = buffer_ptr[2];
+        const uint8_t tpdu_tag = buffer_ptr[2];
         length_field_size = asn_1_decode(&asn_data_length, &buffer_ptr[1], buffer_size - 1);
         if(length_field_size == 0)
         {
@@ -145,27 +252,26 @@ static void ca_event(module_data_t *mod)
         }
         if(asn_data_length == 0)
         {
-            asc_log_error(MSG("en50221: invalid length. slot:%d"), slot_id);
+            asc_log_error(MSG("en50221: invalid TPDU length. slot:%d"), slot_id);
             return;
         }
 
         buffer_ptr += 1 + length_field_size;
         const uint8_t conn_id = buffer_ptr[0];
         ca_connection_t *conn = &mod->slots[slot_id].connections[conn_id];
-        buffer_ptr += 1;
-
-        asc_log_debug(MSG("en50221: conn_id:%d tag:0x%02X"), conn_id, tag);
-
+        ++buffer_ptr;
         --asn_data_length;
 
-        switch(tag) /* en50221: A.4.1.13 List of transport tags */
+        asc_log_debug(MSG("en50221: conn_id:%d tpdu_tag:0x%02X"), conn_id, tpdu_tag);
+
+        switch(tpdu_tag)
         {
-            case 0x83: /* c_t_c_reply */
+            case TPDU_CTC_REPLY:
             {
                 if(conn->state == CA_CONN_CREATE)
                 {
                     conn->state = CA_CONN_ACTIVE;
-                    // callback [ connection_open ]
+                    llci_session(mod, 0, LLCI_CONNECT, slot_id, conn_id);
                 }
                 else
                 {
@@ -174,28 +280,28 @@ static void ca_event(module_data_t *mod)
                 }
                 break;
             }
-            case 0x84: /* delete_t_c */
+            case TPDU_DELETE_TC:
             {
                 if(conn->state & (CA_CONN_ACTIVE | CA_CONN_DELETE))
                 {
                     conn->state = CA_CONN_IDLE;
-                    // free buffer
+                    conn->buffer_size = 0;
 
-                    uint8_t hdr[5];
-                    hdr[0] = slot_id;
                     hdr[1] = conn_id;
-                    hdr[2] = 0x85; /* d_t_c_reply */
+                    hdr[2] = TPDU_DTC_REPLY;
                     hdr[3] = 1;
                     hdr[4] = conn_id;
 
-                    if(write(mod->ca_fd, hdr, sizeof(hdr)) != sizeof(hdr))
+                    if(write(mod->ca_fd, hdr, 5) != 5)
                     {
-                        asc_log_error(MSG("en50221: failed to send d_t_c_reply. slot:%d")
+                        asc_log_error(MSG("en50221: failed to send TPDU_DTC_REPLY. slot:%d")
                                       , slot_id);
                         return;
                     }
 
-                    // callback [ connection_close ]
+                    // TODO: get resource_id
+                    uint32_t resource_id = 0;
+                    llci_session(mod, resource_id, LLCI_CLOSE, slot_id, conn_id);
                 }
                 else
                 {
@@ -204,7 +310,7 @@ static void ca_event(module_data_t *mod)
                 }
                 break;
             }
-            case 0x85: /* d_t_c_reply */
+            case TPDU_DTC_REPLY:
             {
                 if(conn->state == CA_CONN_DELETE)
                     conn->state = CA_CONN_IDLE;
@@ -215,7 +321,7 @@ static void ca_event(module_data_t *mod)
                 }
                 break;
             }
-            case 0x86: /* request_t_c */
+            case TPDU_REQUEST_TC:
             {
                 int new_conn_id = -1;
                 for(int i = 0; i < CA_MAX_CONNECTIONS; ++i)
@@ -226,37 +332,112 @@ static void ca_event(module_data_t *mod)
                         break;
                     }
                 }
+
+                hdr[1] = conn_id;
+                hdr[3] = 2;
+                hdr[4] = conn_id;
+
+                if(new_conn_id == -1)
+                {
+                    asc_log_error(MSG("en50221: too many connections. slot:%d"), slot_id);
+
+                    hdr[2] = TPDU_TC_ERROR;
+                    hdr[5] = 1;
+                    if(write(mod->ca_fd, hdr, 6) != 6)
+                    {
+                        asc_log_error(MSG("en50221: failed to send TPDU_TC_ERROR. slot:%d")
+                                      , slot_id);
+                        return;
+                    }
+                }
+                else
+                {
+                    hdr[2] = TPDU_NEW_TC;
+                    hdr[5] = new_conn_id;
+                    if(write(mod->ca_fd, hdr, 6) != 6)
+                    {
+                        asc_log_error(MSG("en50221: failed to send TPDU_NEW_TC. slot:%d")
+                                      , slot_id);
+                        return;
+                    }
+
+                    hdr[1] = new_conn_id;
+                    hdr[2] = TPDU_CREATE_TC;
+                    hdr[3] = 1;
+                    hdr[4] = new_conn_id;
+                    if(write(mod->ca_fd, hdr, 5) != 5)
+                    {
+                        asc_log_error(MSG("en50221: failed to send TPDU_CREATE_TC. slot:%d")
+                                      , slot_id);
+                        return;
+                    }
+
+                    conn = &mod->slots[slot_id].connections[new_conn_id];
+                    gettimeofday(&conn->tx_time, NULL);
+
+                    llci_session(mod, 0, LLCI_CAM_CONNECT, slot_id, conn_id);
+                }
                 break;
             }
-            case 0xA1: /* data_more */
+            case TPDU_DATA_MORE:
+            case TPDU_DATA_LAST:
             {
                 if(conn->state != CA_CONN_ACTIVE)
                 {
                     asc_log_error(MSG("en50221: %s. slot:%d"), conn_is_not_active, slot_id);
                     return;
                 }
+                if(asn_data_length + conn->buffer_size > MAX_TPDU_SIZE)
+                {
+                    asc_log_error(MSG("en50221: TPDU buffer overflow. slot:%d"), slot_id);
+                    return;
+                }
+                conn->tx_time.tv_sec = 0;
+                memcpy(&conn->buffer[conn->buffer_size], buffer_ptr, asn_data_length);
+                conn->buffer_size += asn_data_length;
+
+                if(tpdu_tag == TPDU_DATA_LAST)
+                {
+                    ca_session_data(mod, slot_id, conn_id);
+                    conn->buffer_size = 0;
+                }
+
                 break;
             }
-            case 0xA0: /* data_last */
+            case TPDU_SB:
             {
                 if(conn->state != CA_CONN_ACTIVE)
                 {
                     asc_log_error(MSG("en50221: %s. slot:%d"), conn_is_not_active, slot_id);
                     return;
                 }
-                break;
-            }
-            case 0x80: /* SB */
-            {
-                if(conn->state != CA_CONN_ACTIVE)
+                if(asn_data_length != 1)
                 {
-                    asc_log_error(MSG("en50221: %s. slot:%d"), conn_is_not_active, slot_id);
+                    asc_log_error(MSG("en50221: SB invalid length. slot:%d"), slot_id);
                     return;
                 }
+                if(buffer_ptr[0] & 0x80)
+                {
+                    hdr[1] = conn_id;
+                    hdr[2] = TPDU_RCV;
+                    hdr[3] = 1;
+                    hdr[4] = conn_id;
+                    if(write(mod->ca_fd, hdr, 5) != 5)
+                    {
+                        asc_log_error(MSG("en50221: failed to send TPDU_RCV. slot:%d"), slot_id);
+                        return;
+                    }
+
+                    gettimeofday(&conn->tx_time, NULL);
+                }
+                else
+                    conn->tx_time.tv_sec = 0;
+
                 break;
             }
             default:
-                asc_log_error(MSG("en50221: unexpected TPDU tag 0x%02x. slot:%d"), tag, slot_id);
+                asc_log_error(MSG("en50221: unexpected TPDU tag 0x%02x. slot:%d")
+                              , tpdu_tag, slot_id);
                 return;
         }
 
@@ -329,7 +510,7 @@ void ca_open(module_data_t *mod)
 
     if(!(caps.slot_type & CA_CI_LINK))
     {
-        asc_log_error(MSG("CI link layer interface is not supported"));
+        asc_log_error(MSG("CI link layer level interface is not supported"));
         ca_close(mod);
         return;
     }
@@ -353,5 +534,5 @@ void ca_loop(module_data_t *mod, int is_data)
     if(!is_data)
         ca_close(mod);
     else
-        ca_event(mod);
+        ca_transport_event(mod);
 }

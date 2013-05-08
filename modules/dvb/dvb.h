@@ -43,9 +43,15 @@ typedef enum
     CA_CONN_ACTIVE  = 0x08
 } ca_connection_state_t;
 
+#define MAX_TPDU_SIZE 2048
+
 typedef struct
 {
     ca_connection_state_t state;
+    struct timeval tx_time;
+
+    uint8_t buffer[MAX_TPDU_SIZE];
+    uint16_t buffer_size;
 } ca_connection_t;
 
 typedef struct
@@ -125,6 +131,8 @@ struct module_data_t
     int ca_fd;
     int slots_num;
     ca_slot_t *slots;
+
+    uint8_t ca_buffer[MAX_TPDU_SIZE];
 };
 
 #define MSG(_msg) "[dvb_input %d:%d] " _msg, mod->adapter, mod->device
