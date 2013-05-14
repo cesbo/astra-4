@@ -70,6 +70,8 @@ function on_http_read(client, data)
     end
 end
 
+log.set({ debug = true })
+
 server = http_server({
     addr = "127.0.0.1",
     port = 5000,

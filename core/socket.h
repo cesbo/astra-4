@@ -43,10 +43,16 @@ const char * asc_socket_addr(asc_socket_t *sock) __wur;
 int asc_socket_port(asc_socket_t *sock) __wur;
 
 
-void asc_socket_event_on_accept(asc_socket_t *sock, event_callback_func_t callback, void *arg);
-void asc_socket_event_on_read(asc_socket_t *sock, event_callback_func_t callback, void *arg);
-void asc_socket_event_on_write(asc_socket_t *sock, event_callback_func_t callback, void *arg);
-void asc_socket_event_on_connect(asc_socket_t *sock, event_callback_func_t callback, void *arg);
+void asc_socket_event_on_accept_new(asc_socket_t *sock, event_callback_t callback, event_callback_t callback_error, void *arg);
+void asc_socket_event_on_read_new(asc_socket_t *sock, event_callback_t callback, event_callback_t callback_error, void *arg);
+void asc_socket_event_on_write_new(asc_socket_t *sock, event_callback_t callback, event_callback_t callback_error, void *arg);
+void asc_socket_event_on_connect_new(asc_socket_t *sock, event_callback_t callback, event_callback_t callback_error, void *arg);
+
+/* To remove! */
+void asc_socket_event_on_accept(asc_socket_t *sock, event_callback_t callback, void *arg);
+void asc_socket_event_on_read(asc_socket_t *sock, event_callback_t callback, void *arg);
+void asc_socket_event_on_write(asc_socket_t *sock, event_callback_t callback, void *arg);
+void asc_socket_event_on_connect(asc_socket_t *sock, event_callback_t callback, void *arg);
 
 void asc_socket_set_sockaddr(asc_socket_t *sock, const char *addr, int port);
 void asc_socket_set_reuseaddr(asc_socket_t *sock, int is_on);

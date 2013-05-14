@@ -391,42 +391,48 @@ int asc_socket_port(asc_socket_t *sock)
  */
 
 static void  __socket_event(asc_socket_t *sock
-                          , event_callback_func_t callback, void *arg
-                          , int is_event_read)
+                          , event_callback_t callback_read
+                          , event_callback_t callback_write
+                          , event_callback_t callback_error
+                          , void *arg)
 {
-    if(sock->event)
+    /*TEMPORARY CODE */
+    if (sock->event)
     {
         asc_event_close(sock->event);
         sock->event = NULL;
     }
 
-    if(!callback) return;
+    if ((callback_read == NULL) && (callback_write == NULL) && (callback_error == NULL))
+        return;
 
-    if(is_event_read)
-        sock->event = asc_event_on_read(sock->fd, callback, arg);
-    else
-        sock->event = asc_event_on_write(sock->fd, callback, arg);
+    sock->event = asc_event_init(sock->fd, callback_read, callback_write, callback_error, arg);    
 }
 
-void asc_socket_event_on_accept(asc_socket_t *sock, event_callback_func_t callback, void *arg)
+void asc_socket_event_on_accept_new(asc_socket_t *sock, event_callback_t callback, event_callback_t callback_error, void *arg)
 {
-    __socket_event(sock, callback, arg, 1);
+    __socket_event(sock, callback, NULL, callback_error, arg);
 }
 
-void asc_socket_event_on_read(asc_socket_t *sock, event_callback_func_t callback, void *arg)
+void asc_socket_event_on_read_new(asc_socket_t *sock, event_callback_t callback, event_callback_t callback_error, void *arg)
 {
-    __socket_event(sock, callback, arg, 1);
+    __socket_event(sock, callback, NULL, callback_error, arg);
 }
 
-void asc_socket_event_on_write(asc_socket_t *sock, event_callback_func_t callback, void *arg)
+void asc_socket_event_on_write_new(asc_socket_t *sock, event_callback_t callback, event_callback_t callback_error, void *arg)
 {
-    __socket_event(sock, callback, arg, 0);
+    __socket_event(sock, NULL, callback, callback_error, arg);
 }
 
-void asc_socket_event_on_connect(asc_socket_t *sock, event_callback_func_t callback, void *arg)
+void asc_socket_event_on_connect_new(asc_socket_t *sock, event_callback_t callback, event_callback_t callback_error, void *arg)
 {
-    __socket_event(sock, callback, arg, 0);
+    __socket_event(sock, NULL, callback, callback_error, arg);
 }
+
+void asc_socket_event_on_accept(asc_socket_t *sock, event_callback_t callback, void *arg){}
+void asc_socket_event_on_read(asc_socket_t *sock, event_callback_t callback, void *arg){}
+void asc_socket_event_on_write(asc_socket_t *sock, event_callback_t callback, void *arg){}
+void asc_socket_event_on_connect(asc_socket_t *sock, event_callback_t callback, void *arg){}
 
 /*
  *  oooooooo8 ooooooooooo ooooooooooo          oo    oo

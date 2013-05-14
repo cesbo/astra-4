@@ -83,48 +83,50 @@ struct module_data_t
  *
  */
 
-static void on_read(void *arg, int is_data)
+static void on_read_error(void *arg)
 {
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
+    
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+    lua_pushlightuserdata(lua, client);
+    lua_pushnil(lua);
+    lua_call(lua, 2, 0);
 
-    if(!is_data)
+    if(client->idx_request)
     {
-        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
-        lua_pushlightuserdata(lua, client);
-        lua_pushnil(lua);
-        lua_call(lua, 2, 0);
-
-        if(client->idx_request)
-        {
-            luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
-            client->idx_request = 0;
-        }
-
-        if(client->idx_data)
-        {
-            luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_data);
-            client->idx_data = 0;
-        }
-
-        if(client->__stream.self)
-        {
-            __module_stream_destroy(&client->__stream);
-            client->__stream.self = NULL;
-        }
-
-        asc_list_remove_item(mod->clients, client);
-        asc_socket_close(client->sock);
-        free(client);
-        return;
+        luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
+        client->idx_request = 0;
     }
+
+    if(client->idx_data)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_data);
+        client->idx_data = 0;
+    }
+
+    if(client->__stream.self)
+    {
+        __module_stream_destroy(&client->__stream);
+        client->__stream.self = NULL;
+    }
+
+    asc_list_remove_item(mod->clients, client);
+    asc_socket_close(client->sock);
+    free(client);
+}
+
+static void on_read(void *arg)
+{
+    http_client_t *client = arg;
+    module_data_t *mod = client->mod;
 
     int r = asc_socket_recv(client->sock, client->buffer, HTTP_BUFFER_SIZE);
     if(r <= 0)
     {
         if(r == -1)
             asc_log_error(MSG("failed to read a request [%s]"), strerror(errno));
-        on_read(client, 0);
+        on_read_error(client);
         return;
     }
 
@@ -309,36 +311,30 @@ static void on_read(void *arg, int is_data)
  *
  */
 
-static void on_write_ready(void *arg, int is_data)
+static void on_write_ready(void *arg)
 {
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
-
-    if(!is_data)
-    {
-        on_read(client, 0);
-        return;
-    }
 
     const int read_size = fread(client->buffer, 1, HTTP_BUFFER_SIZE, client->src_file);
     if(read_size <= 0)
     {
         asc_log_error(MSG("failed to read source file [%s]"), strerror(errno));
-        on_read(client, 0);
+        on_read_error(client);
         return;
     }
 
     if(asc_socket_send(client->sock, client->buffer, read_size) != read_size)
     {
         asc_log_warning(MSG("failed to send file to client:%d"), asc_socket_fd(client->sock));
-        on_read(client, 0);
+        on_read_error(client);
         return;
     }
 
     if(feof(client->src_file))
     {
         client->src_file = NULL;
-        asc_socket_event_on_read(client->sock, on_read, client);
+        asc_socket_event_on_read_new(client->sock, on_read, on_read_error, client);
     }
 }
 
@@ -355,7 +351,7 @@ static void on_ts(void *arg, const uint8_t *ts)
         else if(ret == -1)
         {
             asc_log_warning(MSG("failed to send ts to the client [%s]"), asc_socket_error());
-            on_read(client, 0);
+            on_read_error(client);
             return;
         }
         else
@@ -483,7 +479,7 @@ static int method_send(module_data_t *mod)
         luaL_Stream *stream = luaL_checkudata(lua, -1, LUA_FILEHANDLE);
         client->src_file = stream->f;
 
-        asc_socket_event_on_write(client->sock, on_write_ready, client);
+        asc_socket_event_on_write_new(client->sock, on_write_ready, on_read_error, client);
     }
     lua_pop(lua, 1);
 
@@ -543,7 +539,7 @@ static int method_close(module_data_t *mod)
         astra_abort();
     }
 
-    on_read(lua_touserdata(lua, 2), 0);
+    on_read_error(lua_touserdata(lua, 2));
 
     return 0;
 }
@@ -573,27 +569,26 @@ static void server_close(module_data_t *mod)
     mod->clients = NULL;
 }
 
-static void on_accept(void *arg, int is_data)
+static void on_accept_error(void *arg)
+{
+   server_close(arg);
+}
+
+static void on_accept(void *arg)
 {
     module_data_t *mod = arg;
-
-    if(!is_data)
-    {
-        server_close(mod);
-        return;
-    }
 
     http_client_t *client = calloc(1, sizeof(http_client_t));
     if(!asc_socket_accept(mod->sock, &client->sock))
     {
         free(client);
-        on_accept(mod, 0);
+        on_accept_error(mod);
         return;
     }
     client->mod = mod;
     asc_list_insert_tail(mod->clients, client);
 
-    asc_socket_event_on_read(client->sock, on_read, client);
+    asc_socket_event_on_read_new(client->sock, on_read, on_read_error, client);
 
     if(asc_log_is_debug())
     {
@@ -645,7 +640,7 @@ static void module_init(module_data_t *mod)
         astra_abort();
     }
 
-    asc_socket_event_on_accept(mod->sock, on_accept, mod);
+    asc_socket_event_on_accept_new(mod->sock, on_accept, on_accept_error, mod);
 }
 
 static void module_destroy(module_data_t *mod)
