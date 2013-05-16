@@ -35,6 +35,46 @@ static int utils_hostname(lua_State *L)
     return 1;
 }
 
+static int utils_stat(lua_State *L)
+{
+    const char *path = luaL_checkstring(L, 1);
+
+    lua_newtable(L);
+
+    struct stat sb;
+    if(stat(path, &sb) != 0)
+    {
+        lua_pushstring(L, strerror(errno));
+        lua_setfield(L, -2, "error");
+
+        memset(&sb, 0, sizeof(struct stat));
+    }
+
+    switch(sb.st_mode & S_IFMT)
+    {
+        case S_IFBLK: lua_pushstring(L, "block"); break;
+        case S_IFCHR: lua_pushstring(L, "character"); break;
+        case S_IFDIR: lua_pushstring(L, "directory"); break;
+        case S_IFIFO: lua_pushstring(L, "pipe"); break;
+        case S_IFLNK: lua_pushstring(L, "symlink"); break;
+        case S_IFREG: lua_pushstring(L, "file"); break;
+        case S_IFSOCK: lua_pushstring(L, "socket"); break;
+        default: lua_pushstring(L, "unknown"); break;
+    }
+    lua_setfield(L, -2, "type");
+
+    lua_pushnumber(L, sb.st_uid);
+    lua_setfield(L, -2, "uid");
+
+    lua_pushnumber(L, sb.st_gid);
+    lua_setfield(L, -2, "gid");
+
+    lua_pushnumber(L, sb.st_size);
+    lua_setfield(L, -2, "size");
+
+    return 1;
+}
+
 /* readdir */
 
 static const char __utils_readdir[] = "__utils_readdir";
@@ -90,6 +130,7 @@ LUA_API int luaopen_utils(lua_State *L)
     static const luaL_Reg api[] =
     {
         { "hostname", utils_hostname },
+        { "stat", utils_stat },
         { NULL, NULL }
     };
 
