@@ -95,7 +95,7 @@ static bool __asc_socket_is_would_block(void)
         const int err = WSAGetLastError();
         return (err == WSAEWOULDBLOCK) || (err == WSAEINPROGRESS);
 #else
-        return (errno == EISCONN) || (errno == EINPROGRESS);
+        return (errno == EISCONN) || (errno == EINPROGRESS) || (errno == EAGAIN);
 #endif
 }
 
@@ -190,7 +190,6 @@ static void __on_asc_socket_close(void * arg)
     asc_socket_t * sock = (asc_socket_t *)arg;
     asc_log_debug(MSG("socket close event"));
     if (sock->on_close) sock->on_close(sock->arg);
-    asc_socket_close(sock);
 }
 
 static void __on_asc_socket_accept_ok(void * arg)
@@ -238,13 +237,15 @@ static void __on_asc_socket_write(void * arg)
         int sz = send_buf_sz;
         if (sz > asc_socket_single_send_size) sz = asc_socket_single_send_size;
         int sent = send(sock->fd, asc_vector_get_dataptr(sock->send_buf), sz, 0);
-        if ((sent < 0) || ((sent == 0) && (!__asc_socket_is_would_block())))
+        if ((sent == 0) || ((sent < 0) && (!__asc_socket_is_would_block())))
         {
-            asc_log_error(MSG("send() failed [%s]"), asc_socket_error());
+            asc_log_error(MSG("send() failed [%s] (%d/%d bytes)"), asc_socket_error(), sent, sz);
             __asc_socket_subscribe_write(sock, NULL);
-            /* If user is subscribed to error/close event -> it will be received later */
+            if (sock->on_close) sock->on_close(sock->arg);
             return;
         }
+        if (sent < 0) sent = 0;/* in case of would block */
+        asc_log_debug(MSG("socket write event - sent %d (of %d) bytes"), sent, sz);
         asc_vector_remove_begin(sock->send_buf, sent);
     }
     if (__asc_socket_get_send_buffer_size(sock) <= 0)
@@ -546,11 +547,12 @@ bool asc_socket_send_buffered(asc_socket_t *sock, const void *buffer, int size)
         int send_sz = size;
         if (send_sz > asc_socket_single_send_size) send_sz = asc_socket_single_send_size;
         already_sent = send(sock->fd, buffer, send_sz, 0); 
-        if ((already_sent < 0) || ((already_sent == 0) && (!__asc_socket_is_would_block())))
+        if ((already_sent == 0) || ((already_sent < 0) && (!__asc_socket_is_would_block())))
         {
             asc_log_error(MSG("send() failed [%s]"), asc_socket_error());
             return false;
         }        
+        if (already_sent < 0) already_sent = 0;/* in case of would block */
     }
     if (already_sent < size)
     {

@@ -89,6 +89,7 @@ static void on_read_error(void *arg)
 {
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
+    asc_log_error(MSG("Closing socket"));
     
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
     lua_pushlightuserdata(lua, client);

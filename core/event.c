@@ -154,7 +154,9 @@ void asc_event_core_loop(void)
 #if defined(EV_TYPE_KQUEUE)
 static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete)
 {
-    asc_assert(event->callback_error && (event->callback_read || event->callback_write), MSG("Should specify READ or WRITE for event if specified ERROR! fd=%d"), event->fd);
+    (void)is_add;
+    asc_assert((!event->callback_error) || (event->callback_error && (event->callback_read || event->callback_write)), 
+      MSG("Should specify READ or WRITE for event if specified ERROR! fd=%d"), event->fd);
 
     int ret;
     EV_OTYPE ed;
@@ -185,7 +187,8 @@ static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete
 #else /* EPOLL */
 static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete)
 {
-    asc_assert(event->callback_error && (event->callback_read || event->callback_write), MSG("Should specify READ or WRITE for event if specified ERROR! fd=%d"), event->fd);
+    asc_assert((!event->callback_error) || (event->callback_error && (event->callback_read || event->callback_write)), 
+      MSG("Should specify READ or WRITE for event if specified ERROR! fd=%d"), event->fd);
 
     int ret;
     if (is_delete)
