@@ -173,7 +173,26 @@ static void call_nil(int callback, int self)
     lua_call(lua, 2, 0);
 }
 
-static void on_read(void *arg, int is_data)
+static void on_close(void *arg)
+{
+    module_data_t *mod = arg;
+
+    asc_timer_destroy(mod->timeout_timer);
+    mod->timeout_timer = NULL;
+
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+    const int self = lua_gettop(lua);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_options);
+    lua_gettop(lua);/* Options */
+    lua_getfield(lua, -1, __callback);
+    const int callback = lua_gettop(lua);
+
+    call_nil(callback, self);
+    lua_pop(lua, 3); // self + options + callback
+    method_close(mod);
+}
+
+static void on_read(void *arg)
 {
     module_data_t *mod = arg;
 
@@ -186,14 +205,6 @@ static void on_read(void *arg, int is_data)
     const int options = lua_gettop(lua);
     lua_getfield(lua, -1, __callback);
     const int callback = lua_gettop(lua);
-
-    if(!is_data)
-    {
-        call_nil(callback, self);
-        lua_pop(lua, 3); // self + options + callback
-        method_close(mod);
-        return;
-    }
 
     char *buffer = mod->buffer;
     int r = asc_socket_recv(mod->sock, buffer, HTTP_BUFFER_SIZE);
@@ -446,22 +457,24 @@ static void on_read(void *arg, int is_data)
     lua_pop(lua, 3); // self + options + callback
 } /* on_read */
 
-static void on_connect(void *arg, int is_data)
+static void on_connect_err(void *arg)
+{
+    module_data_t *mod = arg;
+    mod->is_connected = 1;
+    timeout_callback(mod);
+    method_close(mod);    
+}
+
+static void on_connect(void *arg)
 {
     module_data_t *mod = arg;
 
     asc_timer_destroy(mod->timeout_timer);
     mod->timeout_timer = NULL;
 
-    if(!is_data)
-    {
-        mod->is_connected = 1;
-        timeout_callback(mod);
-        method_close(mod);
-        return;
-    }
 
-    asc_socket_event_on_read(mod->sock, on_read, mod);
+    asc_socket_set_callback_read(mod->sock, on_read);
+    asc_socket_set_callback_close(mod->sock, on_close);
 
     mod->is_connected = 2;
     mod->timeout_timer = asc_timer_init(REQUEST_TIMEOUT_INTERVAL, timeout_callback, mod);
@@ -505,10 +518,7 @@ static void on_connect(void *arg, int is_data)
     lua_pop(lua, 1); // empty line
 
     const int header_size = buffer - mod->buffer;
-    if(asc_socket_send(mod->sock, mod->buffer, header_size) != header_size)
-    {
-        // TODO: check result
-    }
+    asc_socket_send_buffered(mod->sock, mod->buffer, header_size);
 
     // send request content
     lua_getfield(lua, -1, __content);
@@ -516,10 +526,7 @@ static void on_connect(void *arg, int is_data)
     {
         const int content_size = luaL_len(lua, -1);
         const char *content = lua_tostring(lua, -1);
-        if(asc_socket_send(mod->sock, (void *)content, content_size) != content_size)
-        {
-            // TODO: check result
-        }
+        asc_socket_send_buffered(mod->sock, (void *)content, content_size);
     }
     lua_pop(lua, 1); // content
 
@@ -563,10 +570,7 @@ static int method_send(module_data_t *mod)
     {
         const int content_size = luaL_len(lua, 2);
         const char *content = lua_tostring(lua, 2);
-        if(asc_socket_send(mod->sock, (void *)content, content_size) != content_size)
-        {
-            // TODO: check result
-        }
+        asc_socket_send_buffered(mod->sock, (void *)content, content_size);
         return 0;
     }
 
@@ -603,13 +607,15 @@ static void module_init(module_data_t *mod)
     mod->idx_options = luaL_ref(lua, LUA_REGISTRYINDEX);
 
     mod->sock = asc_socket_open_tcp4();
-    if(mod->sock && asc_socket_connect(mod->sock, mod->addr, mod->port))
+    
+    if (!mod->sock) 
     {
-        mod->timeout_timer = asc_timer_init(CONNECT_TIMEOUT_INTERVAL, timeout_callback, mod);
-        asc_socket_event_on_connect(mod->sock, on_connect, mod);
-    }
-    else
         method_close(mod);
+        return;
+    }
+    mod->timeout_timer = asc_timer_init(CONNECT_TIMEOUT_INTERVAL, timeout_callback, mod);
+    asc_socket_set_arg(mod->sock, mod);
+    asc_socket_connect(mod->sock, mod->addr, mod->port, on_connect, on_connect_err);
 }
 
 static void module_destroy(module_data_t *mod)

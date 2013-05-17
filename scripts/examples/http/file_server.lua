@@ -73,7 +73,7 @@ end
 log.set({ debug = true })
 
 server = http_server({
-    addr = "127.0.0.1",
+    addr = "",
     port = 5000,
     callback = on_http_read
 })

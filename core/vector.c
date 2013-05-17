@@ -2,7 +2,7 @@
  * Astra Core
  * http://cesbo.com
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2013, Krasheninnikov Alexander
  * Licensed under the MIT license.
  */
 
@@ -131,6 +131,17 @@ inline int asc_vector_count(asc_vector_t * vec)
 void asc_vector_clear(asc_vector_t * vec)
 {
     asc_vector_remove_end(vec, asc_vector_count(vec));
+}
+
+void asc_vector_resize(asc_vector_t * vec, int count_elem)
+{
+    int new_size_bytes = count_elem * vec->element_size;
+    if (new_size_bytes == vec->size_bytes) return;
+    if (new_size_bytes < vec->size_bytes)
+        asc_vector_shrink(vec, vec->size_bytes - new_size_bytes);
+    else
+        asc_vector_grow(vec, new_size_bytes - vec->size_bytes);
+    vec->size_bytes = new_size_bytes;
 }
 
 void asc_vector_append_end(asc_vector_t * vec, void * data, int count_elem)

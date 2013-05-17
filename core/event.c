@@ -3,6 +3,7 @@
  * http://cesbo.com
  *
  * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Revised 2013 Krasheninnikov Alexander
  * Licensed under the MIT license.
  */
 
@@ -135,9 +136,10 @@ void asc_event_core_loop(void)
         EV_OTYPE *ed = &event_observer.ed_list[i];
 #if defined(EV_TYPE_KQUEUE)
         asc_event_t *event = ed->udata;
-        const bool is_rd = (ed->filter == EVFILT_READ)  && (ed->flags & EV_ADD) && !(ed->fflags & EV_FFLAGS) && (ed->data > 0);
-        const bool is_wr = (ed->filter == EVFILT_WRITE) && (ed->flags & EV_ADD) && !(ed->fflags & EV_FFLAGS) && (ed->data > 0);
-        const bool is_er = (!ev_read && !ev_write && (ed->flags & ~EV_ADD));
+        const bool is_probably_rdwr = (ed->flags & EV_ADD) && !(ed->fflags & EV_FFLAGS) && (ed->data > 0);
+        const bool is_rd = is_probably_rdwr && (ed->filter == EVFILT_READ);
+        const bool is_wr = is_probably_rdwr && (ed->filter == EVFILT_WRITE);
+        const bool is_er = (!is_rd && !is_wr && (ed->flags & ~EV_ADD));
 #else
         asc_event_t *event = ed->data.ptr;
         const bool is_rd = ed->events & EPOLLIN;
@@ -149,52 +151,58 @@ void asc_event_core_loop(void)
     }
 }
 
+#if defined(EV_TYPE_KQUEUE)
 static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete)
 {
     asc_assert(event->callback_error && (event->callback_read || event->callback_write), MSG("Should specify READ or WRITE for event if specified ERROR! fd=%d"), event->fd);
 
     int ret;
-#if defined(EV_TYPE_KQUEUE)
     EV_OTYPE ed;
     if (event->callback_read && !is_delete)
     {
-      EV_SET(&ed, fd, EVFILT_READ, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, event);
-      ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
+        EV_SET(&ed, event->fd, EVFILT_READ, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, event);
+        ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
+        asc_assert(ret != -1, MSG("failed to attach (read) fd=%d [%s]"), event->fd, strerror(errno));
     } else
     {
-      EV_SET(&ed, fd, EVFILT_READ, EV_DELETE, 0, 0, event);
-      ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
+        EV_SET(&ed, event->fd, EVFILT_READ, EV_DELETE, 0, 0, event);
+        ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
+        /* Result is not checked, because it could happen, that there is nothing to delete, but we delete */
     }
-    asc_assert(ret != -1, MSG("failed to attach (read) fd=%d [%s]"), fd, strerror(errno));
     if (event->callback_write && !is_delete)
     {
-      EV_SET(&ed, fd, EVFILT_WRITE, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, event);
-      ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
+        EV_SET(&ed, event->fd, EVFILT_WRITE, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, event);
+        ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
+        asc_assert(ret != -1, MSG("failed to attach (write) fd=%d [%s]"), event->fd, strerror(errno));
     } else
     {
-      EV_SET(&ed, fd, EVFILT_WRITE, EV_DELETE, 0, 0, event);
-      ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
+        EV_SET(&ed, event->fd, EVFILT_WRITE, EV_DELETE, 0, 0, event);
+        ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
+        /* Result is not checked, because it could happen, that there is nothing to delete, but we delete */
     }
-    asc_assert(ret != -1, MSG("failed to attach (write) fd=%d [%s]"), fd, strerror(errno));
+}
+
 #else /* EPOLL */
-    EV_OTYPE ed;
-    ed.data.ptr = event;
-    ed.events = EV_FLAGS;
-    if (event->callback_read) ed.events |= EPOLLIN;
-    if (event->callback_write) ed.events |= EPOLLOUT;
+static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete)
+{
+    asc_assert(event->callback_error && (event->callback_read || event->callback_write), MSG("Should specify READ or WRITE for event if specified ERROR! fd=%d"), event->fd);
+
+    int ret;
     if (is_delete)
     {
-      ret = epoll_ctl(event_observer.fd, EPOLL_CTL_DEL, event->fd, NULL);
+        ret = epoll_ctl(event_observer.fd, EPOLL_CTL_DEL, event->fd, NULL);
     } else
     {
-      ret = epoll_ctl(event_observer.fd, is_add ? EPOLL_CTL_ADD : EPOLL_CTL_MOD, event->fd, &ed);
-      ed.events = EV_FLAGS;
-      if (event->callback_read) ed.events |= EPOLLIN;
-      if (event->callback_write) ed.events |= EPOLLOUT;
+        EV_OTYPE ed;
+        ed.data.ptr = event;
+        ed.events = EV_FLAGS;
+        if (event->callback_read) ed.events |= EPOLLIN;
+        if (event->callback_write) ed.events |= EPOLLOUT;
+        ret = epoll_ctl(event_observer.fd, is_add ? EPOLL_CTL_ADD : EPOLL_CTL_MOD, event->fd, &ed);
     }
     asc_assert(ret != -1, MSG("failed to attach fd=%d [%s]"), event->fd, strerror(errno));
-#endif
 }
+#endif
 
 
 
@@ -435,7 +443,7 @@ static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete
 asc_event_t * asc_event_init(int fd, event_callback_t callback_read, event_callback_t callback_write, event_callback_t callback_error, void *arg)
 {
 #ifdef DEBUG
-    asc_log_debug(MSG("asc_event_init for fd=%d"), fd);
+    asc_log_debug(MSG("asc_event_init for fd=%d, %c%c%c"), fd, callback_read ? 'R' : '-', callback_write ? 'W' : '-',  callback_error ? 'E' : '-');
 #endif
     asc_event_t *event = malloc(sizeof(asc_event_t));
     event->fd = fd;
@@ -452,54 +460,27 @@ asc_event_t * asc_event_init(int fd, event_callback_t callback_read, event_callb
 void asc_event_set_read(asc_event_t * event, event_callback_t callback_read)
 {
 #ifdef DEBUG
-    asc_log_debug(MSG("asc_event_set_read for fd=%d"), event->fd);
+    asc_log_debug(MSG("asc_event_set_read for fd=%d, %c"), event->fd, callback_read ? 'R' : '-');
 #endif
     event->callback_read = callback_read;    
-    asc_event_subscribe(event, false, false);
-}
-
-void asc_event_cancel_read(asc_event_t * event)
-{
-#ifdef DEBUG
-    asc_log_debug(MSG("asc_event_cancel_read for fd=%d"), event->fd);
-#endif
-    event->callback_read = NULL;    
     asc_event_subscribe(event, false, false);
 }
 
 void asc_event_set_write(asc_event_t * event, event_callback_t callback_write)
 {
 #ifdef DEBUG
-    asc_log_debug(MSG("asc_event_set_write for fd=%d"), event->fd);
+    asc_log_debug(MSG("asc_event_set_write for fd=%d, %c"), event->fd, callback_write ? 'W' : '-');
 #endif
     event->callback_write = callback_write;    
-    asc_event_subscribe(event, false, false);
-}
-
-void asc_event_cancel_write(asc_event_t * event)
-{
-#ifdef DEBUG
-    asc_log_debug(MSG("asc_event_cancel_write for fd=%d"), event->fd);
-#endif
-    event->callback_write = NULL;    
     asc_event_subscribe(event, false, false);
 }
 
 void asc_event_set_error(asc_event_t * event, event_callback_t callback_error)
 {
 #ifdef DEBUG
-    asc_log_debug(MSG("asc_event_set_write for fd=%d"), event->fd);
+    asc_log_debug(MSG("asc_event_set_error for fd=%d, %c"), event->fd, callback_error ? 'E' : '-');
 #endif
     event->callback_error = callback_error;    
-    asc_event_subscribe(event, false, false);
-}
-
-void asc_event_cancel_error(asc_event_t * event)
-{
-#ifdef DEBUG
-    asc_log_debug(MSG("asc_event_set_write for fd=%d"), event->fd);
-#endif
-    event->callback_error = NULL;    
     asc_event_subscribe(event, false, false);
 }
 
@@ -580,15 +561,4 @@ static bool __asc_event_process(asc_event_t * event, bool is_rd, bool is_wr, boo
     }
     return false;/* No changes in event vec */
 }
-
-/* OLDS */
-asc_event_t * asc_event_on_read(int fd, event_callback_t callback, void *arg)
-{
-    return NULL;
-}
-asc_event_t * asc_event_on_write(int fd, event_callback_t callback, void *arg)
-{
-    return NULL;
-}
-
 
