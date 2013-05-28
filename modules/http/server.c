@@ -90,7 +90,7 @@ static void on_read_error(void *arg)
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
     asc_log_error(MSG("Closing socket"));
-    
+
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
     lua_pushlightuserdata(lua, client);
     lua_pushnil(lua);
@@ -318,9 +318,10 @@ static void on_write_ready(void *arg)
 {
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
-    
+
     int to_send = asc_socket_get_send_buffer_space_available(client->sock);
-    if (to_send > MAX_WRITE_PIECE) to_send = MAX_WRITE_PIECE;
+    if(to_send > MAX_WRITE_PIECE)
+        to_send = MAX_WRITE_PIECE;
     asc_vector_resize(mod->write_temp_buf, to_send);
 
     const int read_size = fread(asc_vector_get_dataptr(mod->write_temp_buf), 1, to_send, client->src_file);
@@ -331,10 +332,13 @@ static void on_write_ready(void *arg)
         return;
     }
 
-    bool ok = asc_socket_send_buffered(client->sock, asc_vector_get_dataptr(mod->write_temp_buf), read_size);
-    if (!ok)
+    bool ok = asc_socket_send_buffered(client->sock
+                                       , asc_vector_get_dataptr(mod->write_temp_buf)
+                                       , read_size);
+    if(!ok)
     {
-        asc_log_warning(MSG("failed to send file part (%d bytes) to client:%d"), read_size, asc_socket_fd(client->sock));
+        asc_log_warning(MSG("failed to send file part (%d bytes) to client:%d")
+                        , read_size, asc_socket_fd(client->sock));
         on_read_error(client);
         return;
     }
@@ -350,40 +354,14 @@ static void on_ts(void *arg, const uint8_t *ts)
 {
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
-    
+
     bool ok = asc_socket_send_buffered(client->sock, ts, TS_PACKET_SIZE);
-    if (!ok)
+    if(!ok)
     {
         asc_log_warning(MSG("failed to send ts to the client [%s]"), asc_socket_error());
         on_read_error(client);
         return;
     }
-    /*
-
-    if(client->buffer_skip >= HTTP_BUFFER_SIZE - TS_PACKET_SIZE)
-    {
-        const int ret = asc_socket_send(client->sock, client->buffer, client->buffer_skip);
-        if(ret == client->buffer_skip)
-            client->buffer_skip = 0;
-        else if(ret == -1)
-        {
-            asc_log_warning(MSG("failed to send ts to the client [%s]"), asc_socket_error());
-            on_read_error(client);
-            return;
-        }
-        else
-        {
-            if(ret > 0)
-            {
-                asc_log_info(MSG("move memory"));
-                memmove(client->buffer, &client->buffer[ret], client->buffer_skip - ret);
-                client->buffer_skip -= ret;
-            }
-        }
-    }
-    memcpy(&client->buffer[client->buffer_skip], ts, TS_PACKET_SIZE);
-    client->buffer_skip += TS_PACKET_SIZE;
-    */
 }
 
 static void buffer_set_text(char **buffer, int capacity
@@ -605,7 +583,7 @@ static void on_accept(void *arg)
     }
     client->mod = mod;
     asc_list_insert_tail(mod->clients, client);
-    
+
     asc_socket_set_arg(client->sock, client);
     asc_socket_set_callback_read(client->sock, on_read);
     asc_socket_set_callback_close(client->sock, on_read_error);
@@ -654,7 +632,7 @@ static void module_init(module_data_t *mod)
 
     mod->sock = asc_socket_open_tcp4();
     asc_socket_set_reuseaddr(mod->sock, 1);
-    if (!asc_socket_bind_new(mod->sock, mod->addr, mod->port))
+    if(!asc_socket_bind_new(mod->sock, mod->addr, mod->port))
     {
         server_close(mod);
         astra_abort();

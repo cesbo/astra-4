@@ -462,7 +462,7 @@ static void on_connect_err(void *arg)
     module_data_t *mod = arg;
     mod->is_connected = 1;
     timeout_callback(mod);
-    method_close(mod);    
+    method_close(mod);
 }
 
 static void on_connect(void *arg)
@@ -607,8 +607,8 @@ static void module_init(module_data_t *mod)
     mod->idx_options = luaL_ref(lua, LUA_REGISTRYINDEX);
 
     mod->sock = asc_socket_open_tcp4();
-    
-    if (!mod->sock) 
+
+    if(!mod->sock)
     {
         method_close(mod);
         return;

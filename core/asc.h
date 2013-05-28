@@ -29,13 +29,13 @@
     asc_socket_core_init();                                                                     \
     asc_event_core_init();
 
-#define ASC_LOOP(_cond_)                                                                        \
-    while(_cond_)                                                                               \
+#define ASC_LOOP(_cond)                                                                         \
+    while(_cond)                                                                                \
     {                                                                                           \
         asc_event_core_loop();                                                                  \
         asc_timer_core_loop();                                                                  \
     }
-    
+
 
 #define ASC_DESTROY()                                                                           \
     asc_event_core_destroy();                                                                   \
