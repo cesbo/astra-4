@@ -413,7 +413,12 @@ void asc_event_core_loop(void)
     const int ret = select(event_observer.max_fd + 1, &rset, &wset, &eset, &timeout);
     if(ret == -1)
     {
+#ifdef _WIN32
+        int err = WSAGetLastError();
+        asc_assert(false, MSG("event observer critical error [WSALastErr: %d]"), err);
+#else
         asc_assert(errno == EINTR, MSG("event observer critical error [%s]"), strerror(errno));
+#endif
         return;
     }
     else if(ret > 0)

@@ -533,6 +533,8 @@ void asc_socket_connect(asc_socket_t *sock, const char *addr, int port
     }
 
     sock->is_connecting = true;
+    sock->on_ac_ok = on_ok;
+    sock->on_ac_err = on_err;    
     __asc_socket_subscribe_read(sock, NULL);
     __asc_socket_subscribe_write(sock, __on_asc_socket_connect_ok);
     __asc_socket_subscribe_error(sock, __on_asc_socket_connect_err);
