@@ -106,7 +106,8 @@ typedef struct
         return 1;                                                           \
     }
 
-int module_option_number(const char *name, int *number);
+bool module_option_bool(const char *name, bool *number);
+bool module_option_number(const char *name, int *number);
 int module_option_string(const char *name, const char **string);
 
 #endif /* _MODULE_LUA_H_ */
