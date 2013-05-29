@@ -313,9 +313,9 @@ static void module_init(module_data_t *mod)
         mod->buffer[11] = (rtpssrc      ) & 0xFF;
     }
 
-    mod->sock = asc_socket_open_udp4();
+    mod->sock = asc_socket_open_udp4(mod);
     asc_socket_set_reuseaddr(mod->sock, 1);
-    if(!asc_socket_bind_new(mod->sock, NULL, 0))
+    if(!asc_socket_bind(mod->sock, NULL, 0))
         astra_abort();
 
     int value;

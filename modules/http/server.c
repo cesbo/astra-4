@@ -354,14 +354,30 @@ static void on_ts(void *arg, const uint8_t *ts)
 {
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
-
-    bool ok = asc_socket_send_buffered(client->sock, ts, TS_PACKET_SIZE);
-    if(!ok)
+    
+#ifdef ACCUM_TS
+    if(client->buffer_skip >= HTTP_BUFFER_SIZE - TS_PACKET_SIZE)
+    {
+        const bool ret = asc_socket_send_buffered(client->sock, client->buffer, client->buffer_skip);
+        if(!ret)
+        {
+            asc_log_warning(MSG("failed to send ts to the client [%s]"), asc_socket_error());
+            on_read_error(client);
+            return;
+        }
+        client->buffer_skip = 0;        
+    }
+    memcpy(&client->buffer[client->buffer_skip], ts, TS_PACKET_SIZE);
+    client->buffer_skip += TS_PACKET_SIZE;
+#else
+    const bool ret = asc_socket_send_buffered(client->sock, ts, TS_PACKET_SIZE);
+    if(!ret)
     {
         asc_log_warning(MSG("failed to send ts to the client [%s]"), asc_socket_error());
         on_read_error(client);
         return;
     }
+#endif
 }
 
 static void buffer_set_text(char **buffer, int capacity
@@ -575,7 +591,7 @@ static void on_accept(void *arg)
     module_data_t *mod = arg;
 
     http_client_t *client = calloc(1, sizeof(http_client_t));
-    if(!asc_socket_accept(mod->sock, &client->sock))
+    if(!asc_socket_accept(mod->sock, &client->sock, client))
     {
         free(client);
         on_accept_error(mod);
@@ -584,7 +600,6 @@ static void on_accept(void *arg)
     client->mod = mod;
     asc_list_insert_tail(mod->clients, client);
 
-    asc_socket_set_arg(client->sock, client);
     asc_socket_set_callback_read(client->sock, on_read);
     asc_socket_set_callback_close(client->sock, on_read_error);
 
@@ -630,14 +645,13 @@ static void module_init(module_data_t *mod)
     mod->clients = asc_list_init();
     mod->write_temp_buf = asc_vector_init(1);
 
-    mod->sock = asc_socket_open_tcp4();
+    mod->sock = asc_socket_open_tcp4(mod);
     asc_socket_set_reuseaddr(mod->sock, 1);
-    if(!asc_socket_bind_new(mod->sock, mod->addr, mod->port))
+    if(!asc_socket_bind(mod->sock, mod->addr, mod->port))
     {
         server_close(mod);
         astra_abort();
     }
-    asc_socket_set_arg(mod->sock, mod);
     asc_socket_listen(mod->sock, on_accept, on_accept_error);
 }
 

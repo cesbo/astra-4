@@ -509,6 +509,7 @@ asc_event_t * asc_event_init(int fd
 
 void asc_event_set_read(asc_event_t * event, event_callback_t callback_read)
 {
+    if (event->callback_read == callback_read) return;
 #ifdef DEBUG
     asc_log_debug(MSG("asc_event_set_read for fd=%d, %c")
                   , event->fd
@@ -520,6 +521,7 @@ void asc_event_set_read(asc_event_t * event, event_callback_t callback_read)
 
 void asc_event_set_write(asc_event_t * event, event_callback_t callback_write)
 {
+    if (event->callback_write == callback_write) return;
 #ifdef DEBUG
     asc_log_debug(MSG("asc_event_set_write for fd=%d, %c")
                   , event->fd
@@ -531,6 +533,7 @@ void asc_event_set_write(asc_event_t * event, event_callback_t callback_write)
 
 void asc_event_set_error(asc_event_t * event, event_callback_t callback_error)
 {
+    if (event->callback_error == callback_error) return;
 #ifdef DEBUG
     asc_log_debug(MSG("asc_event_set_error for fd=%d, %c")
                   , event->fd

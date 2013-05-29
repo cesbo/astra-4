@@ -83,16 +83,19 @@ static void module_init(module_data_t *mod)
     int port = 1234;
     module_option_number("port", &port);
 
-    mod->sock = asc_socket_open_udp4();
+    mod->sock = asc_socket_open_udp4(mod);
     asc_socket_set_reuseaddr(mod->sock, 1);
-    if(!asc_socket_bind_new(mod->sock, addr, port))
+#ifdef _WIN32        
+    if(!asc_socket_bind(mod->sock, NULL, port))
+#else
+    if(!asc_socket_bind(mod->sock, addr, port))
+#endif
         return;
 
     int value;
     if(module_option_number("socket_size", &value))
         asc_socket_set_buffer(mod->sock, value, 0);
 
-    asc_socket_set_arg(mod->sock, mod);
     asc_socket_set_callback_read(mod->sock, udp_input_callback);
     asc_socket_set_callback_close(mod->sock, udp_input_callback_close);
 

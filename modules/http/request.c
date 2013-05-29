@@ -606,15 +606,14 @@ static void module_init(module_data_t *mod)
     lua_pushvalue(lua, 2);
     mod->idx_options = luaL_ref(lua, LUA_REGISTRYINDEX);
 
-    mod->sock = asc_socket_open_tcp4();
-
-    if(!mod->sock)
+    mod->sock = asc_socket_open_tcp4(mod);
+   
+    if(!mod->sock) 
     {
         method_close(mod);
         return;
     }
     mod->timeout_timer = asc_timer_init(CONNECT_TIMEOUT_INTERVAL, timeout_callback, mod);
-    asc_socket_set_arg(mod->sock, mod);
     asc_socket_connect(mod->sock, mod->addr, mod->port, on_connect, on_connect_err);
 }
 
