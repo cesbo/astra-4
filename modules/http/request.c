@@ -11,6 +11,8 @@
  *      http_request
  *
  * Module Options:
+ *      upstream    - object, stream instance returned by module_instance:stream() [optional] 
+ *      ts          - true to push data to upstream instead of callback [optional, default : false]
  *      addr        - string, server IP address
  *      port        - number, server port
  *      callback    - function,
@@ -29,6 +31,8 @@
 
 struct module_data_t
 {
+    MODULE_STREAM_DATA();
+
     const char *addr;
     int port;
 
@@ -36,11 +40,14 @@ struct module_data_t
 
     asc_timer_t *timeout_timer;
     int is_connected; // for timeout message
+    
+    bool is_ts; /* Using TS (true) or send data to callback (false) */
 
     int idx_self;
     int idx_options;
 
     int ready_state; // 0 - not, 1 response, 2 - headers, 3 - content
+    int skip;
 
     size_t chunk_left; // is_chunked || is_content_length
 
@@ -207,7 +214,7 @@ static void on_read(void *arg)
     const int callback = lua_gettop(lua);
 
     char *buffer = mod->buffer;
-    int r = asc_socket_recv(mod->sock, buffer, HTTP_BUFFER_SIZE);
+    int r = asc_socket_recv(mod->sock, buffer + mod->skip, HTTP_BUFFER_SIZE - mod->skip);
     if(r <= 0)
     {
         call_nil(callback, self);
@@ -217,7 +224,6 @@ static void on_read(void *arg)
     }
 
     int response = 0;
-    int skip = 0;
 
     parse_match_t m[4];
 
@@ -228,6 +234,7 @@ static void on_read(void *arg)
         {
             call_error(callback, self, "invalid response");
             lua_pop(lua, 3); // self + options + callback
+            mod->skip = 0;// all data parsed
             return;
         }
 
@@ -241,12 +248,13 @@ static void on_read(void *arg)
         lua_pushlstring(lua, &buffer[m[3].so], m[3].eo - m[3].so);
         lua_setfield(lua, response, __message);
 
-        skip = m[0].eo;
+        mod->skip = m[0].eo;
         mod->ready_state = 1;
 
-        if(skip >= r)
+        if(mod->skip >= r)
         {
             lua_pop(lua, 4); // self + options + callback + response
+            mod->skip = 0;// all data parsed
             return;
         }
     }
@@ -275,17 +283,17 @@ static void on_read(void *arg)
         }
         const int headers = lua_gettop(lua);
 
-        while(skip < r && http_parse_header(&buffer[skip], m))
+        while(mod->skip < r && http_parse_header(&buffer[mod->skip], m))
         {
             const size_t so = m[1].so;
             const size_t length = m[1].eo - so;
             if(!length)
             {
-                skip += m[0].eo;
+                mod->skip += m[0].eo;
                 mod->ready_state = 2;
                 break;
             }
-            const char *header = &buffer[skip + so];
+            const char *header = &buffer[mod->skip + so];
 
             if(!strncasecmp(header, __transfer_encoding
                             , sizeof(__transfer_encoding) - 1))
@@ -318,7 +326,7 @@ static void on_read(void *arg)
             lua_pushnumber(lua, headers_count);
             lua_pushlstring(lua, header, length);
             lua_settable(lua, headers);
-            skip += m[0].eo;
+            mod->skip += m[0].eo;
         }
 
         lua_pop(lua, 1); // headers
@@ -336,9 +344,10 @@ static void on_read(void *arg)
 
         lua_pop(lua, 1); // response
 
-        if(skip >= r)
+        if(mod->skip >= r)
         {
             lua_pop(lua, 3); // self + options + callback
+            mod->skip = 0;// all data parsed
             return;
         }
     }
@@ -346,25 +355,43 @@ static void on_read(void *arg)
     // content
     if(mod->ready_state == 2)
     {
-        // Transfer-Encoding: chunked
-        if(mod->is_chunked)
+        /* Push to stream */
+        if (mod->is_ts) 
         {
-            while(skip < r)
+            while (r - mod->skip >= TS_PACKET_SIZE)
+            {
+                module_stream_send(mod, (uint8_t*)&mod->buffer[mod->skip]);
+                mod->skip += TS_PACKET_SIZE;
+            }
+            if (mod->skip < r)
+            {//there is something usefull in the end of buffer, move it to begin
+                memmove(&mod->buffer[0], &mod->buffer[mod->skip], r - mod->skip);
+                mod->skip = r - mod->skip;
+            } else
+            {//all data is processed
+                mod->skip = 0;
+            }            
+        }
+        // Transfer-Encoding: chunked
+        else if(mod->is_chunked)
+        {
+            while(mod->skip < r)
             {
                 if(!mod->chunk_left)
                 {
-                    if(!http_parse_chunk(&buffer[skip], m))
+                    if(!http_parse_chunk(&buffer[mod->skip], m))
                     {
                         call_error(callback, self, "invalid chunk");
                         lua_pop(lua, 3); // self + options + callback
                         mod->ready_state = 3;
+                        mod->skip = 0;// all data parsed
                         return;
                     }
 
                     char cs_str[] = "00000000";
                     const size_t cs_size = m[1].eo - m[1].so;
                     const size_t cs_skip = 8 - cs_size;
-                    memcpy(&cs_str[cs_skip], &buffer[skip], cs_size);
+                    memcpy(&cs_str[cs_skip], &buffer[mod->skip], cs_size);
 
                     uint8_t cs_hex[4];
                     str_to_hex(cs_str, cs_hex, sizeof(cs_hex));
@@ -372,7 +399,7 @@ static void on_read(void *arg)
                                     | (cs_hex[1] << 16)
                                     | (cs_hex[2] <<  8)
                                     | (cs_hex[3]      );
-                    skip += m[0].eo;
+                    mod->skip += m[0].eo;
 
                     if(!mod->chunk_left)
                     {
@@ -384,35 +411,37 @@ static void on_read(void *arg)
                     }
                 }
 
-                const size_t r_skip = r - skip;
+                const size_t r_skip = r - mod->skip;
                 lua_pushvalue(lua, callback);
                 lua_pushvalue(lua, self);
                 if(mod->chunk_left < r_skip)
                 {
-                    lua_pushlstring(lua, &buffer[skip], mod->chunk_left);
+                    lua_pushlstring(lua, &buffer[mod->skip], mod->chunk_left);
                     lua_call(lua, 2, 0);
-                    skip += mod->chunk_left;
+                    mod->skip += mod->chunk_left;
                     mod->chunk_left = 0;
-                    if(buffer[skip] == '\r')
-                        ++skip;
-                    if(buffer[skip] == '\n')
-                        ++skip;
+                    if(buffer[mod->skip] == '\r')
+                        ++mod->skip;
+                    if(buffer[mod->skip] == '\n')
+                        ++mod->skip;
                     else
                     {
                         call_error(callback, self, "invalid chunk");
                         lua_pop(lua, 3); // self + options + callback
                         mod->ready_state = 3;
+                        mod->skip = 0;// all data parsed
                         return;
                     }
                 }
                 else
                 {
-                    lua_pushlstring(lua, &buffer[skip], r_skip);
+                    lua_pushlstring(lua, &buffer[mod->skip], r_skip);
                     lua_call(lua, 2, 0);
                     mod->chunk_left -= r_skip;
                     break;
                 }
             }
+            mod->skip = 0;// all data parsed
         }
 
         // Content-Length
@@ -420,18 +449,18 @@ static void on_read(void *arg)
         {
             if(mod->chunk_left > 0)
             {
-                const size_t r_skip = r - skip;
+                const size_t r_skip = r - mod->skip;
                 lua_pushvalue(lua, callback);
                 lua_pushvalue(lua, self);
                 if(mod->chunk_left > r_skip)
                 {
-                    lua_pushlstring(lua, &buffer[skip], r_skip);
+                    lua_pushlstring(lua, &buffer[mod->skip], r_skip);
                     lua_call(lua, 2, 0);
                     mod->chunk_left -= r_skip;
                 }
                 else
                 {
-                    lua_pushlstring(lua, &buffer[skip], mod->chunk_left);
+                    lua_pushlstring(lua, &buffer[mod->skip], mod->chunk_left);
                     lua_call(lua, 2, 0);
                     mod->chunk_left = 0;
 
@@ -442,6 +471,7 @@ static void on_read(void *arg)
                     return;
                 }
             }
+            mod->skip = 0;// all data parsed
         }
 
         // Stream
@@ -449,8 +479,9 @@ static void on_read(void *arg)
         {
             lua_pushvalue(lua, callback);
             lua_pushvalue(lua, self);
-            lua_pushlstring(lua, &buffer[skip], r - skip);
+            lua_pushlstring(lua, &buffer[mod->skip], r - mod->skip);
             lua_call(lua, 2, 0);
+            mod->skip = 0;// all data parsed
         }
     }
 
@@ -583,6 +614,8 @@ static int method_send(module_data_t *mod)
 
 static void module_init(module_data_t *mod)
 {
+    module_stream_init(mod, NULL);
+
     if(!module_option_string("addr", &mod->addr) || !mod->addr)
     {
         asc_log_error(MSG("option 'addr' is required"));
@@ -619,6 +652,7 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
+    module_stream_destroy(mod);
     method_close(mod);
 }
 
