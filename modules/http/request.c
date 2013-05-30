@@ -29,6 +29,9 @@
 
 struct module_data_t
 {
+    MODULE_LUA_DATA();
+    MODULE_STREAM_DATA();
+
     const char *addr;
     int port;
 
@@ -38,7 +41,6 @@ struct module_data_t
     int is_connected; // for timeout message
 
     int idx_self;
-    int idx_options;
 
     int ready_state; // 0 - not, 1 response, 2 - headers, 3 - content
 
@@ -118,7 +120,7 @@ void timeout_callback(void *arg)
 
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
     const int self = lua_gettop(lua);
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_options);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
 
     // callback
     lua_getfield(lua, -1, __callback);
@@ -182,7 +184,7 @@ static void on_read(void *arg, int is_data)
 
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
     const int self = lua_gettop(lua);
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_options);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
     const int options = lua_gettop(lua);
     lua_getfield(lua, -1, __callback);
     const int callback = lua_gettop(lua);
@@ -475,7 +477,7 @@ static void on_connect(void *arg, int is_data)
     char *buffer = mod->buffer;
     const char *buffer_tail = mod->buffer + HTTP_BUFFER_SIZE;
 
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_options);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
 
     lua_getfield(lua, -1, __method);
     buffer_set_text(&buffer, buffer_tail - buffer
@@ -548,12 +550,6 @@ static int method_close(module_data_t *mod)
         mod->idx_self = 0;
     }
 
-    if(mod->idx_options > 0)
-    {
-        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_options);
-        mod->idx_options = 0;
-    }
-
     return 0;
 }
 
@@ -588,19 +584,17 @@ static void module_init(module_data_t *mod)
     if(!module_option_number("port", &mod->port))
         mod->port = 80;
 
-    lua_getfield(lua, 2, "callback");
+    lua_getfield(lua, 2, __callback);
     if(lua_type(lua, -1) != LUA_TFUNCTION)
     {
         asc_log_error(MSG("option 'callback' is required"));
         astra_abort();
     }
-    lua_pop(lua, 1);
+    lua_pop(lua, 1); // callback
 
     // store self in registry
     lua_pushvalue(lua, 3);
     mod->idx_self = luaL_ref(lua, LUA_REGISTRYINDEX);
-    lua_pushvalue(lua, 2);
-    mod->idx_options = luaL_ref(lua, LUA_REGISTRYINDEX);
 
     mod->sock = asc_socket_open_tcp4();
     if(mod->sock && asc_socket_connect(mod->sock, mod->addr, mod->port))

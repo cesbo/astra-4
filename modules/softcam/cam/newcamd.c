@@ -40,6 +40,7 @@ typedef enum
 
 struct module_data_t
 {
+    MODULE_LUA_DATA();
     MODULE_CAM_DATA();
 
     /* Config */
