@@ -224,6 +224,7 @@ static void on_read(void *arg)
         method_close(mod);
         return;
     }
+    r += mod->ts_len_in_buf;// Consider that we've received more (+ previous part)
 
     int response = 0;
 
@@ -363,10 +364,11 @@ static void on_read(void *arg)
                 module_stream_send(mod, (uint8_t*)&mod->buffer[pos]);
                 pos += TS_PACKET_SIZE;
             }
-            if (pos < r)
+            int left = r - pos;
+            if (left > 0)
             {//there is something usefull in the end of buffer, move it to begin
-                memmove(&mod->buffer[0], &mod->buffer[pos], r - pos);
-                mod->ts_len_in_buf = r - pos;
+                if (pos > 0) memmove(&mod->buffer[0], &mod->buffer[pos], left);
+                mod->ts_len_in_buf = left;
             } else
             {//all data is processed
                 mod->ts_len_in_buf = 0;

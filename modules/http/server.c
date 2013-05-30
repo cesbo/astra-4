@@ -354,7 +354,7 @@ static void on_ts(void *arg, const uint8_t *ts)
 {
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
-    
+#define ACCUM_TS // This helps to reduce aux traffic
 #ifdef ACCUM_TS
     if(client->buffer_skip >= HTTP_BUFFER_SIZE - TS_PACKET_SIZE)
     {

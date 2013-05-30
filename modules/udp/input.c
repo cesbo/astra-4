@@ -24,6 +24,8 @@
 #define UDP_BUFFER_SIZE 1460
 #define TS_PACKET_SIZE 188
 
+#define MSG(_msg) "[udp_input] " _msg
+
 struct module_data_t
 {
     MODULE_STREAM_DATA();
@@ -59,6 +61,8 @@ void udp_input_callback(void *arg)
     ssize_t i = (mod->is_rtp) ? 12 : 0;
     for(; i < len; i += TS_PACKET_SIZE)
         module_stream_send(mod, &mod->buffer[i]);
+    if (i != len)
+        asc_log_warning(MSG("Lost bytes: %d, because UDP packet size is wrong"), len - i);
 }
 
 void timer_renew_callback(void *arg)
