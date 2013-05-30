@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 #include <modules/astra/base.h> /* crc32b, hex_to_str */
+#include <modules/astra/module_lua.h>
 
 /*
  * ooooooooooo  oooooooo8
@@ -83,7 +84,7 @@ mpegts_packet_type_t mpegts_pes_type(uint8_t type_id);
 
 const char * mpeg4_profile_level_name(uint8_t type_id);
 
-void mpegts_desc_to_string(char *str, uint32_t len, const uint8_t *desc);
+void mpegts_desc_to_lua(const uint8_t *desc);
 
 /*
  * oooooooooo   oooooooo8 ooooo

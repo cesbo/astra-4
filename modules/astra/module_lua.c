@@ -8,6 +8,8 @@
 
 #include <astra.h>
 
+lua_State *lua = NULL;
+
 int module_option_number(const char *name, int *number)
 {
     do

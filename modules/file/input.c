@@ -30,6 +30,7 @@
 
 struct module_data_t
 {
+    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
     const char *filename;

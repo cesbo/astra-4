@@ -11,6 +11,12 @@
 
 #include "base.h"
 
+#include <lua/lua.h>
+#include <lua/lualib.h>
+#include <lua/lauxlib.h>
+
+extern lua_State *lua; // in module_lua.c
+
 typedef struct
 {
     const char *name;
@@ -19,42 +25,48 @@ typedef struct
 
 #define MODULE_OPTIONS_IDX 2
 
+typedef struct
+{
+    int oref;
+} module_lua_t;
+
+#define MODULE_LUA_DATA() module_lua_t __lua
+
 #define MODULE_LUA_METHODS()                                                \
     static const module_lua_method_t __module_lua_methods[] =
 
 #define MODULE_LUA_REGISTER(_name)                                          \
     static const char __module_name[] = #_name;                             \
-    typedef struct { int ref; module_data_t mod; } __module_data_t;         \
     static int __module_new(lua_State *L)                                   \
     {                                                                       \
-        __module_data_t *mod = lua_newuserdata(L, sizeof(__module_data_t)); \
-        memset(mod, 0, sizeof(__module_data_t));                            \
+        module_data_t *mod = lua_newuserdata(L, sizeof(module_data_t));     \
+        memset(mod, 0, sizeof(module_data_t));                              \
         lua_getmetatable(L, 1);                                             \
         lua_setmetatable(L, -2);                                            \
         if(lua_gettop(L) >= 3)                                              \
         {                                                                   \
             lua_pushvalue(L, 2);                                            \
-            mod->ref = luaL_ref(L, LUA_REGISTRYINDEX);                      \
+            mod->__lua.oref = luaL_ref(L, LUA_REGISTRYINDEX);               \
         }                                                                   \
-        module_init(&mod->mod);                                             \
+        module_init(mod);                                                   \
         return 1;                                                           \
     }                                                                       \
     static int __module_delete(lua_State *L)                                \
     {                                                                       \
-        __module_data_t *mod = luaL_checkudata(L, 1, __module_name);        \
-        module_destroy(&mod->mod);                                          \
-        if(mod->ref)                                                        \
+        module_data_t *mod = luaL_checkudata(L, 1, __module_name);          \
+        module_destroy(mod);                                                \
+        if(mod->__lua.oref)                                                 \
         {                                                                   \
-            luaL_unref(L, LUA_REGISTRYINDEX, mod->ref);                     \
-            mod->ref = 0;                                                   \
+            luaL_unref(L, LUA_REGISTRYINDEX, mod->__lua.oref);              \
+            mod->__lua.oref = 0;                                            \
         }                                                                   \
         return 0;                                                           \
     }                                                                       \
     static int __module_thunk(lua_State *L)                                 \
     {                                                                       \
-        __module_data_t *mod = luaL_checkudata(L, 1, __module_name);        \
+        module_data_t *mod = luaL_checkudata(L, 1, __module_name);          \
         module_lua_method_t *m = lua_touserdata(L, lua_upvalueindex(1));    \
-        return m->method(&mod->mod);                                        \
+        return m->method(mod);                                              \
     }                                                                       \
     static int __module_tostring(lua_State *L)                              \
     {                                                                       \
@@ -63,9 +75,9 @@ typedef struct
     }                                                                       \
     static int __module_config(lua_State *L)                                \
     {                                                                       \
-        __module_data_t *mod = luaL_checkudata(L, 1, __module_name);        \
-        if(mod->ref)                                                        \
-            lua_rawgeti(L, LUA_REGISTRYINDEX, mod->ref);                    \
+        module_data_t *mod = luaL_checkudata(L, 1, __module_name);          \
+        if(mod->__lua.oref)                                                 \
+            lua_rawgeti(L, LUA_REGISTRYINDEX, mod->__lua.oref);             \
         else                                                                \
             lua_pushnil(L);                                                 \
         return 1;                                                           \

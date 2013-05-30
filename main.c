@@ -16,8 +16,6 @@
 
 static jmp_buf main_loop;
 
-lua_State *lua;
-
 void astra_exit(void)
 {
     longjmp(main_loop, 1);
@@ -78,7 +76,7 @@ static void astra_init(int argc, const char **argv)
 
     /* change package.path */
     lua_getglobal(lua, "package");
-    lua_pushstring(lua, "/etc/astra/helpers/?.lua;./?.lua");
+    lua_pushstring(lua, "./?.lua");
     lua_setfield(lua, -2, "path");
     lua_pushstring(lua, "");
     lua_setfield(lua, -2, "cpath");
