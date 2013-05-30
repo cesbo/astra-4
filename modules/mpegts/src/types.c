@@ -32,7 +32,7 @@ const char * mpegts_type_name(mpegts_packet_type_t type)
         case MPEGTS_PACKET_EMM:
             return "EMM";
         default:
-            return "UNKNOWN";
+            return "UNKN";
     }
 }
 
@@ -104,55 +104,106 @@ const char * mpeg4_profile_level_name(uint8_t type_id)
     }
 }
 
-void mpegts_desc_to_string(char *str, uint32_t len, const uint8_t *desc)
+#define HEX_PREFIX_SIZE 2
+#define LINE_END_SIZE 1
+
+static const char __data[] = "data";
+static const char __type_name[] = "type_name";
+static const char __strip[] = "... (strip)";
+
+void mpegts_desc_to_lua(const uint8_t *desc)
 {
-    uint32_t skip = 0;
+    char data[128];
+
+    lua_newtable(lua);
+
+    lua_pushnumber(lua, desc[0]);
+    lua_setfield(lua, -2, "type_id");
+
     switch(desc[0])
     {
         case 0x09:
         { /* CA */
+            lua_pushstring(lua, "cas");
+            lua_setfield(lua, -2, __type_name);
+
             const uint16_t ca_pid = DESC_CA_PID(desc);
-            skip = snprintf(str, len, "CAS: caid:0x%02X%02X pid:%d", desc[2], desc[3], ca_pid);
+            const uint16_t caid = desc[2] << 8 | desc[3];
+
+            lua_pushnumber(lua, caid);
+            lua_setfield(lua, -2, "caid");
+
+            lua_pushnumber(lua, ca_pid);
+            lua_setfield(lua, -2, "pid");
+
             const uint8_t ca_info_size = desc[1] - 4; // 4 = caid + ca_pid
             if(ca_info_size > 0)
             {
-                skip += snprintf(&str[skip], len - skip, " data:");
-                if((uint32_t)(ca_info_size * 2 + 1) > (len - skip))
-                    snprintf(&str[skip], len - skip, "ERR (is too long)");
-                else
-                    hex_to_str(&str[skip], &desc[6], ca_info_size);
+                const int max_size = ((HEX_PREFIX_SIZE
+                                      + ca_info_size * 2
+                                      + LINE_END_SIZE) > sizeof(data))
+                                   ? (sizeof(data)
+                                      - HEX_PREFIX_SIZE
+                                      - sizeof(__strip)
+                                      - LINE_END_SIZE) / 2
+                                   : ca_info_size;
+
+                data[0] = '0';
+                data[1] = 'x';
+                hex_to_str(&data[HEX_PREFIX_SIZE], &desc[6], max_size);
+                if(max_size != ca_info_size)
+                    sprintf(&data[HEX_PREFIX_SIZE + max_size], "%s", __strip);
+
+                lua_pushstring(lua, data);
+                lua_setfield(lua, -2, __data);
             }
             break;
         }
         case 0x0A:
         { /* ISO-639 language */
-            snprintf(str, len, "Language: %c%c%c", desc[2], desc[3], desc[4]);
-            break;
-        }
-        case 0x0E:
-        { /* Maximum bitrate */
-            const uint32_t max_bitrate = ((desc[2] & 0x3F) << 16) | (desc[3] << 8) | desc[4];
-            snprintf(str, len, "Maximum Bitrate: %uKbit/s", (max_bitrate * 50 * 8) / 1000);
-            break;
-        }
-        case 0x1B:
-        { /* MPEG-4 video */
-            snprintf(str, len, "MPEG-4 Video Profile/Level: %s"
-                     , mpeg4_profile_level_name(desc[2]));
+            static const char __lang[] = "lang";
+            lua_pushstring(lua, __lang);
+            lua_setfield(lua, -2, __type_name);
+
+            sprintf(data, "%c%c%c", desc[2], desc[3], desc[4]);
+            lua_pushstring(lua, data);
+            lua_setfield(lua, -2, __lang);
             break;
         }
         case 0x52:
         { /* Stream Identifier */
-            snprintf(str, len, "Stream ID: %d", desc[2]);
+            static const char __stream_id[] = "stream_id";
+            lua_pushstring(lua, __stream_id);
+            lua_setfield(lua, -2, __type_name);
+
+            lua_pushnumber(lua, desc[2]);
+            lua_setfield(lua, -2, __stream_id);
             break;
         }
         default:
         {
-            skip = snprintf(str, len, "descriptor:0x%02X size:%d data:0x", desc[0], desc[1]);
-            if((uint32_t)(desc[1] * 2 + 1) > (len - skip))
-                snprintf(&str[skip], len - skip, "ERR (is too long)");
-            else
-                hex_to_str(&str[skip], &desc[2], desc[1]);
+            lua_pushstring(lua, "unknown");
+            lua_setfield(lua, -2, __type_name);
+
+            const int desc_size = 2 + desc[1];
+            const int max_size = ((HEX_PREFIX_SIZE
+                                  + desc_size * 2
+                                  + LINE_END_SIZE) > (int)sizeof(data))
+                               ? (sizeof(data)
+                                  - HEX_PREFIX_SIZE
+                                  - sizeof(__strip)
+                                  - LINE_END_SIZE) / 2
+                               : desc_size;
+
+            data[0] = '0';
+            data[1] = 'x';
+            hex_to_str(&data[HEX_PREFIX_SIZE], desc, max_size);
+            if(max_size != desc_size)
+                sprintf(&data[HEX_PREFIX_SIZE + max_size], "%s", __strip);
+
+            lua_pushstring(lua, data);
+            lua_setfield(lua, -2, __data);
+
             break;
         }
     }
