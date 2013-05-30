@@ -1,64 +1,66 @@
 
-channels =
-{
+--[[
+make_channel({
+    name = "Channel 1",
+    input =
     {
-        name = "Channel 1",
-        input =
         {
-            {
-                type = "dvb",
-                adapter = 0,
-                pnr = 100
-            }
-        },
-        output =
-        {
-            {
-                type = "udp",
-                addr = "127.0.0.1",
-                port = "10000"
-            }
+            type = "dvb",
+            adapter = 0,
+            pnr = 100
         }
     },
+    output =
     {
-        name = "Channel 2",
-        input =
         {
-            {
-                type = "udp",
-                addr = "239.255.2.139",
-                port = 1234
-            }
-        },
-        output =
-        {
-            {
-                type = "file",
-                filename = "/dev/null"
-            }
+            type = "udp",
+            addr = "127.0.0.1",
+            port = "10000"
         }
     }
-}
+})
+
+make_channel({
+    name = "Channel 2",
+    input =
+    {
+        {
+            type = "udp",
+            addr = "239.255.2.139",
+            port = 1234
+        }
+    },
+    output =
+    {
+        {
+            type = "file",
+            filename = "/dev/null"
+        }
+    }
+})
+]]--
 
 input_list = {}
 
-input_list["dvb"] = function(input_conf)
+input_list["dvb"] = function(name, input_conf)
     -- TODO: get dvb adapter from global lists
 end
 
-input_list["udp"] = function(input_conf)
+input_list["udp"] = function(name, input_conf)
+    if not input_conf.port then input_conf.port = 1234 end
     return { tail = udp_input(input_conf) }
 end
 
-input_list["file"] = function(input_conf)
+input_list["file"] = function(name, input_conf)
     return { tail = file_input(input_conf) }
 end
 
 function init_input(input_conf)
-    if not input_conf["type"] then
+    if not input_conf.type then
         log.error("[stream.lua] option 'type' is required for input")
         astra.abort()
     end
+
     local init_input_type = input_list[input_conf.type:lower()]
     if not init_input_type then
         log.error("[stream.lua] unknown input type")
@@ -113,7 +115,7 @@ function init_input(input_conf)
     return input_mods
 end
 
-function init_channel(channel_conf)
+function make_channel(channel_conf)
     if not channel_conf.name then
         log.error("[stream.lua] option 'name' is required")
         astra.abort()
@@ -134,17 +136,11 @@ function init_channel(channel_conf)
         input_conf.name = channel_conf.name
     end
 
-    local new_input = init_input(input_conf)
+    local new_input = init_input(channel_conf.input[1])
     table.insert(modules.input, new_input)
 
     modules.transmit = transmit({ upstream = new_input.tail:stream() })
     modules.tail = modules.transmit
 
     channel_conf.__modules = modules
-end
-
-if type(channels) == 'table' then
-    for _, channel_conf in pairs(channels) do
-        init_channel(channel_conf)
-    end
 end
