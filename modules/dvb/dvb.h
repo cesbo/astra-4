@@ -40,6 +40,7 @@ typedef struct
 
 struct module_data_t
 {
+    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
     MODULE_DEMUX_DATA();
 

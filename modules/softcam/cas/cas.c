@@ -20,12 +20,12 @@
 
 #include "../module_cam.h"
 
-extern cas_t * template_cas_init(uint16_t caid, uint16_t pnr);
+// extern cas_t * template_cas_init(uint16_t caid, uint16_t pnr);
 
 typedef cas_t *(*cas_init_t)(uint16_t caid, uint16_t pnr);
 static const cas_init_t cas_init_list[] =
 {
-    template_cas_init,
+//    template_cas_init,
     NULL
 };
 
