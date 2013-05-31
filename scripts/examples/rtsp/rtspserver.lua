@@ -2,12 +2,18 @@ server = nil
 -- ----------------------------------------------------------------------------------
 -- VARS
 
-app_version = "v.1"
+app_version = "v.2"
+log.set({ stdout = true })
+
+is_debug = false
 localaddr = nil -- for -l option
 client_addr = nil
 is_rtp = false
+storage = nil
+dst_source = false
 
-log.set({ stdout = true })
+rtsp_version = "RTSP/1.0"
+rtsp_server = "Server: Astra " .. astra.version
 
 rtsp_sessions = {}
 -- ----------------------------------------------------------------------------------
@@ -25,19 +31,12 @@ function split(s,d)
 end
 
 function setup_vars()
-    rtsp_version = "RTSP/1.0"
-    rtsp_server = "Server: Astra " .. astra.version
     sdp_proto = (is_rtp == true) and "RTP/AVP" or "UDP"
-    sdp = "v=0\r\n" ..
-          "s=Astra " .. astra.version .. "\r\n" ..
-          "c=IN IP4 0.0.0.0\r\n" ..
-          "a=control:*\r\n" ..
-          "m=video 11000 " .. sdp_proto .. " 33\r\n" ..
-          "a=rtpmap:33 MP2T/90000\r\n"
 end
 
 function send_400(client)
-    log.debug("Response: 400")
+    log.debug("Response: 400 Bad Request")
+
     server:send(client, {
         version = rtsp_version,
         code = 400,
@@ -50,7 +49,8 @@ function send_400(client)
 end
 
 function send_405(client)
-    log.debug("Response: 405")
+    log.debug("Response: 405 Method Not Allowed")
+
     server:send(client, {
         version = rtsp_version,
         code = 405,
@@ -91,13 +91,17 @@ function get_session(data)
     return nil
 end
 
+function get_filename(uri)
+    local filename = uri:match("rtsp://[%d%a%.:_-]+([%d%a/_-]+%.[%d%a]+)")
+    return filename
+end
 
 function get_transport(data)
     for _,h in pairs(data.headers) do
         local t = h:match("Transport: (.*)")
         if t then
             return {
-                destination = t:match("destination=([%d.]+)"),
+                destination = t:match("destination=([%d%.]+)"),
                 client_port = t:match("client_port=([%d-]+)")
             }
         end
@@ -105,31 +109,41 @@ function get_transport(data)
     return {}
 end
 
+function get_range(data)
+    for _,h in pairs(data.headers) do
+        local r = h:match("Range: npt=(%d+).*")
+        if r then return tonumber(r) end
+    end
+    return 0
+end
+
+function play_pause(session_data)
+    session_data.src.instance:pause(1)
+end
+
 function play_start(session_data)
-    if session_data.is_active then play_stop(session_data) end
-    session_data.src.instance = udp_input({
-        addr = session_data.src.addr,
-        port = session_data.src.port,
-        localaddr = localaddr,
-        socket_size = 0x80000
-    })
+    session_data.src.instance:pause(0)
+    if session_data.is_active then return end
+
     session_data.dst.instance = udp_output({
+        upstream = session_data.src.instance:stream(),
         addr = session_data.dst.addr,
         port = session_data.dst.port,
         ttl = 32,
-        rtp = is_rtp,
-        upstream = session_data.src.instance:stream()
+        rtp = is_rtp
     })
     session_data.is_active = true
 end
 
 function play_stop(session_data)
-    if not session_data.is_active then return end
+    if session_data.is_active ~= true then return end
     session_data.src.instance = nil
     session_data.dst.instance = nil
     collectgarbage()
     session_data.is_active = false
 end
+
+
 
 function get_session_data(client, data)
     local session = get_session(data)
@@ -147,8 +161,10 @@ function get_session_data(client, data)
     end
     return session_data
 end
+
 -- ----------------------------------------------------------------------------------
 -- RTSP Methods 
+
 
 -- 
 -- OPTIONS
@@ -168,7 +184,35 @@ end
 --
 
 function rtsp_method_describe(client, data)
+    local filename = get_filename(data.uri)
+    if not filename then
+        log.error("failed to get filename from uri")
+        send_400(client)
+        return    
+    end
+
     local cseq = get_cseq(data)
+
+    local sdp = "v=0\r\n"
+                .. "s=Astra " .. astra.version .. "\r\n"
+                .. "c=IN IP4 0.0.0.0\r\n"
+                .. "a=control:*\r\n"
+                .. "m=video 11000 " .. sdp_proto .. " 33\r\n"
+                .. "a=rtpmap:33 MP2T/90000\r\n"
+    
+    
+    local file_instance = file_input({
+            filename = storage .. filename,
+            pause = true,
+            loop = false
+        })
+
+    local length = file_instance:length()
+    if length then
+        sdp = sdp .. "a=range:npt=0-" .. tostring(length) .. "\r\n"
+    end
+    
+    file_instance = nil
 
     send_200(client, {
         rtsp_server,
@@ -183,11 +227,19 @@ end
 --
 
 function rtsp_method_setup(client, data)
+    local filename = get_filename(data.uri)
+    if not filename then
+        log.error("failed to get filename from uri")
+        send_400(client)
+        return    
+    end
+
     -- create new session
     local session_data = {}    
+    
     session_data.src = {}
     session_data.dst = {}
-       
+
     repeat
         session_data.session = math.random(10000000, 99000000)
     until not rtsp_sessions[session_data.session] -- ensure that new random value is unique
@@ -196,26 +248,19 @@ function rtsp_method_setup(client, data)
 
     log.debug("Creating session " .. session_data.session)
     
+
+    log.info("New session " .. session_data.session .. " for client " .. data.addr .. ":" .. tostring(data.port) .. " [" .. data.uri .. "]")
+    
+    session_data.src.instance = file_input({
+        filename = storage .. filename,
+        pause = true,
+        loop = false
+    })
+
     local cseq = get_cseq(data)
 
-    local src, tail = data.uri:match("/udp/([%d:.]+)(.*)")
-
-    if not src then
-        send_400(client)
-        return
-    end
-
-    local so,eo = src:find(":")
-    if eo then
-        session_data.src.addr = src:sub(0, so - 1)
-        session_data.src.port = src:sub(eo + 1)
-    else
-        session_data.src.addr = src
-        session_data.src.port = "1234"
-    end
-
     local transport = get_transport(data)
-    if transport.destination then
+    if transport.destination and dst_source == false then
         session_data.dst.addr = transport.destination
     else
         if client_addr then
@@ -257,29 +302,55 @@ function rtsp_method_play(client, data)
     end
 
     local cseq = get_cseq(data)
+
     local headers = {
         rtsp_server,
         "CSeq: " .. tostring(cseq),
         "Session: " .. tostring(session_data.session)
     }
+
+    local range = get_range(data)
+    if range > 0 then
+        range = session_data.src.instance:position(range)
+    end
+    local length = session_data.src.instance:length()
+    if length > 0 then
+        table.insert(headers, "Range: npt=" .. range .. "-" .. length)
+    end
+
     send_200(client, headers)
 
     play_start(session_data)
 end
 
+-- 
+-- PAUSE
+--
+
+function rtsp_method_pause(client, data)
+    local session_data = get_session_data(client, data)
+    if not session_data then
+        return
+    end
+
+    local cseq = get_cseq(data)
+    send_200(client, {
+        rtsp_server,
+        "CSeq: " .. tostring(cseq),
+        "Session: " .. tostring(session_data.session)
+    })
+    play_pause(session_data)
+end
 
 -- 
 -- GET PARAM
 --
-
 
 function rtsp_method_get_parameter(client, data)
     local session_data = get_session_data(client, data)
     if not session_data then
         return
     end
-
-
 
     local cseq = get_cseq(data)
     send_200(client, {
@@ -297,8 +368,7 @@ function rtsp_method_teardown(client, data)
     if not session_data then
         return
     end
-
-
+    
     play_stop(session_data)
 
     local cseq = get_cseq(data)
@@ -309,10 +379,8 @@ function rtsp_method_teardown(client, data)
     log.debug("Destroy session " .. session_data.session)
     
     rtsp_sessions[session_data.session] = nil
-
     collectgarbage()
 end
-
 -- --------------------------------------
 -- Processing HTTP callback
 --
@@ -322,16 +390,15 @@ rtsp_methods = {
     ["DESCRIBE"] = rtsp_method_describe,
     ["SETUP"] = rtsp_method_setup,
     ["PLAY"] = rtsp_method_play,
+    ["PAUSE"] = rtsp_method_pause,
     ["GET_PARAMETER"] = rtsp_method_get_parameter,
     ["TEARDOWN"] = rtsp_method_teardown,
 }
 
-function cb(client, data)
-     
+function on_http_read(client, data)
     if type(data) == 'table' then
         if not data.method then
             log.error("[rtsp.lua] " .. data.message)
-            server:close(client)
             return
         end
 
@@ -343,18 +410,12 @@ function cb(client, data)
         else
             send_405(client)
         end
-    elseif type(data) == 'string' then
-        log.debug("data reseived")
-        print(data)
+
     elseif type(data) == 'nil' then
-        collectgarbage()
+        play_stop(server:data(client))
+
     end
 end
-
--- --------------------------------------
--- Usage and MAIN
---
-
 
 function usage()
     print("Usage: rtspproxy [OPTIONS]\n" ..
@@ -364,6 +425,8 @@ function usage()
           "    -p PORT             local port to listen\n" ..
           "    -l ADDR             source interface address\n" ..
           "    -c ADDR             client address\n" ..
+          "    -s PATH             storage path\n" ..
+          "    --pid PATH          pid file\n" ..
           "    --rtp               use RTP instead of UDP\n" ..
           "    --debug             print debug messages"
           )
@@ -371,7 +434,7 @@ function usage()
 end
 
 function version()
-    print("rtspproxy: " .. app_version ..
+    print("rtspserver: " .. app_version ..
           " [Astra: " .. astra.version .. "]")
     astra.exit()
 end
@@ -386,32 +449,33 @@ options = {
     ["-p"] = function(i) rtsp_port = tonumber(argv[i + 1]) return i + 2 end,
     ["-l"] = function(i) localaddr = argv[i + 1] return i + 2 end,
     ["-c"] = function(i) client_addr = argv[i + 1] return i + 2 end,
+    ["-s"] = function(i) storage = argv[i + 1] return i + 2 end,
+    ["--dst-source"] = function(i) dst_source = true return i + 1 end,
+    ["--pid"] = function(i) pidfile(argv[i + 1]) return i + 2 end,
     ["--rtp"] = function(i) is_rtp = true return i + 1 end,
-    ["--debug"] = function (i) log.set({ debug = true }) return i + 1 end,
+    ["--debug"] = function (i) is_debug = true return i + 1 end,
 }
 
-function set_options()
-    i = 1
-    while i <= #argv do
-        if not options[argv[i]] then
-            print("option " .. argv[i] .. " isn't found")
-            return false
-        end
-        i = options[argv[i]](i)
+i = 1
+while i <= #argv do
+    if not options[argv[i]] then
+        print("unknown option: " .. argv[i] .. "\n")
+        usage()
     end
-    return true
+    i = options[argv[i]](i)
 end
 
-function main()
-    if not set_options() then
-        return
-    end
-    setup_vars()
-    return http_server({
-        addr = rtsp_addr,
-        port = rtsp_port,
-        callback = cb
-    })
+log.set({ debug = is_debug })
+
+if not storage then
+    print("Required storage path\n")
+    usage()
 end
 
-server = main()
+setup_vars()
+
+server = http_server({
+    addr = rtsp_addr,
+    port = rtsp_port,
+    callback = on_http_read
+})
