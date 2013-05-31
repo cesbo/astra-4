@@ -215,6 +215,12 @@ static void on_read(void *arg)
     const int callback = lua_gettop(lua);
 
     char *buffer = mod->buffer;
+    /* Small explanation:
+     * When we process response body, and it is treated as MPEG-TS, we should divide it to TS_PACKET_SIZE parts.
+     * So, when it occurs, that part of MPEG-TS packet is not parsed, we move it to begin of buffer, and parse it with next
+     * data portion. 
+     * Later it may be used for proper HTTP parsing :-) 
+     */
     int skip = mod->ts_len_in_buf;
     int r = asc_socket_recv(mod->sock, buffer + skip, HTTP_BUFFER_SIZE - skip);
     if(r <= 0)
@@ -224,7 +230,7 @@ static void on_read(void *arg)
         method_close(mod);
         return;
     }
-    r += mod->ts_len_in_buf;// Consider that we've received more (+ previous part)
+    r += mod->ts_len_in_buf;// Imagine that we've received more (+ previous part)
 
     int response = 0;
 
