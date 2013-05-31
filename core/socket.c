@@ -141,7 +141,7 @@ static void asc_socket_set_nonblock(asc_socket_t *sock)
 #endif
     {
         asc_log_error(MSG("failed to set NONBLOCK [%s]"), asc_socket_error());
-        asc_socket_close(sock);
+        astra_abort();
     }
 }
 
@@ -442,7 +442,6 @@ bool asc_socket_bind(asc_socket_t *sock, const char *addr, int port)
     if(bind(sock->fd, (struct sockaddr *)&sock->addr, sizeof(sock->addr)) == -1)
     {
         asc_log_error(MSG("bind() to %s:%d failed [%s]"), addr, port, asc_socket_error());
-        asc_socket_close(sock);
         return false;
     }
     return true;
