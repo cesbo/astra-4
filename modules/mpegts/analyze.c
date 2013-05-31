@@ -19,6 +19,21 @@
 
 #include <astra.h>
 
+typedef struct
+{
+    mpegts_packet_type_t type;
+
+    uint8_t cc;
+
+    uint32_t packets;
+    uint32_t bitrate;
+
+    // errors
+    uint32_t cc_error;  // Continuity Counter
+    uint32_t sc_error;  // Scrambled
+    uint32_t pes_error; // PES header
+} analyze_item_t;
+
 struct module_data_t
 {
     MODULE_LUA_DATA();
@@ -29,7 +44,13 @@ struct module_data_t
     uint16_t tsid;
 
     int stream_ndx;
-    mpegts_psi_t *stream[MAX_PID];
+
+    analyze_item_t stream[MAX_PID];
+
+    mpegts_psi_t *pat;
+    mpegts_psi_t *cat;
+    mpegts_psi_t *pmt;
+    mpegts_psi_t *sdt;
 };
 
 #define MSG(_msg) "[analyze %s] " _msg, mod->name
@@ -93,6 +114,11 @@ static void on_psi_call(module_data_t *mod)
         lua_pop(lua, 1); // on_psi
 }
 
+static void do_stream_reload(module_stream_t *mod)
+{
+
+}
+
 /*
  * oooooooooo   o   ooooooooooo
  *  888    888 888  88  888  88
@@ -151,8 +177,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         lua_setfield(lua, -2, __pid);
         lua_settable(lua, -3); // append to the "programs" table
 
-        if(pnr)
-            mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_PMT, pid);
+        mod->stream[pid].type = (pnr) ? MPEGTS_PACKET_PMT : MPEGTS_PACKET_NIT;
 
         PAT_ITEMS_NEXT(psi, pointer);
     }
@@ -284,7 +309,8 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         lua_pushnumber(lua, streams_count++);
         lua_newtable(lua);
 
-        lua_pushstring(lua, mpegts_type_name(mpegts_pes_type(type)));
+        mod->stream[pid].type = mpegts_pes_type(type);
+        lua_pushstring(lua, mpegts_type_name(mod->stream[pid].type));
         lua_setfield(lua, -2, "type_name");
 
         lua_pushnumber(lua, type);
@@ -410,35 +436,70 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
 static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
     const uint16_t pid = TS_PID(ts);
-    mpegts_psi_t *psi = mod->stream[pid];
-    if(psi)
+
+    analyze_item_t *item = &mod->stream[pid];
+    const mpegts_packet_type_t type = item->type;
+
+    ++item->packets;
+
+    if(type == MPEGTS_PACKET_NULL)
+        return;
+
+    if(type & MPEGTS_PACKET_PSI)
     {
-        switch(psi->type)
+        switch(type)
         {
             case MPEGTS_PACKET_PAT:
-                mpegts_psi_mux(psi, ts, on_pat, mod);
+                mpegts_psi_mux(mod->pat, ts, on_pat, mod);
                 break;
             case MPEGTS_PACKET_CAT:
-                mpegts_psi_mux(psi, ts, on_cat, mod);
+                mpegts_psi_mux(mod->cat, ts, on_cat, mod);
                 break;
             case MPEGTS_PACKET_PMT:
-                mpegts_psi_mux(psi, ts, on_pmt, mod);
+                mpegts_psi_mux(mod->pmt, ts, on_pmt, mod);
                 break;
             case MPEGTS_PACKET_SDT:
-                mpegts_psi_mux(psi, ts, on_sdt, mod);
+                mpegts_psi_mux(mod->sdt, ts, on_pmt, mod);
                 break;
             default:
                 break;
         }
     }
+
+    // Analyze
+
+    const uint8_t af = TS_AF(ts);
+    // skip packets without payload
+    if(!(af & 0x10))
+        return;
+
+    const uint8_t cc = TS_CC(ts);
+    const uint8_t last_cc = (item->cc + 1) & 0x0F;
+    item->cc = cc;
+
+    if(cc != last_cc)
+        ++item->cc_error;
+
+    if(TS_SC(ts))
+        ++item->sc_error;
+
+    if(!(type & MPEGTS_PACKET_PES))
+        return;
+
+    if(TS_PUSI(ts))
+    {
+        const uint8_t *payload = ts + 4;
+        if(af == 0x30)
+            payload += (ts[4] + 1);
+
+        if(PES_HEADER(payload) != 0x000001)
+            ++item->pes_error;
+    }
 }
 
 static int method_stream_info(module_data_t *mod)
 {
-    __uarg(mod);
-
-    lua_newtable(lua);
-
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->stream_ndx);
     return 1;
 }
 
@@ -462,9 +523,14 @@ static void module_init(module_data_t *mod)
 
     module_stream_init(mod, on_ts);
 
-    mod->stream[0x00] = mpegts_psi_init(MPEGTS_PACKET_PAT, 0x00);
-    mod->stream[0x01] = mpegts_psi_init(MPEGTS_PACKET_CAT, 0x01);
-    mod->stream[0x11] = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
+    mod->stream[0x00].type = MPEGTS_PACKET_PAT;
+    mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0x00);
+    mod->stream[0x01].type = MPEGTS_PACKET_CAT;
+    mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 0x01);
+    mod->stream[0x11].type = MPEGTS_PACKET_SDT;
+    mod->sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
+
+    mod->stream[NULL_TS_PID].type = MPEGTS_PACKET_NULL;
 
     lua_newtable(lua);
     mod->stream_ndx = luaL_ref(lua, LUA_REGISTRYINDEX);
@@ -474,11 +540,9 @@ static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
 
-    for(int i = 0; i < MAX_PID; ++i)
-    {
-        if(mod->stream[i])
-            mpegts_psi_destroy(mod->stream[i]);
-    }
+    mpegts_psi_destroy(mod->pat);
+    mpegts_psi_destroy(mod->cat);
+    mpegts_psi_destroy(mod->sdt);
 
     if(mod->stream_ndx)
     {
