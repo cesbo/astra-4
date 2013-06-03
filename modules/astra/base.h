@@ -38,4 +38,9 @@ void sha1_init(sha1_ctx_t *context);
 void sha1_update(sha1_ctx_t *context, const uint8_t* data, size_t len);
 void sha1_final(sha1_ctx_t *context, uint8_t digest[SHA1_DIGEST_SIZE]);
 
+/* base64.c */
+
+char * base64_encode(const char *in, size_t size, size_t *key_size);
+char * base64_decode(const char *in, size_t *data_size);
+
 #endif /* _ASTRA_BASE_H_ */
