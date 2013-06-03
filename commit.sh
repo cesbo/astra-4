@@ -148,12 +148,12 @@ case "$1" in
     "--dev")
         check_changes
 
+        git checkout $DEV_BRANCH
+        git merge --no-ff $BRANCH -m "merge with $BRANCH"
+
         let ASTRA_VERSION_DEV=ASTRA_VERSION_DEV+1
         version_up
         git commit -m "version up" version.h
-
-        git checkout $DEV_BRANCH
-        git merge --no-ff $BRANCH -m "merge with $BRANCH"
         ;;
     *)
         usage
