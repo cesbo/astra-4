@@ -49,6 +49,7 @@ mpegts_packet_type_t mpegts_pes_type(uint8_t type_id)
             return MPEGTS_PACKET_VIDEO;
         case 0x03:  // MPEG-1 audio
         case 0x04:  // MPEG-2 audio
+        case 0x06:  // AC3 audio
         case 0x11:  // MPEG-4 audio (LATM)
         case 0x0F:  // Audio with ADTS
         case 0x81:  // A52 audio
@@ -62,7 +63,6 @@ mpegts_packet_type_t mpegts_pes_type(uint8_t type_id)
         case 0x82:  // DVB_SPU
         case 0x92:  // DVB_SPU vls
             return MPEGTS_PACKET_SUB;
-        case 0x06:  // PES_PRIVATE
         case 0x12:  // MPEG-4 generic (sub/scene/...)
         case 0xEA:  // privately managed ES
         default:
