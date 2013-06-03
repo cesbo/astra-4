@@ -11,7 +11,6 @@
  *      http_request
  *
  * Module Options:
- *      upstream    - object, stream instance returned by module_instance:stream() [optional] 
  *      ts          - true to push data to upstream instead of callback [optional, default : false]
  *      addr        - string, server IP address
  *      port        - number, server port

@@ -421,6 +421,18 @@ static int method_send(module_data_t *mod)
     }
     http_client_t *client = lua_touserdata(lua, 2);
 
+    if(lua_type(lua, 3) == LUA_TSTRING)
+    {
+        const char * data = lua_tostring(lua, 3);
+        const int data_size = luaL_len(lua, 3);
+        if(!asc_socket_send_buffered(client->sock, data, data_size))
+        {
+            asc_log_error(MSG("failed to send response to client:%d"), asc_socket_fd(client->sock));
+            return 0;
+        }
+        return 0;
+    }    
+
     if(lua_type(lua, 3) != LUA_TTABLE)
     {
         asc_log_error(MSG(":send() table is required"));

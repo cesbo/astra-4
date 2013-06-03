@@ -255,125 +255,81 @@ static void thread_loop(void *arg)
     double block_accuracy = 0;
     double ts_accuracy = 0.75;
     struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
+    
+    bool is_m2ts = mod->ts_size == M2TS_PACKET_SIZE;
 
-    if(mod->ts_size == TS_PACKET_SIZE)
+
+    asc_thread_while(mod->thread)
     {
-        asc_thread_while(mod->thread)
+        mod->buffer.block_end = ((is_m2ts) ? seek_pcr_192 : seek_pcr_188)(mod->buffer.ptr, mod->buffer.end);
+        if(!mod->buffer.block_end)
         {
-            mod->buffer.block_end = seek_pcr_188(mod->buffer.ptr, mod->buffer.end);
-            if(!mod->buffer.block_end)
+            if(!mod->loop)
             {
-                if(!mod->loop)
+                if(mod->idx_callback)
                 {
-                    if(mod->idx_callback)
-                    {
-                        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
-                        lua_call(lua, 0, 0);
-                    }
-                    break;
+                    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+                    lua_call(lua, 0, 0);
                 }
-
-                mod->buffer.ptr = mod->buffer.begin;
-                reset_buffer(mod);
-                continue;
+                break;
             }
 
-            const double block_time = time_per_block(mod->buffer.block_end, &mod->pcr);
-            if(block_time < 0 || block_time > 200)
-            {
-                mod->buffer.ptr = mod->buffer.block_end;
-                continue;
-            }
+            mod->buffer.ptr = mod->buffer.begin;
+            reset_buffer(mod);
+            continue;
+        }
 
-            const uint32_t block_size = mod->buffer.block_end - mod->buffer.ptr;
-            const uint32_t ts_count = block_size / TS_PACKET_SIZE;
+        const double block_time = time_per_block(&mod->buffer.block_end[is_m2ts ? 4 : 0], &mod->pcr);
+        if(block_time < 0 || block_time > 200)
+        {
+            mod->buffer.ptr = mod->buffer.block_end;
+            asc_log_warning(MSG("Some time was skipped, because of big block time: %f"), block_time); 
+            continue;
+        }
+
+        const uint32_t block_size = mod->buffer.block_end - mod->buffer.ptr;
+        const uint32_t ts_count = block_size / mod->ts_size;
+        if ((block_time + block_accuracy) < 0)
+        {
+            ts_sync.tv_nsec = 0;
+        } else
+        {
             const long group_time = ((block_time + block_accuracy) * 1000000);
             ts_sync.tv_nsec = (group_time / ts_count) * ts_accuracy;
-
-            uint8_t *const ptr_end = mod->buffer.block_end;
-            while(mod->buffer.ptr < ptr_end)
-            {
-                asc_stream_send(mod->stream, mod->buffer.ptr, TS_PACKET_SIZE);
-                mod->buffer.ptr += TS_PACKET_SIZE;
-                nanosleep(&ts_sync, NULL);
-            }
-
-            gettimeofday(time_sync_e, NULL);
-            const double time_sync_diff = timeval_diff(time_sync_b, time_sync_e);
-            block_time_total += block_time;
-            block_accuracy = block_time_total - time_sync_diff;
-            if(block_accuracy > 0)
-                ts_accuracy += 0.01;
-            else
-                ts_accuracy -= 0.01;
+            asc_assert((ts_sync.tv_nsec >= 0) && (ts_sync.tv_nsec <= 1000000000), MSG("Strange sleep: %d = (%d = ((%f + %f) *...) / %d) * %f"), ts_sync.tv_nsec, group_time, block_time, block_accuracy, ts_count, ts_accuracy);
         }
-    }
-    else
-    {
-        asc_thread_while(mod->thread)
+
+        double pause_block = 0;
+        uint8_t *const ptr_end = mod->buffer.block_end;
+        while(mod->buffer.ptr < ptr_end)
         {
-            mod->buffer.block_end = seek_pcr_192(mod->buffer.ptr, mod->buffer.end);
-            if(!mod->buffer.block_end)
+            if(mod->pause)
             {
-                if(!mod->loop)
-                {
-                    if(mod->idx_callback)
-                    {
-                        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
-                        lua_call(lua, 0, 0);
-                    }
-                    break;
-                }
-
-                mod->buffer.ptr = mod->buffer.begin;
-                reset_buffer(mod);
-                continue;
+                gettimeofday(&pause_start, NULL);
+                while(mod->pause)
+                    nanosleep(&ts_pause, NULL);
+                gettimeofday(&pause_stop, NULL);
+                pause_block += timeval_diff(&pause_start, &pause_stop);
             }
-
-            const double block_time = time_per_block(&mod->buffer.block_end[4], &mod->pcr);
-            if(block_time == -1)
+            if(mod->reposition)
             {
-                mod->buffer.ptr = mod->buffer.block_end;
-                continue;
+                mod->reposition = 0;
+                break;
             }
-
-            const uint32_t block_size = mod->buffer.block_end - mod->buffer.ptr;
-            const uint32_t ts_count = block_size / M2TS_PACKET_SIZE;
-            const long group_time = ((block_time + block_accuracy) * 1000000);
-            ts_sync.tv_nsec = (group_time / ts_count) * ts_accuracy;
-
-            double pause_block = 0;
-            uint8_t *const ptr_end = mod->buffer.block_end;
-            while(mod->buffer.ptr < ptr_end)
-            {
-                if(mod->pause)
-                {
-                    gettimeofday(&pause_start, NULL);
-                    while(mod->pause)
-                        nanosleep(&ts_pause, NULL);
-                    gettimeofday(&pause_stop, NULL);
-                    pause_block += timeval_diff(&pause_start, &pause_stop);
-                }
-                if(mod->reposition)
-                {
-                    mod->reposition = 0;
-                    break;
-                }
-                asc_stream_send(mod->stream, &mod->buffer.ptr[4], TS_PACKET_SIZE);
-                mod->buffer.ptr += M2TS_PACKET_SIZE;
-                nanosleep(&ts_sync, NULL);
-            }
-            pause_total += pause_block;
-
-            gettimeofday(time_sync_e, NULL);
-            const double time_sync_diff = timeval_diff(time_sync_b, time_sync_e) - pause_total;
-            block_time_total += block_time;
-            block_accuracy = block_time_total - time_sync_diff;
-            if(block_accuracy > 0)
-                ts_accuracy += 0.01;
-            else
-                ts_accuracy -= 0.01;
+            asc_stream_send(mod->stream, &mod->buffer.ptr[is_m2ts ? 4 : 0], TS_PACKET_SIZE);
+            mod->buffer.ptr += mod->ts_size;
+            nanosleep(&ts_sync, NULL);
         }
+        pause_total += pause_block;
+
+        gettimeofday(time_sync_e, NULL);
+        const double time_sync_diff = timeval_diff(time_sync_b, time_sync_e) - pause_total;
+        block_time_total += block_time;
+        block_accuracy = block_time_total - time_sync_diff;
+        if(block_accuracy > 0)
+            ts_accuracy += 0.01;
+        else
+            ts_accuracy -= 0.01;
     }
 
     close_file(mod);
