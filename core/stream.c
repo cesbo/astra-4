@@ -138,11 +138,8 @@ static void asc_stream_close(int socks[2])
     }
 }
 
-static void asc_stream_event(void *arg, int is_data)
+static void asc_stream_event(void *arg)
 {
-    if(!is_data)
-        return;
-
     asc_stream_t *s = (asc_stream_t *)arg;
     s->callback(s->arg);
 }
@@ -158,7 +155,7 @@ asc_stream_t * asc_stream_init(void (*callback)(void *), void *arg)
     }
     s->callback = callback;
     s->arg = arg;
-    s->event = asc_event_on_read(s->gate[1], asc_stream_event, s);
+    s->event = asc_event_init(s->gate[1], asc_stream_event, NULL, NULL, s);
 
     return s;
 }
