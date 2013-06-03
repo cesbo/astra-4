@@ -41,6 +41,12 @@
 #define HTTP_BUFFER_SIZE (64 * 1024)
 #define MAX_WRITE_PIECE 1 * 1024 * 1024
 
+#define FRAME_HEADER_SIZE 2
+#define FRAME_KEY_SIZE 4
+#define FRAME_SIZE8_SIZE 0
+#define FRAME_SIZE16_SIZE 2
+#define FRAME_SIZE64_SIZE 8
+
 typedef struct
 {
     MODULE_STREAM_DATA();
@@ -54,6 +60,7 @@ typedef struct
 
     int ready_state; // 0 - not, 1 request, 2 - headers, 3 - content
 
+    int is_websocket;
     int is_close;
     int is_keep_alive;
     int content_length;
@@ -98,7 +105,6 @@ static void on_read_error(void *arg)
 {
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
-    asc_log_error(MSG("Closing socket"));
 
     get_lua_callback(mod);
     lua_pushlightuserdata(lua, client);
@@ -234,6 +240,8 @@ static void on_read(void *arg)
             static const char __connection[] = "Connection: ";
             static const char __close[] = "close";
             static const char __keep_alive[] = "keep-alive";
+            static const char __upgrade[] = "Upgrade: ";
+            static const char __websocket[] = "websocket";
             if(!strncasecmp(header, __connection, sizeof(__connection) - 1))
             {
                 const char *val = &header[sizeof(__connection) - 1];
@@ -246,6 +254,12 @@ static void on_read(void *arg)
             {
                 const char *val = &header[sizeof(__content_length) - 1];
                 client->content_length = strtoul(val, NULL, 10);
+            }
+            else if(!strncasecmp(header, __upgrade, sizeof(__upgrade) - 1))
+            {
+                const char *val = &header[sizeof(__upgrade) - 1];
+                if(!strncasecmp(val, __websocket, sizeof(__websocket) - 1))
+                    client->is_websocket = 1;
             }
 
             ++headers_count;
@@ -308,7 +322,62 @@ static void on_read(void *arg)
         {
             get_lua_callback(mod);
             lua_pushlightuserdata(lua, client);
-            lua_pushlstring(lua, &client->buffer[skip], r - skip);
+
+            if(client->is_websocket)
+            {
+                uint8_t *key = NULL;
+                uint8_t *data = (uint8_t *)client->buffer;
+                uint64_t data_size = data[1] & 0x7F;
+
+                if(data_size < 126)
+                {
+                    key = data + FRAME_HEADER_SIZE + FRAME_SIZE8_SIZE;
+                }
+                else if(data_size == 126)
+                {
+                    data_size = (data[2] << 8) | data[3];
+
+                    asc_assert(data_size < (HTTP_BUFFER_SIZE
+                                            - FRAME_HEADER_SIZE
+                                            - FRAME_SIZE16_SIZE
+                                            - FRAME_KEY_SIZE)
+                               , MSG("data_size limit"));
+
+                    key = data + FRAME_HEADER_SIZE + FRAME_SIZE16_SIZE;
+                }
+                else if(data_size == 127)
+                {
+                    data_size = (  ((uint64_t)data[2] << 56)
+                                 | ((uint64_t)data[3] << 48)
+                                 | ((uint64_t)data[4] << 40)
+                                 | ((uint64_t)data[5] << 32)
+                                 | ((uint64_t)data[6] << 24)
+                                 | ((uint64_t)data[7] << 16)
+                                 | ((uint64_t)data[8] << 8 )
+                                 | ((uint64_t)data[9]      ));
+
+                    asc_assert(data_size < (HTTP_BUFFER_SIZE
+                                            - FRAME_HEADER_SIZE
+                                            - FRAME_SIZE64_SIZE
+                                            - FRAME_KEY_SIZE)
+                               , MSG("data_size limit"));
+
+                    key = data + FRAME_HEADER_SIZE + FRAME_SIZE64_SIZE;
+                }
+                data = key + FRAME_KEY_SIZE;
+
+                // TODO: check FIN
+                // TODO: check opcode
+                // TODO: luaL_Buffer (to join several buffers)
+
+                for(size_t i = 0; i < data_size; ++i)
+                    data[i] ^= key[i % 4];
+
+                lua_pushlstring(lua, (char *)data, data_size);
+            }
+            else
+                lua_pushlstring(lua, &client->buffer[skip], r - skip);
+
             lua_call(lua, 2, 0);
         }
     }
@@ -430,7 +499,61 @@ static int method_send(module_data_t *mod)
     }
     http_client_t *client = lua_touserdata(lua, 2);
 
-    if(lua_type(lua, 3) != LUA_TTABLE)
+    if(lua_type(lua, 3) == LUA_TSTRING)
+    {
+        int send_ret;
+        const char *str = lua_tostring(lua, 3);
+        const size_t str_size = luaL_len(lua, 3);
+
+        if(client->is_websocket)
+        {
+            uint8_t *data = (uint8_t *)client->buffer;
+            uint8_t frame_header = FRAME_HEADER_SIZE;
+
+            data[0] = 0x81;
+            if(str_size <= 125)
+            {
+                data[1] = str_size & 0xFF;
+            }
+            else if(str_size <= 0xFFFF)
+            {
+                data[1] = 126;
+                data[2] = (str_size >> 8) & 0xFF;
+                data[3] = (str_size     ) & 0xFF;
+
+                frame_header += FRAME_SIZE16_SIZE;
+            }
+            else
+            {
+                data[1] = 127;
+                data[2] = (str_size >> 56) & 0xFF;
+                data[3] = (str_size >> 48) & 0xFF;
+                data[4] = (str_size >> 40) & 0xFF;
+                data[5] = (str_size >> 32) & 0xFF;
+                data[6] = (str_size >> 24) & 0xFF;
+                data[7] = (str_size >> 16) & 0xFF;
+                data[8] = (str_size >> 8 ) & 0xFF;
+                data[9] = (str_size      ) & 0xFF;
+
+                frame_header += FRAME_SIZE64_SIZE;
+            }
+
+            memcpy(&data[frame_header], str, str_size);
+
+            send_ret = asc_socket_send_buffered(client->sock, (void *)data
+                                                , frame_header + str_size);
+        }
+        else
+            send_ret = asc_socket_send_buffered(client->sock, (void *)str, str_size);
+
+        if(!send_ret)
+        {
+            asc_log_error(MSG("failed to send data to client:%d [%s]")
+                          , asc_socket_fd(client->sock), strerror(errno));
+        }
+        return 0;
+    }
+    else if(lua_type(lua, 3) != LUA_TTABLE)
     {
         asc_log_error(MSG(":send() table is required"));
         astra_abort();
@@ -515,7 +638,8 @@ static int method_send(module_data_t *mod)
     }
     lua_pop(lua, 1);
 
-    client->ready_state = 0;
+    if(!client->is_websocket)
+        client->ready_state = 0;
 
     return 0;
 }
