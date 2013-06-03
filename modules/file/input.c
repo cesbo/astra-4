@@ -329,7 +329,11 @@ static void thread_loop(void *arg)
         if(block_accuracy > 0)
             ts_accuracy += 0.01;
         else
+        {
             ts_accuracy -= 0.01;
+            if (ts_accuracy < 0) 
+                ts_accuracy = 0;
+        }
     }
 
     close_file(mod);
