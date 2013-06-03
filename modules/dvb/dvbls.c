@@ -20,6 +20,8 @@
 
 struct module_data_t
 {
+    MODULE_LUA_DATA();
+
     int count;
     char dev_name[512];
 

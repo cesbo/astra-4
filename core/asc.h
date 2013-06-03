@@ -13,6 +13,7 @@
 #include "base.h"
 #include "event.h"
 #include "list.h"
+#include "vector.h"
 #include "log.h"
 #include "socket.h"
 #include "stream.h"
@@ -21,12 +22,13 @@
 
 #define ASC_INIT()                                                                              \
     srand((uint32_t)time(NULL));                                                                \
+    asc_core_loop_alive = true;                                                                 \
     asc_timer_core_init();                                                                      \
     asc_socket_core_init();                                                                     \
     asc_event_core_init();
 
-#define ASC_LOOP()                                                                              \
-    while(1)                                                                                    \
+#define ASC_LOOP(_cond)                                                                         \
+    while(_cond)                                                                                \
     {                                                                                           \
         asc_event_core_loop();                                                                  \
         asc_timer_core_loop();                                                                  \

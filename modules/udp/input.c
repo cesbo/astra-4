@@ -38,21 +38,21 @@ struct module_data_t
     uint8_t buffer[UDP_BUFFER_SIZE];
 };
 
-void udp_input_callback(void *arg, int is_data)
+void on_close(void *arg)
 {
     module_data_t *mod = (module_data_t *)arg;
+    asc_socket_close(mod->sock);
+    mod->sock = NULL;
+}
 
-    if(!is_data)
-    {
-        asc_socket_close(mod->sock);
-        mod->sock = NULL;
-        return;
-    }
+void on_read(void *arg)
+{
+    module_data_t *mod = (module_data_t *)arg;
 
     ssize_t len = asc_socket_recv(mod->sock, mod->buffer, UDP_BUFFER_SIZE);
     if(len <= 0)
     {
-        udp_input_callback(arg, 0);
+        on_close(arg);
         return;
     }
 
@@ -84,16 +84,21 @@ static void module_init(module_data_t *mod)
     int port = 1234;
     module_option_number("port", &port);
 
-    mod->sock = asc_socket_open_udp4();
+    mod->sock = asc_socket_open_udp4(mod);
     asc_socket_set_reuseaddr(mod->sock, 1);
+#ifdef _WIN32
+    if(!asc_socket_bind(mod->sock, NULL, port))
+#else
     if(!asc_socket_bind(mod->sock, addr, port))
+#endif
         return;
 
     int value;
     if(module_option_number("socket_size", &value))
         asc_socket_set_buffer(mod->sock, value, 0);
 
-    asc_socket_event_on_read(mod->sock, udp_input_callback, mod);
+    asc_socket_set_on_read(mod->sock, on_read);
+    asc_socket_set_on_close(mod->sock, on_close);
 
     const char *localaddr = NULL;
     module_option_string("localaddr", &localaddr);

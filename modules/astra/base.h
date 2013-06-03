@@ -24,4 +24,23 @@ uint8_t * str_to_hex(const char *str, uint8_t *hex, int len);
 #define CRC32_SIZE 4
 uint32_t crc32b(const uint8_t *buffer, int size);
 
+/* sha1.c */
+
+typedef struct
+{
+    uint32_t state[5];
+    uint32_t count[2];
+    uint8_t  buffer[64];
+} sha1_ctx_t;
+
+#define SHA1_DIGEST_SIZE 20
+void sha1_init(sha1_ctx_t *context);
+void sha1_update(sha1_ctx_t *context, const uint8_t* data, size_t len);
+void sha1_final(sha1_ctx_t *context, uint8_t digest[SHA1_DIGEST_SIZE]);
+
+/* base64.c */
+
+char * base64_encode(const char *in, size_t size, size_t *key_size);
+char * base64_decode(const char *in, size_t *data_size);
+
 #endif /* _ASTRA_BASE_H_ */
