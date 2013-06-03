@@ -56,9 +56,11 @@ static int utils_stat(lua_State *L)
         case S_IFCHR: lua_pushstring(L, "character"); break;
         case S_IFDIR: lua_pushstring(L, "directory"); break;
         case S_IFIFO: lua_pushstring(L, "pipe"); break;
-        case S_IFLNK: lua_pushstring(L, "symlink"); break;
         case S_IFREG: lua_pushstring(L, "file"); break;
+#ifndef _WIN32
+        case S_IFLNK: lua_pushstring(L, "symlink"); break;
         case S_IFSOCK: lua_pushstring(L, "socket"); break;
+#endif
         default: lua_pushstring(L, "unknown"); break;
     }
     lua_setfield(L, -2, "type");
@@ -72,6 +74,24 @@ static int utils_stat(lua_State *L)
     lua_pushnumber(L, sb.st_size);
     lua_setfield(L, -2, "size");
 
+    return 1;
+}
+
+/* sha1 */
+
+static int utils_sha1(lua_State *L)
+{
+    const char *data = luaL_checkstring(L, 1);
+    const int data_size = luaL_len(L, 1);
+
+    sha1_ctx_t ctx;
+    memset(&ctx, 0, sizeof(sha1_ctx_t));
+    sha1_init(&ctx);
+    sha1_update(&ctx, (uint8_t *)data, data_size);
+    uint8_t digest[SHA1_DIGEST_SIZE];
+    sha1_final(&ctx, digest);
+
+    lua_pushlstring(lua, (char *)digest, sizeof(digest));
     return 1;
 }
 
@@ -131,6 +151,7 @@ LUA_API int luaopen_utils(lua_State *L)
     {
         { "hostname", utils_hostname },
         { "stat", utils_stat },
+        { "sha1", utils_sha1 },
         { NULL, NULL }
     };
 
