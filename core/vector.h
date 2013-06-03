@@ -46,5 +46,4 @@ void asc_ptrvector_remove_begin(asc_ptrvector_t *vec);
 void asc_ptrvector_remove_middle(asc_ptrvector_t *vec, int pos);
 void asc_ptrvector_remove_end(asc_ptrvector_t *vec);
 
-
 #endif /* _VECTOR_H_ */

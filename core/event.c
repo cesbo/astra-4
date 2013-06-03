@@ -4,6 +4,7 @@
  *
  * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  * Revised 2013 Krasheninnikov Alexander
+ *
  * Licensed under the MIT license.
  */
 
@@ -53,12 +54,12 @@
 struct asc_event_t
 {
     int fd;
-    event_callback_t callback_read;
-    event_callback_t callback_write;
-    event_callback_t callback_error; /* TODO: Will work properly only if one of read/write
-                                      * is assigned.
-                                      * NOTE!!! Callback_error should destroy event!
-                                      */
+    event_callback_t on_read;
+    event_callback_t on_write;
+    event_callback_t on_error; /* TODO: Will work properly only if one of read/write
+                                * is assigned.
+                                * NOTE!!! Callback_error should destroy event!
+                                */
     void *arg;
 };
 
@@ -66,7 +67,7 @@ static void __asc_event_core_init_common(void);
 static void __asc_event_core_destroy_common(void);
 
 /* Returns true if event vec changes */
-static bool __asc_event_process(asc_event_t * event, bool is_rd, bool is_wr, bool is_er);
+static bool __asc_event_process(asc_event_t *event, bool is_rd, bool is_wr, bool is_er);
 
 
 /*
@@ -82,7 +83,7 @@ static bool __asc_event_process(asc_event_t * event, bool is_rd, bool is_wr, boo
 typedef struct
 {
     /* Common */
-    asc_ptrvector_t * event_vec;
+    asc_ptrvector_t *event_vec;
     bool event_vec_changed;
 
     /* EPOLL specific */
@@ -162,13 +163,13 @@ void asc_event_core_loop(void)
 }
 
 #if defined(EV_TYPE_KQUEUE)
-static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete)
+static void asc_event_subscribe(asc_event_t *event, bool is_add, bool is_delete)
 {
     __uarg(is_add);
 
     int ret;
     EV_OTYPE ed;
-    if(event->callback_read && !is_delete)
+    if(event->on_read && !is_delete)
     {
         EV_SET(&ed, event->fd, EVFILT_READ, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, event);
         ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
@@ -184,7 +185,7 @@ static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete
          */
     }
 
-    if(event->callback_write && !is_delete)
+    if(event->on_write && !is_delete)
     {
         EV_SET(&ed, event->fd, EVFILT_WRITE, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, event);
         ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
@@ -202,7 +203,7 @@ static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete
 }
 
 #else /* EPOLL */
-static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete)
+static void asc_event_subscribe(asc_event_t *event, bool is_add, bool is_delete)
 {
 
     int ret;
@@ -240,11 +241,11 @@ static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete
 typedef struct
 {
     /* Common */
-    asc_ptrvector_t * event_vec;
+    asc_ptrvector_t *event_vec;
     bool event_vec_changed;
 
     /* POLL specific */
-    asc_vector_t * ed_vec;/* holds vector of struct pollfd */
+    asc_vector_t *ed_vec;/* holds vector of struct pollfd */
 } event_observer_t;
 
 #define ED_SIZE (int)(sizeof(struct pollfd))
@@ -290,7 +291,7 @@ void asc_event_core_loop(void)
 
     for(i = 0; i < count && ret > 0; ++i)
     {
-        struct pollfd * f = asc_vector_get_dataptr_at(event_observer.ed_vec, i);
+        struct pollfd *f = asc_vector_get_dataptr_at(event_observer.ed_vec, i);
         const int revents = f->revents;
         if(revents == 0)
             continue;
@@ -304,7 +305,7 @@ void asc_event_core_loop(void)
     }
 }
 
-static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete)
+static void asc_event_subscribe(asc_event_t *event, bool is_add, bool is_delete)
 {
     int pos;
     if(is_add)
@@ -336,11 +337,11 @@ static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete
         return;
     }
 
-    struct pollfd * f = asc_vector_get_dataptr_at(event_observer.ed_vec, pos);
+    struct pollfd *f = asc_vector_get_dataptr_at(event_observer.ed_vec, pos);
     f->events = 0;
-    if(event->callback_read)
+    if(event->on_read)
         f->events |= POLLIN;
-    if(event->callback_write)
+    if(event->on_write)
         f->events |= POLLOUT;
 }
 
@@ -358,7 +359,7 @@ static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete
 typedef struct
 {
     /* Common */
-    asc_ptrvector_t * event_vec;
+    asc_ptrvector_t *event_vec;
     bool event_vec_changed;
 
     /* SELECT specific */
@@ -428,19 +429,19 @@ void asc_event_core_loop(void)
     }
 }
 
-static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete)
+static void asc_event_subscribe(asc_event_t *event, bool is_add, bool is_delete)
 {
-    if(event->callback_read && !is_delete)
+    if(event->on_read && !is_delete)
         FD_SET(event->fd, &event_observer.rmaster);
     else
         FD_CLR(event->fd, &event_observer.rmaster);
 
-    if(event->callback_write && !is_delete)
+    if(event->on_write && !is_delete)
         FD_SET(event->fd, &event_observer.wmaster);
     else
         FD_CLR(event->fd, &event_observer.wmaster);
 
-    if(event->callback_error && !is_delete)
+    if(event->on_error && !is_delete)
         FD_SET(event->fd, &event_observer.emaster);
     else
         FD_CLR(event->fd, &event_observer.emaster);
@@ -478,24 +479,20 @@ static void asc_event_subscribe(asc_event_t * event, bool is_add, bool is_delete
  *
  */
 
-asc_event_t * asc_event_init(int fd
-                             , event_callback_t callback_read
-                             , event_callback_t callback_write
-                             , event_callback_t callback_error
-                             , void *arg)
+asc_event_t * asc_event_init(int fd, void *arg)
 {
 #ifdef DEBUG
     asc_log_debug(MSG("asc_event_init for fd=%d, %c%c%c")
                    , fd
-                   , (callback_read) ? 'R' : '-'
-                   , (callback_write) ? 'W' : '-'
-                   , (callback_error) ? 'E' : '-');
+                   , (on_read) ? 'R' : '-'
+                   , (on_write) ? 'W' : '-'
+                   , (on_error) ? 'E' : '-');
 #endif
     asc_event_t *event = malloc(sizeof(asc_event_t));
     event->fd = fd;
-    event->callback_read = callback_read;
-    event->callback_write = callback_write;
-    event->callback_error = callback_error;
+    event->on_read = NULL;
+    event->on_write = NULL;
+    event->on_error = NULL;
     event->arg = arg;
     asc_event_subscribe(event, true, false);
     asc_ptrvector_append_end(event_observer.event_vec, event);
@@ -503,45 +500,40 @@ asc_event_t * asc_event_init(int fd
     return event;
 }
 
-void asc_event_set_read(asc_event_t * event, event_callback_t callback_read)
+void asc_event_set_on_read(asc_event_t *event, event_callback_t on_read)
 {
-    if (event->callback_read == callback_read) return;
+    if (event->on_read == on_read) return;
 #ifdef DEBUG
     asc_log_debug(MSG("asc_event_set_read for fd=%d, %c")
                   , event->fd
-                  , (callback_read) ? 'R' : '-');
+                  , (on_read) ? 'R' : '-');
 #endif
-    event->callback_read = callback_read;
+    event->on_read = on_read;
     asc_event_subscribe(event, false, false);
 }
 
-void asc_event_set_write(asc_event_t * event, event_callback_t callback_write)
+void asc_event_set_on_write(asc_event_t *event, event_callback_t on_write)
 {
-    if (event->callback_write == callback_write) return;
+    if (event->on_write == on_write) return;
 #ifdef DEBUG
     asc_log_debug(MSG("asc_event_set_write for fd=%d, %c")
                   , event->fd
-                  , (callback_write) ? 'W' : '-');
+                  , (on_write) ? 'W' : '-');
 #endif
-    event->callback_write = callback_write;
+    event->on_write = on_write;
     asc_event_subscribe(event, false, false);
 }
 
-void asc_event_set_error(asc_event_t * event, event_callback_t callback_error)
+void asc_event_set_on_error(asc_event_t *event, event_callback_t on_error)
 {
-    if (event->callback_error == callback_error) return;
+    if (event->on_error == on_error) return;
 #ifdef DEBUG
     asc_log_debug(MSG("asc_event_set_error for fd=%d, %c")
                   , event->fd
-                  , (callback_error) ? 'E' : '-');
+                  , (on_error) ? 'E' : '-');
 #endif
-    event->callback_error = callback_error;
+    event->on_error = on_error;
     asc_event_subscribe(event, false, false);
-}
-
-void asc_event_set_arg(asc_event_t * event, void *arg)
-{
-    event->arg = arg;
 }
 
 void asc_event_close(asc_event_t *event)
@@ -589,8 +581,8 @@ static void __asc_event_core_destroy_common(void)
             break;
 
         asc_event_t *event = asc_ptrvector_get_at(event_observer.event_vec, 0);
-        if(event->callback_error) /* Callback error SHOULD destroy event! */
-            event->callback_error(event->arg);
+        if(event->on_error) /* Callback error SHOULD destroy event! */
+            event->on_error(event->arg);
         else /* Help them! */
             asc_event_close(event);
 
@@ -603,29 +595,28 @@ static void __asc_event_core_destroy_common(void)
 }
 
 /* Returns true if event vec changes */
-static bool __asc_event_process(asc_event_t * event, bool is_rd, bool is_wr, bool is_er)
+static bool __asc_event_process(asc_event_t *event, bool is_rd, bool is_wr, bool is_er)
 {
-    if(event->callback_read && is_rd)
+    if(event->on_read && is_rd)
     {
-        event->callback_read(event->arg);
+        event->on_read(event->arg);
         if(event_observer.event_vec_changed)
             return true;
     }
 
-    if(event->callback_write && is_wr)
+    if(event->on_write && is_wr)
     {
-        event->callback_write(event->arg);
+        event->on_write(event->arg);
         if(event_observer.event_vec_changed)
             return true;
     }
 
-    if(event->callback_error && is_er)
+    if(event->on_error && is_er)
     {
-        event->callback_error(event->arg);
+        event->on_error(event->arg);
         if(event_observer.event_vec_changed)
             return true;
     }
 
-    return false;/* No changes in event vec */
+    return false; /* No changes in event vec */
 }
-

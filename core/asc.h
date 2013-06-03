@@ -20,8 +20,6 @@
 #include "thread.h"
 #include "timer.h"
 
-
-
 #define ASC_INIT()                                                                              \
     srand((uint32_t)time(NULL));                                                                \
     asc_core_loop_alive = true;                                                                 \
@@ -35,7 +33,6 @@
         asc_event_core_loop();                                                                  \
         asc_timer_core_loop();                                                                  \
     }
-
 
 #define ASC_DESTROY()                                                                           \
     asc_event_core_destroy();                                                                   \

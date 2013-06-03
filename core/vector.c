@@ -233,7 +233,7 @@ void asc_vector_remove_end(asc_vector_t *vec, int count_elem)
 }
 
 /* TEST funcs */
-
+#if 0
 void asc_vector_test(void)
 {
     asc_vector_t * vec = asc_vector_init(1);
@@ -280,16 +280,11 @@ void asc_vector_test(void)
     time(&now);
     printf("Time: %s", ctime(&now));
 }
+#endif
 
 /*
- #####    #####  #####   #    #  ######   ####
- #    #     #    #    #  #    #  #       #    #
- #    #     #    #    #  #    #  #####   #
- #####      #    #####   #    #  #       #
- #          #    #   #    #  #   #       #    #
- #          #    #    #    ##    ######   ####
-
-*/
+ * ptvector
+ */
 
 #define PTRSIZE (int)(sizeof(void*))
 
