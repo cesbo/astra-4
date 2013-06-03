@@ -129,7 +129,9 @@ static void module_init(module_data_t *mod)
 
     fsync(mod->fd);
 
-    mod->event = asc_event_init(mod->fd, asi_on_read, NULL, asi_on_error, mod);
+    mod->event = asc_event_init(mod->fd, mod);
+    asc_event_set_on_read(mod->event, asi_on_read);
+    asc_event_set_on_error(mod->event, asi_on_error);
 }
 
 static void module_destroy(module_data_t *mod)

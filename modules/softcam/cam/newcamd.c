@@ -374,7 +374,7 @@ static int newcamd_send_msg(module_data_t *mod, em_packet_t *packet)
     buffer[0] = (packet_size - 2) >> 8;
     buffer[1] = (packet_size - 2) & 0xff;
 
-    if(asc_socket_send(mod->sock, buffer, packet_size) != packet_size)
+    if(asc_socket_send_direct(mod->sock, buffer, packet_size) != packet_size)
     {
         asc_log_error(MSG("send: failed [%d]"), errno);
         if(packet)
@@ -642,16 +642,18 @@ static int newcamd_response(module_data_t *mod)
  *            o88
  */
 
-static void newcamd_on_read(void *arg, int is_data)
+static void on_close(void *arg)
 {
     module_data_t *mod = arg;
-    if(!is_data)
-    {
-        asc_log_error(MSG("failed to read from socket [%s]"), strerror(errno));
-        newcamd_disconnect(mod, 0);
-        newcamd_timeout_set(mod);
-        return;
-    }
+
+    asc_log_error(MSG("failed to read from socket [%s]"), strerror(errno));
+    newcamd_disconnect(mod, 0);
+    newcamd_timeout_set(mod);
+}
+
+static void on_read(void *arg)
+{
+    module_data_t *mod = arg;
 
     int ret = 0;
     switch(mod->status) {
@@ -675,22 +677,24 @@ static void newcamd_on_read(void *arg, int is_data)
     }
 
     if(ret <= 0)
-        newcamd_on_read(arg, 0);
+        on_close(mod);
 }
 
-static void newcamd_on_connect(void *arg, int is_data)
+static void on_connect_error(void *arg)
 {
     module_data_t *mod = arg;
-    if(!is_data)
-    {
-        asc_log_error(MSG("socket not ready [%s]"), asc_socket_error());
-        newcamd_disconnect(mod, 0);
-        newcamd_timeout_set(mod);
-        return;
-    }
+
+    asc_log_error(MSG("socket not ready [%s]"), asc_socket_error());
+    newcamd_disconnect(mod, 0);
+    newcamd_timeout_set(mod);
+}
+
+static void on_connect(void *arg)
+{
+    module_data_t *mod = arg;
 
     mod->status = NEWCAMD_STARTED;
-    asc_socket_event_on_read(mod->sock, newcamd_on_read, mod);
+    asc_socket_set_on_read(mod->sock, on_read);
 }
 
 /*
@@ -706,14 +710,8 @@ static void newcamd_connect(void *arg)
 {
     module_data_t *mod = arg;
 
-    mod->sock = asc_socket_open_tcp4();
-    if(!asc_socket_connect(mod->sock, mod->host, mod->port))
-    {
-        newcamd_timeout_set(mod);
-        return;
-    }
-
-    asc_socket_event_on_connect(mod->sock, newcamd_on_connect, mod);
+    mod->sock = asc_socket_open_tcp4(mod);
+    asc_socket_connect(mod->sock, mod->host, mod->port, on_connect, on_connect_error);
 }
 
 static void newcamd_disconnect(module_data_t *mod, int status)

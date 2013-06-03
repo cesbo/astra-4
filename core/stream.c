@@ -155,7 +155,8 @@ asc_stream_t * asc_stream_init(void (*callback)(void *), void *arg)
     }
     s->callback = callback;
     s->arg = arg;
-    s->event = asc_event_init(s->gate[1], asc_stream_event, NULL, NULL, s);
+    s->event = asc_event_init(s->gate[1], s);
+    asc_event_set_on_read(s->event, asc_stream_event);
 
     return s;
 }

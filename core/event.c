@@ -216,9 +216,9 @@ static void asc_event_subscribe(asc_event_t *event, bool is_add, bool is_delete)
         EV_OTYPE ed;
         ed.data.ptr = event;
         ed.events = EV_FLAGS;
-        if(event->callback_read)
+        if(event->on_read)
             ed.events |= EPOLLIN;
-        if(event->callback_write)
+        if(event->on_write)
             ed.events |= EPOLLOUT;
         ret = epoll_ctl(event_observer.fd, (is_add) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD
                         , event->fd, &ed);

@@ -53,7 +53,9 @@ void dvr_open(module_data_t *mod)
         }
     }
 
-    mod->dvr_event = asc_event_init(mod->dvr_fd, dvr_on_read, NULL, dvr_on_error, mod);
+    mod->dvr_event = asc_event_init(mod->dvr_fd, mod);
+    asc_event_set_on_read(mod->dvr_event, dvr_on_read);
+    asc_event_set_on_error(mod->dvr_event, dvr_on_error);
 }
 
 void dvr_close(module_data_t *mod)
