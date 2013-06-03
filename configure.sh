@@ -203,7 +203,7 @@ cat >&5 <<EOF
 MAKEFLAGS = -rR --no-print-directory
 
 APP         = $APP
-C           = $APP_C
+CC          = $APP_C
 CFLAGS      = $APP_CFLAGS
 OS          = $OS
 
