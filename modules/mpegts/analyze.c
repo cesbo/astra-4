@@ -405,6 +405,7 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
 
             SDT_ITEM_DESC_NEXT(pointer, desc_pointer);
         }
+        lua_setfield(lua, -2, __descriptors);
 
         lua_settable(lua, -3); // append to the "services[X].descriptors" table
 
