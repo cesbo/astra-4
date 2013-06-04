@@ -503,7 +503,7 @@ static int method_send(module_data_t *mod)
     {
         int send_ret;
         const char *str = lua_tostring(lua, 3);
-        const size_t str_size = luaL_len(lua, 3);
+        const uint64_t str_size = luaL_len(lua, 3);
 
         if(client->is_websocket)
         {
