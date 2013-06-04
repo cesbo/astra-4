@@ -1,3 +1,9 @@
+-- Description
+-- This script is RTSP Proxy.
+-- it has two main functions
+-- 1. UDP Proxy. It receives UDP (multicast) stream and transforms it into RTSP. Client should make request with URI = /udp/ip:port to do that
+-- 2. VOD proxy. It interacts with client via RTSP, converts it into XRTSPHTTP protocol, and transfers requests to XRTSPHTTP Server. It uses only one (RTSP) connection, without RTP/UDP between Proxy and server.
+
 server = nil
 -- ----------------------------------------------------------------------------------
 -- VARS
@@ -14,6 +20,8 @@ is_rtp = false
 log.set({ stdout = true })
 
 rtsp_sessions = {}
+rtsp_sessions_udp = {}
+
 -- ----------------------------------------------------------------------------------
 -- Aux funcs
 
@@ -125,6 +133,51 @@ function get_session_data(client, data)
     end
     return session_data
 end
+
+function get_session_data_udp(client, data)
+    local session = get_session(data.headers)
+    if not session then
+        log.error("Session id not found it request")
+        send_405(client)
+        return nil
+    end
+    
+    local session_data = rtsp_sessions_udp[session] 
+    if not session_data then
+        log.error("Session not found by id " .. session)
+        send_405(client)
+        return nil
+    end
+    return session_data
+end
+
+function play_start(session_data)
+    if session_data.is_active then play_stop(session_data) end
+    session_data.src.instance = udp_input({
+        addr = session_data.src.addr,
+        port = session_data.src.port,
+        localaddr = localaddr,
+        socket_size = 0x80000
+    })
+    session_data.dst.instance = udp_output({
+        addr = session_data.dst.addr,
+        port = session_data.dst.port,
+        ttl = 32,
+        rtp = is_rtp,
+        upstream = session_data.src.instance:stream()
+    })
+    session_data.is_active = true
+end
+
+function play_stop(session_data)
+    if not session_data.is_active then return end
+    session_data.src.instance = nil
+    session_data.dst.instance = nil
+    collectgarbage()
+    session_data.is_active = false
+end
+
+
 -- ----------------------------------------------------------------------------------
 -- RTSP Methods 
 
@@ -296,6 +349,173 @@ function rtsp_method_teardown(client, data, cb_unused)
     rtsp_method_proxy(client, data, cb_unused)
 end
 
+-- ----------------------------------------------------------------------------------
+-- RTSP Methods  FOR UDP
+
+-- 
+-- OPTIONS
+--
+
+function rtsp_method_udp_options(client, data)
+    local cseq = get_cseq(data)
+    send_200(client, {
+        rtsp_server,
+        "CSeq: " .. tostring(cseq),
+        "Public: DESCRIBE, SETUP, TEARDOWN, PLAY, PAUSE"
+    })
+end
+
+-- 
+-- DESCRIBE
+--
+
+function rtsp_method_udp_describe(client, data)
+    local cseq = get_cseq(data)
+
+    send_200(client, {
+        rtsp_server,
+        "CSeq: " .. tostring(cseq),
+        "Content-Type: application/sdp",
+        "Content-Length: " .. tostring(#sdp)
+    }, sdp)
+end
+
+-- 
+-- SETUP
+--
+
+function rtsp_method_udp_setup(client, data)
+    -- create new session
+    local session_data = {}    
+    session_data.src = {}
+    session_data.dst = {}
+       
+    repeat
+        session_data.session = math.random(10000000, 99000000)
+    until not rtsp_sessions_udp[session_data.session] -- ensure that new random value is unique
+    
+    rtsp_sessions_udp[session_data.session] = session_data
+
+    log.debug("Creating session " .. session_data.session)
+    
+    local cseq = get_cseq(data)
+
+    local src, tail = data.uri:match("/udp/([%d:.]+)(.*)")
+
+    if not src then
+        send_400(client)
+        return
+    end
+
+    local so,eo = src:find(":")
+    if eo then
+        session_data.src.addr = src:sub(0, so - 1)
+        session_data.src.port = src:sub(eo + 1)
+    else
+        session_data.src.addr = src
+        session_data.src.port = "1234"
+    end
+
+    local transport = get_transport(data)
+    if transport.destination then
+        session_data.dst.addr = transport.destination
+    else
+        if client_addr then
+            -- get address from -c option
+            session_data.dst.addr = client_addr
+        else
+            -- get address from connection
+            session_data.dst.addr = data.addr
+        end
+    end
+
+    if transport.client_port then
+        session_data.dst.port = tonumber(transport.client_port:match("%d+"))
+    else
+        session_data.dst.port = 11000
+    end
+
+    local tstring = "Transport: " .. sdp_proto ..
+                    ";unicast;destination=" ..
+                    session_data.dst.addr ..
+                    ";client_port=" .. tostring(session_data.dst.port)
+
+    send_200(client, {
+        rtsp_server,
+        "CSeq: " .. tostring(cseq),
+        "Session: " .. tostring(session_data.session),
+        tstring
+    })
+end
+
+-- 
+-- PLAY
+--
+
+function rtsp_method_udp_play(client, data)
+    local session_data = get_session_data_udp(client, data)
+    if not session_data then
+        return
+    end
+
+    local cseq = get_cseq(data)
+    local headers = {
+        rtsp_server,
+        "CSeq: " .. tostring(cseq),
+        "Session: " .. tostring(session_data.session)
+    }
+    send_200(client, headers)
+
+    play_start(session_data)
+end
+
+
+-- 
+-- GET PARAM
+--
+
+
+function rtsp_method_udp_get_parameter(client, data)
+    local session_data = get_session_data_udp(client, data)
+    if not session_data then
+        return
+    end
+
+
+
+    local cseq = get_cseq(data)
+    send_200(client, {
+        rtsp_server,
+        "CSeq: " .. tostring(cseq)
+    })
+end
+
+-- 
+-- TEARDOWN
+--
+
+function rtsp_method_udp_teardown(client, data)
+    local session_data = get_session_data_udp(client, data)
+    if not session_data then
+        return
+    end
+
+
+    play_stop(session_data)
+
+    local cseq = get_cseq(data)
+    send_200(client, {
+        rtsp_server,
+        "CSeq: " .. tostring(cseq)
+    })
+    log.debug("Destroy session " .. session_data.session)
+    
+    rtsp_sessions_udp[session_data.session] = nil
+
+    collectgarbage()
+end
+
+
 -- --------------------------------------
 -- Processing HTTP callback
 --
@@ -310,6 +530,16 @@ rtsp_methods = {
     ["TEARDOWN"] = rtsp_method_teardown,
 }
 
+rtsp_methods_udp = {
+    ["OPTIONS"] = rtsp_method_udp_options,
+    ["DESCRIBE"] = rtsp_method_udp_describe,
+    ["SETUP"] = rtsp_method_udp_setup,
+    ["PLAY"] = rtsp_method_udp_play,
+    ["GET_PARAMETER"] = rtsp_method_udp_get_parameter,
+    ["TEARDOWN"] = rtsp_method_udp_teardown,
+
+}
+
 function cb(client, data)
      
     if type(data) == 'table' then
@@ -321,12 +551,22 @@ function cb(client, data)
 
         log.debug("Request: " .. data.method .. " " .. data.uri)
         for _,h in pairs(data.headers) do log.debug("    " .. h) end
-
-        if rtsp_methods[data.method] then
-            rtsp_methods[data.method](client, data, nil)
+        
+        local is_udp = data.uri:match("/udp/[%d:.]+.*")
+        if is_udp then
+            if rtsp_methods_udp[data.method] then
+                rtsp_methods_udp[data.method](client, data)
+            else
+                send_405(client)
+            end
         else
-            send_405(client)
+            if rtsp_methods[data.method] then
+                rtsp_methods[data.method](client, data, nil)
+            else
+                send_405(client)
+            end
         end
+
     elseif type(data) == 'string' then
         log.debug("data received")
         print(data)
