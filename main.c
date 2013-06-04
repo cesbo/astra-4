@@ -127,18 +127,6 @@ void astra_do_text(int argc, const char **argv, const char *text, size_t size)
 #ifndef ASTRA_SHELL
 int main(int argc, const char **argv)
 {
-    md5_ctx_t ctx;
-    memset(&ctx, 0, sizeof(md5_ctx_t));
-    md5_init(&ctx);
-    const char __str[] = "Hello, world";
-    md5_update(&ctx, __str, sizeof(__str) - 1);
-    uint8_t digest[MD5_DIGEST_SIZE];
-    md5_final(digest, &ctx);
-    char str[256];
-    hex_to_str(str, digest, MD5_DIGEST_SIZE);
-    printf("%s\n", str);
-    return 0;
-
     if(argc < 2)
     {
         printf("Astra " ASTRA_VERSION_STR "\n"

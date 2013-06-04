@@ -59,4 +59,6 @@ void md5_init(md5_ctx_t *context);
 void md5_update(md5_ctx_t *context, const uint8_t *data, size_t len);
 void md5_final(md5_ctx_t *context, uint8_t digest[MD5_DIGEST_SIZE]);
 
+void md5_crypt(const char *pw, const char *salt, char passwd[36]);
+
 #endif /* _ASTRA_BASE_H_ */
