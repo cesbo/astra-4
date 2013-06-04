@@ -108,25 +108,22 @@ if [ $ARG_CC -eq 0 -a -z "$ARG_MODULE_PACK" ]; then
    fi
 fi
 
-CRT1=`$APP_C -print-file-name=crt1.o`
 CCSYSTEM=`$APP_C -dumpmachine`
 case "$CCSYSTEM" in
 *"linux"*)
     OS="linux"
     CFLAGS="$CFLAGS -fPIC -pthread"
-    CRTI=`$APP_C -print-file-name=crti.o`
-    CRTN=`$APP_C -print-file-name=crtn.o`
-    LDFLAGS="-nostdlib $CRT1 $CRTI -lc $CRTN -ldl -lm -lpthread"
+    LDFLAGS="-ldl -lm -lpthread"
     ;;
 *"freebsd"*)
     OS="freebsd"
     CFLAGS="$CFLAGS -fPIC -pthread"
-    LDFLAGS="-nostdlib $CRT1 -lc -lm -lpthread"
+    LDFLAGS="-lm -lpthread"
     ;;
 *"darwin"*)
     OS="darwin"
     CFLAGS="$CFLAGS -fPIC -pthread"
-    LDFLAGS="-nostdlib $CRT1 -lc"
+    LDFLAGS=""
     ;;
 *"mingw"*)
     APP="$APP.exe"
