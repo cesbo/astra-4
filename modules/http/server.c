@@ -106,11 +106,6 @@ static void on_read_error(void *arg)
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
-    get_lua_callback(mod);
-    lua_pushlightuserdata(lua, client);
-    lua_pushnil(lua);
-    lua_call(lua, 2, 0);
-
     if(client->idx_request)
     {
         luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
@@ -122,6 +117,11 @@ static void on_read_error(void *arg)
         luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_data);
         client->idx_data = 0;
     }
+
+    get_lua_callback(mod);
+    lua_pushlightuserdata(lua, client);
+    lua_pushnil(lua);
+    lua_call(lua, 2, 0);
 
     if(client->__stream.self)
     {

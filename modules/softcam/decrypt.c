@@ -38,7 +38,7 @@ struct module_data_t
     MODULE_STREAM_DATA();
 
     /* Config */
-    char *name;
+    const char *name;
 
     /* Buffer */
     uint8_t *buffer; // r_buffer + s_buffer
@@ -260,15 +260,8 @@ static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, on_ts);
 
-    const char *string_value = NULL;
-    const int name_length = module_option_string("name", &string_value);
-    if(!string_value)
-    {
-        asc_log_error("[decrypt] option 'name' is required");
-        astra_abort();
-    }
-    mod->name = malloc(name_length + 1);
-    strcpy(mod->name, string_value);
+    module_option_string("name", &mod->name);
+    asc_assert(mod->name != NULL, "[decrypt] option 'name' is required");
 
     mod->ffdecsa = get_key_struct();
     mod->cluster_size = get_suggested_cluster_size();
@@ -276,7 +269,7 @@ static void module_init(module_data_t *mod)
     mod->cluster = malloc(sizeof(void *) * (mod->cluster_size * 2 + 2));
 
     uint8_t first_key[8] = { 0 };
-    string_value = NULL;
+    const char *string_value = NULL;
     const int biss_length = module_option_string("biss", &string_value);
     if(string_value)
     {
@@ -326,8 +319,6 @@ static void module_destroy(module_data_t *mod)
         mpegts_psi_destroy(mod->pmt);
         mpegts_psi_destroy(mod->custom_pmt);
     }
-
-    free(mod->name);
 }
 
 MODULE_STREAM_METHODS()
