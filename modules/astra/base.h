@@ -34,6 +34,7 @@ typedef struct
 } sha1_ctx_t;
 
 #define SHA1_DIGEST_SIZE 20
+
 void sha1_init(sha1_ctx_t *context);
 void sha1_update(sha1_ctx_t *context, const uint8_t* data, size_t len);
 void sha1_final(sha1_ctx_t *context, uint8_t digest[SHA1_DIGEST_SIZE]);
@@ -42,5 +43,22 @@ void sha1_final(sha1_ctx_t *context, uint8_t digest[SHA1_DIGEST_SIZE]);
 
 char * base64_encode(const char *in, size_t size, size_t *key_size);
 char * base64_decode(const char *in, size_t *data_size);
+
+/* md5.c */
+
+typedef struct
+{
+    uint32_t state[4];  /* state (ABCD) */
+    uint32_t count[2];  /* number of bits, modulo 2^64 (lsb first) */
+    uint8_t buffer[64]; /* input buffer */
+} md5_ctx_t;
+
+#define MD5_DIGEST_SIZE 16
+
+void md5_init(md5_ctx_t *context);
+void md5_update(md5_ctx_t *context, const uint8_t *data, size_t len);
+void md5_final(md5_ctx_t *context, uint8_t digest[MD5_DIGEST_SIZE]);
+
+void md5_crypt(const char *pw, const char *salt, char passwd[36]);
 
 #endif /* _ASTRA_BASE_H_ */

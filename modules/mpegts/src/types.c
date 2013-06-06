@@ -141,10 +141,10 @@ void mpegts_desc_to_lua(const uint8_t *desc)
             {
                 const int max_size = ((HEX_PREFIX_SIZE
                                       + ca_info_size * 2
-                                      + LINE_END_SIZE) > sizeof(data))
-                                   ? (sizeof(data)
+                                      + LINE_END_SIZE) > (int)sizeof(data))
+                                   ? ((int)sizeof(data)
                                       - HEX_PREFIX_SIZE
-                                      - sizeof(__strip)
+                                      - (int)sizeof(__strip)
                                       - LINE_END_SIZE) / 2
                                    : ca_info_size;
 
@@ -189,9 +189,9 @@ void mpegts_desc_to_lua(const uint8_t *desc)
             const int max_size = ((HEX_PREFIX_SIZE
                                   + desc_size * 2
                                   + LINE_END_SIZE) > (int)sizeof(data))
-                               ? (sizeof(data)
+                               ? ((int)sizeof(data)
                                   - HEX_PREFIX_SIZE
-                                  - sizeof(__strip)
+                                  - (int)sizeof(__strip)
                                   - LINE_END_SIZE) / 2
                                : desc_size;
 

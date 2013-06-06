@@ -204,8 +204,6 @@ static void on_read(void *arg)
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
     const int self = lua_gettop(lua);
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
-    lua_getfield(lua, -1, "callback");
-    lua_remove(lua, -2);
     const int options = lua_gettop(lua);
     lua_getfield(lua, -1, __callback);
     const int callback = lua_gettop(lua);
@@ -475,7 +473,6 @@ static void on_connect(void *arg)
 
     asc_timer_destroy(mod->timeout_timer);
     mod->timeout_timer = NULL;
-
 
     asc_socket_set_on_read(mod->sock, on_read);
     asc_socket_set_on_close(mod->sock, on_close);

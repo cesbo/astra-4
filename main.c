@@ -53,7 +53,7 @@ static void astra_init(int argc, const char **argv)
     signal(SIGHUP, signal_handler);
     signal(SIGQUIT, signal_handler);
 #endif
-    
+
     ASC_INIT();
     asc_core_loop_alive = true;
 

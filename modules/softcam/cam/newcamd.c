@@ -22,7 +22,6 @@
 #include "../module_cam.h"
 
 #include <openssl/des.h>
-#include <openssl/md5.h>
 
 #define NEWCAMD_HEADER_SIZE 12
 #define NEWCAMD_MSG_SIZE EM_MAX_SIZE
@@ -131,117 +130,6 @@ static void triple_des_set_key(module_data_t *mod, uint8_t *key, size_t key_size
     DES_key_sched((DES_cblock *)&triple_des_key[0], &mod->triple_des.ks1);
     DES_key_sched((DES_cblock *)&triple_des_key[8], &mod->triple_des.ks2);
 } /* triple_des_set_key */
-
-static void md5_to64(char *s, uint64_t v, int n)
-{
-    static const char md5_itoa64[] = /* 0 ... 63 => ascii - 64 */
-        "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    while(--n >= 0)
-    {
-        *s++ = md5_itoa64[v&0x3f];
-        v >>= 6;
-    }
-}
-
-/*
- * oooo     oooo ooooooooo   oooooooooo
- *  8888o   888   888    88o 888
- *  88 888o8 88   888    888 888888888o
- *  88  888  88   888    888 ooo    o888
- * o88o  8  o88o o888ooo88     88ooo88
- *
- */
-
-// From FreeBSD
-static void md5_crypt(const char *pw, const char *salt, char *passwd)
-{
-    const char *ep;
-    const char *sp = salt;
-
-    // If it starts with the magic string, then skip that
-    static const char *md5_magic = "$1$";
-    const size_t md5_magic_len = 3;
-    if(!strncmp(sp, md5_magic, md5_magic_len))
-        sp += md5_magic_len;
-
-    for(ep = sp; *ep && *ep != '$' && ep < (sp + 8); ep++)
-        continue;
-
-    // get the length of the true salt
-    const int sl = (int)(ep - sp);
-
-    MD5_CTX ctx;
-    MD5_Init(&ctx);
-
-    // The password first, since that is what is most unknown
-    const size_t pw_len = strlen(pw);
-    MD5_Update(&ctx, pw, pw_len);
-    // Then our magic string
-    MD5_Update(&ctx, md5_magic, md5_magic_len);
-    // Then the raw salt
-    MD5_Update(&ctx, sp, sl);
-    // Then just as many characters of the MD5(pw,salt,pw)
-    MD5_CTX ctx1;
-    MD5_Init(&ctx1);
-    MD5_Update(&ctx1, pw, pw_len);
-    MD5_Update(&ctx1, sp, sl);
-    MD5_Update(&ctx1, pw, pw_len);
-    uint8_t final[17];
-    MD5_Final(final, &ctx1);
-    for(int i = (int)pw_len; i > 0; i -= 16)
-        MD5_Update(&ctx, (const uint8_t *)final, (i > 16) ? 16 : i);
-
-    memset(final, 0, sizeof(final));
-    for(int i = (int)pw_len; i; i >>= 1)
-    {
-        const uint8_t *d = (i & 1) ? final : (uint8_t *)pw;
-        MD5_Update(&ctx, d, 1);
-    }
-
-    // Now make the output string
-    strcpy(passwd, md5_magic);
-    strncat(passwd, sp, sl);
-    strcat(passwd, "$");
-
-    MD5_Final(final, &ctx);
-
-    for(int i = 0; i < 1000; i++)
-    {
-        MD5_Init(&ctx1);
-
-        if(i & 1)
-            MD5_Update(&ctx1, pw, pw_len);
-        else
-            MD5_Update(&ctx1, final, 16);
-
-        if(i % 3)
-            MD5_Update(&ctx1, sp, sl);
-
-        if(i % 7)
-            MD5_Update(&ctx1, pw, pw_len);
-
-        if(i & 1)
-            MD5_Update(&ctx1, final, 16);
-        else
-            MD5_Update(&ctx1, pw, pw_len);
-
-        MD5_Final(final, &ctx1);
-    }
-
-    uint64_t l;
-    char *p = passwd + strlen(passwd);
-    final[16] = final[5];
-    for(int i = 0; i < 5; i++)
-    {
-        l = (final[i] << 16) | (final[i + 6] << 8) | final[i + 12];
-        md5_to64(p, l, 4); p += 4;
-    }
-    l = final[11];
-    md5_to64(p, l, 2); p += 2;
-    *p = '\0';
-
-    memset(final, 0, sizeof(final));
-} /* md5_crypt */
 
 static uint8_t xor_sum(const uint8_t *mem, int len)
 {

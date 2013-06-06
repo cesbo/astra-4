@@ -5,7 +5,6 @@ SOURCES="$SOURCES_CORE $SOURCES_LIBS"
 case "$OS" in
 "linux")
     CFLAGS="-DLUA_USE_LINUX"
-    LDFLAGS="-ldl -lm"
     ;;
 "freebsd")
     CFLAGS="-DLUA_USE_LINUX"
