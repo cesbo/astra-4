@@ -13,8 +13,7 @@
  * Module Options:
  *      upstream    - object, stream instance returned by module_instance:stream()
  *      name        - string, analyzer name
- *      on_psi      - function,
- *      on_error    - function,
+ *      callback    - function,
  */
 
 #include <astra.h>
@@ -40,6 +39,7 @@ struct module_data_t
     MODULE_STREAM_DATA();
 
     const char *name;
+    int rate_stat;
 
     uint16_t tsid;
 
@@ -51,9 +51,11 @@ struct module_data_t
     mpegts_psi_t *pmt;
     mpegts_psi_t *sdt;
 
-    //
+    // rate_stat
     struct timeval last_ts;
     uint32_t ts_count;
+    int rate_count;
+    int rate[10];
 };
 
 #define MSG(_msg) "[analyze %s] " _msg, mod->name
@@ -406,41 +408,57 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
  *
  */
 
+static void append_rate(module_data_t *mod, int rate)
+{
+    mod->rate[mod->rate_count] = rate;
+    ++mod->rate_count;
+    if(mod->rate_count >= (int)(sizeof(mod->rate)/sizeof(*mod->rate)))
+    {
+        lua_newtable(lua);
+        lua_newtable(lua);
+        for(int i = 0; i < mod->rate_count; ++i)
+        {
+            lua_pushnumber(lua, i + 1);
+            lua_pushnumber(lua, mod->rate[i]);
+            lua_settable(lua, -3);
+        }
+        lua_setfield(lua, -2, "rate");
+        do_callback(mod);
+        mod->rate_count = 0;
+    }
+}
+
 static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
-#if 0
-    ++mod->ts_count;
-
-    int diff_interval = 0;
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    tv.tv_usec /= 10000;
-    const int64_t s = mod->last_ts.tv_sec * 100 + mod->last_ts.tv_usec;
-    const int64_t e = tv.tv_sec * 100 + tv.tv_usec;
-    if(e != s)
+    if(mod->rate_stat)
     {
-        memcpy(&mod->last_ts, &tv, sizeof(struct timeval));
-        if(s > 0)
-            diff_interval = e - s;
-    }
+        ++mod->ts_count;
 
-    if(diff_interval > 0)
-    {
-        if(diff_interval > 1)
+        int diff_interval = 0;
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        tv.tv_usec /= 10000;
+        const int64_t s = mod->last_ts.tv_sec * 100 + mod->last_ts.tv_usec;
+        const int64_t e = tv.tv_sec * 100 + tv.tv_usec;
+        if(e != s)
         {
-            printf("bitrate=0 (in %f sec.)\n", (double)(diff_interval / 100));
-            // for(; diff_interval > 1; --diff_interval)
+            memcpy(&mod->last_ts, &tv, sizeof(struct timeval));
+            if(s > 0)
+                diff_interval = e - s;
         }
 
-        if(mod->ts_count > 200)
+        if(diff_interval > 0)
         {
-            const float bitrate = (mod->ts_count * TS_PACKET_SIZE * 8 * 100) / 1000 / 1000;
-            printf("ts_count = %d bitrate=%.2fMb/s\n", mod->ts_count, bitrate);
-        }
+            if(diff_interval > 1)
+            {
+                for(; diff_interval > 0; --diff_interval)
+                    append_rate(mod, 0);
+            }
 
-        mod->ts_count = 0;
+            append_rate(mod, mod->ts_count);
+            mod->ts_count = 0;
+        }
     }
-#endif
 
     const uint16_t pid = TS_PID(ts);
 
@@ -571,6 +589,8 @@ static void module_init(module_data_t *mod)
     lua_getfield(lua, 2, "callback");
     asc_assert(lua_type(lua, -1) == LUA_TFUNCTION, MSG("option 'callback' is required"));
     lua_pop(lua, 1);
+
+    module_option_number("rate_stat", &mod->rate_stat);
 
     module_stream_init(mod, on_ts);
 
