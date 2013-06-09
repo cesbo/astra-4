@@ -30,11 +30,12 @@
 
 #include <dirent.h>
 
-#include <ifaddrs.h>
-#include <netdb.h>
-
 #ifdef _WIN32
-#include <winsock2.h>
+#   include <winsock2.h>
+#else
+#   include <sys/socket.h>
+#   include <ifaddrs.h>
+#   include <netdb.h>
 #endif
 
 /* hostname */
@@ -58,7 +59,9 @@ static int utils_ifaddrs(lua_State *L)
 
     static const char __ipv4[] = "ipv4";
     static const char __ipv6[] = "ipv6";
+#ifdef AF_LINK
     static const char __link[] = "link";
+#endif
 
     lua_newtable(L);
 
@@ -92,9 +95,11 @@ static int utils_ifaddrs(lua_State *L)
                 case AF_INET6:
                     ip_family = __ipv6;
                     break;
+#ifdef AF_LINK
                 case AF_LINK:
                     ip_family = __link;
                     break;
+#endif
                 default:
                     break;
             }
