@@ -12,7 +12,17 @@
  * Methods:
  *      utils.hostname()
  *                  - get name of the host
- *      log.readdir(path)
+ *      utils.ifaddrs()
+ *                  - get network interfaces list
+ *      utils.stat(path)
+ *                  - file/folder information
+ *      utils.sha1(string)
+ *                  - calculate SHA1 hash
+ *      utils.base64_encode(string)
+ *                  - convert data to base64
+ *      utils.base64_decode(base64)
+ *                  - convert base64 to data
+ *      utils.readdir(path)
  *                  - iterator to scan directory located by path
  */
 
@@ -21,7 +31,11 @@
 #include <dirent.h>
 
 #ifdef _WIN32
-#include <winsock2.h>
+#   include <winsock2.h>
+#else
+#   include <sys/socket.h>
+#   include <ifaddrs.h>
+#   include <netdb.h>
 #endif
 
 /* hostname */
@@ -32,6 +46,91 @@ static int utils_hostname(lua_State *L)
     if(gethostname(hostname, sizeof(hostname)) != 0)
         luaL_error(L, "failed to get hostname");
     lua_pushstring(L, hostname);
+    return 1;
+}
+
+static int utils_ifaddrs(lua_State *L)
+{
+    struct ifaddrs *ifaddr;
+    char host[NI_MAXHOST];
+
+    const int s = getifaddrs(&ifaddr);
+    asc_assert(s != -1, "getifaddrs() failed");
+
+    static const char __ipv4[] = "ipv4";
+    static const char __ipv6[] = "ipv6";
+#ifdef AF_LINK
+    static const char __link[] = "link";
+#endif
+
+    lua_newtable(L);
+
+    for(; ifaddr; ifaddr = ifaddr->ifa_next)
+    {
+        if(!ifaddr->ifa_addr)
+            continue;
+
+        lua_getfield(L, -1, ifaddr->ifa_name);
+        if(lua_isnil(L, -1))
+        {
+            lua_pop(L, 1);
+            lua_newtable(L);
+            lua_pushstring(L, ifaddr->ifa_name);
+            lua_pushvalue(L, -2);
+            lua_settable(L, -4);
+        }
+
+        const int s = getnameinfo(ifaddr->ifa_addr, sizeof(struct sockaddr_in)
+                                  , host, sizeof(host), NULL, 0
+                                  , NI_NUMERICHOST);
+        if(s == 0 && *host != '\0')
+        {
+            const char *ip_family = NULL;
+
+            switch(ifaddr->ifa_addr->sa_family)
+            {
+                case AF_INET:
+                    ip_family = __ipv4;
+                    break;
+                case AF_INET6:
+                    ip_family = __ipv6;
+                    break;
+#ifdef AF_LINK
+                case AF_LINK:
+                    ip_family = __link;
+                    break;
+#endif
+                default:
+                    break;
+            }
+
+            if(ip_family)
+            {
+                int count = 0;
+                lua_getfield(L, -1, ip_family);
+                if(lua_isnil(L, -1))
+                {
+                    lua_pop(L, 1);
+                    lua_newtable(L);
+                    lua_pushstring(L, ip_family);
+                    lua_pushvalue(L, -2);
+                    lua_settable(L, -4);
+                    count = 0;
+                }
+                else
+                    count = luaL_len(L, -1);
+
+                lua_pushnumber(L, count + 1);
+                lua_pushstring(L, host);
+                lua_settable(L, -3);
+                lua_pop(L, 1);
+            }
+        }
+
+        lua_pop(L, 1);
+    }
+    freeifaddrs(ifaddr);
+
     return 1;
 }
 
@@ -177,6 +276,7 @@ LUA_API int luaopen_utils(lua_State *L)
     static const luaL_Reg api[] =
     {
         { "hostname", utils_hostname },
+        { "ifaddrs", utils_ifaddrs },
         { "stat", utils_stat },
         { "sha1", utils_sha1 },
         { "base64_encode", utils_base64_encode },

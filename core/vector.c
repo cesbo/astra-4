@@ -69,7 +69,7 @@ static void asc_vector_realloc(asc_vector_t *vec, int newCap, int copySize)
 
 static void asc_vector_grow(asc_vector_t *vec, int add_size)
 {
-    int newSize = vec->size_bytes + add_size;
+    int newSize = vec->skip_bytes + vec->size_bytes + add_size;
     if(newSize <= vec->capacity_bytes)
         return; /* no need to grow, because have enough capacity */
 
@@ -82,7 +82,7 @@ static void asc_vector_grow(asc_vector_t *vec, int add_size)
 
 static void asc_vector_shrink(asc_vector_t *vec, int del_size)
 {
-    int newSize = vec->size_bytes - del_size;
+    int newSize = vec->skip_bytes + vec->size_bytes - del_size;
     asc_assert(newSize >= 0, "[core/vector] cannot shrink vector by %d bytes, "
                              "because it has only %d bytes"
                , del_size, vec->size_bytes);
@@ -105,7 +105,7 @@ static void asc_vector_shrink(asc_vector_t *vec, int del_size)
             break; /* new size doesn't fit into new cap */
         newCap = newCap2;
     }
-    asc_vector_realloc(vec, newCap, newSize);
+    asc_vector_realloc(vec, newCap, vec->size_bytes - del_size);
 }
 
 asc_vector_t * asc_vector_init(int element_size)
@@ -191,6 +191,9 @@ void asc_vector_insert_middle(asc_vector_t *vec, int pos_elem, void *data, int c
                 , vec->data + vec->skip_bytes + pos
                 , vec->size_bytes - pos);
     }
+    asc_assert(vec->capacity_bytes >= (vec->skip_bytes + pos + len)
+               , "Memcpy after end, cap %d, skip %d, pos %d len %d, sz %d"
+               , vec->capacity_bytes, vec->skip_bytes, pos, len, vec->size_bytes);
     memcpy(vec->data + vec->skip_bytes + pos, data, len);
     vec->size_bytes += len;
 }
