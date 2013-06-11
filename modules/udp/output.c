@@ -18,7 +18,8 @@
  *      localaddr   - string, IP address of the local interface
  *      socket_size - number, socket buffer size
  *      rtp         - boolean, use RTP instad RAW UDP
- *      sync        - number, buffer size in TS-packets, by default 0 - syncing is disabled
+ *      sync        - number, if greater then 0, then use MPEG-TS syncing.
+ *                            average value of the stream bitrate in megabit per second
  */
 
 #include <astra.h>
@@ -35,7 +36,6 @@ struct module_data_t
 
     const char *addr;
     int port;
-    int sync_size;
 
     int is_rtp;
     uint16_t rtpseq;
@@ -183,12 +183,10 @@ static void thread_loop(void *arg)
     struct timeval *time_sync_be = &time_sync[3];
 
     double block_time_total, total_sync_diff;
-
-    struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
-
     uint32_t pos;
     uint32_t block_size = 0;
 
+    struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
     static const struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000 };
 
     asc_thread_while(mod->sync.thread)
@@ -198,7 +196,7 @@ static void thread_loop(void *arg)
         // flush
         mod->sync.buffer_count = 0;
 
-        while(mod->sync.buffer_count < (mod->sync.buffer_size / 4))
+        while(mod->sync.buffer_count < (mod->sync.buffer_size / 2))
         {
             nanosleep(&ts, NULL);
             continue;
@@ -349,12 +347,15 @@ static void module_init(module_data_t *mod)
     asc_socket_multicast_join(mod->sock, mod->addr, NULL);
     asc_socket_set_sockaddr(mod->sock, mod->addr, mod->port);
 
-    if(module_option_number("sync", &mod->sync_size) && mod->sync_size)
+    if(module_option_number("sync", &value) && value > 0)
     {
         module_stream_init(mod, sync_queue_push);
 
-        mod->sync.buffer_size = TS_PACKET_SIZE * mod->sync_size;
-        mod->sync.buffer = malloc(mod->sync.buffer_size);
+        // is a 1/5 of the storage for the one second of the stream
+        value = ((value * 200000 / 8) / TS_PACKET_SIZE) * TS_PACKET_SIZE;
+
+        mod->sync.buffer = malloc(value);
+        mod->sync.buffer_size = value;
 
         asc_thread_init(&mod->sync.thread, thread_loop, mod);
     }
@@ -366,7 +367,7 @@ static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
 
-    if(mod->sync_size)
+    if(mod->sync.buffer)
     {
         asc_thread_destroy(&mod->sync.thread);
         free(mod->sync.buffer);

@@ -29,7 +29,7 @@
 
 #define MSG(_msg) "[file_intput %s] " _msg, mod->filename
 
-#define PIPE_BUFFER_SIZE (TS_PACKET_SIZE * 2048)
+#define SYNC_BUFFER_SIZE (TS_PACKET_SIZE * 2048)
 
 struct module_data_t
 {
@@ -506,8 +506,8 @@ static void module_init(module_data_t *mod)
 
     mod->sync.event = asc_event_init(mod->sync.fd[1], mod);
     asc_event_set_on_read(mod->sync.event, on_thread_read);
-    mod->sync.buffer = malloc(PIPE_BUFFER_SIZE);
-    mod->sync.buffer_size = PIPE_BUFFER_SIZE;
+    mod->sync.buffer = malloc(SYNC_BUFFER_SIZE);
+    mod->sync.buffer_size = SYNC_BUFFER_SIZE;
 
     asc_thread_init(&mod->sync.thread, thread_loop, mod);
 }
