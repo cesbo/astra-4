@@ -88,7 +88,7 @@ static inline int check_pcr(const uint8_t *ts)
     return (   (ts[3] & 0x20)   /* adaptation field without payload */
             && (ts[4] > 0)      /* adaptation field length */
             && (ts[5] & 0x10)   /* PCR_flag */
-            && !(ts[5] & 0x40)  /* skip random_access_indicator */
+            && (ts[0] == 0x47)
             );
 }
 
@@ -256,13 +256,15 @@ static void sync_queue_push(module_data_t *mod, const uint8_t *ts)
     __sync_fetch_and_add(&mod->sync.buffer_count, TS_PACKET_SIZE);
 
     uint8_t cmd[1] = { 0 };
-    send(mod->sync.fd[0], cmd, sizeof(cmd), 0);
+    if(send(mod->sync.fd[0], cmd, sizeof(cmd), 0) != sizeof(cmd))
+        asc_log_error(MSG("failed to push signal to queue\n"));
 }
 
 static void sync_queue_pop(module_data_t *mod, uint8_t *ts)
 {
     uint8_t cmd[1];
-    recv(mod->sync.fd[1], cmd, sizeof(cmd), 0);
+    if(recv(mod->sync.fd[1], cmd, sizeof(cmd), 0) != sizeof(cmd))
+        asc_log_error(MSG("failed to pop signal from queue\n"));
 
     memcpy(ts, &mod->sync.buffer[mod->sync.buffer_read], TS_PACKET_SIZE);
     mod->sync.buffer_read += TS_PACKET_SIZE;
