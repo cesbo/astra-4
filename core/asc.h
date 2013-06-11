@@ -16,7 +16,6 @@
 #include "vector.h"
 #include "log.h"
 #include "socket.h"
-#include "stream.h"
 #include "thread.h"
 #include "timer.h"
 
