@@ -130,7 +130,6 @@ static inline int check_pcr(const uint8_t *ts)
     return (   (ts[3] & 0x20)   /* adaptation field without payload */
             && (ts[4] > 0)      /* adaptation field length */
             && (ts[5] & 0x10)   /* PCR_flag */
-            && !(ts[5] & 0x40)  /* skip random_access_indicator */
             );
 }
 
