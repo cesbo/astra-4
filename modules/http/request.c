@@ -30,6 +30,7 @@
 
 struct module_data_t
 {
+    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
     const char *addr;
@@ -39,11 +40,10 @@ struct module_data_t
 
     asc_timer_t *timeout_timer;
     int is_connected; // for timeout message
-    
-    bool is_ts; /* Using TS (true) or send data to callback (false) */
+
+    int is_ts; /* Using TS (true) or send data to callback (false) */
 
     int idx_self;
-    int idx_options;
 
     int ready_state; // 0 - not, 1 response, 2 - headers, 3 - content
     int ts_len_in_buf;// useful ts bytes in TS buffer
@@ -125,7 +125,7 @@ void timeout_callback(void *arg)
 
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
     const int self = lua_gettop(lua);
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_options);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
 
     // callback
     lua_getfield(lua, -1, __callback);
@@ -189,8 +189,8 @@ static void on_close(void *arg)
 
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
     const int self = lua_gettop(lua);
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_options);
-    lua_gettop(lua);/* Options */
+
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
     lua_getfield(lua, -1, __callback);
     const int callback = lua_gettop(lua);
 
@@ -208,7 +208,7 @@ static void on_read(void *arg)
 
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
     const int self = lua_gettop(lua);
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_options);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
     const int options = lua_gettop(lua);
     lua_getfield(lua, -1, __callback);
     const int callback = lua_gettop(lua);
@@ -217,8 +217,8 @@ static void on_read(void *arg)
     /* Small explanation:
      * When we process response body, and it is treated as MPEG-TS, we should divide it to TS_PACKET_SIZE parts.
      * So, when it occurs, that part of MPEG-TS packet is not parsed, we move it to begin of buffer, and parse it with next
-     * data portion. 
-     * Later it may be used for proper HTTP parsing :-) 
+     * data portion.
+     * Later it may be used for proper HTTP parsing :-)
      */
     int skip = mod->ts_len_in_buf;
     int r = asc_socket_recv(mod->sock, buffer + skip, HTTP_BUFFER_SIZE - skip);
@@ -361,7 +361,7 @@ static void on_read(void *arg)
     if(mod->ready_state == 2)
     {
         /* Push to stream */
-        if (mod->is_ts) 
+        if (mod->is_ts)
         {
             int pos = skip - mod->ts_len_in_buf;// buffer rewind
             while (r - pos >= TS_PACKET_SIZE)
@@ -377,7 +377,7 @@ static void on_read(void *arg)
             } else
             {//all data is processed
                 mod->ts_len_in_buf = 0;
-            }            
+            }
         }
         // Transfer-Encoding: chunked
         else if(mod->is_chunked)
@@ -505,9 +505,8 @@ static void on_connect(void *arg)
     asc_timer_destroy(mod->timeout_timer);
     mod->timeout_timer = NULL;
 
-
-    asc_socket_set_callback_read(mod->sock, on_read);
-    asc_socket_set_callback_close(mod->sock, on_close);
+    asc_socket_set_on_read(mod->sock, on_read);
+    asc_socket_set_on_close(mod->sock, on_close);
 
     mod->is_connected = 2;
     mod->timeout_timer = asc_timer_init(REQUEST_TIMEOUT_INTERVAL, timeout_callback, mod);
@@ -521,7 +520,7 @@ static void on_connect(void *arg)
     char *buffer = mod->buffer;
     const char *buffer_tail = mod->buffer + HTTP_BUFFER_SIZE;
 
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_options);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
 
     lua_getfield(lua, -1, __method);
     buffer_set_text(&buffer, buffer_tail - buffer
@@ -588,12 +587,6 @@ static int method_close(module_data_t *mod)
         mod->idx_self = 0;
     }
 
-    if(mod->idx_options > 0)
-    {
-        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_options);
-        mod->idx_options = 0;
-    }
-
     return 0;
 }
 
@@ -627,25 +620,23 @@ static void module_init(module_data_t *mod)
     if(!module_option_number("port", &mod->port))
         mod->port = 80;
 
-    module_option_bool("ts", &mod->is_ts);
+    module_option_number("ts", &mod->is_ts);
 
-    lua_getfield(lua, 2, "callback");
+    lua_getfield(lua, 2, __callback);
     if(lua_type(lua, -1) != LUA_TFUNCTION)
     {
         asc_log_error(MSG("option 'callback' is required"));
         astra_abort();
     }
-    lua_pop(lua, 1);
+    lua_pop(lua, 1); // callback
 
     // store self in registry
     lua_pushvalue(lua, 3);
     mod->idx_self = luaL_ref(lua, LUA_REGISTRYINDEX);
-    lua_pushvalue(lua, 2);
-    mod->idx_options = luaL_ref(lua, LUA_REGISTRYINDEX);
 
     mod->sock = asc_socket_open_tcp4(mod);
-   
-    if(!mod->sock) 
+
+    if(!mod->sock)
     {
         method_close(mod);
         return;

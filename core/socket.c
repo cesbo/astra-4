@@ -153,145 +153,6 @@ static int __asc_socket_get_send_buffer_size(asc_socket_t *sock)
     return asc_vector_count(sock->send_buf);
 }
 
-
-/*
- * SUBSCRIPTION TO EVENTS
- */
-
-static void __asc_socket_subscribe_read(asc_socket_t * sock,  event_callback_t callback_read)
-{
-    if(sock->event)
-        asc_event_set_read(sock->event, callback_read);
-    else
-        sock->event = asc_event_init(sock->fd, callback_read, NULL, NULL, sock);
-}
-
-static void __asc_socket_subscribe_write(asc_socket_t * sock,  event_callback_t callback_write)
-{
-    if(sock->event)
-        asc_event_set_write(sock->event, callback_write);
-    else
-        sock->event = asc_event_init(sock->fd, NULL, callback_write, NULL, sock);
-}
-
-static void __asc_socket_subscribe_error(asc_socket_t * sock,  event_callback_t callback_error)
-{
-    if(sock->event)
-        asc_event_set_error(sock->event, callback_error);
-    else
-        sock->event = asc_event_init(sock->fd, NULL, NULL, callback_error, sock);
-}
-
-/*
- * EVENT HANDLERS
- */
-
-static void __on_asc_socket_read(void * arg)
-{
-    asc_socket_t * sock = (asc_socket_t *)arg;
-    if(sock->on_read)
-        sock->on_read(sock->arg);
-}
-
-static void __on_asc_socket_close(void * arg)
-{
-    asc_socket_t * sock = (asc_socket_t *)arg;
-#ifdef DEBUG    
-    asc_log_debug(MSG("socket close event"));
-#endif
-    if(sock->on_close)
-        sock->on_close(sock->arg);
-}
-
-static void __on_asc_socket_accept_ok(void * arg)
-{
-    asc_socket_t * sock = (asc_socket_t *)arg;
-#ifdef DEBUG    
-    asc_log_debug(MSG("socket accept event"));
-#endif
-    if(sock->on_ac_ok)
-        sock->on_ac_ok(sock->arg);
-}
-
-static void __on_asc_socket_accept_err(void * arg)
-{
-    asc_socket_t * sock = (asc_socket_t *)arg;
-#ifdef DEBUG    
-    asc_log_debug(MSG("socket accept event"));
-#endif
-    if(sock->on_ac_err)
-        sock->on_ac_err(sock->arg);
-}
-
-static void __on_asc_socket_connect_ok(void * arg)
-{
-    asc_socket_t * sock = (asc_socket_t *)arg;
-#ifdef DEBUG    
-    asc_log_debug(MSG("socket connect event"));
-#endif
-    asc_assert(sock->is_connecting, MSG("Socket was not in connecting state, but was connected"));
-    sock->is_connecting = false;
-    __asc_socket_subscribe_read(sock, (sock->on_read) ? __on_asc_socket_read : NULL);
-    __asc_socket_subscribe_write(sock, NULL);
-    __asc_socket_subscribe_error(sock, (sock->on_close) ? __on_asc_socket_close : NULL);
-    if(sock->on_ac_ok)
-        sock->on_ac_ok(sock->arg);
-}
-
-static void __on_asc_socket_connect_err(void * arg)
-{
-    asc_socket_t * sock = (asc_socket_t *)arg;
-#ifdef DEBUG    
-    asc_log_debug(MSG("socket connect fail event"));
-#endif
-    asc_assert(sock->is_connecting
-               , MSG("Socket was not in connecting state, but was connected (fail)"));
-    sock->is_connecting = false;
-    if(sock->on_ac_err)
-        sock->on_ac_err(sock->arg);
-}
-
-static void __on_asc_socket_write(void * arg)
-{
-    asc_socket_t * sock = (asc_socket_t *)arg;
-#ifdef DEBUG    
-    asc_log_debug(MSG("socket write event"));
-#endif
-    int send_buf_sz = __asc_socket_get_send_buffer_size(sock);
-    if(send_buf_sz > 0)
-    { /*if there is something to send */
-        int sz = send_buf_sz;
-        if(sz > asc_socket_single_send_size) sz = asc_socket_single_send_size;
-        int sent = send(sock->fd, asc_vector_get_dataptr(sock->send_buf), sz, 0);
-        if((sent == 0) || ((sent < 0) && (!__asc_socket_is_would_block())))
-        {
-            asc_log_error(MSG("send() failed [%s] (%d/%d bytes)"), asc_socket_error(), sent, sz);
-            __asc_socket_subscribe_write(sock, NULL);
-            if(sock->on_close)
-                sock->on_close(sock->arg);
-            return;
-        }
-        if(sent < 0)
-            sent = 0; /* in case of would block */
-#ifdef DEBUG    
-        asc_log_debug(MSG("socket write event - sent %d (of %d) bytes"), sent, sz);
-#endif
-        asc_vector_remove_begin(sock->send_buf, sent);
-    }
-
-    if(__asc_socket_get_send_buffer_size(sock) <= 0)
-    {
-        /* No need to notify me about write anymore - nothing to send */
-        __asc_socket_subscribe_write(sock, NULL);
-    }
-
-    if(sock->on_send_possible
-       && (__asc_socket_get_send_buffer_size(sock) < asc_socket_notify_send_buffer_size))
-    {
-        sock->on_send_possible(sock->arg);
-    }
-}
-
 /*
  *   ooooooo  oooooooooo ooooooooooo oooo   oooo
  * o888   888o 888    888 888    88   8888o  88
@@ -326,47 +187,6 @@ asc_socket_t * asc_socket_open_udp4(void * arg)
 {
     return __socket_open(PF_INET, SOCK_DGRAM, arg);
 }
-
-void asc_socket_set_arg(asc_socket_t * sock, void * arg)
-{
-    sock->arg = arg;
-}
-
-void asc_socket_set_callback_read(asc_socket_t * sock, socket_callback_t on_read)
-{
-    if(sock->on_read == on_read)
-        return;
-
-    sock->on_read = on_read;
-    if(!sock->is_connecting)
-        __asc_socket_subscribe_read(sock, (sock->on_read) ? __on_asc_socket_read : NULL);
-}
-
-void asc_socket_set_callback_close(asc_socket_t * sock, socket_callback_t on_close)
-{
-    if(sock->on_close == on_close)
-        return;
-
-    sock->on_close = on_close;
-    if(!sock->is_connecting)
-        __asc_socket_subscribe_error(sock, (sock->on_close) ? __on_asc_socket_close : NULL);
-}
-
-void asc_socket_set_callback_send_possible(asc_socket_t * sock, socket_callback_t on_send_possible)
-{
-    if(sock->on_send_possible == on_send_possible)
-        return;
-
-    sock->on_send_possible = on_send_possible;
-    if((!sock->is_connecting)
-       && sock->on_send_possible
-       && (__asc_socket_get_send_buffer_size(sock) < asc_socket_max_send_buffer_size))
-    {
-        /* user needs to get notification right now */
-        __asc_socket_subscribe_write(sock, __on_asc_socket_write);
-    }
-}
-
 
 /*
  *   oooooooo8 ooooo         ooooooo    oooooooo8 ooooooooooo
@@ -409,6 +229,196 @@ void asc_socket_close(asc_socket_t *sock)
     if(sock->send_buf)
         asc_vector_destroy(sock->send_buf);
     free(sock);
+}
+
+/*
+ * ooooooooooo ooooo  oooo ooooooooooo oooo   oooo ooooooooooo
+ *  888    88   888    88   888    88   8888o  88  88  888  88
+ *  888ooo8      888  88    888ooo8     88 888o88      888
+ *  888    oo     88888     888    oo   88   8888      888
+ * o888ooo8888     888     o888ooo8888 o88o    88     o888o
+ *
+ */
+
+static void __asc_socket_subscribe_read(asc_socket_t * sock,  event_callback_t on_read)
+{
+    if(sock->event)
+        asc_event_set_on_read(sock->event, on_read);
+    else
+    {
+        sock->event = asc_event_init(sock->fd, sock);
+        asc_event_set_on_read(sock->event, on_read);
+    }
+}
+
+static void __asc_socket_subscribe_write(asc_socket_t * sock,  event_callback_t on_write)
+{
+    if(sock->event)
+        asc_event_set_on_write(sock->event, on_write);
+    else
+    {
+        sock->event = asc_event_init(sock->fd, sock);
+        asc_event_set_on_write(sock->event, on_write);
+    }
+}
+
+static void __asc_socket_subscribe_error(asc_socket_t * sock,  event_callback_t on_error)
+{
+    if(sock->event)
+        asc_event_set_on_error(sock->event, on_error);
+    else
+    {
+        sock->event = asc_event_init(sock->fd, sock);
+        asc_event_set_on_error(sock->event, on_error);
+    }
+}
+
+/*
+ * EVENT HANDLERS
+ */
+
+static void __on_asc_socket_read(void * arg)
+{
+    asc_socket_t * sock = (asc_socket_t *)arg;
+    if(sock->on_read)
+        sock->on_read(sock->arg);
+}
+
+static void __on_asc_socket_close(void * arg)
+{
+    asc_socket_t * sock = (asc_socket_t *)arg;
+#ifdef DEBUG
+    asc_log_debug(MSG("socket close event"));
+#endif
+    if(sock->on_close)
+        sock->on_close(sock->arg);
+}
+
+static void __on_asc_socket_accept_ok(void * arg)
+{
+    asc_socket_t * sock = (asc_socket_t *)arg;
+#ifdef DEBUG
+    asc_log_debug(MSG("socket accept event"));
+#endif
+    if(sock->on_ac_ok)
+        sock->on_ac_ok(sock->arg);
+}
+
+static void __on_asc_socket_accept_err(void * arg)
+{
+    asc_socket_t * sock = (asc_socket_t *)arg;
+#ifdef DEBUG
+    asc_log_debug(MSG("socket accept event"));
+#endif
+    if(sock->on_ac_err)
+        sock->on_ac_err(sock->arg);
+}
+
+static void __on_asc_socket_connect_ok(void * arg)
+{
+    asc_socket_t * sock = (asc_socket_t *)arg;
+#ifdef DEBUG
+    asc_log_debug(MSG("socket connect event"));
+#endif
+    asc_assert(sock->is_connecting, MSG("Socket was not in connecting state, but was connected"));
+    sock->is_connecting = false;
+    __asc_socket_subscribe_read(sock, (sock->on_read) ? __on_asc_socket_read : NULL);
+    __asc_socket_subscribe_write(sock, NULL);
+    __asc_socket_subscribe_error(sock, (sock->on_close) ? __on_asc_socket_close : NULL);
+    if(sock->on_ac_ok)
+        sock->on_ac_ok(sock->arg);
+}
+
+static void __on_asc_socket_connect_err(void * arg)
+{
+    asc_socket_t * sock = (asc_socket_t *)arg;
+#ifdef DEBUG
+    asc_log_debug(MSG("socket connect fail event"));
+#endif
+    asc_assert(sock->is_connecting
+               , MSG("Socket was not in connecting state, but was connected (fail)"));
+    sock->is_connecting = false;
+    if(sock->on_ac_err)
+        sock->on_ac_err(sock->arg);
+}
+
+static void __on_asc_socket_write(void * arg)
+{
+    asc_socket_t * sock = (asc_socket_t *)arg;
+#ifdef DEBUG
+    asc_log_debug(MSG("socket write event"));
+#endif
+    int send_buf_sz = __asc_socket_get_send_buffer_size(sock);
+    if(send_buf_sz > 0)
+    { /*if there is something to send */
+        int sz = send_buf_sz;
+        if(sz > asc_socket_single_send_size) sz = asc_socket_single_send_size;
+        int sent = send(sock->fd, asc_vector_get_dataptr(sock->send_buf), sz, 0);
+        if((sent == 0) || ((sent < 0) && (!__asc_socket_is_would_block())))
+        {
+            asc_log_error(MSG("send() failed [%s] (%d/%d bytes)"), asc_socket_error(), sent, sz);
+            __asc_socket_subscribe_write(sock, NULL);
+            if(sock->on_close)
+                sock->on_close(sock->arg);
+            return;
+        }
+        if(sent < 0)
+            sent = 0; /* in case of would block */
+#ifdef DEBUG
+        asc_log_debug(MSG("socket write event - sent %d (of %d) bytes"), sent, sz);
+#endif
+        asc_vector_remove_begin(sock->send_buf, sent);
+    }
+
+    if(__asc_socket_get_send_buffer_size(sock) <= 0)
+    {
+        /* No need to notify me about write anymore - nothing to send */
+        __asc_socket_subscribe_write(sock, NULL);
+    }
+
+    if(sock->on_send_possible
+       && (__asc_socket_get_send_buffer_size(sock) < asc_socket_notify_send_buffer_size))
+    {
+        sock->on_send_possible(sock->arg);
+    }
+}
+
+/*
+ */
+
+void asc_socket_set_on_read(asc_socket_t * sock, socket_callback_t on_read)
+{
+    if(sock->on_read == on_read)
+        return;
+
+    sock->on_read = on_read;
+    if(!sock->is_connecting)
+        __asc_socket_subscribe_read(sock, (sock->on_read) ? __on_asc_socket_read : NULL);
+}
+
+void asc_socket_set_on_close(asc_socket_t * sock, socket_callback_t on_close)
+{
+    if(sock->on_close == on_close)
+        return;
+
+    sock->on_close = on_close;
+    if(!sock->is_connecting)
+        __asc_socket_subscribe_error(sock, (sock->on_close) ? __on_asc_socket_close : NULL);
+}
+
+void asc_socket_set_on_send_possible(asc_socket_t * sock, socket_callback_t on_send_possible)
+{
+    if(sock->on_send_possible == on_send_possible)
+        return;
+
+    sock->on_send_possible = on_send_possible;
+    if((!sock->is_connecting)
+       && sock->on_send_possible
+       && (__asc_socket_get_send_buffer_size(sock) < asc_socket_max_send_buffer_size))
+    {
+        /* user needs to get notification right now */
+        __asc_socket_subscribe_write(sock, __on_asc_socket_write);
+    }
 }
 
 /*
@@ -533,7 +543,7 @@ void asc_socket_connect(asc_socket_t *sock, const char *addr, int port
 
     sock->is_connecting = true;
     sock->on_ac_ok = on_ok;
-    sock->on_ac_err = on_err;    
+    sock->on_ac_err = on_err;
     __asc_socket_subscribe_read(sock, NULL);
     __asc_socket_subscribe_write(sock, __on_asc_socket_connect_ok);
     __asc_socket_subscribe_error(sock, __on_asc_socket_connect_err);
@@ -578,7 +588,7 @@ ssize_t asc_socket_recvfrom(asc_socket_t *sock, void *buffer, size_t size)
 
 bool asc_socket_send_buffered(asc_socket_t *sock, const void *buffer, int size)
 {
-#ifdef DEBUG    
+#ifdef DEBUG
     asc_log_debug(MSG("asc_socket_send_buffered, fd=%d, size %d"), sock->fd, size);
 #endif
     int already_sent = 0;
@@ -617,7 +627,7 @@ bool asc_socket_send_buffered(asc_socket_t *sock, const void *buffer, int size)
      * b) user requested send possible notify and send buffer is empty enough
      *    (we could send notification right now, but how?)
      */
-#ifdef DEBUG    
+#ifdef DEBUG
     asc_log_debug(MSG("asc_socket_send_buffered, fd=%d, sent %d of %d, buffered %d"), sock->fd, already_sent, size, __asc_socket_get_send_buffer_size(sock));
 #endif
 
@@ -683,66 +693,6 @@ const char * asc_socket_addr(asc_socket_t *sock)
 int asc_socket_port(asc_socket_t *sock)
 {
     return ntohs(sock->addr.sin_port);
-}
-
-/*
- * ooooooooooo ooooo  oooo ooooooooooo oooo   oooo ooooooooooo
- *  888    88   888    88   888    88   8888o  88  88  888  88
- *  888ooo8      888  88    888ooo8     88 888o88      888
- *  888    oo     88888     888    oo   88   8888      888
- * o888ooo8888     888     o888ooo8888 o88o    88     o888o
- *
- */
-
-static void  __socket_event(asc_socket_t *sock
-                            , event_callback_t callback_read
-                            , event_callback_t callback_write
-                            , event_callback_t callback_error
-                            , void *arg)
-{
-    /*TEMPORARY CODE */
-    if(sock->event)
-    {
-        asc_event_close(sock->event);
-        sock->event = NULL;
-    }
-
-    if((callback_read == NULL) && (callback_write == NULL) && (callback_error == NULL))
-        return;
-
-    sock->event = asc_event_init(sock->fd, callback_read, callback_write, callback_error, arg);
-}
-
-void asc_socket_event_on_accept_new(asc_socket_t *sock
-                                    , event_callback_t callback
-                                    , event_callback_t callback_error
-                                    , void *arg)
-{
-    __socket_event(sock, callback, NULL, callback_error, arg);
-}
-
-void asc_socket_event_on_read_new(asc_socket_t *sock
-                                  , event_callback_t callback
-                                  , event_callback_t callback_error
-                                  , void *arg)
-{
-    __socket_event(sock, callback, NULL, callback_error, arg);
-}
-
-void asc_socket_event_on_write_new(asc_socket_t *sock
-                                   , event_callback_t callback
-                                   , event_callback_t callback_error
-                                   , void *arg)
-{
-    __socket_event(sock, NULL, callback, callback_error, arg);
-}
-
-void asc_socket_event_on_connect_new(asc_socket_t *sock
-                                     , event_callback_t callback
-                                     , event_callback_t callback_error
-                                     , void *arg)
-{
-    __socket_event(sock, NULL, callback, callback_error, arg);
 }
 
 /*

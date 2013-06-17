@@ -8,15 +8,9 @@
 
 #include <astra.h>
 
-bool module_option_bool(const char *name, bool *number)
-{
-    int val;
-    if (!module_option_number(name, &val)) return false;
-    *number = val != 0;
-    return true;
-}
+lua_State *lua = NULL;
 
-bool module_option_number(const char *name, int *number)
+int module_option_number(const char *name, int *number)
 {
     do
     {

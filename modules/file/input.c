@@ -25,19 +25,20 @@
 
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <sys/socket.h>
 
 #define MSG(_msg) "[file_intput %s] " _msg, mod->filename
 
+#define SYNC_BUFFER_SIZE (TS_PACKET_SIZE * 2048)
+
 struct module_data_t
 {
+    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
     const char *filename;
     const char *lock;
     int loop;
-
-    asc_thread_t *thread;
-    asc_stream_t *stream;
 
     int fd;
     size_t skip;
@@ -52,8 +53,24 @@ struct module_data_t
 
     void *timer_skip;
 
+    // thread to module buffer
+    struct
+    {
+        asc_thread_t *thread;
+
+        int fd[2];
+        asc_event_t *event;
+
+        uint8_t *buffer;
+        uint32_t buffer_size;
+        uint32_t buffer_count;
+        uint32_t buffer_read;
+        uint32_t buffer_write;
+        uint32_t buffer_overflow;
+    } sync;
     uint64_t pcr;
 
+    // input buffer
     struct
     {
         uint8_t *begin;
@@ -66,16 +83,15 @@ struct module_data_t
 
 /* module code */
 
-static inline int check_pcr(uint8_t *ts)
+static inline int check_pcr(const uint8_t *ts)
 {
     return (   (ts[3] & 0x20)   /* adaptation field without payload */
             && (ts[4] > 0)      /* adaptation field length */
             && (ts[5] & 0x10)   /* PCR_flag */
-            && !(ts[5] & 0x40)  /* skip random_access_indicator */
             );
 }
 
-static inline uint64_t calc_pcr(uint8_t *ts)
+static inline uint64_t calc_pcr(const uint8_t *ts)
 {
     const uint64_t pcr_base = (ts[6] << 25)
                             | (ts[7] << 17)
@@ -110,26 +126,11 @@ static uint8_t * seek_pcr_192(uint8_t *buffer, uint8_t *buffer_end)
     return NULL;
 }
 
-static double time_per_block(uint8_t *block_end, uint64_t *last_pcr)
-{
-    uint64_t pcr = calc_pcr(block_end);
-
-    const uint64_t dpcr = pcr - *last_pcr;
-    *last_pcr = pcr;
-    const uint64_t dpcr_base = dpcr / 300;
-    const uint64_t dpcr_ext = dpcr % 300;
-
-    const double dt = ((double)(dpcr_base / 90.0)     // 90 kHz
-                    + (double)(dpcr_ext / 27000.0));  // 27 MHz
-
-    return dt; // ms
-}
-
 static double timeval_diff(struct timeval *start, struct timeval *end)
 {
     const int64_t s_us = start->tv_sec * 1000000 + start->tv_usec;
     const int64_t e_us = end->tv_sec * 1000000 + end->tv_usec;
-    return (e_us - s_us) / 1000; // ms
+    return (double)(e_us - s_us) / 1000.0; // ms
 }
 
 static inline uint32_t m2ts_time(const uint8_t *ts)
@@ -232,6 +233,46 @@ static int open_file(module_data_t *mod)
     return reset_buffer(mod);
 }
 
+static void sync_queue_push(module_data_t *mod, const uint8_t *ts)
+{
+    if(mod->sync.buffer_count >= mod->sync.buffer_size)
+    {
+        ++mod->sync.buffer_overflow;
+        return;
+    }
+
+    if(mod->sync.buffer_overflow)
+    {
+        asc_log_error(MSG("sync buffer overflow. dropped %d packets"), mod->sync.buffer_overflow);
+        mod->sync.buffer_overflow = 0;
+    }
+
+    memcpy(&mod->sync.buffer[mod->sync.buffer_write], ts, TS_PACKET_SIZE);
+    mod->sync.buffer_write += TS_PACKET_SIZE;
+    if(mod->sync.buffer_write >= mod->sync.buffer_size)
+        mod->sync.buffer_write = 0;
+
+    __sync_fetch_and_add(&mod->sync.buffer_count, TS_PACKET_SIZE);
+
+    uint8_t cmd[1] = { 0 };
+    if(send(mod->sync.fd[0], cmd, sizeof(cmd), 0) != sizeof(cmd))
+        asc_log_error(MSG("failed to push signal to queue\n"));
+}
+
+static void sync_queue_pop(module_data_t *mod, uint8_t *ts)
+{
+    uint8_t cmd[1];
+    if(recv(mod->sync.fd[1], cmd, sizeof(cmd), 0) != sizeof(cmd))
+        asc_log_error(MSG("failed to pop signal from queue\n"));
+
+    memcpy(ts, &mod->sync.buffer[mod->sync.buffer_read], TS_PACKET_SIZE);
+    mod->sync.buffer_read += TS_PACKET_SIZE;
+    if(mod->sync.buffer_read >= mod->sync.buffer_size)
+        mod->sync.buffer_read = 0;
+
+    __sync_fetch_and_sub(&mod->sync.buffer_count, TS_PACKET_SIZE);
+}
+
 static void thread_loop(void *arg)
 {
     module_data_t *mod = arg;
@@ -239,29 +280,26 @@ static void thread_loop(void *arg)
     if(!open_file(mod))
         return;
 
-    // pause
-    const struct timespec ts_pause = { .tv_sec = 0, .tv_nsec = 500000 };
-    struct timeval pause_start;
-    struct timeval pause_stop;
-    double pause_total = 0;
-
     // block sync
-    struct timeval time_sync[2];
+    struct timeval time_sync[4];
     struct timeval *time_sync_b = &time_sync[0]; // begin
     struct timeval *time_sync_e = &time_sync[1]; // end
+    struct timeval *time_sync_bb = &time_sync[2];
+    struct timeval *time_sync_be = &time_sync[3];
+
     gettimeofday(time_sync_b, NULL);
-    double block_time_total = 0;
+    double block_time_total = 0.0;
+    double total_sync_diff = 0.0;
 
-    double block_accuracy = 0;
-    double ts_accuracy = 0.75;
     struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
-    
-    bool is_m2ts = mod->ts_size == M2TS_PACKET_SIZE;
 
-
-    asc_thread_while(mod->thread)
+    asc_thread_while(mod->sync.thread)
     {
-        mod->buffer.block_end = ((is_m2ts) ? seek_pcr_192 : seek_pcr_188)(mod->buffer.ptr, mod->buffer.end);
+        if(mod->ts_size == TS_PACKET_SIZE)
+            mod->buffer.block_end = seek_pcr_188(mod->buffer.ptr, mod->buffer.end);
+        else
+            mod->buffer.block_end = seek_pcr_192(mod->buffer.ptr, mod->buffer.end);
+
         if(!mod->buffer.block_end)
         {
             if(!mod->loop)
@@ -279,74 +317,90 @@ static void thread_loop(void *arg)
             continue;
         }
 
-        const double block_time = time_per_block(&mod->buffer.block_end[is_m2ts ? 4 : 0], &mod->pcr);
+#define GET_TS_PTR(_ptr) ((mod->ts_size == TS_PACKET_SIZE) ? _ptr : &_ptr[4])
+
+        // get PCR
+        const uint64_t pcr = calc_pcr(GET_TS_PTR(mod->buffer.block_end));
+        const uint64_t delta_pcr = pcr - mod->pcr;
+        mod->pcr = pcr;
+        // get block time
+        const uint64_t dpcr_base = delta_pcr / 300;
+        const uint64_t dpcr_ext = delta_pcr % 300;
+        const double block_time = ((double)(dpcr_base / 90.0)     // 90 kHz
+                                + (double)(dpcr_ext / 27000.0));  // 27 MHz
         if(block_time < 0 || block_time > 200)
         {
+            asc_log_error(MSG("block time out of range: %.2f"), block_time);
             mod->buffer.ptr = mod->buffer.block_end;
-            asc_log_warning(MSG("Some time was skipped, because of big block time: %f"), block_time); 
+
+            gettimeofday(time_sync_b, NULL);
+            block_time_total = 0.0;
+            total_sync_diff = 0.0;
             continue;
         }
-
-        const uint32_t block_size = mod->buffer.block_end - mod->buffer.ptr;
-        const uint32_t ts_count = block_size / mod->ts_size;
-        if ((block_time + block_accuracy) < 0)
-        {
-            ts_sync.tv_nsec = 0;
-        } else
-        {
-            const long group_time = ((block_time + block_accuracy) * 1000000);
-            ts_sync.tv_nsec = (group_time / ts_count) * ts_accuracy;
-            asc_assert((ts_sync.tv_nsec >= 0) && (ts_sync.tv_nsec <= 1000000000), MSG("Strange sleep: %d = (%d = ((%f + %f) *...) / %d) * %f"), ts_sync.tv_nsec, group_time, block_time, block_accuracy, ts_count, ts_accuracy);
-        }
-
-        double pause_block = 0;
-        uint8_t *const ptr_end = mod->buffer.block_end;
-        while(mod->buffer.ptr < ptr_end)
-        {
-            if(mod->pause)
-            {
-                gettimeofday(&pause_start, NULL);
-                while(mod->pause)
-                    nanosleep(&ts_pause, NULL);
-                gettimeofday(&pause_stop, NULL);
-                pause_block += timeval_diff(&pause_start, &pause_stop);
-            }
-            if(mod->reposition)
-            {
-                mod->reposition = 0;
-                break;
-            }
-            asc_stream_send(mod->stream, &mod->buffer.ptr[is_m2ts ? 4 : 0], TS_PACKET_SIZE);
-            mod->buffer.ptr += mod->ts_size;
-            nanosleep(&ts_sync, NULL);
-        }
-        pause_total += pause_block;
-
-        gettimeofday(time_sync_e, NULL);
-        const double time_sync_diff = timeval_diff(time_sync_b, time_sync_e) - pause_total;
         block_time_total += block_time;
-        block_accuracy = block_time_total - time_sync_diff;
-        if(block_accuracy > 0)
-            ts_accuracy += 0.01;
+
+        const uint32_t block_size = (mod->buffer.block_end - mod->buffer.ptr) / mod->ts_size;
+        // calculate the sync time value
+        if((block_time + total_sync_diff) > 0)
+            ts_sync.tv_nsec = ((block_time + total_sync_diff) * 1000000) / block_size;
         else
+            ts_sync.tv_nsec = 0;
+        // store the sync time value for later usage
+        const long ts_sync_nsec = ts_sync.tv_nsec;
+#if 0
+        if(ts_sync_nsec > 1000000)
+            printf("ts_sync_nsec: %ld\n", ts_sync_nsec);
+#endif
+        long calc_block_time_ns = 0;
+        gettimeofday(time_sync_bb, NULL);
+
+        while(mod->buffer.ptr < mod->buffer.block_end)
         {
-            ts_accuracy -= 0.01;
-            if (ts_accuracy < 0) 
-                ts_accuracy = 0;
+            sync_queue_push(mod, GET_TS_PTR(mod->buffer.ptr));
+            mod->buffer.ptr += mod->ts_size;
+            if(ts_sync.tv_nsec > 0)
+                nanosleep(&ts_sync, NULL);
+
+            // block syncing
+            calc_block_time_ns += ts_sync_nsec;
+            gettimeofday(time_sync_be, NULL);
+            const long real_block_time_ns
+                = ((time_sync_be->tv_sec * 1000000 + time_sync_be->tv_usec)
+                   - (time_sync_bb->tv_sec * 1000000 + time_sync_bb->tv_usec))
+                * 1000;
+
+            ts_sync.tv_nsec = (real_block_time_ns > calc_block_time_ns) ? 0 : ts_sync_nsec;
+        }
+
+#undef GET_TS_PTR
+
+        // stream syncing
+        gettimeofday(time_sync_e, NULL);
+        total_sync_diff = block_time_total - timeval_diff(time_sync_b, time_sync_e);
+#if 0
+        printf("syncing value: %.2f\n", total_sync_diff);
+#endif
+        // reset buffer on changing the system time
+        if(total_sync_diff < -100.0 || total_sync_diff > 100.0)
+        {
+            asc_log_warning(MSG("wrong syncing time: %.2fms. reset time values"), total_sync_diff);
+            gettimeofday(time_sync_b, NULL);
+            block_time_total = 0.0;
+            total_sync_diff = 0.0;
         }
     }
 
     close_file(mod);
 }
 
-static void thread_callback(void *arg)
+static void on_thread_read(void *arg)
 {
     module_data_t *mod = arg;
 
     uint8_t ts[TS_PACKET_SIZE];
-    ssize_t len = asc_stream_recv(mod->stream, ts, sizeof(ts));
-    if(len == sizeof(ts))
-        module_stream_send(mod, ts);
+    sync_queue_pop(mod, ts);
+    module_stream_send(mod, ts);
 }
 
 static void timer_skip_set(void *arg)
@@ -444,15 +498,30 @@ static void module_init(module_data_t *mod)
         mod->timer_skip = asc_timer_init(2000, timer_skip_set, mod);
     }
 
-    mod->stream = asc_stream_init(thread_callback, mod);
-    asc_thread_init(&mod->thread, thread_loop, mod);
+    socketpair(AF_LOCAL, SOCK_STREAM, 0, mod->sync.fd);
+    int flags;
+    flags = fcntl(mod->sync.fd[0], F_GETFL);
+    fcntl(mod->sync.fd[0], F_SETFL, flags | O_NONBLOCK);
+    flags = fcntl(mod->sync.fd[1], F_GETFL);
+    fcntl(mod->sync.fd[1], F_SETFL, flags | O_NONBLOCK);
+
+    mod->sync.event = asc_event_init(mod->sync.fd[1], mod);
+    asc_event_set_on_read(mod->sync.event, on_thread_read);
+    mod->sync.buffer = malloc(SYNC_BUFFER_SIZE);
+    mod->sync.buffer_size = SYNC_BUFFER_SIZE;
+
+    asc_thread_init(&mod->sync.thread, thread_loop, mod);
 }
 
 static void module_destroy(module_data_t *mod)
 {
     asc_timer_destroy(mod->timer_skip);
-    asc_thread_destroy(&mod->thread);
-    asc_stream_destroy(mod->stream);
+    asc_thread_destroy(&mod->sync.thread);
+
+    asc_event_close(mod->sync.event);
+    close(mod->sync.fd[0]);
+    close(mod->sync.fd[1]);
+    free(mod->sync.buffer);
 
     if(mod->idx_callback)
     {
