@@ -21,7 +21,6 @@ struct module_data_t
 {
     MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
-    MODULE_DEMUX_DATA();
 
     int adapter;
     int budget;
@@ -95,7 +94,7 @@ static void leave_pid(module_data_t *mod, uint16_t pid)
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, NULL);
-    module_demux_init(mod, join_pid, leave_pid);
+    module_stream_demux_set(mod, join_pid, leave_pid);
 
     if(!module_option_number("adapter", &mod->adapter))
     {
@@ -137,7 +136,6 @@ static void module_init(module_data_t *mod)
 static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
-    module_demux_destroy(mod);
 
     asc_event_close(mod->event);
     if(mod->fd)
@@ -146,12 +144,10 @@ static void module_destroy(module_data_t *mod)
 
 
 MODULE_STREAM_METHODS()
-MODULE_DEMUX_METHODS()
 
 MODULE_LUA_METHODS()
 {
-    MODULE_STREAM_METHODS_REF(),
-    MODULE_DEMUX_METHODS_REF()
+    MODULE_STREAM_METHODS_REF()
 };
 
 MODULE_LUA_REGISTER(asi_input)

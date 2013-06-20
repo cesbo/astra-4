@@ -17,7 +17,6 @@
 #include "modules/astra/module_event.h"
 
 #include "modules/mpegts/mpegts.h"
-#include "modules/mpegts/module_demux.h"
 
 #define STACK_DEBUG(_pos) printf("%s(): stack %d: %d\n", __FUNCTION__, _pos, lua_gettop(lua))
 

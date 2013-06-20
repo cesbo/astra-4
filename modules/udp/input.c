@@ -30,7 +30,6 @@ struct module_data_t
 {
     MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
-    MODULE_DEMUX_DATA();
 
     int is_rtp;
 
@@ -75,7 +74,6 @@ void timer_renew_callback(void *arg)
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, NULL);
-    module_demux_init(mod, NULL, NULL);
 
     const char *addr = NULL;
     module_option_string("addr", &addr);
@@ -115,7 +113,6 @@ static void module_init(module_data_t *mod)
 static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
-    module_demux_destroy(mod);
 
     if(mod->timer_renew)
         asc_timer_destroy(mod->timer_renew);
@@ -128,10 +125,9 @@ static void module_destroy(module_data_t *mod)
 }
 
 MODULE_STREAM_METHODS()
-MODULE_DEMUX_METHODS()
+
 MODULE_LUA_METHODS()
 {
-    MODULE_STREAM_METHODS_REF(),
-    MODULE_DEMUX_METHODS_REF()
+    MODULE_STREAM_METHODS_REF()
 };
 MODULE_LUA_REGISTER(udp_input)
