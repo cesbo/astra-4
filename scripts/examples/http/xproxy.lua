@@ -1,6 +1,6 @@
 #!/usr/bin/env astra
 
-log.set({ debug = true })
+-- log.set({ debug = true })
 
 function split(s,d)
     local p = 1

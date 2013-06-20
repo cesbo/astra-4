@@ -22,26 +22,26 @@ int module_option_number(const char *name, int *number)
         {
             *number = lua_tonumber(lua, -1);
             lua_pop(lua, 1);
-            return 1;
+            return true;
         }
         else if(type == LUA_TSTRING)
         {
             const char *str = lua_tostring(lua, -1);
             *number = atoi(str);
             lua_pop(lua, 1);
-            return 1;
+            return true;
         }
         else if(type == LUA_TBOOLEAN)
         {
             *number = lua_toboolean(lua, -1);
             lua_pop(lua, 1);
-            return 1;
+            return true;
         }
         else
             lua_pop(lua, 1);
     } while(0);
 
-    return 0;
+    return false;
 }
 
 int module_option_string(const char *name, const char **string)
