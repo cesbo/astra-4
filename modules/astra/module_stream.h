@@ -78,6 +78,7 @@ void __module_stream_send(module_stream_t *stream, const uint8_t *ts);
                     module_stream_demux_leave_pid(_mod, __i);                                   \
                 }                                                                               \
             }                                                                                   \
+            free(_mod->__stream.pid_list);                                                      \
         }                                                                                       \
         __module_stream_destroy(&_mod->__stream);                                               \
         _mod->__stream.self = NULL;                                                             \
