@@ -147,10 +147,11 @@ end
 
 function play_stop(session_data)
     if session_data.is_active ~= true then return end
+    session_data.timeout = nil
     session_data.src.instance = nil
     session_data.dst.instance = nil
-    collectgarbage()
     session_data.is_active = false
+    collectgarbage()
 end
 
 
@@ -163,25 +164,36 @@ function get_session_data(client, data)
         send_405(client)
         return nil
     end
-    
-    local session_data = rtsp_sessions[session] 
+
+    local session_data = rtsp_sessions[session]
     if not session_data then
         log.error("Session not found by id " .. session)
         send_405(client)
         return nil
     end
+
     return session_data
 end
 
+function check_timeout(session_data)
+    if session_data.timeout then
+        session_data.timeout = nil
+        collectgarbage()
+    end
+end
+
 -- ----------------------------------------------------------------------------------
--- RTSP Methods 
+-- RTSP Methods
 
 
--- 
+--
 -- OPTIONS
 --
 
 function rtsp_method_options(client, data)
+    local client_data = server:data(client)
+    client_data.with_timeout = false
+
     local cseq = get_cseq(data)
     send_200(client, {
         rtsp_server,
@@ -190,7 +202,7 @@ function rtsp_method_options(client, data)
     })
 end
 
--- 
+--
 -- DESCRIBE
 --
 
@@ -199,8 +211,11 @@ function rtsp_method_describe(client, data)
     if not filename then
         log.error("failed to get filename from uri")
         send_400(client)
-        return    
+        return
     end
+
+    local client_data = server:data(client)
+    client_data.with_timeout = false
 
     local cseq = get_cseq(data)
 
@@ -210,20 +225,20 @@ function rtsp_method_describe(client, data)
                 .. "a=control:*\r\n"
                 .. "m=video 11000 " .. sdp_proto .. " 33\r\n"
                 .. "a=rtpmap:33 MP2T/90000\r\n"
-    
-    
+
+
     local file_instance = file_input({
             filename = storage .. filename,
-            pause = true,
-            loop = false
+            check_length = true
         })
 
     local length = file_instance:length()
     if length then
         sdp = sdp .. "a=range:npt=0-" .. tostring(length) .. "\r\n"
     end
-    
+
     file_instance = nil
+    collectgarbage()
 
     send_200(client, {
         rtsp_server,
@@ -233,7 +248,7 @@ function rtsp_method_describe(client, data)
     }, sdp)
 end
 
--- 
+--
 -- SETUP
 --
 
@@ -242,27 +257,31 @@ function rtsp_method_setup(client, data)
     if not filename then
         log.error("failed to get filename from uri")
         send_400(client)
-        return    
+        return
     end
 
     -- create new session
-    local session_data = {}    
-    
-    session_data.src = {}
-    session_data.dst = {}
+    local session_data = {
+        src = {},
+        dst = {},
+    }
 
     repeat
         session_data.session = math.random(10000000, 99000000)
     until not rtsp_sessions[session_data.session] -- ensure that new random value is unique
-    
+
     rtsp_sessions[session_data.session] = session_data
 
-    log.debug("Creating session " .. session_data.session)
-    
+    local client_data = server:data(client)
+    client_data.session_data = session_data
+    client_data.with_timeout = true
+
+    log.info("Session " .. session_data.session .. " is started")
+
     session_data.dst.is_xhttprtsp = get_xhttprtsp(data)
 
     log.info("New session " .. session_data.session .. " for client " .. data.addr .. ":" .. tostring(data.port) .. " [" .. data.uri .. "]")
-    
+
     session_data.src.instance = file_input({
         filename = storage .. filename,
         pause = true,
@@ -270,7 +289,7 @@ function rtsp_method_setup(client, data)
     })
 
     local cseq = get_cseq(data)
-    
+
     local transport = get_transport(data)
     if transport.destination and dst_source == false then
         session_data.dst.addr = transport.destination
@@ -303,7 +322,7 @@ function rtsp_method_setup(client, data)
     })
 end
 
--- 
+--
 -- PLAY
 --
 
@@ -311,6 +330,13 @@ function rtsp_method_play(client, data)
     local session_data = get_session_data(client, data)
     if not session_data then
         return
+    end
+
+    check_timeout(session_data)
+    if session_data.is_xhttprtsp then
+        local client_data = server:data(client)
+        client_data.with_timeout = true
+        client_data.session_data = session_data
     end
 
     local cseq = get_cseq(data)
@@ -335,7 +361,7 @@ function rtsp_method_play(client, data)
     play_start(session_data)
 end
 
--- 
+--
 -- PAUSE
 --
 
@@ -344,6 +370,10 @@ function rtsp_method_pause(client, data)
     if not session_data then
         return
     end
+
+    check_timeout(session_data)
+    local client_data = server:data(client)
+    client_data.with_timeout = true
 
     local cseq = get_cseq(data)
     send_200(client, {
@@ -354,7 +384,7 @@ function rtsp_method_pause(client, data)
     play_pause(session_data)
 end
 
--- 
+--
 -- GET PARAM
 --
 
@@ -364,6 +394,9 @@ function rtsp_method_get_parameter(client, data)
         return
     end
 
+    local client_data = server:data(client)
+    client_data.with_timeout = false
+
     local cseq = get_cseq(data)
     send_200(client, {
         rtsp_server,
@@ -371,7 +404,7 @@ function rtsp_method_get_parameter(client, data)
     })
 end
 
--- 
+--
 -- GETSTREAM
 --
 
@@ -385,22 +418,26 @@ function rtsp_method_getstream(client, data)
         send_400(client)
         return
     end
-    
+
     log.debug("GetStream for session " .. session_data.session)
+
+    local client_data = server:data(client)
+    client_data.session_data = session_data
+    client_data.is_getstream = true
 
     server:send(client, {
         version = rtsp_version,
         code = 200,
         message = "OK",
         headers = {
-          rtsp_server, 
+          rtsp_server,
         },
         upstream = session_data.src.instance:stream()
     })
 end
 
 
--- 
+--
 -- TEARDOWN
 --
 
@@ -409,7 +446,11 @@ function rtsp_method_teardown(client, data)
     if not session_data then
         return
     end
-    
+
+    local client_data = server:data(client)
+    client_data.with_timeout = false
+
+    log.info("Session " .. session_data.session .. " closed by teardown")
     play_stop(session_data)
 
     local cseq = get_cseq(data)
@@ -418,7 +459,7 @@ function rtsp_method_teardown(client, data)
         "CSeq: " .. tostring(cseq)
     })
     log.debug("Destroy session " .. session_data.session)
-    
+
     rtsp_sessions[session_data.session] = nil
     collectgarbage()
 end
@@ -454,8 +495,26 @@ function on_http_read(client, data)
         end
 
     elseif type(data) == 'nil' then
-        play_stop(server:data(client))
 
+        local client_data = server:data(client)
+        local session_data = client_data.session_data
+
+        if client_data.is_getstream then
+            play_stop(session_data)
+            return
+        end
+
+        if client_data.with_timeout then
+            session_data.timeout = timer({
+                interval = 10,
+                callback = function()
+                        log.info("Session " .. session_data.session .. " closed by timeout")
+                        play_stop(session_data)
+                        rtsp_sessions[session_data.session] = nil
+                        collectgarbage()
+                    end
+            })
+        end
     end
 end
 

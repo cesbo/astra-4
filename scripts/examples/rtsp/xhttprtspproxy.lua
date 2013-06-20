@@ -8,8 +8,6 @@ server = nil
 -- ----------------------------------------------------------------------------------
 -- VARS
 
-xhttpserver_addr = "127.0.0.1"
-xhttpserver_port = 554
 rtsp_addr = "0.0.0.0"
 rtsp_port = 554
 app_version = "v.1"
@@ -124,8 +122,8 @@ function get_session_data(client, data)
         send_405(client)
         return nil
     end
-    
-    local session_data = rtsp_sessions[session] 
+
+    local session_data = rtsp_sessions[session]
     if not session_data then
         log.error("Session not found by id " .. session)
         send_405(client)
@@ -141,8 +139,8 @@ function get_session_data_udp(client, data)
         send_405(client)
         return nil
     end
-    
-    local session_data = rtsp_sessions_udp[session] 
+
+    local session_data = rtsp_sessions_udp[session]
     if not session_data then
         log.error("Session not found by id " .. session)
         send_405(client)
@@ -179,27 +177,53 @@ end
 
 
 -- ----------------------------------------------------------------------------------
--- RTSP Methods 
+-- RTSP Methods
 
--- 
+--
 -- proxy method
 --
 
-function rtsp_method_proxy(client, data, cb_pretable)
+function rtsp_method_proxy(client, data, cb_pretable, is_teardown)
     local client_data = server:data(client)
     client_data.resp = {}
     client_data.resp.content = ""
     client_data.resp.bytes_to_close = 0
     table.insert(data.headers, "x-httprtp: true")
-    client_data.req = http_request({
-        addr = xhttpserver_addr,
-        port = xhttpserver_port,
+
+    -- parse uri
+    if not client_data.xhttpserver_addr then
+        local _, _, xhttpserver, uri = data.uri:find("^rtsp://[%d%s%.:]+/([%d%.:]+)(/.+)")
+        if not xhttpserver then
+            log.error("Wrong URL format " .. data.uri)
+            server:close(client)
+            return
+        end
+        client_data.xhttpserver = xhttpserver
+        client_data.xhttpserver_uri = uri
+
+        local b, _ = xhttpserver:find(":")
+        if b then
+            client_data.xhttpserver_addr = xhttpserver:sub(1, b - 1)
+            client_data.xhttpserver_port = xhttpserver:sub(b + 1)
+        else
+            client_data.xhttpserver_addr = xhttpserver
+            client_data.xhttpserver_port = 554
+        end
+    end
+
+    http_request({
+        addr = client_data.xhttpserver_addr,
+        port = client_data.xhttpserver_port,
         method = data.method,
-        uri = data.uri,
+        uri = "rtsp://" .. client_data.xhttpserver .. client_data.xhttpserver_uri,
         version = data.version,
         headers = data.headers,
-        callback = 
+        callback =
             function(req, resp_data)
+                if is_teardown then
+                    return
+                end
+
                 if type(resp_data) == 'table' then
                     if resp_data.code == 0 then
                         log.error("Remote XHTTPRTSP Server request failed: " .. resp_data.message)
@@ -220,7 +244,7 @@ function rtsp_method_proxy(client, data, cb_pretable)
                             headers = resp_data.headers
                     })
                     for _,h in pairs(resp_data.headers) do
-                        local len = h:lower():match("content%-length: (%d+)") 
+                        local len = h:lower():match("content%-length: (%d+)")
                         if len then
                             client_data.resp.bytes_to_close = tonumber(len)
                         end
@@ -241,18 +265,18 @@ function rtsp_method_proxy(client, data, cb_pretable)
         })
 end
 
--- 
+--
 -- SETUP
 --
 
 function rtsp_method_setup(client, data, cb_unused)
-    
+
     rtsp_method_proxy(client, data,
-    
+
         function(client2, resp_data)
             -- create new session
-            local session_data = {}    
-            
+            local session_data = {}
+
             session_data.src = {}
             session_data.dst = {}
             session_data.session = get_session(resp_data.headers)
@@ -275,13 +299,13 @@ function rtsp_method_setup(client, data, cb_unused)
                     session_data.dst.addr = data.addr
                 end
             end
-            
+
             if transport.client_port then
                 session_data.dst.port = tonumber(transport.client_port:match("%d+"))
             else
                 session_data.dst.port = 11000
             end
-            
+
             local tstring = "Transport: " .. sdp_proto ..
                        ";unicast;destination=" ..
                        session_data.dst.addr ..
@@ -294,14 +318,15 @@ function rtsp_method_setup(client, data, cb_unused)
                 tstring
             }
 
+            local client_data = server:data(client)
             session_data.src.instance = http_request({
-                addr = xhttpserver_addr, 
-                port = xhttpserver_port, 
+                addr = client_data.xhttpserver_addr,
+                port = client_data.xhttpserver_port,
                 method = "GETSTREAM",
-                uri = data.uri,
+                uri = client_data.xhttpserver_uri,
                 version = data.version,
                 headers = {
-                    rtsp_server, 
+                    rtsp_server,
                     "Session: " .. tostring(session_data.session)
                     },
                 ts = true,
@@ -311,7 +336,7 @@ function rtsp_method_setup(client, data, cb_unused)
                         end
                     end
             })
-            
+
             session_data.dst.instance = udp_output({
                 upstream = session_data.src.instance:stream(),
                 addr = session_data.dst.addr,
@@ -319,13 +344,13 @@ function rtsp_method_setup(client, data, cb_unused)
                 ttl = 32,
                 rtp = is_rtp
             })
-            
+
             return resp_data
         end
     )
 end
 
--- 
+--
 -- TEARDOWN
 --
 
@@ -334,25 +359,29 @@ function rtsp_method_teardown(client, data, cb_unused)
     if not session_data then
         return
     end
-    
-    if session_data.src.instance then
-        session_data.src.instance:close()
-    end
-    session_data.src.instance = nil
-    session_data.dst.instance = nil
-    rtsp_sessions[session_data.session] = nil
 
-    log.debug("Destroy session " .. session_data.session)
+    rtsp_method_proxy(client, data,
+        function(client2, resp_data)
+            if session_data.src.instance then
+                session_data.src.instance:close()
+            end
+            session_data.src.instance = nil
+            session_data.dst.instance = nil
+            rtsp_sessions[session_data.session] = nil
 
-    collectgarbage()
-    
-    rtsp_method_proxy(client, data, cb_unused)
+            log.debug("Destroy session " .. session_data.session)
+
+            collectgarbage()
+
+            return resp_data
+        end
+    , true)
 end
 
 -- ----------------------------------------------------------------------------------
 -- RTSP Methods  FOR UDP
 
--- 
+--
 -- OPTIONS
 --
 
@@ -365,7 +394,7 @@ function rtsp_method_udp_options(client, data)
     })
 end
 
--- 
+--
 -- DESCRIBE
 --
 
@@ -380,24 +409,24 @@ function rtsp_method_udp_describe(client, data)
     }, sdp)
 end
 
--- 
+--
 -- SETUP
 --
 
 function rtsp_method_udp_setup(client, data)
     -- create new session
-    local session_data = {}    
+    local session_data = {}
     session_data.src = {}
     session_data.dst = {}
-       
+
     repeat
         session_data.session = math.random(10000000, 99000000)
     until not rtsp_sessions_udp[session_data.session] -- ensure that new random value is unique
-    
+
     rtsp_sessions_udp[session_data.session] = session_data
 
     log.debug("Creating session " .. session_data.session)
-    
+
     local cseq = get_cseq(data)
 
     local src, tail = data.uri:match("/udp/([%d:.]+)(.*)")
@@ -448,7 +477,7 @@ function rtsp_method_udp_setup(client, data)
     })
 end
 
--- 
+--
 -- PLAY
 --
 
@@ -470,7 +499,7 @@ function rtsp_method_udp_play(client, data)
 end
 
 
--- 
+--
 -- GET PARAM
 --
 
@@ -490,7 +519,7 @@ function rtsp_method_udp_get_parameter(client, data)
     })
 end
 
--- 
+--
 -- TEARDOWN
 --
 
@@ -509,7 +538,7 @@ function rtsp_method_udp_teardown(client, data)
         "CSeq: " .. tostring(cseq)
     })
     log.debug("Destroy session " .. session_data.session)
-    
+
     rtsp_sessions_udp[session_data.session] = nil
 
     collectgarbage()
@@ -541,7 +570,7 @@ rtsp_methods_udp = {
 }
 
 function cb(client, data)
-     
+
     if type(data) == 'table' then
         if not data.method then
             log.error("[rtsp.lua] " .. data.message)
@@ -551,7 +580,7 @@ function cb(client, data)
 
         log.debug("Request: " .. data.method .. " " .. data.uri)
         for _,h in pairs(data.headers) do log.debug("    " .. h) end
-        
+
         local is_udp = data.uri:match("/udp/[%d:.]+.*")
         if is_udp then
             if rtsp_methods_udp[data.method] then
@@ -594,7 +623,6 @@ function usage()
           "    -p PORT             local port to listen\n" ..
           "    -l ADDR             source interface address\n" ..
           "    -c ADDR             client address\n" ..
-          "    -s ADDR             XHTTPRTP server address\n" ..
           "    --rtp               use RTP instead of UDP\n" ..
           "    --debug             print debug messages"
           )
@@ -616,8 +644,6 @@ options = {
     ["-p"] = function(i) rtsp_port = tonumber(argv[i + 1]) return i + 2 end,
     ["-l"] = function(i) localaddr = argv[i + 1] return i + 2 end,
     ["-c"] = function(i) client_addr = argv[i + 1] return i + 2 end,
-    ["-s"] = function(i) xhttpserver_addr  = argv[i + 1] return i + 2 end,
-    ["--sp"] = function(i) xhttpserver_port = argv[i + 1] return i + 2 end,
     ["--rtp"] = function(i) is_rtp = true return i + 1 end,
     ["--debug"] = function (i) log.set({ debug = true }) return i + 1 end,
 }

@@ -280,6 +280,12 @@ static void thread_loop(void *arg)
     if(!open_file(mod))
         return;
 
+    // pause
+    const struct timespec ts_pause = { .tv_sec = 0, .tv_nsec = 500000 };
+    struct timeval pause_start;
+    struct timeval pause_stop;
+    double pause_total = 0.0;
+
     // block sync
     struct timeval time_sync[4];
     struct timeval *time_sync_b = &time_sync[0]; // begin
@@ -295,6 +301,17 @@ static void thread_loop(void *arg)
 
     asc_thread_while(mod->sync.thread)
     {
+        if(mod->pause)
+        {
+            while(mod->pause)
+                nanosleep(&ts_pause, NULL);
+
+            gettimeofday(time_sync_b, NULL);
+            block_time_total = 0.0;
+            total_sync_diff = 0.0;
+            pause_total = 0.0;
+        }
+
         if(mod->ts_size == TS_PACKET_SIZE)
             mod->buffer.block_end = seek_pcr_188(mod->buffer.ptr, mod->buffer.end);
         else
@@ -336,6 +353,7 @@ static void thread_loop(void *arg)
             gettimeofday(time_sync_b, NULL);
             block_time_total = 0.0;
             total_sync_diff = 0.0;
+            pause_total = 0.0;
             continue;
         }
         block_time_total += block_time;
@@ -355,8 +373,24 @@ static void thread_loop(void *arg)
         long calc_block_time_ns = 0;
         gettimeofday(time_sync_bb, NULL);
 
+        double pause_block = 0.0;
+
         while(mod->buffer.ptr < mod->buffer.block_end)
         {
+            if(mod->pause)
+            {
+                gettimeofday(&pause_start, NULL);
+                while(mod->pause)
+                    nanosleep(&ts_pause, NULL);
+                gettimeofday(&pause_stop, NULL);
+                pause_block += timeval_diff(&pause_start, &pause_stop);
+            }
+            if(mod->reposition)
+            {
+                mod->reposition = 0;
+                break;
+            }
+
             sync_queue_push(mod, GET_TS_PTR(mod->buffer.ptr));
             mod->buffer.ptr += mod->ts_size;
             if(ts_sync.tv_nsec > 0)
@@ -368,16 +402,19 @@ static void thread_loop(void *arg)
             const long real_block_time_ns
                 = ((time_sync_be->tv_sec * 1000000 + time_sync_be->tv_usec)
                    - (time_sync_bb->tv_sec * 1000000 + time_sync_bb->tv_usec))
-                * 1000;
+                * 1000
+                - pause_block;
 
             ts_sync.tv_nsec = (real_block_time_ns > calc_block_time_ns) ? 0 : ts_sync_nsec;
         }
+        pause_total += pause_block;
 
 #undef GET_TS_PTR
 
         // stream syncing
         gettimeofday(time_sync_e, NULL);
-        total_sync_diff = block_time_total - timeval_diff(time_sync_b, time_sync_e);
+        const double real_sync_diff = timeval_diff(time_sync_b, time_sync_e) - pause_total;
+        total_sync_diff = block_time_total - real_sync_diff;
 #if 0
         printf("syncing value: %.2f\n", total_sync_diff);
 #endif
@@ -388,6 +425,7 @@ static void thread_loop(void *arg)
             gettimeofday(time_sync_b, NULL);
             block_time_total = 0.0;
             total_sync_diff = 0.0;
+            pause_total = 0.0;
         }
     }
 
@@ -471,6 +509,15 @@ static int method_position(module_data_t *mod)
 static void module_init(module_data_t *mod)
 {
     module_option_string("filename", &mod->filename);
+
+    int value;
+    if(module_option_number("check_length", &value) && value)
+    {
+        open_file(mod);
+        close_file(mod);
+        return;
+    }
+
     module_option_string("lock", &mod->lock);
     module_option_number("loop", &mod->loop);
     module_option_number("pause", &mod->pause);
@@ -499,11 +546,6 @@ static void module_init(module_data_t *mod)
     }
 
     socketpair(AF_LOCAL, SOCK_STREAM, 0, mod->sync.fd);
-    int flags;
-    flags = fcntl(mod->sync.fd[0], F_GETFL);
-    fcntl(mod->sync.fd[0], F_SETFL, flags | O_NONBLOCK);
-    flags = fcntl(mod->sync.fd[1], F_GETFL);
-    fcntl(mod->sync.fd[1], F_SETFL, flags | O_NONBLOCK);
 
     mod->sync.event = asc_event_init(mod->sync.fd[1], mod);
     asc_event_set_on_read(mod->sync.event, on_thread_read);
@@ -519,9 +561,14 @@ static void module_destroy(module_data_t *mod)
     asc_thread_destroy(&mod->sync.thread);
 
     asc_event_close(mod->sync.event);
-    close(mod->sync.fd[0]);
-    close(mod->sync.fd[1]);
-    free(mod->sync.buffer);
+    if(mod->sync.fd[0])
+    {
+        close(mod->sync.fd[0]);
+        close(mod->sync.fd[1]);
+    }
+
+    if(mod->sync.buffer)
+        free(mod->sync.buffer);
 
     if(mod->idx_callback)
     {
