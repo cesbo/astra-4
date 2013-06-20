@@ -24,11 +24,12 @@
 #define UDP_BUFFER_SIZE 1460
 #define TS_PACKET_SIZE 188
 
+#define MSG(_msg) "[udp_input] " _msg
+
 struct module_data_t
 {
     MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
-    MODULE_DEMUX_DATA();
 
     int is_rtp;
 
@@ -60,6 +61,8 @@ void on_read(void *arg)
     ssize_t i = (mod->is_rtp) ? 12 : 0;
     for(; i < len; i += TS_PACKET_SIZE)
         module_stream_send(mod, &mod->buffer[i]);
+    if (i != len)
+        asc_log_warning(MSG("Lost bytes: %d, because UDP packet size is wrong"), len - i);
 }
 
 void timer_renew_callback(void *arg)
@@ -71,7 +74,6 @@ void timer_renew_callback(void *arg)
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, NULL);
-    module_demux_init(mod, NULL, NULL);
 
     const char *addr = NULL;
     module_option_string("addr", &addr);
@@ -111,7 +113,6 @@ static void module_init(module_data_t *mod)
 static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
-    module_demux_destroy(mod);
 
     if(mod->timer_renew)
         asc_timer_destroy(mod->timer_renew);
@@ -124,10 +125,9 @@ static void module_destroy(module_data_t *mod)
 }
 
 MODULE_STREAM_METHODS()
-MODULE_DEMUX_METHODS()
+
 MODULE_LUA_METHODS()
 {
-    MODULE_STREAM_METHODS_REF(),
-    MODULE_DEMUX_METHODS_REF()
+    MODULE_STREAM_METHODS_REF()
 };
 MODULE_LUA_REGISTER(udp_input)

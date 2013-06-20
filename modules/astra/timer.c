@@ -52,6 +52,7 @@ static void module_init(module_data_t *mod)
         asc_log_error("[timer] option 'callback' must be a function");
         astra_abort();
     }
+    lua_pop(lua, 1);
 
     mod->timer = asc_timer_init(interval * 1000, timer_callback, mod);
 }

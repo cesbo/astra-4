@@ -7,6 +7,8 @@ function on_read(self, data)
     end
 end
 
+log.set({ debug = true })
+
 http_request({
     addr = "93.158.134.3",
     port = 80,
