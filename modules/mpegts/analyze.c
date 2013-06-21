@@ -25,7 +25,6 @@ typedef struct
     uint8_t cc;
 
     uint32_t packets;
-    uint32_t bitrate;
 
     // errors
     uint32_t cc_error;  // Continuity Counter
@@ -530,6 +529,8 @@ static void on_check_stat(void *arg)
     int items_count = 1;
     lua_newtable(lua);
 
+    uint32_t bitrate = 0;
+
     lua_newtable(lua);
     for(int i = 0; i < MAX_PID; ++i)
     {
@@ -538,32 +539,35 @@ static void on_check_stat(void *arg)
         if(item->type == MPEGTS_PACKET_UNKNOWN)
             continue;
 
-        if(item->cc_error || item->sc_error || item->pes_error)
-        {
-            lua_pushnumber(lua, items_count++);
-            lua_newtable(lua);
+        bitrate += item->packets;
+        item->packets = 0;
 
-            lua_pushnumber(lua, i);
-            lua_setfield(lua, -2, "pid");
+        lua_pushnumber(lua, items_count++);
+        lua_newtable(lua);
 
-            lua_pushnumber(lua, item->cc_error);
-            lua_setfield(lua, -2, "cc_error");
-            lua_pushnumber(lua, item->sc_error);
-            lua_setfield(lua, -2, "sc_error");
-            lua_pushnumber(lua, item->pes_error);
-            lua_setfield(lua, -2, "pes_error");
+        lua_pushnumber(lua, i);
+        lua_setfield(lua, -2, "pid");
 
-            item->cc_error = 0;
-            item->sc_error = 0;
-            item->pes_error = 0;
+        lua_pushnumber(lua, item->cc_error);
+        lua_setfield(lua, -2, "cc_error");
+        lua_pushnumber(lua, item->sc_error);
+        lua_setfield(lua, -2, "sc_error");
+        lua_pushnumber(lua, item->pes_error);
+        lua_setfield(lua, -2, "pes_error");
 
-            lua_settable(lua, -3);
-        }
+        item->cc_error = 0;
+        item->sc_error = 0;
+        item->pes_error = 0;
+
+        lua_settable(lua, -3);
     }
     lua_setfield(lua, -2, "analyze");
 
-    if(items_count > 1)
-        do_callback(mod);
+    bitrate = (bitrate * TS_PACKET_SIZE * 8) / 1000;
+    lua_pushnumber(lua, bitrate);
+    lua_setfield(lua, -2, "bitrate");
+
+    do_callback(mod);
 
     lua_pop(lua, 1); // table
 }
@@ -580,11 +584,7 @@ static void on_check_stat(void *arg)
 static void module_init(module_data_t *mod)
 {
     module_option_string("name", &mod->name);
-    if(!mod->name)
-    {
-        asc_log_error("[analyze] option 'name' is required");
-        astra_abort();
-    }
+    asc_assert(mod->name != NULL, "[analyze] option 'name' is required");
 
     lua_getfield(lua, 2, "callback");
     asc_assert(lua_type(lua, -1) == LUA_TFUNCTION, MSG("option 'callback' is required"));
