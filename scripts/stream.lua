@@ -2,22 +2,23 @@
 function dump_table(t, p, i)
     if not p then p = print end
     if not i then
-        i = "    "
         p("{")
+        dump_table(t, p, "    ")
+        p("}")
+        return
     end
 
     for key,val in pairs(t) do
         if type(val) == 'table' then
-            p(tostring(key) .. " = {")
+            p(i .. tostring(key) .. " = {")
             dump_table(val, p, i .. "    ")
+            p(i .. "}")
         elseif type(val) == 'string' then
-            p(tostring(key) .. " = \"" .. val .. "\"")
+            p(i .. tostring(key) .. " = \"" .. val .. "\"")
         else
-            p(tostring(key) .. " = " .. tostring(val))
+            p(i .. tostring(key) .. " = " .. tostring(val))
         end
     end
-
-    p("}")
 end
 
 -- ooooo  oooo oooooooooo  ooooo
@@ -78,13 +79,15 @@ function parse_options(options, source)
 end
 
 function parse_url(url)
-    local x,_,source_type,source_addr,source_options = url:find("^(%a+)://([%a%d%.:@_-/]+)(.*)$" )
-    if not source_type then return nil end
+    local x,_,source_type,source_addr,source_options = url:find("^(%a+)://([%a%d%.:@_/%-]+)(.*)$" )
+    if not source_type then
+        return nil
+    end
     if type(parse_source[source_type]) ~= 'function' then return nil end
 
     local source = { type = source_type }
     parse_source[source_type](source_addr, source)
-    if #source_options > 0 then parse_options(source_options, source) end
+    if source_options then parse_options(source_options, source) end
 
     return source
 end
@@ -99,13 +102,13 @@ local input_list = {}
 
 local dvb_instance_list = {}
 
-input_list.dvb = function(name, input_conf)
+input_list.dvb = function(input_conf)
     -- TODO:
 end
 
 local udp_instance_list = {}
 
-input_list.udp = function(name, input_conf)
+input_list.udp = function(input_conf)
     if not input_conf.port then input_conf.port = 1234 end
 
     local addr = input_conf.addr .. ":" .. input_conf.port
@@ -122,11 +125,11 @@ input_list.udp = function(name, input_conf)
     return { tail = udp_instance }
 end
 
-input_list.file = function(name, input_conf)
+input_list.file = function(input_conf)
     return { tail = file_input(input_conf) }
 end
 
-function init_input(input_conf)
+function init_input(channel_name, input_conf)
     if type(input_conf) == 'string' then
         local input_conf_t = parse_url(input_conf)
         if not input_conf_t then
@@ -148,13 +151,13 @@ function init_input(input_conf)
     end
 
     local input_mods = {}
-    input_mods.source = init_input_type(name, input_conf)
+    input_mods.source = init_input_type(input_conf)
     input_mods.tail = input_mods.source.tail
 
     if input_conf.pnr then
         local channel_conf =
         {
-            name = input_conf.name,
+            name = channel_name,
             upstream = input_mods.tail:stream(),
             pnr = input_conf.pnr
         }
@@ -176,13 +179,64 @@ function init_input(input_conf)
 
     -- TODO: extra modules
 
-    input_mods.analyze = analyze({
-        upstream = input_mods.tail:stream(),
-        name = input_conf.name
-    })
-    input_mods.tail = input_mods.analyze
+    -- input_mods.analyze = analyze({
+    --     upstream = input_mods.tail:stream(),
+    --     name = channel_name
+    -- })
+    -- input_mods.tail = input_mods.analyze
 
     return input_mods
+end
+
+--   ooooooo  ooooo  oooo ooooooooooo oooooooooo ooooo  oooo ooooooooooo
+-- o888   888o 888    88  88  888  88  888    888 888    88  88  888  88
+-- 888     888 888    88      888      888oooo88  888    88      888
+-- 888o   o888 888    88      888      888        888    88      888
+--   88ooo88    888oo88      o888o    o888o        888oo88      o888o
+
+local output_list = {}
+
+output_list.udp = function(output_conf)
+    if not output_conf.port then output_conf.port = 1234 end
+    if not output_conf.ttl then output_conf.ttl = 32 end
+
+    return { tail = udp_output(output_conf) }
+end
+
+output_list.file = function(output_conf)
+    return { tail = file_output(output_conf) }
+end
+
+function init_output(channel_name, output_conf, upstream)
+    if type(output_conf) == 'string' then
+        local output_conf_t = parse_url(output_conf)
+        if not output_conf_t then
+            log.error("[stream.lua] wrong output URL format: " .. output_conf)
+            astra.abort()
+        end
+        output_conf = output_conf_t
+    end
+
+    if not output_conf.type then
+        log.error("[stream.lua] option 'type' is required for output")
+        astra.abort()
+    end
+
+    local init_output_type = output_list[output_conf.type]
+    if not init_output_type then
+        log.error("[stream.lua] unknown output type")
+        astra.abort()
+    end
+
+    output_conf.upstream = upstream
+
+    local output_mods = {}
+    output_mods.source = init_output_type(output_conf)
+    output_mods.tail = output_mods.source.tail
+
+    -- TODO: extra modules
+
+    return output_mods
 end
 
 --   oooooooo8 ooooo ooooo      o      oooo   oooo oooo   oooo ooooooooooo ooooo
@@ -208,15 +262,17 @@ function make_channel(channel_conf)
         output = {}
     }
 
-    for _, input_conf in pairs(channel_conf.input) do
-        input_conf.name = channel_conf.name
-    end
-
-    local new_input = init_input(channel_conf.input[1])
+    local new_input = init_input(channel_conf.name, channel_conf.input[1])
     table.insert(modules.input, new_input)
 
     modules.transmit = transmit({ upstream = new_input.tail:stream() })
     modules.tail = modules.transmit
+
+    if not channel_conf.output then channel_conf.output = {} end
+    for _,output_conf in pairs(channel_conf.output) do
+        local new_output = init_output(channel_name, output_conf, modules.tail:stream())
+        table.insert(modules.output, new_output)
+    end
 
     channel_conf.__modules = modules
 end
