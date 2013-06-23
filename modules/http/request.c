@@ -11,6 +11,7 @@
  *      http_request
  *
  * Module Options:
+ *      ts          - true to push data to upstream instead of callback [optional, default : false]
  *      addr        - string, server IP address
  *      port        - number, server port
  *      callback    - function,
@@ -40,9 +41,12 @@ struct module_data_t
     asc_timer_t *timeout_timer;
     int is_connected; // for timeout message
 
+    int is_ts; /* Using TS (true) or send data to callback (false) */
+
     int idx_self;
 
     int ready_state; // 0 - not, 1 response, 2 - headers, 3 - content
+    int ts_len_in_buf;// useful ts bytes in TS buffer
 
     size_t chunk_left; // is_chunked || is_content_length
 
@@ -61,6 +65,7 @@ static const char __version[] = "version";
 static const char __headers[] = "headers";
 static const char __content[] = "content";
 static const char __callback[] = "callback";
+static const char __ts[] = "ts";
 static const char __code[] = "code";
 static const char __message[] = "message";
 static const char __response[] = "__response";
@@ -175,7 +180,26 @@ static void call_nil(int callback, int self)
     lua_call(lua, 2, 0);
 }
 
-static void on_read(void *arg, int is_data)
+static void on_close(void *arg)
+{
+    module_data_t *mod = arg;
+
+    asc_timer_destroy(mod->timeout_timer);
+    mod->timeout_timer = NULL;
+
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+    const int self = lua_gettop(lua);
+
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
+    lua_getfield(lua, -1, __callback);
+    const int callback = lua_gettop(lua);
+
+    call_nil(callback, self);
+    lua_pop(lua, 3); // self + options + callback
+    method_close(mod);
+}
+
+static void on_read(void *arg)
 {
     module_data_t *mod = arg;
 
@@ -189,16 +213,15 @@ static void on_read(void *arg, int is_data)
     lua_getfield(lua, -1, __callback);
     const int callback = lua_gettop(lua);
 
-    if(!is_data)
-    {
-        call_nil(callback, self);
-        lua_pop(lua, 3); // self + options + callback
-        method_close(mod);
-        return;
-    }
-
     char *buffer = mod->buffer;
-    int r = asc_socket_recv(mod->sock, buffer, HTTP_BUFFER_SIZE);
+    /* Small explanation:
+     * When we process response body, and it is treated as MPEG-TS, we should divide it to TS_PACKET_SIZE parts.
+     * So, when it occurs, that part of MPEG-TS packet is not parsed, we move it to begin of buffer, and parse it with next
+     * data portion.
+     * Later it may be used for proper HTTP parsing :-)
+     */
+    int skip = mod->ts_len_in_buf;
+    int r = asc_socket_recv(mod->sock, buffer + skip, HTTP_BUFFER_SIZE - skip);
     if(r <= 0)
     {
         call_nil(callback, self);
@@ -206,9 +229,9 @@ static void on_read(void *arg, int is_data)
         method_close(mod);
         return;
     }
+    r += mod->ts_len_in_buf;// Imagine that we've received more (+ previous part)
 
     int response = 0;
-    int skip = 0;
 
     parse_match_t m[4];
 
@@ -337,8 +360,27 @@ static void on_read(void *arg, int is_data)
     // content
     if(mod->ready_state == 2)
     {
+        /* Push to stream */
+        if (mod->is_ts)
+        {
+            int pos = skip - mod->ts_len_in_buf;// buffer rewind
+            while (r - pos >= TS_PACKET_SIZE)
+            {
+                module_stream_send(mod, (uint8_t*)&mod->buffer[pos]);
+                pos += TS_PACKET_SIZE;
+            }
+            int left = r - pos;
+            if (left > 0)
+            {//there is something usefull in the end of buffer, move it to begin
+                if (pos > 0) memmove(&mod->buffer[0], &mod->buffer[pos], left);
+                mod->ts_len_in_buf = left;
+            } else
+            {//all data is processed
+                mod->ts_len_in_buf = 0;
+            }
+        }
         // Transfer-Encoding: chunked
-        if(mod->is_chunked)
+        else if(mod->is_chunked)
         {
             while(skip < r)
             {
@@ -448,22 +490,23 @@ static void on_read(void *arg, int is_data)
     lua_pop(lua, 3); // self + options + callback
 } /* on_read */
 
-static void on_connect(void *arg, int is_data)
+static void on_connect_err(void *arg)
+{
+    module_data_t *mod = arg;
+    mod->is_connected = 1;
+    timeout_callback(mod);
+    method_close(mod);
+}
+
+static void on_connect(void *arg)
 {
     module_data_t *mod = arg;
 
     asc_timer_destroy(mod->timeout_timer);
     mod->timeout_timer = NULL;
 
-    if(!is_data)
-    {
-        mod->is_connected = 1;
-        timeout_callback(mod);
-        method_close(mod);
-        return;
-    }
-
-    asc_socket_event_on_read(mod->sock, on_read, mod);
+    asc_socket_set_on_read(mod->sock, on_read);
+    asc_socket_set_on_close(mod->sock, on_close);
 
     mod->is_connected = 2;
     mod->timeout_timer = asc_timer_init(REQUEST_TIMEOUT_INTERVAL, timeout_callback, mod);
@@ -507,10 +550,7 @@ static void on_connect(void *arg, int is_data)
     lua_pop(lua, 1); // empty line
 
     const int header_size = buffer - mod->buffer;
-    if(asc_socket_send(mod->sock, mod->buffer, header_size) != header_size)
-    {
-        // TODO: check result
-    }
+    asc_socket_send_buffered(mod->sock, mod->buffer, header_size);
 
     // send request content
     lua_getfield(lua, -1, __content);
@@ -518,10 +558,7 @@ static void on_connect(void *arg, int is_data)
     {
         const int content_size = luaL_len(lua, -1);
         const char *content = lua_tostring(lua, -1);
-        if(asc_socket_send(mod->sock, (void *)content, content_size) != content_size)
-        {
-            // TODO: check result
-        }
+        asc_socket_send_buffered(mod->sock, (void *)content, content_size);
     }
     lua_pop(lua, 1); // content
 
@@ -559,10 +596,7 @@ static int method_send(module_data_t *mod)
     {
         const int content_size = luaL_len(lua, 2);
         const char *content = lua_tostring(lua, 2);
-        if(asc_socket_send(mod->sock, (void *)content, content_size) != content_size)
-        {
-            // TODO: check result
-        }
+        asc_socket_send_buffered(mod->sock, (void *)content, content_size);
         return 0;
     }
 
@@ -575,6 +609,8 @@ static int method_send(module_data_t *mod)
 
 static void module_init(module_data_t *mod)
 {
+    module_stream_init(mod, NULL);
+
     if(!module_option_string("addr", &mod->addr) || !mod->addr)
     {
         asc_log_error(MSG("option 'addr' is required"));
@@ -583,6 +619,8 @@ static void module_init(module_data_t *mod)
 
     if(!module_option_number("port", &mod->port))
         mod->port = 80;
+
+    module_option_number("ts", &mod->is_ts);
 
     lua_getfield(lua, 2, __callback);
     if(lua_type(lua, -1) != LUA_TFUNCTION)
@@ -596,23 +634,27 @@ static void module_init(module_data_t *mod)
     lua_pushvalue(lua, 3);
     mod->idx_self = luaL_ref(lua, LUA_REGISTRYINDEX);
 
-    mod->sock = asc_socket_open_tcp4();
-    if(mod->sock && asc_socket_connect(mod->sock, mod->addr, mod->port))
+    mod->sock = asc_socket_open_tcp4(mod);
+
+    if(!mod->sock)
     {
-        mod->timeout_timer = asc_timer_init(CONNECT_TIMEOUT_INTERVAL, timeout_callback, mod);
-        asc_socket_event_on_connect(mod->sock, on_connect, mod);
-    }
-    else
         method_close(mod);
+        return;
+    }
+    mod->timeout_timer = asc_timer_init(CONNECT_TIMEOUT_INTERVAL, timeout_callback, mod);
+    asc_socket_connect(mod->sock, mod->addr, mod->port, on_connect, on_connect_err);
 }
 
 static void module_destroy(module_data_t *mod)
 {
+    module_stream_destroy(mod);
     method_close(mod);
 }
 
+MODULE_STREAM_METHODS()
 MODULE_LUA_METHODS()
 {
+    MODULE_STREAM_METHODS_REF(),
     { "close", method_close },
     { "send", method_send }
 };

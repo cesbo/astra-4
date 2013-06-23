@@ -21,7 +21,6 @@ struct module_data_t
 {
     MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
-    MODULE_DEMUX_DATA();
 
     int adapter;
     int budget;
@@ -33,23 +32,25 @@ struct module_data_t
     uint8_t buffer[ASI_BUFFER_SIZE];
 };
 
-static void asi_on_read(void *arg, int is_data)
+static void asi_on_error(void *arg)
 {
     module_data_t *mod = arg;
 
-    if(!is_data)
-    {
-        asc_log_error(MSG("asi read error [%s]"), strerror(errno));
-        asc_event_close(mod->event);
-        close(mod->fd);
-        astra_abort();
-        return;
-    }
+    asc_log_error(MSG("asi read error [%s]"), strerror(errno));
+    asc_event_close(mod->event);
+    close(mod->fd);
+    astra_abort();
+}
+
+
+static void asi_on_read(void *arg)
+{
+    module_data_t *mod = arg;
 
     const ssize_t len = read(mod->fd, mod->buffer, ASI_BUFFER_SIZE);
     if(len <= 0)
     {
-        asi_on_read(mod, 0);
+        asi_on_error(mod);
         return;
     }
 
@@ -93,7 +94,7 @@ static void leave_pid(module_data_t *mod, uint16_t pid)
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, NULL);
-    module_demux_init(mod, join_pid, leave_pid);
+    module_stream_demux_set(mod, join_pid, leave_pid);
 
     if(!module_option_number("adapter", &mod->adapter))
     {
@@ -127,13 +128,14 @@ static void module_init(module_data_t *mod)
 
     fsync(mod->fd);
 
-    mod->event = asc_event_on_read(mod->fd, asi_on_read, mod);
+    mod->event = asc_event_init(mod->fd, mod);
+    asc_event_set_on_read(mod->event, asi_on_read);
+    asc_event_set_on_error(mod->event, asi_on_error);
 }
 
 static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
-    module_demux_destroy(mod);
 
     asc_event_close(mod->event);
     if(mod->fd)
@@ -142,12 +144,10 @@ static void module_destroy(module_data_t *mod)
 
 
 MODULE_STREAM_METHODS()
-MODULE_DEMUX_METHODS()
 
 MODULE_LUA_METHODS()
 {
-    MODULE_STREAM_METHODS_REF(),
-    MODULE_DEMUX_METHODS_REF()
+    MODULE_STREAM_METHODS_REF()
 };
 
 MODULE_LUA_REGISTER(asi_input)

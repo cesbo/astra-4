@@ -1,5 +1,7 @@
 #!/usr/bin/env astra
 
+-- log.set({ debug = true })
+
 function split(s,d)
     local p = 1
     local t = {}
@@ -53,7 +55,7 @@ function on_http_read(client, data)
         end
 
         local a = split(u[3], ":") --> { "239.255.1.1", "1234" }
-        local udp_input_conf = { addr = a[1], port = 1234 }
+        local udp_input_conf = { addr = a[1], port = 1234, socket_size = 0x80000 }
         if #a == 2 then udp_input_conf.port = tonumber(a[2]) end
         if localaddr then udp_input_conf.localaddr = localaddr end
 

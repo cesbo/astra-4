@@ -15,6 +15,7 @@
 #include "config.h"
 
 static jmp_buf main_loop;
+static volatile bool asc_core_loop_alive;
 
 void astra_exit(void)
 {
@@ -38,13 +39,10 @@ static void signal_handler(int signum)
         asc_log_hup();
         return;
     }
+#else
+    (void)signum;
 #endif
-
-    static int is_signum = 0;
-    if(is_signum)
-        return;
-    is_signum = 1;
-    longjmp(main_loop, 1);
+    asc_core_loop_alive = false;
 }
 
 static void astra_init(int argc, const char **argv)
@@ -57,6 +55,7 @@ static void astra_init(int argc, const char **argv)
 #endif
 
     ASC_INIT();
+    asc_core_loop_alive = true;
 
     lua = luaL_newstate();
     luaL_openlibs(lua);
@@ -102,7 +101,7 @@ void astra_do_file(int argc, const char **argv, const char *filename)
         if(luaL_dofile(lua, filename))
             luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
 
-        ASC_LOOP();
+        ASC_LOOP(asc_core_loop_alive);
     }
 
     lua_close(lua);
@@ -118,7 +117,7 @@ void astra_do_text(int argc, const char **argv, const char *text, size_t size)
         if(luaL_loadbuffer(lua, text, size, "=inscript") || lua_pcall(lua, 0, LUA_MULTRET, 0))
             luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
 
-        ASC_LOOP();
+        ASC_LOOP(asc_core_loop_alive);
     }
 
     lua_close(lua);

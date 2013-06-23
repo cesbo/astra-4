@@ -25,7 +25,6 @@ struct module_data_t
 {
     MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
-    MODULE_DEMUX_DATA();
 
     /* Options */
     const char *name;
@@ -86,7 +85,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         const uint16_t pid = PAT_ITEMS_GET_PID(psi, pointer);
         if(pnr == mod->pnr)
         {
-            demux_join_pid(mod, pid);
+            module_stream_demux_join_pid(mod, pid);
             mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_PMT, pid);
             break;
         }
@@ -145,7 +144,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
         if(desc_pointer[0] == 0x09
            && (mod->caid == 0xFFFF || DESC_CA_CAID(desc_pointer) == mod->caid))
         {
-            demux_join_pid(mod, DESC_CA_PID(desc_pointer));
+            module_stream_demux_join_pid(mod, DESC_CA_PID(desc_pointer));
         }
 
         CAT_DESC_NEXT(psi, desc_pointer);
@@ -191,7 +190,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
             if(desc_pointer[0] == 0x09
                && (mod->caid == 0xFFFF || DESC_CA_CAID(desc_pointer) == mod->caid))
             {
-                demux_join_pid(mod, DESC_CA_PID(desc_pointer));
+                module_stream_demux_join_pid(mod, DESC_CA_PID(desc_pointer));
             }
 
             PMT_DESC_NEXT(psi, desc_pointer);
@@ -211,14 +210,14 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                 if(desc_pointer[0] == 0x09
                    && (mod->caid == 0xFFFF || DESC_CA_CAID(desc_pointer) == mod->caid))
                 {
-                    demux_join_pid(mod, DESC_CA_PID(desc_pointer));
+                    module_stream_demux_join_pid(mod, DESC_CA_PID(desc_pointer));
                 }
 
                 PMT_ITEM_DESC_NEXT(pointer, desc_pointer);
             }
         }
 
-        demux_join_pid(mod, pid);
+        module_stream_demux_join_pid(mod, pid);
 
         PMT_ITEMS_NEXT(psi, pointer);
     }
@@ -302,7 +301,7 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
 static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
     const uint16_t pid = TS_PID(ts);
-    if(!demux_is_pid(mod, pid))
+    if(!module_stream_demux_check_pid(mod, pid))
         return;
 
     if(!mod->pnr)
@@ -372,7 +371,6 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, on_ts);
-    module_demux_init(mod, NULL, NULL);
 
     module_option_string("name", &mod->name);
     if(!mod->name)
@@ -381,37 +379,28 @@ static void module_init(module_data_t *mod)
         astra_abort();
     }
 
-    lua_getfield(lua, MODULE_OPTIONS_IDX, "demux");
-    if(lua_type(lua, -1) != LUA_TLIGHTUSERDATA)
-    {
-        asc_log_error("[channel] option 'demux' is required");
-        astra_abort();
-    }
-    demux_set_parent(mod, lua_touserdata(lua, -1));
-    lua_pop(lua, 1);
-
     if(module_option_number("pnr", &mod->pnr))
     {
         mod->custom_pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
         mod->stream[0] = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
-        demux_join_pid(mod, 0x00);
+        module_stream_demux_join_pid(mod, 0x00);
     }
 
     if(module_option_number("caid", &mod->caid) && mod->caid == 1)
     {
         mod->stream[1] = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
-        demux_join_pid(mod, 0x01);
+        module_stream_demux_join_pid(mod, 0x01);
     }
 
     if(module_option_number("sdt", &mod->sdt))
     {
         mod->custom_sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
         mod->stream[0x11] = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
-        demux_join_pid(mod, 0x11);
+        module_stream_demux_join_pid(mod, 0x11);
     }
 
     if(module_option_number("eit", &mod->eit))
-        demux_join_pid(mod, 0x12);
+        module_stream_demux_join_pid(mod, 0x12);
 
     // TODO: parse options
 }
@@ -419,7 +408,6 @@ static void module_init(module_data_t *mod)
 static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
-    module_demux_destroy(mod);
 
     if(mod->custom_pat)
         mpegts_psi_destroy(mod->custom_pat);
