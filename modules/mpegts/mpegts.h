@@ -76,7 +76,8 @@ typedef enum
     MPEGTS_PACKET_VIDEO     = MPEGTS_PACKET_PES | 0x01,
     MPEGTS_PACKET_AUDIO     = MPEGTS_PACKET_PES | 0x02,
     MPEGTS_PACKET_SUB       = MPEGTS_PACKET_PES | 0x04,
-    MPEGTS_PACKET_DATA      = 0x01000000
+    MPEGTS_PACKET_DATA      = 0x01000000,
+    MPEGTS_PACKET_NULL      = 0x02000000
 } mpegts_packet_type_t;
 
 const char * mpegts_type_name(mpegts_packet_type_t type);

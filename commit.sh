@@ -149,11 +149,15 @@ case "$1" in
         check_changes
 
         git checkout $DEV_BRANCH
-        git merge --no-ff $BRANCH -m "merge with $BRANCH"
+        git merge --no-ff --no-commit $BRANCH
+        [ $? -ne 0 ] && exit
+
+        git reset HEAD version.h
+        git checkout -- version.h
 
         let ASTRA_VERSION_DEV=ASTRA_VERSION_DEV+1
         version_up
-        git commit -m "version up" version.h
+        git commit -am "merge with $BRANCH"
         ;;
     *)
         usage

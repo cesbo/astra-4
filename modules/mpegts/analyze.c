@@ -13,11 +13,36 @@
  * Module Options:
  *      upstream    - object, stream instance returned by module_instance:stream()
  *      name        - string, analyzer name
- *      on_psi      - function,
- *      on_error    - function,
+ *      rate_stat   - boolean, dump bitrate with 10ms interval
+ *      callback    - function(data), events callback:
+                      data.error    - string,
+                      data.psi      - table, psi information (PAT, PMT, CAT, SDT)
+                      data.analyze  - table, per pid information: errors, bitrate
+                      data.on_air   - boolean, comes with data.analyze, stream status
+                      data.rate     - table, rate_stat array
  */
 
 #include <astra.h>
+
+typedef struct
+{
+    mpegts_packet_type_t type;
+
+    uint8_t cc;
+
+    uint32_t packets;
+
+    // errors
+    uint32_t cc_error;  // Continuity Counter
+    uint32_t sc_error;  // Scrambled
+    uint32_t pes_error; // PES header
+} analyze_item_t;
+
+typedef struct
+{
+    uint16_t pnr;
+    uint32_t crc;
+} pmt_checksum_t;
 
 struct module_data_t
 {
@@ -25,11 +50,29 @@ struct module_data_t
     MODULE_STREAM_DATA();
 
     const char *name;
+    int rate_stat;
 
     uint16_t tsid;
 
-    int stream_ndx;
-    mpegts_psi_t *stream[MAX_PID];
+    asc_timer_t *check_stat;
+    analyze_item_t stream[MAX_PID];
+
+    mpegts_psi_t *pat;
+    mpegts_psi_t *cat;
+    mpegts_psi_t *pmt;
+    mpegts_psi_t *sdt;
+
+    int pmt_count;
+    pmt_checksum_t *pmt_checksum_list;
+
+    // rate_stat
+    struct timeval last_ts;
+    uint32_t ts_count;
+    int rate_count;
+    int rate[10];
+
+    // on_air
+    uint32_t last_bitrate;
 };
 
 #define MSG(_msg) "[analyze %s] " _msg, mod->name
@@ -40,57 +83,20 @@ static const char __crc32[] = "crc32";
 static const char __pnr[] = "pnr";
 static const char __tsid[] = "tsid";
 static const char __descriptors[] = "descriptors";
-static const char __checksum_error[] = "checksum error";
+static const char __psi[] = "psi";
+static const char __err[] = "error";
+static const char __callback[] = "callback";
 
-static void on_error_call(module_data_t *mod, const char *msg)
+static void do_callback(module_data_t *mod)
 {
     asc_assert((lua_type(lua, -1) == LUA_TTABLE), "table required");
 
-    lua_pushstring(lua, msg);
-    lua_setfield(lua, -2, "error");
-
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->stream_ndx);
-    const int len = luaL_len(lua, -1);
-    lua_pushnumber(lua, len + 1);
-    lua_pushvalue(lua, -3);
-    lua_settable(lua, -3);
-    lua_pop(lua, 1); // stream
-
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
-    lua_getfield(lua, -1, "on_error");
+    lua_getfield(lua, -1, __callback);
     lua_remove(lua, -2);
 
-    if(!lua_isnil(lua, -1))
-    {
-        lua_pushvalue(lua, -2);
-        lua_call(lua, 1, 0);
-    }
-    else
-        lua_pop(lua, 1); // on_error
-}
-
-static void on_psi_call(module_data_t *mod)
-{
-    asc_assert((lua_type(lua, -1) == LUA_TTABLE), "table required");
-
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->stream_ndx);
-    const int len = luaL_len(lua, -1);
-    lua_pushnumber(lua, len + 1);
-    lua_pushvalue(lua, -3);
-    lua_settable(lua, -3);
-    lua_pop(lua, 1); // stream
-
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
-    lua_getfield(lua, -1, "on_psi");
-    lua_remove(lua, -2);
-
-    if(lua_isfunction(lua, -1))
-    {
-        lua_pushvalue(lua, -2); // push stream info
-        lua_call(lua, 1, 0);
-    }
-    else
-        lua_pop(lua, 1); // on_psi
+    lua_pushvalue(lua, -2);
+    lua_call(lua, 1, 0);
 }
 
 /*
@@ -112,8 +118,6 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         return;
 
     lua_newtable(lua);
-    lua_pushstring(lua, "PAT");
-    lua_setfield(lua, -2, __type);
 
     lua_pushnumber(lua, psi->pid);
     lua_setfield(lua, -2, __pid);
@@ -121,13 +125,18 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        on_error_call(mod, __checksum_error);
+        lua_pushstring(lua, "PAT checksum error");
+        lua_setfield(lua, -2, __err);
+        do_callback(mod);
         lua_pop(lua, 1); // info
         return;
     }
 
     psi->crc32 = crc32;
     mod->tsid = PAT_GET_TSID(psi);
+
+    lua_pushstring(lua, "pat");
+    lua_setfield(lua, -2, __psi);
 
     lua_pushnumber(lua, psi->crc32);
     lua_setfield(lua, -2, __crc32);
@@ -151,14 +160,16 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         lua_setfield(lua, -2, __pid);
         lua_settable(lua, -3); // append to the "programs" table
 
-        if(pnr)
-            mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_PMT, pid);
+        mod->stream[pid].type = (pnr) ? MPEGTS_PACKET_PMT : MPEGTS_PACKET_NIT;
 
         PAT_ITEMS_NEXT(psi, pointer);
     }
     lua_setfield(lua, -2, "programs");
 
-    on_psi_call(mod);
+    mod->pmt_count = programs_count;
+    mod->pmt_checksum_list = calloc(mod->pmt_count, sizeof(pmt_checksum_t));
+
+    do_callback(mod);
     lua_pop(lua, 1); // info
 }
 
@@ -181,8 +192,6 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
         return;
 
     lua_newtable(lua);
-    lua_pushstring(lua, "CAT");
-    lua_setfield(lua, -2, __type);
 
     lua_pushnumber(lua, psi->pid);
     lua_setfield(lua, -2, __pid);
@@ -190,11 +199,16 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        on_error_call(mod, __checksum_error);
+        lua_pushstring(lua, "CAT checksum error");
+        lua_setfield(lua, -2, __err);
+        do_callback(mod);
         lua_pop(lua, 1); // info
         return;
     }
     psi->crc32 = crc32;
+
+    lua_pushstring(lua, "cat");
+    lua_setfield(lua, -2, __psi);
 
     lua_pushnumber(lua, psi->crc32);
     lua_setfield(lua, -2, __crc32);
@@ -212,7 +226,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     }
     lua_setfield(lua, -2, __descriptors);
 
-    on_psi_call(mod);
+    do_callback(mod);
     lua_pop(lua, 1); // info
 }
 
@@ -229,31 +243,50 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 {
     module_data_t *mod = arg;
 
-    // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
-    if(crc32 == psi->crc32)
-        return;
-
-    lua_newtable(lua);
-    lua_pushstring(lua, "PMT");
-    lua_setfield(lua, -2, __type);
-
-    lua_pushnumber(lua, psi->pid);
-    lua_setfield(lua, -2, __pid);
 
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        on_error_call(mod, __checksum_error);
+        lua_newtable(lua);
+
+        lua_pushnumber(lua, psi->pid);
+        lua_setfield(lua, -2, __pid);
+
+        lua_pushstring(lua, "PMT checksum error");
+        lua_setfield(lua, -2, __err);
+        do_callback(mod);
         lua_pop(lua, 1); // info
         return;
     }
-    psi->crc32 = crc32;
-
-    lua_pushnumber(lua, psi->crc32);
-    lua_setfield(lua, -2, __crc32);
 
     const uint16_t pnr = PMT_GET_PNR(psi);
+
+    // check changes
+    for(int i = 0; i < mod->pmt_count; ++i)
+    {
+        if(mod->pmt_checksum_list[i].pnr == pnr || mod->pmt_checksum_list[i].pnr == 0)
+        {
+            if(mod->pmt_checksum_list[i].crc == crc32)
+                return;
+
+            mod->pmt_checksum_list[i].pnr = pnr;
+            mod->pmt_checksum_list[i].crc = crc32;
+            break;
+        }
+    }
+
+    lua_newtable(lua);
+
+    lua_pushnumber(lua, psi->pid);
+    lua_setfield(lua, -2, __pid);
+
+    lua_pushstring(lua, "pmt");
+    lua_setfield(lua, -2, __psi);
+
+    lua_pushnumber(lua, crc32);
+    lua_setfield(lua, -2, __crc32);
+
     lua_pushnumber(lua, pnr);
     lua_setfield(lua, -2, __pnr);
 
@@ -284,7 +317,8 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         lua_pushnumber(lua, streams_count++);
         lua_newtable(lua);
 
-        lua_pushstring(lua, mpegts_type_name(mpegts_pes_type(type)));
+        mod->stream[pid].type = mpegts_pes_type(type);
+        lua_pushstring(lua, mpegts_type_name(mod->stream[pid].type));
         lua_setfield(lua, -2, "type_name");
 
         lua_pushnumber(lua, type);
@@ -312,7 +346,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     }
     lua_setfield(lua, -2, "streams");
 
-    on_psi_call(mod);
+    do_callback(mod);
     lua_pop(lua, 1); // options
 }
 
@@ -341,8 +375,6 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
         return;
 
     lua_newtable(lua);
-    lua_pushstring(lua, "SDT");
-    lua_setfield(lua, -2, __type);
 
     lua_pushnumber(lua, psi->pid);
     lua_setfield(lua, -2, __pid);
@@ -350,11 +382,16 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        on_error_call(mod, __checksum_error);
+        lua_pushstring(lua, "SDT checksum error");
+        lua_setfield(lua, -2, __err);
+        do_callback(mod);
         lua_pop(lua, 1); // info
         return;
     }
     psi->crc32 = crc32;
+
+    lua_pushstring(lua, "sdt");
+    lua_setfield(lua, -2, __psi);
 
     lua_pushnumber(lua, psi->crc32);
     lua_setfield(lua, -2, __crc32);
@@ -387,6 +424,7 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
 
             SDT_ITEM_DESC_NEXT(pointer, desc_pointer);
         }
+        lua_setfield(lua, -2, __descriptors);
 
         lua_settable(lua, -3); // append to the "services[X].descriptors" table
 
@@ -394,7 +432,7 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
     }
     lua_setfield(lua, -2, "services");
 
-    on_psi_call(mod);
+    do_callback(mod);
     lua_pop(lua, 1); // options
 }
 
@@ -407,39 +445,188 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
  *
  */
 
+static void append_rate(module_data_t *mod, int rate)
+{
+    mod->rate[mod->rate_count] = rate;
+    ++mod->rate_count;
+    if(mod->rate_count >= (int)(sizeof(mod->rate)/sizeof(*mod->rate)))
+    {
+        lua_newtable(lua);
+        lua_newtable(lua);
+        for(int i = 0; i < mod->rate_count; ++i)
+        {
+            lua_pushnumber(lua, i + 1);
+            lua_pushnumber(lua, mod->rate[i]);
+            lua_settable(lua, -3);
+        }
+        lua_setfield(lua, -2, "rate");
+        do_callback(mod);
+        mod->rate_count = 0;
+    }
+}
+
 static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
-    const uint16_t pid = TS_PID(ts);
-    mpegts_psi_t *psi = mod->stream[pid];
-    if(psi)
+    if(mod->rate_stat)
     {
-        switch(psi->type)
+        ++mod->ts_count;
+
+        int diff_interval = 0;
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        tv.tv_usec /= 10000;
+        const int64_t s = mod->last_ts.tv_sec * 100 + mod->last_ts.tv_usec;
+        const int64_t e = tv.tv_sec * 100 + tv.tv_usec;
+        if(e != s)
+        {
+            memcpy(&mod->last_ts, &tv, sizeof(struct timeval));
+            if(s > 0)
+                diff_interval = e - s;
+        }
+
+        if(diff_interval > 0)
+        {
+            if(diff_interval > 1)
+            {
+                for(; diff_interval > 0; --diff_interval)
+                    append_rate(mod, 0);
+            }
+
+            append_rate(mod, mod->ts_count);
+            mod->ts_count = 0;
+        }
+    }
+
+    const uint16_t pid = TS_PID(ts);
+
+    analyze_item_t *item = &mod->stream[pid];
+    const mpegts_packet_type_t type = item->type;
+
+    ++item->packets;
+
+    if(type == MPEGTS_PACKET_NULL)
+        return;
+
+    if(type & MPEGTS_PACKET_PSI)
+    {
+        switch(type)
         {
             case MPEGTS_PACKET_PAT:
-                mpegts_psi_mux(psi, ts, on_pat, mod);
+                mpegts_psi_mux(mod->pat, ts, on_pat, mod);
                 break;
             case MPEGTS_PACKET_CAT:
-                mpegts_psi_mux(psi, ts, on_cat, mod);
+                mpegts_psi_mux(mod->cat, ts, on_cat, mod);
                 break;
             case MPEGTS_PACKET_PMT:
-                mpegts_psi_mux(psi, ts, on_pmt, mod);
+                mod->pmt->pid = pid;
+                mpegts_psi_mux(mod->pmt, ts, on_pmt, mod);
                 break;
             case MPEGTS_PACKET_SDT:
-                mpegts_psi_mux(psi, ts, on_sdt, mod);
+                mpegts_psi_mux(mod->sdt, ts, on_sdt, mod);
                 break;
             default:
                 break;
         }
     }
+
+    // Analyze
+
+    const uint8_t af = TS_AF(ts);
+    // skip packets without payload
+    if(!(af & 0x10))
+        return;
+
+    const uint8_t cc = TS_CC(ts);
+    const uint8_t last_cc = (item->cc + 1) & 0x0F;
+    item->cc = cc;
+
+    if(cc != last_cc)
+        ++item->cc_error;
+
+    if(TS_SC(ts))
+        ++item->sc_error;
+
+    if(!(type & MPEGTS_PACKET_PES))
+        return;
+
+    if(TS_PUSI(ts))
+    {
+        const uint8_t *payload = ts + 4;
+        if(af == 0x30)
+            payload += (ts[4] + 1);
+
+        if(PES_HEADER(payload) != 0x000001)
+            ++item->pes_error;
+    }
 }
 
-static int method_stream_info(module_data_t *mod)
+static void on_check_stat(void *arg)
 {
-    __uarg(mod);
+    module_data_t *mod = arg;
 
+    int items_count = 1;
     lua_newtable(lua);
 
-    return 1;
+    bool on_air = true;
+
+    uint32_t bitrate = 0;
+
+    lua_newtable(lua);
+    for(int i = 0; i < MAX_PID; ++i)
+    {
+        analyze_item_t *item = &mod->stream[i];
+
+        if(item->type == MPEGTS_PACKET_UNKNOWN)
+            continue;
+
+        lua_pushnumber(lua, items_count++);
+        lua_newtable(lua);
+
+        lua_pushnumber(lua, i);
+        lua_setfield(lua, -2, __pid);
+
+        const uint32_t item_bitrate = (item->packets * TS_PACKET_SIZE * 8) / 1000;
+        bitrate += item_bitrate;
+
+        lua_pushnumber(lua, item_bitrate);
+        lua_setfield(lua, -2, "bitrate");
+
+        lua_pushnumber(lua, item->cc_error);
+        lua_setfield(lua, -2, "cc_error");
+        lua_pushnumber(lua, item->sc_error);
+        lua_setfield(lua, -2, "sc_error");
+        lua_pushnumber(lua, item->pes_error);
+        lua_setfield(lua, -2, "pes_error");
+
+        if(item->type == MPEGTS_PACKET_VIDEO)
+        {
+            if(item->sc_error)
+                on_air = false;
+            if(item->pes_error > 2)
+                on_air = false;
+        }
+
+        item->packets = 0;
+        item->cc_error = 0;
+        item->sc_error = 0;
+        item->pes_error = 0;
+
+        lua_settable(lua, -3);
+    }
+    lua_setfield(lua, -2, "analyze");
+
+    const uint32_t half_last_bitrate = mod->last_bitrate / 2;
+    if(bitrate <= half_last_bitrate)
+        on_air = false;
+    else
+        mod->last_bitrate = bitrate;
+
+    lua_pushboolean(lua, on_air);
+    lua_setfield(lua, -2, "on_air");
+
+    do_callback(mod);
+
+    lua_pop(lua, 1); // table
 }
 
 /*
@@ -454,43 +641,48 @@ static int method_stream_info(module_data_t *mod)
 static void module_init(module_data_t *mod)
 {
     module_option_string("name", &mod->name);
-    if(!mod->name)
-    {
-        asc_log_error("[analyze] option 'name' is required");
-        astra_abort();
-    }
+    asc_assert(mod->name != NULL, "[analyze] option 'name' is required");
+
+    lua_getfield(lua, 2, __callback);
+    asc_assert(lua_type(lua, -1) == LUA_TFUNCTION, MSG("option 'callback' is required"));
+    lua_pop(lua, 1);
+
+    module_option_number("rate_stat", &mod->rate_stat);
 
     module_stream_init(mod, on_ts);
 
-    mod->stream[0x00] = mpegts_psi_init(MPEGTS_PACKET_PAT, 0x00);
-    mod->stream[0x01] = mpegts_psi_init(MPEGTS_PACKET_CAT, 0x01);
-    mod->stream[0x11] = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
+    // PAT
+    mod->stream[0x00].type = MPEGTS_PACKET_PAT;
+    mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0x00);
+    // CAT
+    mod->stream[0x01].type = MPEGTS_PACKET_CAT;
+    mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 0x01);
+    // SDT
+    mod->stream[0x11].type = MPEGTS_PACKET_SDT;
+    mod->sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
+    // PMT
+    mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
+    // NULL
+    mod->stream[NULL_TS_PID].type = MPEGTS_PACKET_NULL;
 
-    lua_newtable(lua);
-    mod->stream_ndx = luaL_ref(lua, LUA_REGISTRYINDEX);
+    mod->check_stat = asc_timer_init(1000, on_check_stat, mod);
 }
 
 static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
 
-    for(int i = 0; i < MAX_PID; ++i)
-    {
-        if(mod->stream[i])
-            mpegts_psi_destroy(mod->stream[i]);
-    }
+    mpegts_psi_destroy(mod->pat);
+    mpegts_psi_destroy(mod->cat);
+    mpegts_psi_destroy(mod->sdt);
+    mpegts_psi_destroy(mod->pmt);
 
-    if(mod->stream_ndx)
-    {
-        luaL_unref(lua, LUA_REGISTRYINDEX, mod->stream_ndx);
-        mod->stream_ndx = 0;
-    }
+    asc_timer_destroy(mod->check_stat);
 }
 
 MODULE_STREAM_METHODS()
 MODULE_LUA_METHODS()
 {
-    MODULE_STREAM_METHODS_REF(),
-    { "stream_info", method_stream_info }
+    MODULE_STREAM_METHODS_REF()
 };
 MODULE_LUA_REGISTER(analyze)
