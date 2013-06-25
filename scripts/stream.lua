@@ -27,31 +27,31 @@ end
 --  888    88   888  88o    888      o
 --   888oo88   o888o  88o8 o888ooooo88
 
-local parse_source = {}
+local parse_addr = {}
 
-parse_source.udp = function(addr, source)
+parse_addr.udp = function(addr, result)
     local x = addr:find("@")
     if x then
         if x > 1 then
-            source.localaddr = addr:sub(1, x - 1)
+            result.localaddr = addr:sub(1, x - 1)
         end
         addr = addr:sub(x + 1)
     end
     local x = addr:find(":")
     if x then
-        source.addr = addr:sub(1, x - 1)
-        source.port = tonumber(addr:sub(x + 1))
+        result.addr = addr:sub(1, x - 1)
+        result.port = tonumber(addr:sub(x + 1))
     else
-        source.addr = addr
-        source.port = 1234
+        result.addr = addr
+        result.port = 1234
     end
 end
 
-parse_source.file = function(addr, source)
-    source.filename = addr
+parse_addr.file = function(addr, result)
+    result.filename = addr
 end
 
-function parse_options(options, source)
+function parse_options(options, result)
     local x = options:find("?")
     if x ~= 1 then
         return
@@ -62,7 +62,7 @@ function parse_options(options, source)
         local x = option:find("=")
         if not x then return nil end
         local key = option:sub(1, x - 1)
-        source[key] = option:sub(x + 1)
+        result[key] = option:sub(x + 1)
     end
 
     local pos = 1
@@ -79,17 +79,17 @@ function parse_options(options, source)
 end
 
 function parse_url(url)
-    local x,_,source_type,source_addr,source_options = url:find("^(%a+)://([%a%d%.:@_/%-]+)(.*)$" )
-    if not source_type then
+    local x,_,module_name,url_addr,url_options = url:find("^(%a+)://([%a%d%.:@_/%-]+)(.*)$" )
+    if not module_name then
         return nil
     end
-    if type(parse_source[source_type]) ~= 'function' then return nil end
+    if type(parse_addr[module_name]) ~= 'function' then return nil end
 
-    local source = { type = source_type }
-    parse_source[source_type](source_addr, source)
-    if source_options then parse_options(source_options, source) end
+    local result = { module_name = module_name }
+    parse_addr[module_name](url_addr, result)
+    if url_options then parse_options(url_options, result) end
 
-    return source
+    return result
 end
 
 -- ooooo oooo   oooo oooooooooo ooooo  oooo ooooooooooo
@@ -129,22 +129,13 @@ input_list.file = function(input_conf)
     return { tail = file_input(input_conf) }
 end
 
-function init_input(channel_name, input_conf)
-    if type(input_conf) == 'string' then
-        local input_conf_t = parse_url(input_conf)
-        if not input_conf_t then
-            log.error("[stream.lua] wrong input URL format: " .. input_conf)
-            astra.abort()
-        end
-        input_conf = input_conf_t
-    end
-
-    if not input_conf.type then
-        log.error("[stream.lua] option 'type' is required for input")
+function init_input(channel_data, input_conf)
+    if not input_conf.module_name then
+        log.error("[stream.lua] option 'module_name' is required for input")
         astra.abort()
     end
 
-    local init_input_type = input_list[input_conf.type]
+    local init_input_type = input_list[input_conf.module_name]
     if not init_input_type then
         log.error("[stream.lua] unknown input type")
         astra.abort()
@@ -157,7 +148,7 @@ function init_input(channel_name, input_conf)
     if input_conf.pnr then
         local channel_conf =
         {
-            name = channel_name,
+            name = channel_data.config.name,
             upstream = input_mods.tail:stream(),
             pnr = input_conf.pnr
         }
@@ -179,11 +170,24 @@ function init_input(channel_name, input_conf)
 
     -- TODO: extra modules
 
-    -- input_mods.analyze = analyze({
-    --     upstream = input_mods.tail:stream(),
-    --     name = channel_name
-    -- })
-    -- input_mods.tail = input_mods.analyze
+    input_mods.analyze = analyze({
+        upstream = input_mods.tail:stream(),
+        name = channel_data.config.name,
+        callback = function(data)
+                if data.analyze then
+                    local bitrate = 0
+                    for _,item in pairs(data.analyze) do
+                        bitrate = bitrate + item.bitrate
+                    end
+                    log.info(channel_data.config.name .. ' Bitrate: ' .. bitrate .. ' Kbit/s')
+
+                    if data.on_air ~= input_mods.last_state then
+                        input_mods.last_state = data.on_air
+                        log.info(channel_data.config.name .. ' Input state: ' .. tostring(data.on_air))
+                    end
+                end
+            end
+    })
 
     return input_mods
 end
@@ -207,34 +211,25 @@ output_list.file = function(output_conf)
     return { tail = file_output(output_conf) }
 end
 
-function init_output(channel_name, output_conf, upstream)
-    if type(output_conf) == 'string' then
-        local output_conf_t = parse_url(output_conf)
-        if not output_conf_t then
-            log.error("[stream.lua] wrong output URL format: " .. output_conf)
-            astra.abort()
-        end
-        output_conf = output_conf_t
-    end
-
-    if not output_conf.type then
-        log.error("[stream.lua] option 'type' is required for output")
+function init_output(channel_data, output_conf)
+    if not output_conf.module_name then
+        log.error("[stream.lua] option 'module_name' is required for output")
         astra.abort()
     end
 
-    local init_output_type = output_list[output_conf.type]
+    local init_output_type = output_list[output_conf.module_name]
     if not init_output_type then
         log.error("[stream.lua] unknown output type")
         astra.abort()
     end
 
-    output_conf.upstream = upstream
+    -- TODO: extra modules
+
+    output_conf.upstream = channel_data.tail:stream()
 
     local output_mods = {}
     output_mods.source = init_output_type(output_conf)
     output_mods.tail = output_mods.source.tail
-
-    -- TODO: extra modules
 
     return output_mods
 end
@@ -256,23 +251,38 @@ function make_channel(channel_conf)
         astra.abort()
     end
 
-    local modules =
-    {
-        input = {},
-        output = {}
-    }
-
-    local new_input = init_input(channel_conf.name, channel_conf.input[1])
-    table.insert(modules.input, new_input)
-
-    modules.transmit = transmit({ upstream = new_input.tail:stream() })
-    modules.tail = modules.transmit
-
     if not channel_conf.output then channel_conf.output = {} end
-    for _,output_conf in pairs(channel_conf.output) do
-        local new_output = init_output(channel_name, output_conf, modules.tail:stream())
-        table.insert(modules.output, new_output)
+
+    function parse_conf(list)
+        for key,val in pairs(list) do
+            if type(val) == 'string' then
+                local conf_tmp = parse_url(val)
+                if not conf_tmp then
+                    log.error("[stream.lua] wrong URL format: " .. val)
+                    astra.abort()
+                end
+                list[key] = conf_tmp
+            end
+        end
     end
 
-    channel_conf.__modules = modules
+    parse_conf(channel_conf.input)
+    parse_conf(channel_conf.output)
+
+    local channel_data = {}
+    channel_data.config = channel_conf
+    channel_data.input = {}
+    channel_data.output = {}
+
+    -- Start first input
+    local new_input = init_input(channel_data, channel_conf.input[1])
+    table.insert(channel_data.input, new_input)
+
+    channel_data.transmit = transmit({ upstream = new_input.tail:stream() })
+    channel_data.tail = channel_data.transmit
+
+    for _,output_conf in pairs(channel_conf.output) do
+        local new_output = init_output(channel_data, output_conf)
+        table.insert(channel_data.output, new_output)
+    end
 end
