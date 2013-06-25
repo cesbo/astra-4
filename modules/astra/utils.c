@@ -284,6 +284,23 @@ LUA_API int luaopen_utils(lua_State *L)
         { NULL, NULL }
     };
 
+    lua_getglobal(L, "string");
+
+    lua_pushvalue(L, -1);
+    lua_pushcfunction(L, utils_base64_encode);
+    lua_setfield(L, -2, "base64_encode");
+
+    lua_pushvalue(L, -1);
+    lua_pushcfunction(L, utils_base64_decode);
+    lua_setfield(L, -2, "base64_decode");
+
+    lua_pushvalue(L, -1);
+    lua_pushcfunction(L, utils_sha1);
+    lua_setfield(L, -2, "sha1");
+
+    lua_pop(L, 1); // string
+
+
     luaL_newlib(L, api);
 
     /* readdir */
