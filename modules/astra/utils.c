@@ -13,7 +13,7 @@
  *      utils.hostname()
  *                  - get name of the host
  *      utils.ifaddrs()
- *                  - get network interfaces list
+ *                  - get network interfaces list (except Win32)
  *      utils.stat(path)
  *                  - file/folder information
  *      utils.sha1(string)
@@ -49,6 +49,7 @@ static int utils_hostname(lua_State *L)
     return 1;
 }
 
+#ifndef _WIN32
 static int utils_ifaddrs(lua_State *L)
 {
     struct ifaddrs *ifaddr;
@@ -133,6 +134,7 @@ static int utils_ifaddrs(lua_State *L)
 
     return 1;
 }
+#endif
 
 static int utils_stat(lua_State *L)
 {
@@ -276,7 +278,9 @@ LUA_API int luaopen_utils(lua_State *L)
     static const luaL_Reg api[] =
     {
         { "hostname", utils_hostname },
+#ifndef _WIN32
         { "ifaddrs", utils_ifaddrs },
+#endif
         { "stat", utils_stat },
         { "sha1", utils_sha1 },
         { "base64_encode", utils_base64_encode },

@@ -18,22 +18,16 @@
 #include <linux/dvb/frontend.h>
 #include <linux/dvb/net.h>
 
-struct module_data_t
-{
-    MODULE_LUA_DATA();
+static int count;
+static char dev_name[512];
 
-    int count;
-    char dev_name[512];
-
-    int adapter;
-    int device;
-};
+static int adapter;
+static int device;
 
 static const char __adapter[] = "adapter";
 static const char __device[] = "device";
 
-static void iterate_dir(const char *dir, const char *filter
-                        , void (*callback)(module_data_t *mod, const char *), module_data_t *mod)
+static void iterate_dir(const char *dir, const char *filter, void (*callback)(const char *))
 {
     DIR *dirp = opendir(dir);
     if(!dirp)
@@ -53,7 +47,7 @@ static void iterate_dir(const char *dir, const char *filter
         if(strncmp(entry->d_name, filter, filter_len))
             continue;
         sprintf(&item[item_len], "%s", entry->d_name);
-        callback(mod, item);
+        callback(item);
     } while(1);
 
     closedir(dirp);
@@ -81,11 +75,11 @@ static int get_last_int(const char *str)
     return atoi(&str[i_pos]);
 }
 
-static void check_device_net(module_data_t *mod)
+static void check_device_net(void)
 {
-    sprintf(mod->dev_name, "/dev/dvb/adapter%d/net%d", mod->adapter, mod->device);
+    sprintf(dev_name, "/dev/dvb/adapter%d/net%d", adapter, device);
 
-    int fd = open(mod->dev_name, O_RDWR | O_NONBLOCK);
+    int fd = open(dev_name, O_RDWR | O_NONBLOCK);
     static char dvb_mac[] = "00:00:00:00:00:00";
 
     do
@@ -110,7 +104,7 @@ static void check_device_net(module_data_t *mod)
 
         struct ifreq ifr;
         memset(&ifr, 0, sizeof(ifr));
-        sprintf(ifr.ifr_name, "dvb%d_%d", mod->adapter, mod->device);
+        sprintf(ifr.ifr_name, "dvb%d_%d", adapter, device);
 
         int sock = socket(PF_INET, SOCK_DGRAM, 0);
         if(ioctl(sock, SIOCGIFHWADDR, &ifr) != 0)
@@ -137,17 +131,17 @@ static void check_device_net(module_data_t *mod)
     lua_setfield(lua, -2, "mac");
 }
 
-static void check_device_fe(module_data_t *mod)
+static void check_device_fe(void)
 {
-    sprintf(mod->dev_name, "/dev/dvb/adapter%d/frontend%d", mod->adapter, mod->device);
+    sprintf(dev_name, "/dev/dvb/adapter%d/frontend%d", adapter, device);
 
     int is_busy = 0;
 
-    int fd = open(mod->dev_name, O_RDWR | O_NONBLOCK);
+    int fd = open(dev_name, O_RDWR | O_NONBLOCK);
     if(fd <= 0)
     {
         is_busy = 1;
-        fd = open(mod->dev_name, O_RDONLY | O_NONBLOCK);
+        fd = open(dev_name, O_RDONLY | O_NONBLOCK);
     }
 
     if(fd > 0)
@@ -168,47 +162,40 @@ static void check_device_fe(module_data_t *mod)
     lua_setfield(lua, -2, "frontend");
 }
 
-static void check_device(module_data_t *mod, const char *item)
+static void check_device(const char *item)
 {
-    mod->device = get_last_int(&item[(sizeof("/dev/dvb/adapter") - 1) + (sizeof("/net") - 1)]);
+    device = get_last_int(&item[(sizeof("/dev/dvb/adapter") - 1) + (sizeof("/net") - 1)]);
 
     lua_newtable(lua);
-    lua_pushnumber(lua, mod->adapter);
+    lua_pushnumber(lua, adapter);
     lua_setfield(lua, -2, __adapter);
-    lua_pushnumber(lua, mod->device);
+    lua_pushnumber(lua, device);
     lua_setfield(lua, -2, __device);
-    check_device_fe(mod);
-    check_device_net(mod);
+    check_device_fe();
+    check_device_net();
 
-    ++mod->count;
-    lua_rawseti(lua, -2, mod->count);
+    ++count;
+    lua_rawseti(lua, -2, count);
 }
 
-static void check_adapter(module_data_t *mod, const char *item)
+static void check_adapter(const char *item)
 {
-    mod->adapter = get_last_int(&item[sizeof("/dev/dvb/adapter") - 1]);
-    iterate_dir(item, "net", check_device, mod);
+    adapter = get_last_int(&item[sizeof("/dev/dvb/adapter") - 1]);
+    iterate_dir(item, "net", check_device);
 }
 
-static int dvbls_scan(module_data_t *mod)
+static int dvbls_scan(lua_State *L)
 {
+    __uarg(L);
+
+    count = 0;
     lua_newtable(lua);
-    iterate_dir("/dev/dvb", __adapter, check_adapter, mod);
+    iterate_dir("/dev/dvb", __adapter, check_adapter);
     return 1;
 }
 
-static void module_init(module_data_t *mod)
+LUA_API int luaopen_dvbls(lua_State *L)
 {
-    __uarg(mod);
+    lua_register(L, "dvbls", dvbls_scan);
+    return 1;
 }
-
-static void module_destroy(module_data_t *mod)
-{
-    __uarg(mod);
-}
-
-MODULE_LUA_METHODS()
-{
-    { "scan", dvbls_scan }
-};
-MODULE_LUA_REGISTER(dvbls)
