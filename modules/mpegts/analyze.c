@@ -32,6 +32,12 @@ typedef struct
     uint32_t pes_error; // PES header
 } analyze_item_t;
 
+typedef struct
+{
+    uint16_t pnr;
+    uint32_t crc;
+} pmt_checksum_t;
+
 struct module_data_t
 {
     MODULE_LUA_DATA();
@@ -50,6 +56,9 @@ struct module_data_t
     mpegts_psi_t *pmt;
     mpegts_psi_t *sdt;
 
+    int pmt_count;
+    pmt_checksum_t *pmt_checksum_list;
+
     // rate_stat
     struct timeval last_ts;
     uint32_t ts_count;
@@ -67,13 +76,14 @@ static const char __tsid[] = "tsid";
 static const char __descriptors[] = "descriptors";
 static const char __psi[] = "psi";
 static const char __err[] = "error";
+static const char __callback[] = "callback";
 
 static void do_callback(module_data_t *mod)
 {
     asc_assert((lua_type(lua, -1) == LUA_TTABLE), "table required");
 
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
-    lua_getfield(lua, -1, "callback");
+    lua_getfield(lua, -1, __callback);
     lua_remove(lua, -2);
 
     lua_pushvalue(lua, -2);
@@ -146,6 +156,9 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         PAT_ITEMS_NEXT(psi, pointer);
     }
     lua_setfield(lua, -2, "programs");
+
+    mod->pmt_count = programs_count;
+    mod->pmt_checksum_list = calloc(mod->pmt_count, sizeof(pmt_checksum_t));
 
     do_callback(mod);
     lua_pop(lua, 1); // info
@@ -221,34 +234,50 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 {
     module_data_t *mod = arg;
 
-    // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
-    if(crc32 == psi->crc32)
-        return;
-
-    lua_newtable(lua);
-
-    lua_pushnumber(lua, psi->pid);
-    lua_setfield(lua, -2, __pid);
 
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
+        lua_newtable(lua);
+
+        lua_pushnumber(lua, psi->pid);
+        lua_setfield(lua, -2, __pid);
+
         lua_pushstring(lua, "PMT checksum error");
         lua_setfield(lua, -2, __err);
         do_callback(mod);
         lua_pop(lua, 1); // info
         return;
     }
-    psi->crc32 = crc32;
+
+    const uint16_t pnr = PMT_GET_PNR(psi);
+
+    // check changes
+    for(int i = 0; i < mod->pmt_count; ++i)
+    {
+        if(mod->pmt_checksum_list[i].pnr == pnr || mod->pmt_checksum_list[i].pnr == 0)
+        {
+            if(mod->pmt_checksum_list[i].crc == crc32)
+                return;
+
+            mod->pmt_checksum_list[i].pnr = pnr;
+            mod->pmt_checksum_list[i].crc = crc32;
+            break;
+        }
+    }
+
+    lua_newtable(lua);
+
+    lua_pushnumber(lua, psi->pid);
+    lua_setfield(lua, -2, __pid);
 
     lua_pushstring(lua, "pmt");
     lua_setfield(lua, -2, __psi);
 
-    lua_pushnumber(lua, psi->crc32);
+    lua_pushnumber(lua, crc32);
     lua_setfield(lua, -2, __crc32);
 
-    const uint16_t pnr = PMT_GET_PNR(psi);
     lua_pushnumber(lua, pnr);
     lua_setfield(lua, -2, __pnr);
 
@@ -529,8 +558,6 @@ static void on_check_stat(void *arg)
     int items_count = 1;
     lua_newtable(lua);
 
-    uint32_t bitrate = 0;
-
     lua_newtable(lua);
     for(int i = 0; i < MAX_PID; ++i)
     {
@@ -539,14 +566,16 @@ static void on_check_stat(void *arg)
         if(item->type == MPEGTS_PACKET_UNKNOWN)
             continue;
 
-        bitrate += item->packets;
-        item->packets = 0;
-
         lua_pushnumber(lua, items_count++);
         lua_newtable(lua);
 
         lua_pushnumber(lua, i);
-        lua_setfield(lua, -2, "pid");
+        lua_setfield(lua, -2, __pid);
+
+        const uint32_t item_bitrate = (item->packets * TS_PACKET_SIZE * 8) / 1000;
+
+        lua_pushnumber(lua, item_bitrate);
+        lua_setfield(lua, -2, "bitrate");
 
         lua_pushnumber(lua, item->cc_error);
         lua_setfield(lua, -2, "cc_error");
@@ -555,6 +584,7 @@ static void on_check_stat(void *arg)
         lua_pushnumber(lua, item->pes_error);
         lua_setfield(lua, -2, "pes_error");
 
+        item->packets = 0;
         item->cc_error = 0;
         item->sc_error = 0;
         item->pes_error = 0;
@@ -562,10 +592,6 @@ static void on_check_stat(void *arg)
         lua_settable(lua, -3);
     }
     lua_setfield(lua, -2, "analyze");
-
-    bitrate = (bitrate * TS_PACKET_SIZE * 8) / 1000;
-    lua_pushnumber(lua, bitrate);
-    lua_setfield(lua, -2, "bitrate");
 
     do_callback(mod);
 
@@ -586,7 +612,7 @@ static void module_init(module_data_t *mod)
     module_option_string("name", &mod->name);
     asc_assert(mod->name != NULL, "[analyze] option 'name' is required");
 
-    lua_getfield(lua, 2, "callback");
+    lua_getfield(lua, 2, __callback);
     asc_assert(lua_type(lua, -1) == LUA_TFUNCTION, MSG("option 'callback' is required"));
     lua_pop(lua, 1);
 
