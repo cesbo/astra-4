@@ -167,17 +167,21 @@ function on_analyze(data)
             log.error("Unknown PSI: " .. data.psi)
         end
     elseif data.analyze then
-        log.info("Bitrate: " .. tostring(data.bitrate) .. " Kbit/s")
+        local bitrate = 0
         local cc_error = ""
         local pes_error = ""
         for _,item in pairs(data.analyze) do
+            bitrate = bitrate + item.bitrate
+
             if item.cc_error > 0 then
                 cc_error = cc_error .. "PID:" .. tostring(item.pid) .. "=" .. tostring(item.cc_error) .. " "
             end
+
             if item.pes_error > 0 then
                 pes_error = pes_error .. tostring(item.pid) .. "=" .. tostring(item.pes_error) .. " "
             end
         end
+        log.info("Bitrate: " .. tostring(bitrate) .. " Kbit/s")
         if #cc_error > 0 then log.error("CC: " .. cc_error) end
         if #pes_error > 0 then log.error("PES: " .. pes_error) end
     end

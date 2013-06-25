@@ -13,7 +13,13 @@
  * Module Options:
  *      upstream    - object, stream instance returned by module_instance:stream()
  *      name        - string, analyzer name
- *      callback    - function,
+ *      rate_stat   - boolean, dump bitrate with 10ms interval
+ *      callback    - function(data), events callback:
+                      data.error    - string,
+                      data.psi      - table, psi information (PAT, PMT, CAT, SDT)
+                      data.analyze  - table, per pid information: errors, bitrate
+                      data.on_air   - boolean, comes with data.analyze, stream status
+                      data.rate     - table, rate_stat array
  */
 
 #include <astra.h>
@@ -64,6 +70,9 @@ struct module_data_t
     uint32_t ts_count;
     int rate_count;
     int rate[10];
+
+    // on_air
+    uint32_t last_bitrate;
 };
 
 #define MSG(_msg) "[analyze %s] " _msg, mod->name
@@ -558,6 +567,10 @@ static void on_check_stat(void *arg)
     int items_count = 1;
     lua_newtable(lua);
 
+    bool on_air = true;
+
+    uint32_t bitrate = 0;
+
     lua_newtable(lua);
     for(int i = 0; i < MAX_PID; ++i)
     {
@@ -573,6 +586,7 @@ static void on_check_stat(void *arg)
         lua_setfield(lua, -2, __pid);
 
         const uint32_t item_bitrate = (item->packets * TS_PACKET_SIZE * 8) / 1000;
+        bitrate += item_bitrate;
 
         lua_pushnumber(lua, item_bitrate);
         lua_setfield(lua, -2, "bitrate");
@@ -584,6 +598,14 @@ static void on_check_stat(void *arg)
         lua_pushnumber(lua, item->pes_error);
         lua_setfield(lua, -2, "pes_error");
 
+        if(item->type == MPEGTS_PACKET_VIDEO)
+        {
+            if(item->sc_error)
+                on_air = false;
+            if(item->pes_error > 2)
+                on_air = false;
+        }
+
         item->packets = 0;
         item->cc_error = 0;
         item->sc_error = 0;
@@ -592,6 +614,15 @@ static void on_check_stat(void *arg)
         lua_settable(lua, -3);
     }
     lua_setfield(lua, -2, "analyze");
+
+    const uint32_t half_last_bitrate = mod->last_bitrate / 2;
+    if(bitrate <= half_last_bitrate)
+        on_air = false;
+    else
+        mod->last_bitrate = bitrate;
+
+    lua_pushboolean(lua, on_air);
+    lua_setfield(lua, -2, "on_air");
 
     do_callback(mod);
 
