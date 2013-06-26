@@ -15,11 +15,11 @@
  *      name        - string, analyzer name
  *      rate_stat   - boolean, dump bitrate with 10ms interval
  *      callback    - function(data), events callback:
-                      data.error    - string,
-                      data.psi      - table, psi information (PAT, PMT, CAT, SDT)
-                      data.analyze  - table, per pid information: errors, bitrate
-                      data.on_air   - boolean, comes with data.analyze, stream status
-                      data.rate     - table, rate_stat array
+ *                    data.error    - string,
+ *                    data.psi      - table, psi information (PAT, PMT, CAT, SDT)
+ *                    data.analyze  - table, per pid information: errors, bitrate
+ *                    data.on_air   - boolean, comes with data.analyze, stream status
+ *                    data.rate     - table, rate_stat array
  */
 
 #include <astra.h>
