@@ -12,7 +12,7 @@
  *
  * Module Options:
  *      upstream    - object, stream instance returned by module_instance:stream()
- *      demux       - object, demux instance returned by module_instance:demux()
+ *      name        - string, channel name
  *      pnr         - number, join PID related to the program number
  *      caid        - number, CAID to join CAS PID (CAT,EMM,ECM)
  *      sdt         - boolean, join SDT table
@@ -368,16 +368,23 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
  *
  */
 
+static void join_pid(module_data_t *mod, uint16_t pid)
+{
+    module_stream_demux_join_pid(mod, pid);
+}
+
+static void leave_pid(module_data_t *mod, uint16_t pid)
+{
+    module_stream_demux_leave_pid(mod, pid);
+}
+
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, on_ts);
+    module_stream_demux_set(mod, join_pid, leave_pid);
 
     module_option_string("name", &mod->name);
-    if(!mod->name)
-    {
-        asc_log_error("[channel] option 'name' is required");
-        astra_abort();
-    }
+    asc_assert(mod->name != NULL, "[channel] option 'name' is required");
 
     if(module_option_number("pnr", &mod->pnr))
     {
