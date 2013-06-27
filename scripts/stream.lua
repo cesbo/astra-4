@@ -1,4 +1,6 @@
 
+log.info("Starting Astra " .. astra.version)
+
 function dump_table(t, p, i)
     if not p then p = print end
     if not i then
@@ -92,6 +94,50 @@ function parse_url(url)
     return result
 end
 
+-- oooooooooo  ooooooooooo  oooooooo8 ooooooooooo oooooooooo ooooo  oooo ooooooooooo
+--  888    888  888    88  888         888    88   888    888 888    88   888    88
+--  888oooo88   888ooo8     888oooooo  888ooo8     888oooo88   888  88    888ooo8
+--  888  88o    888    oo          888 888    oo   888  88o     88888     888    oo
+-- o888o  88o8 o888ooo8888 o88oooo888 o888ooo8888 o888o  88o8    888     o888ooo8888
+
+function start_reserve(channel_data)
+    function set_input()
+        for input_id = 1, #channel_data.input do
+            local input_data = channel_data.input[input_id]
+            if input_data.on_air then
+                log.info("[" .. channel_data.config.name .. "] Activate input " .. input_id)
+                channel_data.transmit:set_upstream(input_data.tail:stream())
+                return input_id
+            end
+        end
+        return 0
+    end
+
+    local active_input_id = set_input()
+
+    if active_input_id == 0 then
+        for input_id = 2, #channel_data.input do
+            local input_data = channel_data.input[input_id]
+            if not input_data.source then
+                init_input(channel_data, input_id)
+                return nil
+            end
+        end
+
+        log.error("[" .. channel_data.config.name .. "] Inputs are not working")
+        return
+    end
+
+    for input_id = active_input_id + 1, #channel_data.input do
+        local input_data = channel_data.input[input_id]
+        if input_data.source then
+            log.debug("[" .. channel_data.config.name .. "] Destroy input " .. input_id)
+            channel_data.input[input_id] = { on_air = false, }
+        end
+    end
+    collectgarbage()
+end
+
 -- ooooo oooo   oooo oooooooooo ooooo  oooo ooooooooooo
 --  888   8888o  88   888    888 888    88  88  888  88
 --  888   88 888o88   888oooo88  888    88      888
@@ -129,7 +175,9 @@ input_list.file = function(input_conf)
     return { tail = file_input(input_conf) }
 end
 
-function init_input(channel_data, input_conf)
+function init_input(channel_data, input_id)
+    local input_conf = channel_data.config.input[input_id]
+
     if not input_conf.module_name then
         log.error("[stream.lua] option 'module_name' is required for input")
         astra.abort()
@@ -137,59 +185,53 @@ function init_input(channel_data, input_conf)
 
     local init_input_type = input_list[input_conf.module_name]
     if not init_input_type then
-        log.error("[stream.lua] unknown input type")
+        log.error("[" .. channel_data.config.name .. "] Unknown type of input " .. input_id)
         astra.abort()
     end
 
-    local input_mods = {}
-    input_mods.source = init_input_type(input_conf)
-    input_mods.tail = input_mods.source.tail
+    local input_data = {}
+    input_data.source = init_input_type(input_conf)
+    input_data.tail = input_data.source.tail
 
     if input_conf.pnr then
         local channel_conf =
         {
             name = channel_data.config.name,
-            upstream = input_mods.tail:stream(),
+            upstream = input_data.tail:stream(),
             pnr = input_conf.pnr
         }
         if input_conf.caid then channel_conf.caid = input_conf.caid end
         if input_conf.sdt then channel_conf.sdt = input_conf.sdt end
         if input_conf.eit then channel_conf.eit = input_conf.eit end
 
-        input_mods.channel = channel(channel_conf)
-        input_mods.tail = input_mods.channel
+        input_data.channel = channel(channel_conf)
+        input_data.tail = input_data.channel
     end
 
     if input_conf.biss then
-        input_mods.decrypt = decrypt({
-            upstream = input_mods.tail:stream(),
+        input_data.decrypt = decrypt({
+            upstream = input_data.tail:stream(),
             biss = input_conf.biss
         })
-        input_mods.tail = input_mods.decrypt
+        input_data.tail = input_data.decrypt
     end
 
     -- TODO: extra modules
 
-    input_mods.analyze = analyze({
-        upstream = input_mods.tail:stream(),
+    input_data.analyze = analyze({
+        upstream = input_data.tail:stream(),
         name = channel_data.config.name,
         callback = function(data)
                 if data.analyze then
-                    local bitrate = 0
-                    for _,item in pairs(data.analyze) do
-                        bitrate = bitrate + item.bitrate
-                    end
-                    log.info(channel_data.config.name .. ' Bitrate: ' .. bitrate .. ' Kbit/s')
-
-                    if data.on_air ~= input_mods.last_state then
-                        input_mods.last_state = data.on_air
-                        log.info(channel_data.config.name .. ' Input state: ' .. tostring(data.on_air))
+                    if data.on_air ~= input_data.on_air then
+                        input_data.on_air = data.on_air
+                        start_reserve(channel_data)
                     end
                 end
             end
     })
 
-    return input_mods
+    channel_data.input[input_id] = input_data
 end
 
 --   ooooooo  ooooo  oooo ooooooooooo oooooooooo ooooo  oooo ooooooooooo
@@ -211,7 +253,9 @@ output_list.file = function(output_conf)
     return { tail = file_output(output_conf) }
 end
 
-function init_output(channel_data, output_conf)
+function init_output(channel_data, output_id)
+    local output_conf = channel_data.config.output[output_id]
+
     if not output_conf.module_name then
         log.error("[stream.lua] option 'module_name' is required for output")
         astra.abort()
@@ -219,19 +263,17 @@ function init_output(channel_data, output_conf)
 
     local init_output_type = output_list[output_conf.module_name]
     if not init_output_type then
-        log.error("[stream.lua] unknown output type")
+        log.error("[" .. channel_data.config.name .. "] Unknown type of output " .. output_id)
         astra.abort()
     end
 
     -- TODO: extra modules
 
     output_conf.upstream = channel_data.tail:stream()
+    local output_data = {}
+    output_data.instance = init_output_type(output_conf)
 
-    local output_mods = {}
-    output_mods.source = init_output_type(output_conf)
-    output_mods.tail = output_mods.source.tail
-
-    return output_mods
+    channel_data.output[output_id] = output_data
 end
 
 --   oooooooo8 ooooo ooooo      o      oooo   oooo oooo   oooo ooooooooooo ooooo
@@ -247,7 +289,7 @@ function make_channel(channel_conf)
     end
 
     if not channel_conf.input or #channel_conf.input == 0 then
-        log.error("[stream.lua] option 'input' is required")
+        log.error("[stream.lua " .. channel_conf.name .. "] option 'input' is required")
         astra.abort()
     end
 
@@ -274,15 +316,15 @@ function make_channel(channel_conf)
     channel_data.input = {}
     channel_data.output = {}
 
-    -- Start first input
-    local new_input = init_input(channel_data, channel_conf.input[1])
-    table.insert(channel_data.input, new_input)
+    for input_id = 1, #channel_conf.input do
+        channel_data.input[input_id] = { on_air = false, }
+    end
+    init_input(channel_data, 1)
 
-    channel_data.transmit = transmit({ upstream = new_input.tail:stream() })
+    channel_data.transmit = transmit({})
     channel_data.tail = channel_data.transmit
 
-    for _,output_conf in pairs(channel_conf.output) do
-        local new_output = init_output(channel_data, output_conf)
-        table.insert(channel_data.output, new_output)
+    for output_id,_ in pairs(channel_conf.output) do
+        init_output(channel_data, output_id)
     end
 end
