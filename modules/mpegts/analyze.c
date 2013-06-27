@@ -419,7 +419,7 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
         while(!SDT_ITEM_DESC_EOL(pointer, desc_pointer))
         {
             lua_pushnumber(lua, descriptors_count++);
-            lua_pushlstring(lua, (const char *)desc_pointer, 2 + desc_pointer[1]);
+            mpegts_desc_to_lua(desc_pointer);
             lua_settable(lua, -3);
 
             SDT_ITEM_DESC_NEXT(pointer, desc_pointer);
@@ -507,7 +507,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     if(type == MPEGTS_PACKET_NULL)
         return;
 
-    if(type & MPEGTS_PACKET_PSI)
+    if(type & (MPEGTS_PACKET_PSI | MPEGTS_PACKET_SI))
     {
         switch(type)
         {

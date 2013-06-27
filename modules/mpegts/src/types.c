@@ -104,6 +104,109 @@ const char * mpeg4_profile_level_name(uint8_t type_id)
     }
 }
 
+static void push_iso8859_1_text(luaL_Buffer *b, const uint8_t *data, uint8_t size)
+{
+    for(uint8_t i = 0; i < size; ++i)
+    {
+        uint8_t c = data[i];
+        if(c < 0x80)
+        {
+            luaL_addchar(b, c);
+        }
+        else
+        {
+            luaL_addchar(b, 0xC0 | ((c & 0xC0) >> 6));
+            luaL_addchar(b, 0x80 | (c & 0x3F));
+        }
+    }
+}
+
+static void push_iso8859_5_text(luaL_Buffer *b, const uint8_t *data, uint8_t size)
+{
+    uint8_t c, u1, u2;
+
+    for(uint8_t i = 0; i < size; ++i)
+    {
+        c = data[i];
+
+        if(c < 0x80)
+        {
+            luaL_addchar(b, c);
+            continue;
+        }
+
+        u1 = 0xD0;
+        u2 = 0x80 | (c & 0x1F);
+
+        if(c >= 0xE0) u1 |= 0x01;
+        else if(c >= 0xC0) u2 |= 0x20;
+
+        luaL_addchar(b, u1);
+        luaL_addchar(b, u2);
+    }
+}
+
+static void push_iso8859_7_text(luaL_Buffer *b, const uint8_t *data, uint8_t size)
+{
+    uint8_t c, u1, u2;
+
+    for(uint8_t i = 0; i < size; ++i)
+    {
+        c = data[i];
+
+        if(c < 0x80)
+        {
+            luaL_addchar(b, c);
+            continue;
+        }
+
+        u1 = 0xCE;
+        u2 = c - 0x30;
+
+        if(c >= 0xF0)
+        {
+            u1 |= 0x01;
+            u2 -= 0x40;
+        }
+
+        luaL_addchar(b, u1);
+        luaL_addchar(b, u2);
+    }
+}
+
+static void push_description_text(const uint8_t *data)
+{
+    char s[3];
+
+    luaL_Buffer b;
+    luaL_buffinit(lua, &b);
+
+    const uint8_t size = *data++;
+    const uint8_t charset_id = *data;
+
+    switch(charset_id)
+    {
+        case 0x01: push_iso8859_5_text(&b, &data[1], size - 1); break; // Cyrillic
+        case 0x03: push_iso8859_7_text(&b, &data[1], size - 1); break; // Greek
+        default:
+        {
+            if(charset_id >= 0x20)
+                push_iso8859_1_text(&b, data, size);
+            else
+            {
+                luaL_addstring(&b, "unknown charset: 0x");
+                for(uint8_t i = 0; i < size; ++i)
+                {
+                    snprintf(s, sizeof(s), "%02X", data[i]);
+                    luaL_addstring(&b, s);
+                }
+            }
+        }
+    }
+
+    luaL_pushresult(&b);
+}
+
 #define HEX_PREFIX_SIZE 2
 #define LINE_END_SIZE 1
 
@@ -168,6 +271,26 @@ void mpegts_desc_to_lua(const uint8_t *desc)
             sprintf(data, "%c%c%c", desc[2], desc[3], desc[4]);
             lua_pushstring(lua, data);
             lua_setfield(lua, -2, __lang);
+            break;
+        }
+        case 0x48:
+        { /* Service Descriptor */
+            lua_pushstring(lua, "service");
+            lua_setfield(lua, -2, __type_name);
+
+            lua_pushnumber(lua, desc[2]);
+            lua_setfield(lua, -2, "service_type_id");
+
+            desc += 3;
+            // service provider
+            push_description_text(desc);
+            lua_setfield(lua, -2, "service_provider");
+
+            desc += desc[0] + 1;
+            // service name
+            push_description_text(desc);
+            lua_setfield(lua, -2, "service_name");
+
             break;
         }
         case 0x52:
