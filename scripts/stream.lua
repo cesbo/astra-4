@@ -33,13 +33,21 @@ local parse_option = {}
 
 --
 
+local ifaddrs
+if utils.ifaddrs then ifaddrs = utils.ifaddrs() end
+
 local parse_addr = {}
 
 parse_addr.udp = function(addr, result)
     local x = addr:find("@")
     if x then
         if x > 1 then
-            result.localaddr = addr:sub(1, x - 1)
+            local localaddr = addr:sub(1, x - 1)
+            if ifaddrs and ifaddrs[localaddr] and ifaddrs[localaddr].ipv4 then
+                result.localaddr = ifaddrs[localaddr].ipv4[1]
+            else
+                result.localaddr = localaddr
+            end
         end
         addr = addr:sub(x + 1)
     end
