@@ -24,7 +24,7 @@
 #include <stdint.h>
 #include <modules/astra/base.h>
 
-#define EM_MAX_SIZE 400
+#define EM_MAX_SIZE 512
 
 /*
  * Initializing:
