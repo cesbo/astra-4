@@ -29,6 +29,10 @@ end
 --  888    88   888  88o    888      o
 --   888oo88   o888o  88o8 o888ooooo88
 
+local parse_option = {}
+
+--
+
 local parse_addr = {}
 
 parse_addr.udp = function(addr, result)
@@ -60,21 +64,26 @@ function parse_options(options, result)
     end
     options = options:sub(2)
 
-    function parse_option(option)
+    function parse_key_val(option)
         local x = option:find("=")
         if not x then return nil end
         local key = option:sub(1, x - 1)
-        result[key] = option:sub(x + 1)
+        local val = option:sub(x + 1)
+        if parse_option[key] then
+            parse_option[key](val, result)
+        else
+            result[key] = val
+        end
     end
 
     local pos = 1
     while true do
         local x = options:find("&", pos)
         if x then
-            parse_option(options:sub(pos, x - 1))
+            parse_key_val(options:sub(pos, x - 1))
             pos = x + 1
         else
-            parse_option(options:sub(pos))
+            parse_key_val(options:sub(pos))
             return nil
         end
     end
