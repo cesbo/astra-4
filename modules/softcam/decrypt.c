@@ -26,6 +26,8 @@
  *      upstream    - object, stream instance returned by module_instance:stream()
  *      biss        - string, BISS key, 16 chars length. example: biss = "1122330044556600"
  *      cam         - object, cam instance returned by cam_module_instance:cam()
+ *      caid        - number, CAID to select CAS
+ *      cas_data    - string, additional paramters for CAS
  */
 
 #include <astra.h>
@@ -36,9 +38,11 @@ struct module_data_t
 {
     MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
+    MODULE_DECRYPT_DATA();
 
     /* Config */
     const char *name;
+    int caid;
 
     /* Buffer */
     uint8_t *buffer; // r_buffer + s_buffer
@@ -61,8 +65,6 @@ struct module_data_t
 
     int pmt_pnr;
     int pmt_pid;
-
-    cam_t *cam;
 };
 
 #define MSG(_msg) "[decrypt %s] " _msg, mod->name
@@ -256,12 +258,25 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
  *
  */
 
+static void on_cam_ready(module_data_t *mod)
+{
+    //
+}
+
+static void on_cam_error(module_data_t *mod)
+{
+    //
+}
+
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, on_ts);
 
     module_option_string("name", &mod->name);
     asc_assert(mod->name != NULL, "[decrypt] option 'name' is required");
+
+    module_option_number("caid", &mod->caid);
+    asc_assert(mod->caid > 0 && mod->caid < 0xFFFF, MSG("option 'caid' is required"));
 
     mod->ffdecsa = get_key_struct();
     mod->cluster_size = get_suggested_cluster_size();
@@ -285,17 +300,37 @@ static void module_init(module_data_t *mod)
     }
     set_control_words(mod->ffdecsa, first_key, first_key);
 
+    // module_decrypt_init(mod, on_cam_ready, on_cam_error);
+    mod->__decrypt.self = mod;
+    mod->__decrypt.on_cam_ready = on_cam_ready;
+    mod->__decrypt.on_cam_error = on_cam_error;
+
     lua_getfield(lua, 2, "cam");
     if(!lua_isnil(lua, -1))
     {
-        if(lua_type(lua, -1) != LUA_TLIGHTUSERDATA)
-        {
-            asc_log_error(MSG("option 'cam' required cam-module instance"));
-            astra_abort();
-        }
-        mod->cam = lua_touserdata(lua, -1);
+        asc_assert(lua_type(lua, -1) == LUA_TLIGHTUSERDATA
+                   , "option 'cam' required cam-module instance");
+        mod->__decrypt.cam = lua_touserdata(lua, -1);
+
+        asc_list_insert_tail(mod->__decrypt.cam->decrypt_list, &mod->__decrypt);
+        if(mod->__decrypt.cam->is_ready)
+            mod->__decrypt.on_cam_ready(mod);
     }
-    lua_pop(lua, 1); // cam
+    lua_pop(lua, 1);
+
+    if(mod->__decrypt.cam)
+    {
+        uint8_t cas_data[32] = { 0 };
+        const char *value = NULL;
+        module_option_string("cas_data", &value);
+        if(value)
+        {
+            str_to_hex(value, cas_data, sizeof(cas_data));
+        }
+
+        // TODO: init CAS by CAID with cas_data
+    }
+    // ---
 
     mod->buffer = malloc(mod->cluster_size_bytes * 2);
     mod->r_buffer = mod->buffer; // s_buffer = NULL
@@ -307,6 +342,14 @@ static void module_init(module_data_t *mod)
 static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
+
+    // module_decrypt_destroy(mod);
+    if(mod->__decrypt.cam)
+    {
+        // TODO: if(_mod->__decrypt.cam) remove packets from CAM queue
+        asc_list_remove_item(mod->__decrypt.cam->decrypt_list, &mod->__decrypt);
+    }
+    // ---
 
     free_key_struct(mod->ffdecsa);
     free(mod->cluster);

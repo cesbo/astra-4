@@ -21,8 +21,7 @@
 #ifndef _MODULE_CAM_H_
 #define _MODULE_CAM_H_ 1
 
-#include <stdint.h>
-#include <modules/astra/base.h>
+#include <astra.h>
 
 #define EM_MAX_SIZE 512
 
@@ -61,6 +60,76 @@ struct em_packet_t
 };
 
 /*
+ *   oooooooo8     o      oooo     oooo
+ * o888     88    888      8888o   888
+ * 888           8  88     88 888o8 88
+ * 888o     oo  8oooo88    88  888  88
+ *  888oooo88 o88o  o888o o88o  8  o88o
+ *
+ */
+
+typedef struct
+{
+    int is_ready;
+
+    uint16_t caid;
+    uint8_t ua[8];
+    int disable_emm;
+
+    asc_list_t *prov_list;
+    asc_list_t *decrypt_list;
+
+    module_data_t *self;
+} module_cam_t;
+
+#define MODULE_CAM_DATA() module_cam_t __cam
+
+#define module_cam_set_provider(_mod, _provider)                                                \
+    asc_list_insert_tail(_mod->__cam.prov_list, _provider);
+
+#define module_cam_reset(_mod)                                                                  \
+    {                                                                                           \
+        for(asc_list_first(mod->__cam.prov_list)                                                \
+            ; !asc_list_eol(mod->__cam.prov_list)                                               \
+            ; asc_list_first(mod->__cam.prov_list))                                             \
+        {                                                                                       \
+            asc_list_remove_current(mod->__cam.prov_list);                                      \
+        }                                                                                       \
+    }
+
+#define module_cam_init(_mod)                                                                   \
+    {                                                                                           \
+        _mod->__cam.self = _mod;                                                                \
+        _mod->__cam.decrypt_list = asc_list_init();                                             \
+        _mod->__cam.prov_list = asc_list_init();                                                \
+    }
+
+#define module_cam_destroy(_mod)                                                                \
+    {                                                                                           \
+        module_cam_reset(_mod);                                                                 \
+        for(asc_list_first(_mod->__cam.decrypt_list)                                            \
+            ; !asc_list_eol(_mod->__cam.decrypt_list)                                           \
+            ; asc_list_first(_mod->__cam.decrypt_list))                                         \
+        {                                                                                       \
+            module_decrypt_t *__decrypt = asc_list_data(_mod->__cam.decrypt_list);              \
+            __decrypt->on_cam_error(__decrypt->self);                                           \
+            asc_list_remove_current(_mod->__cam.decrypt_list);                                  \
+        }                                                                                       \
+        asc_list_destroy(_mod->__cam.decrypt_list);                                             \
+        asc_list_destroy(_mod->__cam.prov_list);                                                \
+    }
+
+#define MODULE_CAM_METHODS()                                                                    \
+    static int module_cam_cam(module_data_t *mod)                                               \
+    {                                                                                           \
+        lua_pushlightuserdata(lua, &mod->__cam);                                                \
+        return 1;                                                                               \
+    }
+
+#define MODULE_CAM_METHODS_REF()                                                                \
+    { "cam", module_cam_cam }
+
+/*
  *   oooooooo8     o       oooooooo8
  * o888     88    888     888
  * 888           8  88     888oooooo
@@ -90,38 +159,25 @@ int cas_check_em(cas_t *cas, em_packet_t *packet);
 int cas_check_keys(cas_t *cas, em_packet_t *packet);
 
 /*
- *   oooooooo8     o      oooo     oooo
- * o888     88    888      8888o   888
- * 888           8  88     88 888o8 88
- * 888o     oo  8oooo88    88  888  88
- *  888oooo88 o88o  o888o o88o  8  o88o
+ * ooooooooo  ooooooooooo  oooooooo8 oooooooooo ooooo  oooo oooooooooo  ooooooooooo
+ *  888    88o 888    88 o888     88  888    888  888  88    888    888 88  888  88
+ *  888    888 888ooo8   888          888oooo88     888      888oooo88      888
+ *  888    888 888    oo 888o     oo  888  88o      888      888            888
+ * o888ooo88  o888ooo8888 888oooo88  o888o  88o8   o888o    o888o          o888o
  *
  */
 
 typedef struct
 {
-    uint16_t caid;
-    uint8_t ua[8];
-    int disable_emm;
+    module_cam_t *cam;
+    cas_t *cas;
+
+    void (*on_cam_ready)(module_data_t *mod);
+    void (*on_cam_error)(module_data_t *mod);
 
     module_data_t *self;
-} cam_t;
+} module_decrypt_t;
 
-#define MODULE_CAM_DATA() cam_t __cam
-
-#define module_cam_init(_mod)                                                                   \
-    _mod->__cam.self = _mod
-
-#define module_cam_destroy(_mod)
-
-#define MODULE_CAM_METHODS()                                                                    \
-    static int module_cam_cam(module_data_t *mod)                                               \
-    {                                                                                           \
-        lua_pushlightuserdata(lua, &mod->__cam);                                                \
-        return 1;                                                                               \
-    }
-
-#define MODULE_CAM_METHODS_REF()                                                                \
-    { "cam", module_cam_cam }
+#define MODULE_DECRYPT_DATA() module_decrypt_t __decrypt
 
 #endif /* _MODULE_CAM_H_ */

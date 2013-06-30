@@ -43,14 +43,14 @@ struct module_data_t
     MODULE_CAM_DATA();
 
     /* Config */
-    char *name;
+    const char *name;
 
-    char *host;
+    const char *host;
     int port;
     int timeout;
 
-    char *user;
-    char *pass;
+    const char *user;
+    const char *pass;
     uint8_t key[14];
 
     /* Base */
@@ -152,7 +152,7 @@ static uint8_t xor_sum(const uint8_t *mem, int len)
  */
 
 static void newcamd_connect(void *);
-static void newcamd_disconnect(module_data_t *, int);
+static void newcamd_disconnect(module_data_t *);
 
 static void timeout_timer_callback(void *arg)
 {
@@ -178,7 +178,7 @@ static void timeout_timer_callback(void *arg)
             break;
     }
 
-    newcamd_disconnect(mod, 0);
+    newcamd_disconnect(mod);
     newcamd_connect(mod);
 }
 
@@ -458,7 +458,7 @@ static int newcamd_login_3(module_data_t *mod)
         uint8_t *p = &mod->prov_buffer[i * info_size];
         memcpy(&p[0], &buffer[15 + (11 * i)], 3);
         memcpy(&p[3], &buffer[18 + (11 * i)], 8);
-        // TODO: append to the prov_list
+        module_cam_set_provider(mod, p);
         asc_log_info(MSG("Prov:%d ID:%s SA:%s"), i
                      , hex_to_str(hex_str, &p[0], 3)
                      , hex_to_str(&hex_str[8], &p[3], 8));
@@ -535,7 +535,7 @@ static void on_close(void *arg)
     module_data_t *mod = arg;
 
     asc_log_error(MSG("failed to read from socket [%s]"), strerror(errno));
-    newcamd_disconnect(mod, 0);
+    newcamd_disconnect(mod);
     newcamd_timeout_set(mod);
 }
 
@@ -573,7 +573,7 @@ static void on_connect_error(void *arg)
     module_data_t *mod = arg;
 
     asc_log_error(MSG("socket not ready [%s]"), asc_socket_error());
-    newcamd_disconnect(mod, 0);
+    newcamd_disconnect(mod);
     newcamd_timeout_set(mod);
 }
 
@@ -602,7 +602,7 @@ static void newcamd_connect(void *arg)
     asc_socket_connect(mod->sock, mod->host, mod->port, on_connect, on_connect_error);
 }
 
-static void newcamd_disconnect(module_data_t *mod, int status)
+static void newcamd_disconnect(module_data_t *mod)
 {
     newcamd_timeout_unset(mod);
 
@@ -613,24 +613,50 @@ static void newcamd_disconnect(module_data_t *mod, int status)
     }
     mod->status = NEWCAMD_UNKNOWN;
 
-    // list_t *i = mod->__cam_module.prov_list;
-    // while(i)
-    //     i = list_delete(i, NULL);
-    // mod->__cam_module.prov_list = NULL;
+    module_cam_reset(mod);
 }
 
 static void module_init(module_data_t *mod)
 {
+    module_option_string("name", &mod->name);
+    asc_assert(mod->name != NULL, "[newcamd] option 'name' is required");
 
+    module_option_string("host", &mod->host);
+    asc_assert(mod->host != NULL, MSG("option 'host' is required"));
+    module_option_number("port", &mod->port);
+    asc_assert(mod->port > 0 && mod->port < 65535, MSG("option 'port' is required"));
+
+    module_option_string("user", &mod->user);
+    asc_assert(mod->user != NULL, MSG("option 'user' is required"));
+    module_option_string("pass", &mod->pass);
+    asc_assert(mod->pass != NULL, MSG("option 'pass' is required"));
+
+    const char *key = NULL;
+    module_option_string("key", &key);
+    asc_assert(key != NULL, MSG("option 'key' is required"));
+    str_to_hex(key, mod->key, sizeof(mod->key));
+
+    module_option_number("timeout", &mod->timeout);
+    if(!mod->timeout)
+        mod->timeout = 8;
+    mod->timeout *= 1000;
+
+    module_cam_init(mod);
 }
 
 static void module_destroy(module_data_t *mod)
 {
+    newcamd_disconnect(mod);
 
+    if(mod->prov_buffer)
+        free(mod->prov_buffer);
+
+    module_cam_destroy(mod);
 }
 
+MODULE_CAM_METHODS()
 MODULE_LUA_METHODS()
 {
-    { NULL, NULL }
+    MODULE_CAM_METHODS_REF()
 };
 MODULE_LUA_REGISTER(newcamd)
