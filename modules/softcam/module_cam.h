@@ -25,6 +25,12 @@
 
 #define EM_MAX_SIZE 512
 
+typedef struct module_decrypt_t module_decrypt_t;
+typedef struct module_cam_t module_cam_t;
+typedef struct module_cas_t module_cas_t;
+
+typedef struct em_packet_t em_packet_t;
+
 /*
  * oooooooooo   o       oooooooo8 oooo   oooo ooooooooooo ooooooooooo
  *  888    888 888    o888     88  888  o88    888    88  88  888  88
@@ -34,16 +40,12 @@
  *
  */
 
-typedef struct em_packet_t em_packet_t;
 struct em_packet_t
 {
     uint8_t buffer[EM_MAX_SIZE];
     uint16_t buffer_size;
 
-    uint16_t pnr;
-
-    void (*on_key)(module_data_t *mod, em_packet_t *packet);
-    module_data_t *mod;
+    module_decrypt_t *decrypt;
 };
 
 /*
@@ -55,7 +57,7 @@ struct em_packet_t
  *
  */
 
-typedef struct
+struct module_cam_t
 {
     int is_ready;
 
@@ -67,7 +69,7 @@ typedef struct
     asc_list_t *decrypt_list;
 
     module_data_t *self;
-} module_cam_t;
+};
 
 #define MODULE_CAM_DATA() module_cam_t __cam
 
@@ -126,13 +128,13 @@ typedef struct
  */
 
 typedef struct cas_data_t cas_data_t;
-typedef struct module_cas_t module_cas_t;
 
 struct module_cas_t
 {
-    module_cas_t * (*init)(uint16_t caid, uint8_t *cas_data);
+    module_cas_t * (*init)(uint16_t caid, const uint8_t *cas_data);
+    bool (*check_descriptor)(module_cas_t *cas, const uint8_t *desc);
     bool (*check_em)(module_cas_t *cas, mpegts_psi_t *em);
-    bool (*check_key)(module_cas_t *cas, uint8_t parity, uint8_t *key);
+    bool (*check_key)(module_cas_t *cas, uint8_t parity, const uint8_t *key);
 
     cas_data_t *data;
 };
@@ -140,6 +142,7 @@ struct module_cas_t
 module_cas_t * cas_module_init(uint16_t caid, uint8_t *cas_data);
 void cas_module_destroy(module_cas_t *cas);
 
+#define cas_module_check_descriptor(_cas, _desc) _cas->check_descriptor(_cas, _desc)
 #define cas_module_check_em(_cas, _em) _cas->check_em(_cas, _em)
 #define cas_module_check_key(_cas, _parity, _key) _cas->check_key(_cas, _parity, _key)
 
@@ -152,8 +155,10 @@ void cas_module_destroy(module_cas_t *cas);
  *
  */
 
-typedef struct
+struct module_decrypt_t
 {
+    uint16_t pnr;
+
     module_cam_t *cam;
     module_cas_t *cas;
 
@@ -162,7 +167,7 @@ typedef struct
     void (*on_key)(module_data_t *mod, uint8_t parity, uint8_t *key);
 
     module_data_t *self;
-} module_decrypt_t;
+};
 
 #define MODULE_DECRYPT_DATA() module_decrypt_t __decrypt
 

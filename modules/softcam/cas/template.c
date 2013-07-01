@@ -25,24 +25,29 @@ struct cas_data_t
     int empty;
 };
 
-static bool template_check_em(module_cas_t *cas, mpegts_psi_t *em)
+static bool check_em(module_cas_t *cas, mpegts_psi_t *em)
 {
     return false;
 }
 
-static bool template_check_key(module_cas_t *cas, uint8_t parity, uint8_t *key)
+static bool check_key(module_cas_t *cas, uint8_t parity, const uint8_t *key)
 {
     return false;
 }
 
-static module_cas_t * template_cas_init(uint16_t caid, uint8_t *cas_data)
+static bool check_descriptor(module_cas_t *cas, const uint8_t *desc)
+{
+    return false;
+}
+
+static module_cas_t * cas_init(uint16_t caid, const uint8_t *cas_data)
 {
     if(caid != 0xFFFF)
         return NULL;
 
     module_cas_t *cas = malloc(sizeof(module_cas_t));
-    cas->check_em = template_check_em;
-    cas->check_key = template_check_key;
+    cas->check_em = check_em;
+    cas->check_key = check_key;
     cas->data = calloc(1, sizeof(cas_data_t));
 
     return cas;
@@ -50,7 +55,8 @@ static module_cas_t * template_cas_init(uint16_t caid, uint8_t *cas_data)
 
 const module_cas_t template =
 {
-    .init = template_cas_init,
-    .check_em = template_check_em,
-    .check_key = template_check_key
+    .init = cas_init,
+    .check_descriptor = check_descriptor,
+    .check_em = check_em,
+    .check_key = check_key
 };

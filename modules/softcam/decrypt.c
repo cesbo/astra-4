@@ -65,7 +65,6 @@ struct module_data_t
     mpegts_psi_t *custom_pmt;
     mpegts_psi_t *em;
 
-    uint16_t pmt_pnr;
     mpegts_packet_type_t stream[MAX_PID];
 };
 
@@ -110,7 +109,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         const uint16_t pnr = PAT_ITEMS_GET_PNR(psi, pointer);
         if(pnr)
         {
-            mod->pmt_pnr = pnr;
+            mod->__decrypt.pnr = pnr;
             const uint16_t pmt_pid = PAT_ITEMS_GET_PID(psi, pointer);
             mod->stream[pmt_pid] = MPEGTS_PACKET_PMT;
             mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, pmt_pid);
@@ -146,7 +145,17 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     }
     psi->crc32 = crc32;
 
-    // TODO: send to cas
+    const uint8_t *desc_pointer = CAT_DESC_FIRST(psi);
+    while(!CAT_DESC_EOL(psi, desc_pointer))
+    {
+        if(desc_pointer[0] == 0x09
+           && DESC_CA_CAID(desc_pointer) == mod->caid
+           && cas_module_check_descriptor(mod->__decrypt.cas, desc_pointer))
+        {
+            mod->stream[DESC_CA_PID(desc_pointer)] = MPEGTS_PACKET_EMM;
+        }
+        CAT_DESC_NEXT(psi, desc_pointer);
+    }
 }
 
 /*
@@ -158,66 +167,13 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
  *
  */
 
-static void pmt_copy(mpegts_psi_t *dst, mpegts_psi_t *src)
-{
-    uint16_t skip = 12;
-    memcpy(dst->buffer, src->buffer, 12);
-
-    uint8_t *desc_pointer = PMT_DESC_FIRST(src);
-    while(!PMT_DESC_EOL(src, desc_pointer))
-    {
-        if(desc_pointer[0] != 0x09)
-        {
-            const uint8_t size = desc_pointer[1] + 2;
-            memcpy(&dst->buffer[skip], desc_pointer, size);
-            skip += size;
-        }
-
-        PMT_DESC_NEXT(src, desc_pointer);
-    }
-    const uint16_t size = skip - 12; // 12 - PMT header
-    dst->buffer[10] = (size >> 8) & 0x0F;
-    dst->buffer[11] = size & 0xFF;
-
-    uint8_t *pointer = PMT_ITEMS_FIRST(src);
-    while(!PMT_ITEMS_EOL(src, pointer))
-    {
-        memcpy(&dst->buffer[skip], pointer, 5);
-        skip += 5;
-
-        const uint16_t skip_last = skip;
-
-        desc_pointer = PMT_ITEM_DESC_FIRST(pointer);
-        while(!PMT_ITEM_DESC_EOL(pointer, desc_pointer))
-        {
-            if(desc_pointer[0] != 0x09)
-            {
-                const uint8_t size = desc_pointer[1] + 2;
-                memcpy(&dst->buffer[skip], desc_pointer, size);
-                skip += size;
-            }
-
-            PMT_ITEM_DESC_NEXT(pointer, desc_pointer);
-        }
-        const uint16_t size = skip - skip_last;
-        dst->buffer[skip_last - 2] = (size << 8) & 0x0F;
-        dst->buffer[skip_last - 1] = size & 0xFF;
-
-        PMT_ITEMS_NEXT(src, pointer);
-    }
-
-    dst->buffer_size = skip + CRC32_SIZE;
-    PSI_SET_SIZE(dst);
-    PSI_SET_CRC32(dst);
-}
-
 static void on_pmt(void *arg, mpegts_psi_t *psi)
 {
     module_data_t *mod = arg;
 
     // check pnr
     const uint16_t pnr = PMT_GET_PNR(psi);
-    if(pnr != mod->pmt_pnr)
+    if(pnr != mod->__decrypt.pnr)
         return;
 
     // check changes
@@ -233,14 +189,76 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     }
     psi->crc32 = crc32;
 
-    if(mod->__decrypt.cas)
-    {
-        // TODO: send data to CAS
-    }
+    // Make custom PMT and set descriptors for CAS
 
     mpegts_psi_destroy(mod->custom_pmt);
     mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, psi->pid);
-    pmt_copy(mod->custom_pmt, psi);
+
+    uint16_t skip = 12;
+    memcpy(mod->custom_pmt->buffer, psi->buffer, 12);
+
+    const uint8_t *desc_pointer = PMT_DESC_FIRST(psi);
+    while(!PMT_DESC_EOL(psi, desc_pointer))
+    {
+        if(desc_pointer[0] == 0x09)
+        {
+            if(DESC_CA_CAID(desc_pointer) == mod->caid
+               && cas_module_check_descriptor(mod->__decrypt.cas, desc_pointer))
+            {
+                mod->stream[DESC_CA_PID(desc_pointer)] = MPEGTS_PACKET_ECM;
+            }
+        }
+        else
+        {
+            const uint8_t size = desc_pointer[1] + 2;
+            memcpy(&mod->custom_pmt->buffer[skip], desc_pointer, size);
+            skip += size;
+        }
+
+        PMT_DESC_NEXT(psi, desc_pointer);
+    }
+    const uint16_t size = skip - 12; // 12 - PMT header
+    mod->custom_pmt->buffer[10] = (size >> 8) & 0x0F;
+    mod->custom_pmt->buffer[11] = size & 0xFF;
+
+    const uint8_t *pointer = PMT_ITEMS_FIRST(psi);
+    while(!PMT_ITEMS_EOL(psi, pointer))
+    {
+        memcpy(&mod->custom_pmt->buffer[skip], pointer, 5);
+        skip += 5;
+
+        const uint16_t skip_last = skip;
+
+        desc_pointer = PMT_ITEM_DESC_FIRST(pointer);
+        while(!PMT_ITEM_DESC_EOL(pointer, desc_pointer))
+        {
+            if(desc_pointer[0] == 0x09)
+            {
+                if(DESC_CA_CAID(desc_pointer) == mod->caid
+                   && cas_module_check_descriptor(mod->__decrypt.cas, desc_pointer))
+                {
+                    mod->stream[DESC_CA_PID(desc_pointer)] = MPEGTS_PACKET_ECM;
+                }
+            }
+            else
+            {
+                const uint8_t size = desc_pointer[1] + 2;
+                memcpy(&mod->custom_pmt->buffer[skip], desc_pointer, size);
+                skip += size;
+            }
+
+            PMT_ITEM_DESC_NEXT(pointer, desc_pointer);
+        }
+        const uint16_t size = skip - skip_last;
+        mod->custom_pmt->buffer[skip_last - 2] = (size << 8) & 0x0F;
+        mod->custom_pmt->buffer[skip_last - 1] = size & 0xFF;
+
+        PMT_ITEMS_NEXT(psi, pointer);
+    }
+
+    mod->custom_pmt->buffer_size = skip + CRC32_SIZE;
+    PSI_SET_SIZE(mod->custom_pmt);
+    PSI_SET_CRC32(mod->custom_pmt);
 }
 
 /*
@@ -288,6 +306,12 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             if(mod->custom_pmt)
             {
                 mpegts_psi_demux(mod->custom_pmt
+                                 , (void (*)(void *, const uint8_t *))__module_stream_send
+                                 , &mod->__stream);
+            }
+            else
+            {
+                mpegts_psi_demux(mod->pmt
                                  , (void (*)(void *, const uint8_t *))__module_stream_send
                                  , &mod->__stream);
             }
