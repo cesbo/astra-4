@@ -68,10 +68,14 @@ struct module_cam_t
     asc_list_t *prov_list;
     asc_list_t *decrypt_list;
 
+    void (*send_em)(module_data_t *mod);
+
     module_data_t *self;
 };
 
 #define MODULE_CAM_DATA() module_cam_t __cam
+
+void module_cam_send_em(module_cam_t *cam, module_decrypt_t *decrypt, uint8_t *em, uint16_t size);
 
 #define module_cam_set_provider(_mod, _provider)                                                \
     asc_list_insert_tail(_mod->__cam.prov_list, _provider);
@@ -86,11 +90,12 @@ struct module_cam_t
         }                                                                                       \
     }
 
-#define module_cam_init(_mod)                                                                   \
+#define module_cam_init(_mod, _send_em)                                                         \
     {                                                                                           \
         _mod->__cam.self = _mod;                                                                \
         _mod->__cam.decrypt_list = asc_list_init();                                             \
         _mod->__cam.prov_list = asc_list_init();                                                \
+        _mod->__cam.send_em = _send_em;                                                         \
     }
 
 #define module_cam_destroy(_mod)                                                                \

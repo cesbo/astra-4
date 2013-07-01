@@ -274,10 +274,32 @@ static void on_em(void *arg, mpegts_psi_t *psi)
 {
     module_data_t *mod = arg;
 
+    if(psi->buffer_size > EM_MAX_SIZE)
+    {
+        asc_log_error(MSG("Entitlement message size is greater than %d"), EM_MAX_SIZE);
+        return;
+    }
+
+    const uint8_t em_type = psi->buffer[0];
+    if((em_type & ~0x0F) != 0x80)
+    {
+        asc_log_error(MSG("wrong packet type 0x%02X"), em_type);
+        return;
+    }
+    else if(em_type >= 0x82)
+    { /* EMM */
+        if(mod->__decrypt.cam->disable_emm)
+            return;
+    }
+    else
+    { /* ECM */
+        ;
+    }
+
     if(!cas_module_check_em(mod->__decrypt.cas, psi))
         return;
 
-    // TODO: send to CAM
+    // TODO: SEND TO CAM
 }
 
 /*

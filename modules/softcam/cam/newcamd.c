@@ -216,7 +216,7 @@ static int newcamd_send_msg(module_data_t *mod, em_packet_t *packet)
     memset(&buffer[2], 0, NEWCAMD_HEADER_SIZE - 2);
     if(packet)
     {
-        const uint16_t pnr = packet->pnr;
+        const uint16_t pnr = packet->decrypt->pnr;
         buffer[4] = pnr >> 8;
         buffer[5] = pnr & 0xff;
 
@@ -511,7 +511,8 @@ static int newcamd_response(module_data_t *mod)
         else
         {
             mod->packet->buffer[2] = 0x00;
-            asc_log_error(MSG("pnr:%d incorrect message length %d"), mod->packet->pnr, len);
+            asc_log_error(MSG("pnr:%d incorrect message length %d")
+                          , mod->packet->decrypt->pnr, len);
             mod->packet->buffer_size = 3;
         }
 
@@ -616,6 +617,11 @@ static void newcamd_disconnect(module_data_t *mod)
     module_cam_reset(mod);
 }
 
+static void newcamd_send_em(module_data_t *mod)
+{
+    // pop em from queue
+}
+
 static void module_init(module_data_t *mod)
 {
     module_option_string("name", &mod->name);
@@ -641,7 +647,7 @@ static void module_init(module_data_t *mod)
         mod->timeout = 8;
     mod->timeout *= 1000;
 
-    module_cam_init(mod);
+    module_cam_init(mod, newcamd_send_em);
 }
 
 static void module_destroy(module_data_t *mod)
