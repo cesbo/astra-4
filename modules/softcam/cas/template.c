@@ -18,39 +18,39 @@
  * along with this module.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <astra.h>
 #include "../module_cam.h"
 
-struct cas_t
+struct cas_data_t
 {
-    CAS_DATA();
+    int empty;
 };
 
-static int template_cas_check_em(cas_t *cas, em_packet_t *packet)
+static bool template_check_em(module_cas_t *cas, mpegts_psi_t *em)
 {
-    return 1;
+    return false;
 }
 
-static int template_cas_check_keys(cas_t *cas, em_packet_t *packet)
+static bool template_check_key(module_cas_t *cas, uint8_t parity, uint8_t *key)
 {
-    return 1;
+    return false;
 }
 
-static void template_cas_destroy(cas_t *cas)
-{
-    free(cas);
-}
-
-cas_t * template_cas_init(uint16_t caid, uint16_t pnr)
+static module_cas_t * template_cas_init(uint16_t caid, uint8_t *cas_data)
 {
     if(caid != 0xFFFF)
         return NULL;
 
-    cas_t *cas = calloc(1, sizeof(cas_t));
-    cas_data_set(cas
-                 , template_cas_check_em
-                 , template_cas_check_keys
-                 , template_cas_destroy);
+    module_cas_t *cas = malloc(sizeof(module_cas_t));
+    cas->check_em = template_check_em;
+    cas->check_key = template_check_key;
+    cas->data = calloc(1, sizeof(cas_data_t));
 
     return cas;
 }
+
+const module_cas_t template =
+{
+    .init = template_cas_init,
+    .check_em = template_check_em,
+    .check_key = template_check_key
+};

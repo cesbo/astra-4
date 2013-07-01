@@ -20,42 +20,31 @@
 
 #include "../module_cam.h"
 
-// extern cas_t * template_cas_init(uint16_t caid, uint16_t pnr);
+extern module_cas_t template;
 
-typedef cas_t *(*cas_init_t)(uint16_t caid, uint16_t pnr);
-static const cas_init_t cas_init_list[] =
+module_cas_t *cas_modules[] =
 {
-//    template_cas_init,
+    &template,
     NULL
 };
 
-cas_t * cas_init(uint16_t caid, uint16_t pnr)
+module_cas_t * cas_module_init(uint16_t caid, uint8_t *cas_data)
 {
-    for(int i = 0; cas_init_list[i]; ++i)
+    for(int i = 0; cas_modules[i]; ++i)
     {
-        cas_t *cas = cas_init_list[i](caid, pnr);
+        module_cas_t *cas = cas_modules[i]->init(caid, cas_data);
         if(cas)
             return cas;
     }
     return NULL;
 }
 
-struct cas_t
+void cas_module_destroy(module_cas_t *cas)
 {
-    CAS_DATA();
-};
+    if(!cas)
+        return;
 
-inline void cas_destroy(cas_t *cas)
-{
-    cas->__cas.destroy(cas);
-}
-
-inline int cas_check_em(cas_t *cas, em_packet_t *packet)
-{
-    return cas->__cas.check_em(cas, packet);
-}
-
-inline int cas_check_keys(cas_t *cas, em_packet_t *packet)
-{
-    return cas->__cas.check_keys(cas, packet);
+    if(cas->data)
+        free(cas->data);
+    free(cas);
 }

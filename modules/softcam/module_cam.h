@@ -26,19 +26,6 @@
 #define EM_MAX_SIZE 512
 
 /*
- * Initializing:
- * 1) decrypt: set cam
- * 1) decrypt: on_pmt->cas_init(caid, pmt_psi_buffer)
- *
- * Processing:
- * 1) decrypt:  on_em
- * 2) decrypt:  cas_check_em(em_packet_t)
- * 3) decrypt:  cam_send(em_packet_t)
- * 4) cam:      on_response->on_key
- * 5) decrypt:  cas_check_key
- */
-
-/*
  * oooooooooo   o       oooooooo8 oooo   oooo ooooooooooo ooooooooooo
  *  888    888 888    o888     88  888  o88    888    88  88  888  88
  *  888oooo88 8  88   888          888888      888ooo8        888
@@ -138,25 +125,23 @@ typedef struct
  *
  */
 
-typedef struct cas_t cas_t;
+typedef struct cas_data_t cas_data_t;
+typedef struct module_cas_t module_cas_t;
 
-#define CAS_DATA()                                                                              \
-    struct                                                                                      \
-    {                                                                                           \
-        int (*check_em)(cas_t *cas, em_packet_t *packet);                                       \
-        int (*check_keys)(cas_t *cas, em_packet_t *packet);                                     \
-        void (*destroy)(cas_t *cas);                                                            \
-    } __cas
+struct module_cas_t
+{
+    module_cas_t * (*init)(uint16_t caid, uint8_t *cas_data);
+    bool (*check_em)(module_cas_t *cas, mpegts_psi_t *em);
+    bool (*check_key)(module_cas_t *cas, uint8_t parity, uint8_t *key);
 
-#define cas_data_set(_cas, _check_em, _check_keys, _destroy)                                    \
-    _cas->__cas.check_em = _check_em;                                                           \
-    _cas->__cas.check_keys = _check_keys;                                                       \
-    _cas->__cas.destroy = _destroy
+    cas_data_t *data;
+};
 
-cas_t * cas_init(uint16_t caid, uint16_t pnr);
-void cas_destroy(cas_t *cas);
-int cas_check_em(cas_t *cas, em_packet_t *packet);
-int cas_check_keys(cas_t *cas, em_packet_t *packet);
+module_cas_t * cas_module_init(uint16_t caid, uint8_t *cas_data);
+void cas_module_destroy(module_cas_t *cas);
+
+#define cas_module_check_em(_cas, _em) _cas->check_em(_cas, _em)
+#define cas_module_check_key(_cas, _parity, _key) _cas->check_key(_cas, _parity, _key)
 
 /*
  * ooooooooo  ooooooooooo  oooooooo8 oooooooooo ooooo  oooo oooooooooo  ooooooooooo
@@ -170,10 +155,11 @@ int cas_check_keys(cas_t *cas, em_packet_t *packet);
 typedef struct
 {
     module_cam_t *cam;
-    cas_t *cas;
+    module_cas_t *cas;
 
     void (*on_cam_ready)(module_data_t *mod);
     void (*on_cam_error)(module_data_t *mod);
+    void (*on_key)(module_data_t *mod, uint8_t parity, uint8_t *key);
 
     module_data_t *self;
 } module_decrypt_t;
