@@ -151,7 +151,7 @@ static uint8_t xor_sum(const uint8_t *mem, int len)
  *
  */
 
-static void newcamd_connect(void *);
+static void newcamd_connect(module_data_t *);
 static void newcamd_disconnect(module_data_t *);
 
 static void timeout_timer_callback(void *arg)
@@ -207,16 +207,19 @@ static void newcamd_timeout_unset(module_data_t *mod)
  *
  */
 
-static int newcamd_send_msg(module_data_t *mod, em_packet_t *packet)
+static int newcamd_send_msg(module_data_t *mod)
 {
     // packet header
     const size_t buffer_size = mod->buffer_size;
     uint8_t *buffer = mod->buffer;
 
     memset(&buffer[2], 0, NEWCAMD_HEADER_SIZE - 2);
-    if(packet)
+    if(mod->packet)
     {
-        const uint16_t pnr = packet->decrypt->pnr;
+        memcpy(&mod->buffer[NEWCAMD_HEADER_SIZE], mod->packet->buffer, mod->packet->buffer_size);
+        mod->buffer_size = mod->packet->buffer_size;
+
+        const uint16_t pnr = mod->packet->decrypt->pnr;
         buffer[4] = pnr >> 8;
         buffer[5] = pnr & 0xff;
 
@@ -265,9 +268,9 @@ static int newcamd_send_msg(module_data_t *mod, em_packet_t *packet)
     if(asc_socket_send_direct(mod->sock, buffer, packet_size) != packet_size)
     {
         asc_log_error(MSG("send: failed [%d]"), errno);
-        if(packet)
+        if(mod->packet)
         {
-            packet->buffer[2] = 0x00;
+            mod->packet->buffer[2] = 0x00;
             // TODO: cam_callback(mod, packet);
             --mod->msg_id;
         }
@@ -285,7 +288,7 @@ static int newcamd_send_cmd(module_data_t *mod, newcamd_cmd_t cmd)
     buffer[1] = 0;
     buffer[2] = 0;
     mod->buffer_size = 3;
-    return newcamd_send_msg(mod, NULL);
+    return newcamd_send_msg(mod);
 }
 
 /*
@@ -297,7 +300,7 @@ static int newcamd_send_cmd(module_data_t *mod, newcamd_cmd_t cmd)
  *
  */
 
-int newcamd_recv_msg(module_data_t *mod, em_packet_t *packet)
+int newcamd_recv_msg(module_data_t *mod)
 {
     if(mod->status != NEWCAMD_READY)
         newcamd_timeout_unset(mod);
@@ -343,7 +346,7 @@ int newcamd_recv_msg(module_data_t *mod, em_packet_t *packet)
     }
 
     const uint8_t msg_type = buffer[NEWCAMD_HEADER_SIZE];
-    if(packet && msg_type >= 0x80 && msg_type <= 0x8F)
+    if(mod->packet && msg_type >= 0x80 && msg_type <= 0x8F)
     {
         const uint16_t msg_id = (buffer[2] << 8) | buffer[3];
         if(msg_id != mod->msg_id)
@@ -351,6 +354,7 @@ int newcamd_recv_msg(module_data_t *mod, em_packet_t *packet)
             asc_log_warning(MSG("wrong message id. required:%d receive:%d"), mod->msg_id, msg_id);
             return 0;
         }
+        newcamd_timeout_unset(mod);
     }
 
     mod->buffer_size = (((buffer[NEWCAMD_HEADER_SIZE + 1] << 8)
@@ -362,7 +366,7 @@ int newcamd_recv_msg(module_data_t *mod, em_packet_t *packet)
 
 static newcamd_cmd_t newcamd_recv_cmd(module_data_t *mod)
 {
-    if(newcamd_recv_msg(mod, NULL))
+    if(newcamd_recv_msg(mod))
         return mod->buffer[NEWCAMD_HEADER_SIZE];
 
     return NEWCAMD_MSG_ERROR;
@@ -404,7 +408,7 @@ static int newcamd_login_1(module_data_t *mod)
     mod->buffer_size = u_len + p_len + 3;
 
     mod->status = NEWCAMD_CONNECTED;
-    return newcamd_send_msg(mod, NULL);
+    return newcamd_send_msg(mod);
 }
 
 static int newcamd_login_2(module_data_t *mod)
@@ -428,7 +432,7 @@ static int newcamd_login_3(module_data_t *mod)
 {
     uint8_t *buffer = &mod->buffer[NEWCAMD_HEADER_SIZE];
 
-    if(!newcamd_recv_msg(mod, NULL))
+    if(!newcamd_recv_msg(mod))
         return 0;
     if(buffer[0] != NEWCAMD_MSG_CARD_DATA)
     {
@@ -464,6 +468,7 @@ static int newcamd_login_3(module_data_t *mod)
                      , hex_to_str(&hex_str[8], &p[3], 8));
     }
 
+    module_cam_ready(mod);
     mod->status = NEWCAMD_READY;
     return 1;
 }
@@ -479,7 +484,7 @@ static int newcamd_login_3(module_data_t *mod)
 
 static int newcamd_response(module_data_t *mod)
 {
-    const int len = newcamd_recv_msg(mod, mod->packet);
+    const int len = newcamd_recv_msg(mod);
     if(len)
     {
         uint8_t *buffer = &mod->buffer[NEWCAMD_HEADER_SIZE];
@@ -516,7 +521,15 @@ static int newcamd_response(module_data_t *mod)
             mod->packet->buffer_size = 3;
         }
 
-        // cam_callback(mod, packet);
+        module_cam_response(mod);
+    }
+
+    if(mod->packet)
+    {
+        free(mod->packet);
+        mod->packet = module_cam_queue_pop(mod);
+        if(mod->packet)
+            newcamd_send_msg(mod);
     }
 
     return len;
@@ -595,10 +608,8 @@ static void on_connect(void *arg)
  *
  */
 
-static void newcamd_connect(void *arg)
+static void newcamd_connect(module_data_t *mod)
 {
-    module_data_t *mod = arg;
-
     mod->sock = asc_socket_open_tcp4(mod);
     asc_socket_connect(mod->sock, mod->host, mod->port, on_connect, on_connect_error);
 }
@@ -617,9 +628,36 @@ static void newcamd_disconnect(module_data_t *mod)
     module_cam_reset(mod);
 }
 
-static void newcamd_send_em(module_data_t *mod)
+static void newcamd_send_em(module_data_t *mod, module_decrypt_t *decrypt
+                            , uint8_t *buffer, uint16_t size)
 {
-    // pop em from queue
+    asc_log_info("%s(): 0x%02X", __FUNCTION__, buffer[0]);
+    em_packet_t *packet = malloc(sizeof(em_packet_t));
+    memcpy(packet->buffer, buffer, size);
+    packet->buffer_size = size;
+    packet->decrypt = decrypt;
+
+    asc_list_first(mod->__cam.packet_queue);
+    while(!asc_list_eol(mod->__cam.packet_queue))
+    {
+        em_packet_t *packet = asc_list_data(mod->__cam.packet_queue);
+        if(packet->decrypt == decrypt && ((packet->buffer[0] & ~0x01) == 0x80))
+        {
+            asc_log_warning(MSG("drop old packet "
+                                "(pnr:%d drop:0x%02X set:0x%02X)")
+                            , decrypt->pnr, packet->buffer[0], buffer[0]);
+            asc_list_remove_current(mod->__cam.packet_queue);
+            break;
+        }
+        asc_list_next(mod->__cam.packet_queue);
+    }
+
+    asc_list_insert_tail(mod->__cam.packet_queue, packet);
+    if(mod->packet) // newcamd is busy
+        return;
+    mod->packet = module_cam_queue_pop(mod);
+
+    newcamd_send_msg(mod);
 }
 
 static void module_init(module_data_t *mod)
@@ -647,7 +685,7 @@ static void module_init(module_data_t *mod)
         mod->timeout = 8;
     mod->timeout *= 1000;
 
-    module_cam_init(mod, newcamd_send_em);
+    module_cam_init(mod, newcamd_connect, newcamd_disconnect, newcamd_send_em);
 }
 
 static void module_destroy(module_data_t *mod)

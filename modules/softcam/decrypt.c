@@ -32,6 +32,7 @@
 
 #include <astra.h>
 #include "module_cam.h"
+#include "cas/cas_list.h"
 #include "FFdecsa/FFdecsa.h"
 
 struct module_data_t
@@ -43,7 +44,6 @@ struct module_data_t
     /* Config */
     const char *name;
     int caid;
-    uint8_t cas_data[32];
 
     /* Buffer */
     uint8_t *buffer; // r_buffer + s_buffer
@@ -69,6 +69,23 @@ struct module_data_t
 };
 
 #define MSG(_msg) "[decrypt %s] " _msg, mod->name
+
+static module_cas_t * module_decrypt_cas_init(module_data_t *mod)
+{
+    for(int i = 0; cas_init_list[i]; ++i)
+    {
+        module_cas_t *cas = cas_init_list[i](&mod->__decrypt);
+        if(cas)
+            return cas;
+    }
+    return NULL;
+}
+
+static void module_decrypt_cas_destroy(module_data_t *mod)
+{
+    if(mod->__decrypt.cas)
+        free(mod->__decrypt.cas->self);
+}
 
 /*
  * oooooooooo   o   ooooooooooo
@@ -96,13 +113,6 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     }
     psi->crc32 = crc32;
 
-    memset(mod->stream, 0, sizeof(mod->stream));
-    mod->stream[0] = MPEGTS_PACKET_PAT;
-    mod->stream[1] = MPEGTS_PACKET_CAT;
-
-    mpegts_psi_destroy(mod->pmt);
-    mod->pmt = NULL;
-
     const uint8_t *pointer = PAT_ITEMS_FIRST(psi);
     while(!PAT_ITEMS_EOL(psi, pointer))
     {
@@ -112,10 +122,19 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
             mod->__decrypt.pnr = pnr;
             const uint16_t pmt_pid = PAT_ITEMS_GET_PID(psi, pointer);
             mod->stream[pmt_pid] = MPEGTS_PACKET_PMT;
-            mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, pmt_pid);
+            mod->pmt->pid = pmt_pid;
             break;
         }
         PAT_ITEMS_NEXT(psi, pointer);
+    }
+
+    if(mod->__decrypt.cam)
+    {
+        mod->__decrypt.cas = module_decrypt_cas_init(mod);
+        asc_assert(mod->__decrypt.cas != NULL, "CAS with CAID:0x%04X not found");
+
+        if(!mod->__decrypt.cam->disable_emm)
+            mod->stream[1] = MPEGTS_PACKET_CAT;
     }
 }
 
@@ -150,7 +169,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     {
         if(desc_pointer[0] == 0x09
            && DESC_CA_CAID(desc_pointer) == mod->caid
-           && cas_module_check_descriptor(mod->__decrypt.cas, desc_pointer))
+           && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
         {
             mod->stream[DESC_CA_PID(desc_pointer)] = MPEGTS_PACKET_EMM;
         }
@@ -191,8 +210,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
     // Make custom PMT and set descriptors for CAS
 
-    mpegts_psi_destroy(mod->custom_pmt);
-    mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, psi->pid);
+    mod->custom_pmt->pid = psi->pid;
 
     uint16_t skip = 12;
     memcpy(mod->custom_pmt->buffer, psi->buffer, 12);
@@ -203,7 +221,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         if(desc_pointer[0] == 0x09)
         {
             if(DESC_CA_CAID(desc_pointer) == mod->caid
-               && cas_module_check_descriptor(mod->__decrypt.cas, desc_pointer))
+               && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
             {
                 mod->stream[DESC_CA_PID(desc_pointer)] = MPEGTS_PACKET_ECM;
             }
@@ -235,7 +253,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
             if(desc_pointer[0] == 0x09)
             {
                 if(DESC_CA_CAID(desc_pointer) == mod->caid
-                   && cas_module_check_descriptor(mod->__decrypt.cas, desc_pointer))
+                   && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
                 {
                     mod->stream[DESC_CA_PID(desc_pointer)] = MPEGTS_PACKET_ECM;
                 }
@@ -296,10 +314,11 @@ static void on_em(void *arg, mpegts_psi_t *psi)
         ;
     }
 
-    if(!cas_module_check_em(mod->__decrypt.cas, psi))
+    if(!module_cas_check_em(mod->__decrypt.cas, psi))
         return;
 
-    // TODO: SEND TO CAM
+    mod->__decrypt.cam->send_em(mod->__decrypt.cam->self, &mod->__decrypt
+                                , psi->buffer, psi->buffer_size);
 }
 
 /*
@@ -325,7 +344,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             return;
         case MPEGTS_PACKET_PMT:
             mpegts_psi_mux(mod->pmt, ts, on_pmt, mod);
-            if(mod->custom_pmt)
+            if(mod->__decrypt.cam->is_ready)
             {
                 mpegts_psi_demux(mod->custom_pmt
                                  , (void (*)(void *, const uint8_t *))__module_stream_send
@@ -399,17 +418,28 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 
 static void on_cam_ready(module_data_t *mod)
 {
+    asc_log_info(MSG("%s()"), __FUNCTION__);
     //
+    mod->caid = mod->__decrypt.cam->caid;
+    mod->stream[0] = MPEGTS_PACKET_PAT;
+    mod->pat->crc32 = 0;
+    mod->cat->crc32 = 0;
+    mod->pmt->crc32 = 0;
 }
 
 static void on_cam_error(module_data_t *mod)
 {
+    asc_log_info(MSG("%s()"), __FUNCTION__);
     //
+    mod->caid = 0x0000;
+    memset(mod->stream, 0, sizeof(mod->stream));
 }
 
-static void on_key(module_data_t *mod, uint8_t parity, uint8_t *key)
+static void on_response(module_data_t *mod, uint8_t *data)
 {
-    if(!cas_module_check_key(mod->__decrypt.cas, parity, key))
+    asc_log_info(MSG("%s(): 0x%02X%02X%02X"), __FUNCTION__, data[0], data[1], data[2]);
+
+    if(!module_cas_check_keys(mod->__decrypt.cas, data))
         return;
 }
 
@@ -419,9 +449,6 @@ static void module_init(module_data_t *mod)
 
     module_option_string("name", &mod->name);
     asc_assert(mod->name != NULL, "[decrypt] option 'name' is required");
-
-    module_option_number("caid", &mod->caid);
-    asc_assert(mod->caid > 0 && mod->caid < 0xFFFF, MSG("option 'caid' is required"));
 
     mod->ffdecsa = get_key_struct();
     mod->cluster_size = get_suggested_cluster_size();
@@ -449,30 +476,28 @@ static void module_init(module_data_t *mod)
     mod->__decrypt.self = mod;
     mod->__decrypt.on_cam_ready = on_cam_ready;
     mod->__decrypt.on_cam_error = on_cam_error;
-    mod->__decrypt.on_key = on_key;
+    mod->__decrypt.on_response = on_response;
 
-    lua_getfield(lua, 2, "cam");
-    if(!lua_isnil(lua, -1))
+    if(!mod->is_keys)
     {
-        asc_assert(lua_type(lua, -1) == LUA_TLIGHTUSERDATA
-                   , "option 'cam' required cam-module instance");
-        mod->__decrypt.cam = lua_touserdata(lua, -1);
-
-        asc_list_insert_tail(mod->__decrypt.cam->decrypt_list, &mod->__decrypt);
-        if(mod->__decrypt.cam->is_ready)
-            mod->__decrypt.on_cam_ready(mod);
+        lua_getfield(lua, 2, "cam");
+        if(!lua_isnil(lua, -1))
+        {
+            asc_assert(lua_type(lua, -1) == LUA_TLIGHTUSERDATA
+                       , "option 'cam' required cam-module instance");
+            mod->__decrypt.cam = lua_touserdata(lua, -1);
+        }
+        lua_pop(lua, 1);
     }
-    lua_pop(lua, 1);
 
     if(mod->__decrypt.cam)
     {
         const char *value = NULL;
         module_option_string("cas_data", &value);
         if(value)
-            str_to_hex(value, mod->cas_data, sizeof(mod->cas_data));
+            str_to_hex(value, mod->__decrypt.cas_data, sizeof(mod->__decrypt.cas_data));
 
-        mod->__decrypt.cas = cas_module_init(mod->caid, mod->cas_data);
-        asc_assert(mod->__decrypt.cas != NULL, "CAS with CAID:0x%04X not found");
+        module_cam_attach_decrypt(mod->__decrypt.cam, &mod->__decrypt);
     }
     // ---
 
@@ -480,9 +505,10 @@ static void module_init(module_data_t *mod)
     mod->r_buffer = mod->buffer; // s_buffer = NULL
 
     mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
-    mod->stream[0] = MPEGTS_PACKET_PAT;
     mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
-    mod->stream[1] = MPEGTS_PACKET_CAT;
+    mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
+    mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
+    mod->em = mpegts_psi_init(MPEGTS_PACKET_CA, MAX_PID);
 }
 
 static void module_destroy(module_data_t *mod)
@@ -492,10 +518,8 @@ static void module_destroy(module_data_t *mod)
     // module_decrypt_destroy(mod);
     if(mod->__decrypt.cam)
     {
-        // TODO: if(_mod->__decrypt.cam) remove packets from CAM queue
-        asc_list_remove_item(mod->__decrypt.cam->decrypt_list, &mod->__decrypt);
-
-        cas_module_destroy(mod->__decrypt.cas);
+        module_cam_detach_decrypt(mod->__decrypt.cam, &mod->__decrypt);
+        module_decrypt_cas_destroy(mod);
     }
     // ---
 
@@ -505,11 +529,9 @@ static void module_destroy(module_data_t *mod)
 
     mpegts_psi_destroy(mod->pat);
     mpegts_psi_destroy(mod->cat);
-    if(mod->pmt)
-    {
-        mpegts_psi_destroy(mod->pmt);
-        mpegts_psi_destroy(mod->custom_pmt);
-    }
+    mpegts_psi_destroy(mod->pmt);
+    mpegts_psi_destroy(mod->custom_pmt);
+    mpegts_psi_destroy(mod->em);
 }
 
 MODULE_STREAM_METHODS()

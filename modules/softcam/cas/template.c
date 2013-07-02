@@ -20,43 +20,49 @@
 
 #include "../module_cam.h"
 
-struct cas_data_t
+struct module_data_t
 {
-    int empty;
+    MODULE_CAS_DATA();
+
+    uint8_t parity;
 };
 
-static bool check_em(module_cas_t *cas, mpegts_psi_t *em)
+static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
 {
     return false;
 }
 
-static bool check_key(module_cas_t *cas, uint8_t parity, const uint8_t *key)
+static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
+{
+    const uint8_t em_type = em->buffer[0];
+    switch(em_type)
+    {
+        // ECM
+        case 0x80:
+        case 0x81:
+        {
+            if(em_type == mod->parity)
+                return false;
+            return true;
+        }
+        // EMM
+        default:
+        {
+            break;
+        }
+    }
+
+    return false;
+}
+
+static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
 {
     return false;
 }
 
-static bool check_descriptor(module_cas_t *cas, const uint8_t *desc)
+static bool cas_check_caid(uint16_t caid)
 {
-    return false;
+    return (caid == 0xFFFF);
 }
 
-static module_cas_t * cas_init(uint16_t caid, const uint8_t *cas_data)
-{
-    if(caid != 0xFFFF)
-        return NULL;
-
-    module_cas_t *cas = malloc(sizeof(module_cas_t));
-    cas->check_em = check_em;
-    cas->check_key = check_key;
-    cas->data = calloc(1, sizeof(cas_data_t));
-
-    return cas;
-}
-
-const module_cas_t template =
-{
-    .init = cas_init,
-    .check_descriptor = check_descriptor,
-    .check_em = check_em,
-    .check_key = check_key
-};
+MODULE_CAS(template)
