@@ -90,27 +90,35 @@ void __module_stream_send(module_stream_t *stream, const uint8_t *ts);
 // demux
 
 #define module_stream_demux_check_pid(_mod, _pid)                                               \
-    (_mod->__stream.pid_list && _mod->__stream.pid_list[_pid] > 0)
+    (_mod->__stream.pid_list[_pid] > 0)
 
 #define module_stream_demux_join_pid(_mod, _pid)                                                \
     {                                                                                           \
         const uint16_t __pid = _pid;                                                            \
-        if(_mod->__stream.pid_list && !_mod->__stream.pid_list[__pid])                          \
+        asc_assert(_mod->__stream.pid_list != NULL                                              \
+                   , "%s:%d module_stream_demux_set() is required", __FILE__, __LINE__);        \
+        ++_mod->__stream.pid_list[__pid];                                                       \
+        if(_mod->__stream.pid_list[__pid] == 1                                                  \
+           && _mod->__stream.parent                                                             \
+           && _mod->__stream.parent->join_pid)                                                  \
         {                                                                                       \
-            _mod->__stream.pid_list[__pid] = 1;                                                 \
-            if(_mod->__stream.parent && _mod->__stream.parent->join_pid)                        \
-                _mod->__stream.parent->join_pid(_mod->__stream.parent->self, __pid);            \
+            _mod->__stream.parent->join_pid(_mod->__stream.parent->self, __pid);                \
         }                                                                                       \
     }
 
 #define module_stream_demux_leave_pid(_mod, _pid)                                               \
     {                                                                                           \
         const uint16_t __pid = _pid;                                                            \
-        if(_mod->__stream.pid_list && _mod->__stream.pid_list[__pid])                           \
+        asc_assert(_mod->__stream.pid_list != NULL                                              \
+                   , "%s:%d module_stream_demux_set() is required", __FILE__, __LINE__);        \
+        asc_assert(_mod->__stream.pid_list[__pid] > 0                                           \
+                   , "%s:%d module_stream_demux_leave_pid() double call", __FILE__, __LINE__);  \
+        --_mod->__stream.pid_list[__pid];                                                       \
+        if(_mod->__stream.pid_list[__pid] == 0                                                  \
+           && _mod->__stream.parent                                                             \
+           && _mod->__stream.parent->leave_pid)                                                 \
         {                                                                                       \
-            _mod->__stream.pid_list[__pid] = 0;                                                 \
-            if(_mod->__stream.parent && _mod->__stream.parent->leave_pid)                       \
-                _mod->__stream.parent->leave_pid(_mod->__stream.parent->self, __pid);           \
+            _mod->__stream.parent->leave_pid(_mod->__stream.parent->self, __pid);               \
         }                                                                                       \
     }
 
