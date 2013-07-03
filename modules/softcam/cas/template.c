@@ -27,11 +27,6 @@ struct module_data_t
     uint8_t parity;
 };
 
-static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
-{
-    return false;
-}
-
 static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
 {
     const uint8_t em_type = em->buffer[0];
@@ -56,6 +51,21 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
 }
 
 static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
+{
+    return false;
+}
+
+/*
+ * CA descriptor (iso13818-1):
+ * tag      :8 (must be 0x09)
+ * length   :8
+ * caid     :16
+ * reserved :3
+ * pid      :13
+ * data     :length-4
+ */
+
+static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
 {
     return false;
 }

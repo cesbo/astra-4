@@ -1,6 +1,6 @@
 /*
  * Astra SoftCAM module
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  *               2011, Santa77 <santa77@fibercom.sk>
  *
  * This module is free software: you can redistribute it and/or modify
