@@ -126,7 +126,7 @@ static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
     {
         if(mod->chid == 0xFFFF)
             mod->test.is_checking = 0;
-        return 0;
+        return false;
     }
 
     if(mod->chid == 0xFFFF)
@@ -138,7 +138,7 @@ static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
         asc_log_info("[cas Irdeto PNR:%d] select chid:0x%04X", mod->__cas.decrypt->pnr, mod->chid);
     }
 
-    return 1;
+    return true;
 }
 
 /*
