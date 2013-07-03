@@ -1,6 +1,6 @@
 SOURCES_CSA="FFdecsa/FFdecsa.c"
 SOURCES_CAM="cam/cam.c cam/newcamd.c"
-SOURCES_CAS="cas/irdeto.c"
+SOURCES_CAS="cas/irdeto.c cas/viaccess.c"
 SOURCES="$SOURCES_CSA $SOURCES_CAM $SOURCES_CAS decrypt.c"
 
 MODULES="decrypt newcamd"

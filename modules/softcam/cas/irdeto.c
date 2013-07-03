@@ -153,6 +153,8 @@ static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
 
 static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
 {
+    __uarg(desc);
+
     if(!mod->sa)
     {
         mod->chid = 0xFFFF;
