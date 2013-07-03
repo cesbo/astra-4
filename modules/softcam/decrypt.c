@@ -105,8 +105,6 @@ static void stream_reload(module_data_t *mod)
     mod->pmt->crc32 = 0;
 
     module_decrypt_cas_destroy(mod);
-
-    mpegts_psi_destroy(mod->custom_pmt);
 }
 
 /*
@@ -237,7 +235,12 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
     if(crc32 == psi->crc32)
+    {
+        mpegts_psi_demux(mod->custom_pmt
+                         , (void (*)(void *, const uint8_t *))__module_stream_send
+                         , &mod->__stream);
         return;
+    }
 
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
@@ -257,7 +260,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     psi->crc32 = crc32;
 
     // Make custom PMT and set descriptors for CAS
-    mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, psi->pid);
+    mod->custom_pmt->pid = psi->pid;
 
     uint16_t skip = 12;
     memcpy(mod->custom_pmt->buffer, psi->buffer, 10);
@@ -326,6 +329,10 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     mod->custom_pmt->buffer_size = skip + CRC32_SIZE;
     PSI_SET_SIZE(mod->custom_pmt);
     PSI_SET_CRC32(mod->custom_pmt);
+
+    mpegts_psi_demux(mod->custom_pmt
+                     , (void (*)(void *, const uint8_t *))__module_stream_send
+                     , &mod->__stream);
 }
 
 /*
@@ -393,18 +400,6 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             return;
         case MPEGTS_PACKET_PMT:
             mpegts_psi_mux(mod->pmt, ts, on_pmt, mod);
-            if(mod->custom_pmt)
-            {
-                mpegts_psi_demux(mod->custom_pmt
-                                 , (void (*)(void *, const uint8_t *))__module_stream_send
-                                 , &mod->__stream);
-            }
-            else
-            {
-                mpegts_psi_demux(mod->pmt
-                                 , (void (*)(void *, const uint8_t *))__module_stream_send
-                                 , &mod->__stream);
-            }
             return;
         case MPEGTS_PACKET_ECM:
         case MPEGTS_PACKET_EMM:
@@ -632,6 +627,7 @@ static void module_init(module_data_t *mod)
     mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
     mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
     mod->em = mpegts_psi_init(MPEGTS_PACKET_CA, MAX_PID);
+    mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
 }
 
 static void module_destroy(module_data_t *mod)
