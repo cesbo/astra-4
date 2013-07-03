@@ -24,6 +24,7 @@
  *
  * Module Options:
  *      upstream    - object, stream instance returned by module_instance:stream()
+ *      name        - string, channel name
  *      biss        - string, BISS key, 16 chars length. example: biss = "1122330044556600"
  *      cam         - object, cam instance returned by cam_module_instance:cam()
  *      cas_data    - string, additional paramters for CAS
@@ -266,7 +267,8 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     {
         if(desc_pointer[0] == 0x09)
         {
-            if(DESC_CA_CAID(desc_pointer) == mod->caid
+            if(mod->caid != 0x2600 /* Not BISS */
+               && DESC_CA_CAID(desc_pointer) == mod->caid
                && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
             {
                 mod->stream[DESC_CA_PID(desc_pointer)] = MPEGTS_PACKET_ECM;
@@ -298,7 +300,8 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         {
             if(desc_pointer[0] == 0x09)
             {
-                if(DESC_CA_CAID(desc_pointer) == mod->caid
+                if(mod->caid != 0x2600 /* Not BISS */
+                   && DESC_CA_CAID(desc_pointer) == mod->caid
                    && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
                 {
                     mod->stream[DESC_CA_PID(desc_pointer)] = MPEGTS_PACKET_ECM;
@@ -589,6 +592,7 @@ static void module_init(module_data_t *mod)
         first_key[3] = (first_key[0] + first_key[1] + first_key[2]) & 0xFF;
         first_key[7] = (first_key[4] + first_key[5] + first_key[6]) & 0xFF;
         mod->is_keys = 1;
+        mod->caid = 0x2600;
     }
     set_control_words(mod->ffdecsa, first_key, first_key);
 

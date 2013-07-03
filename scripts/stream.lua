@@ -31,6 +31,15 @@ end
 
 local parse_option = {}
 
+parse_option.cam = function(val, result)
+    if _G[val] then
+        result.cam = _G[val]
+    else
+        log.error("[stream.lua] cam not found")
+        astra.abort()
+    end
+end
+
 --
 
 local ifaddrs
@@ -228,9 +237,21 @@ function init_input(channel_data, input_id)
     if input_conf.biss then
         input_data.decrypt = decrypt({
             upstream = input_data.tail:stream(),
-            biss = input_conf.biss
+            name = channel_data.config.name,
+            biss = input_conf.biss,
         })
         input_data.tail = input_data.decrypt
+
+    elseif input_conf.cam then
+        local decrypt_conf = {
+            upstream = input_data.tail:stream(),
+            name = channel_data.config.name,
+            cam = input_conf.cam,
+        }
+        if input_conf.cas_data then decrypt_conf.cas_data = input_conf.cas_data end
+        input_data.decrypt = decrypt(decrypt_conf)
+        input_data.tail = input_data.decrypt
+
     end
 
     -- TODO: extra modules
