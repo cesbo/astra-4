@@ -93,6 +93,21 @@ static void module_decrypt_cas_destroy(module_data_t *mod)
         free(mod->__decrypt.cas->self);
 }
 
+static void stream_reload(module_data_t *mod)
+{
+    memset(mod->stream, 0, sizeof(mod->stream));
+    if(mod->__decrypt.cam->is_ready)
+        mod->stream[0] = MPEGTS_PACKET_PAT;
+
+    mod->pat->crc32 = 0;
+    mod->cat->crc32 = 0;
+    mod->pmt->crc32 = 0;
+
+    module_decrypt_cas_destroy(mod);
+
+    mpegts_psi_destroy(mod->custom_pmt);
+}
+
 /*
  * oooooooooo   o   ooooooooooo
  *  888    888 888  88  888  88
@@ -117,6 +132,14 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         asc_log_error(MSG("PAT checksum mismatch"));
         return;
     }
+
+    // reload stream
+    if(psi->crc32 != 0)
+    {
+        asc_log_warning(MSG("PAT changed. Reload stream info"));
+        stream_reload(mod);
+    }
+
     psi->crc32 = crc32;
 
     const uint8_t *pointer = PAT_ITEMS_FIRST(psi);
@@ -168,6 +191,15 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
         asc_log_error(MSG("PMT checksum mismatch"));
         return;
     }
+
+    // reload stream
+    if(psi->crc32 != 0)
+    {
+        asc_log_warning(MSG("CAT changed. Reload stream info"));
+        stream_reload(mod);
+        return;
+    }
+
     psi->crc32 = crc32;
 
     const uint8_t *desc_pointer = CAT_DESC_FIRST(psi);
@@ -212,14 +244,22 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         asc_log_error(MSG("PMT checksum mismatch"));
         return;
     }
+
+    // reload stream
+    if(psi->crc32 != 0)
+    {
+        asc_log_warning(MSG("PMT changed. Reload stream info"));
+        stream_reload(mod);
+        return;
+    }
+
     psi->crc32 = crc32;
 
     // Make custom PMT and set descriptors for CAS
-
-    mod->custom_pmt->pid = psi->pid;
+    mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, psi->pid);
 
     uint16_t skip = 12;
-    memcpy(mod->custom_pmt->buffer, psi->buffer, 12);
+    memcpy(mod->custom_pmt->buffer, psi->buffer, 10);
 
     const uint8_t *desc_pointer = PMT_DESC_FIRST(psi);
     while(!PMT_DESC_EOL(psi, desc_pointer))
@@ -242,7 +282,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         PMT_DESC_NEXT(psi, desc_pointer);
     }
     const uint16_t size = skip - 12; // 12 - PMT header
-    mod->custom_pmt->buffer[10] = (size >> 8) & 0x0F;
+    mod->custom_pmt->buffer[10] = (mod->pmt->buffer[10] & 0xF0) | ((size >> 8) & 0x0F);
     mod->custom_pmt->buffer[11] = size & 0xFF;
 
     const uint8_t *pointer = PMT_ITEMS_FIRST(psi);
@@ -350,7 +390,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             return;
         case MPEGTS_PACKET_PMT:
             mpegts_psi_mux(mod->pmt, ts, on_pmt, mod);
-            if(mod->__decrypt.cam->is_ready)
+            if(mod->custom_pmt)
             {
                 mpegts_psi_demux(mod->custom_pmt
                                  , (void (*)(void *, const uint8_t *))__module_stream_send
@@ -436,10 +476,7 @@ static void on_cam_ready(module_data_t *mod)
     asc_log_debug(MSG("%s()"), __FUNCTION__);
     //
     mod->caid = mod->__decrypt.cam->caid;
-    mod->stream[0] = MPEGTS_PACKET_PAT;
-    mod->pat->crc32 = 0;
-    mod->cat->crc32 = 0;
-    mod->pmt->crc32 = 0;
+    stream_reload(mod);
 }
 
 static void on_cam_error(module_data_t *mod)
@@ -447,7 +484,7 @@ static void on_cam_error(module_data_t *mod)
     asc_log_debug(MSG("%s()"), __FUNCTION__);
     //
     mod->caid = 0x0000;
-    memset(mod->stream, 0, sizeof(mod->stream));
+    stream_reload(mod);
 }
 
 static void on_response(module_data_t *mod, const uint8_t *data)
@@ -590,7 +627,6 @@ static void module_init(module_data_t *mod)
     mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
     mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
     mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
-    mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
     mod->em = mpegts_psi_init(MPEGTS_PACKET_CA, MAX_PID);
 }
 
@@ -598,13 +634,11 @@ static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
 
-    // module_decrypt_destroy(mod);
     if(mod->__decrypt.cam)
     {
         module_cam_detach_decrypt(mod->__decrypt.cam, &mod->__decrypt);
         module_decrypt_cas_destroy(mod);
     }
-    // ---
 
     free_key_struct(mod->ffdecsa);
     free(mod->cluster);
@@ -613,8 +647,8 @@ static void module_destroy(module_data_t *mod)
     mpegts_psi_destroy(mod->pat);
     mpegts_psi_destroy(mod->cat);
     mpegts_psi_destroy(mod->pmt);
-    mpegts_psi_destroy(mod->custom_pmt);
     mpegts_psi_destroy(mod->em);
+    mpegts_psi_destroy(mod->custom_pmt);
 }
 
 MODULE_STREAM_METHODS()

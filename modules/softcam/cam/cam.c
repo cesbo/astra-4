@@ -1,6 +1,6 @@
 /*
  * Astra SoftCAM module
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2013, Andrey Dyldin <and@cesbo.com>
  *
  * This module is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,6 +48,8 @@ void module_cam_queue_flush(module_cam_t *cam, module_decrypt_t *decrypt)
 
 void __module_cam_ready(module_cam_t *cam)
 {
+    cam->is_ready = true;
+
     for(asc_list_first(cam->decrypt_list)
         ; !asc_list_eol(cam->decrypt_list)
         ; asc_list_next(cam->decrypt_list))
@@ -59,6 +61,8 @@ void __module_cam_ready(module_cam_t *cam)
 
 void __module_cam_reset(module_cam_t *cam)
 {
+    cam->is_ready = false;
+
     for(asc_list_first(cam->decrypt_list)
         ; !asc_list_eol(cam->decrypt_list)
         ; asc_list_next(cam->decrypt_list))
