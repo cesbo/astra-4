@@ -150,18 +150,15 @@ static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
     {
         int is_prov_ident = 0;
 
-        asc_list_t *prov_list = mod->__cas.decrypt->cam->prov_list;
-        asc_list_first(prov_list);
-        while(!asc_list_eol(prov_list))
+        asc_list_for(mod->__cas.decrypt->cam->prov_list)
         {
-            uint8_t *prov = asc_list_data(prov_list);
+            uint8_t *prov = asc_list_data(mod->__cas.decrypt->cam->prov_list);
             if(prov[2])
             {
                 is_prov_ident = 1;
                 if(prov[2] == dre_id)
                     return true;
             }
-            asc_list_next(prov_list);
         }
 
         if(!is_prov_ident && !mod->is_cas_data_error)

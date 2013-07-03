@@ -191,8 +191,6 @@ static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
     uint8_t *cas_data = mod->__cas.decrypt->cas_data;
     const bool is_cas_data = (cas_data[0] || cas_data[1]);
 
-    asc_list_t *prov_list = mod->__cas.decrypt->cam->prov_list;
-
     int ident_count = 0;
     const uint8_t *ident = NULL;
     int skip = 6;
@@ -206,10 +204,9 @@ static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
             ++ident_count;
             if(!is_cas_data || __check_ident(ident, cas_data))
             {
-                asc_list_first(prov_list);
-                while(!asc_list_eol(prov_list))
+                asc_list_for(mod->__cas.decrypt->cam->prov_list)
                 {
-                    const uint8_t *prov = asc_list_data(prov_list);
+                    const uint8_t *prov = asc_list_data(mod->__cas.decrypt->cam->prov_list);
                     if(__check_ident(ident, prov))
                     {
                         if(!mod->ident)
@@ -219,7 +216,6 @@ static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
                         }
                         return true;
                     }
-                    asc_list_next(prov_list);
                 }
             }
         }
