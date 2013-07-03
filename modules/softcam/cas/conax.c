@@ -1,8 +1,7 @@
 /*
- * Astra SoftCAM Module
- * http://cesbo.com/astra
- *
+ * Astra SoftCAM module
  * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ *               2011, Santa77 <santa77@fibercom.sk>
  *
  * This module is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,6 +15,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this module.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * For more information, visit http://cesbo.com
  */
 
 #include "../module_cam.h"
@@ -36,23 +37,41 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
         case 0x80:
         case 0x81:
         {
-            if(em_type == mod->parity)
-                return false;
-            return true;
+            if(em_type != mod->parity)
+            {
+                mod->parity = em_type;
+                return true;
+            }
+            break;
         }
         // EMM
         default:
         {
+            const uint8_t *emm_id = &em->buffer[6];
+
+            asc_list_for(mod->__cas.decrypt->cam->prov_list)
+            {
+                uint8_t *prov = asc_list_data(mod->__cas.decrypt->cam->prov_list);
+                // 3 - skip ident
+                // 4 - skip 0
+                prov += 3 + 4;
+                if(!memcmp(emm_id, prov, 4)) // shared
+                    return true;
+            }
+            if(!memcmp(emm_id, &mod->__cas.decrypt->cam->ua[4], 4)) // unique
+                return true;
             break;
         }
     }
 
-    return false;
+    return NULL;
 }
 
 static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
 {
-    return false;
+    __uarg(mod);
+    __uarg(keys);
+    return true;
 }
 
 /*
@@ -67,12 +86,14 @@ static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
 
 static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
 {
-    return false;
+    __uarg(mod);
+    __uarg(desc);
+    return true;
 }
 
 static bool cas_check_caid(uint16_t caid)
 {
-    return (caid == 0xFFFF);
+    return ((caid & 0xFF00) == 0x0B00);
 }
 
-MODULE_CAS(template)
+MODULE_CAS(conax)

@@ -24,7 +24,7 @@
 #include <openssl/des.h>
 
 #define NEWCAMD_HEADER_SIZE 12
-#define NEWCAMD_MSG_SIZE EM_MAX_SIZE
+#define NEWCAMD_MSG_SIZE (NEWCAMD_HEADER_SIZE + EM_MAX_SIZE)
 #define MAX_PROV_COUNT 16
 
 typedef enum
@@ -43,14 +43,14 @@ struct module_data_t
     MODULE_CAM_DATA();
 
     /* Config */
-    char *name;
+    const char *name;
 
-    char *host;
+    const char *host;
     int port;
     int timeout;
 
-    char *user;
-    char *pass;
+    const char *user;
+    const char *pass;
     uint8_t key[14];
 
     /* Base */
@@ -73,7 +73,7 @@ struct module_data_t
     em_packet_t *packet;    // current packet
     uint64_t last_key[2];   // NDS
 
-    size_t buffer_size;
+    uint16_t buffer_size;
     uint8_t buffer[NEWCAMD_MSG_SIZE];
 };
 
@@ -151,8 +151,8 @@ static uint8_t xor_sum(const uint8_t *mem, int len)
  *
  */
 
-static void newcamd_connect(void *);
-static void newcamd_disconnect(module_data_t *, int);
+static void newcamd_connect(module_data_t *);
+static void newcamd_disconnect(module_data_t *);
 
 static void timeout_timer_callback(void *arg)
 {
@@ -178,7 +178,7 @@ static void timeout_timer_callback(void *arg)
             break;
     }
 
-    newcamd_disconnect(mod, 0);
+    newcamd_disconnect(mod);
     newcamd_connect(mod);
 }
 
@@ -207,29 +207,32 @@ static void newcamd_timeout_unset(module_data_t *mod)
  *
  */
 
-static int newcamd_send_msg(module_data_t *mod, em_packet_t *packet)
+static int newcamd_send_msg(module_data_t *mod)
 {
     // packet header
-    const size_t buffer_size = mod->buffer_size;
-    uint8_t *buffer = mod->buffer;
 
-    memset(&buffer[2], 0, NEWCAMD_HEADER_SIZE - 2);
-    if(packet)
+    memset(&mod->buffer[2], 0, NEWCAMD_HEADER_SIZE - 2);
+    if(mod->packet)
     {
-        const uint16_t pnr = packet->pnr;
-        buffer[4] = pnr >> 8;
-        buffer[5] = pnr & 0xff;
+        mod->buffer_size = mod->packet->buffer_size;
+
+        memcpy(&mod->buffer[NEWCAMD_HEADER_SIZE], mod->packet->buffer, mod->packet->buffer_size);
+        mod->buffer_size = mod->packet->buffer_size;
+
+        const uint16_t pnr = mod->packet->decrypt->pnr;
+        mod->buffer[4] = pnr >> 8;
+        mod->buffer[5] = pnr & 0xff;
 
         ++mod->msg_id;
-        buffer[2] = mod->msg_id >> 8;
-        buffer[3] = mod->msg_id & 0xff;
+        mod->buffer[2] = mod->msg_id >> 8;
+        mod->buffer[3] = mod->msg_id & 0xff;
     }
 
     // packet content
-    buffer[13] = ((buffer[13] & 0xf0) | (((buffer_size - 3) >> 8) & 0x0f));
-    buffer[14] = (buffer_size - 3) & 0xff;
+    mod->buffer[13] = ((mod->buffer[13] & 0xf0) | (((mod->buffer_size - 3) >> 8) & 0x0f));
+    mod->buffer[14] = (mod->buffer_size - 3) & 0xff;
 
-    uint16_t packet_size = NEWCAMD_HEADER_SIZE + buffer_size;
+    uint16_t packet_size = NEWCAMD_HEADER_SIZE + mod->buffer_size;
     // pad_message
     const uint8_t no_pad_bytes= (8 - ((packet_size - 1) % 8)) % 8;
     if((packet_size + no_pad_bytes + 1) >= (NEWCAMD_MSG_SIZE - 8))
@@ -240,9 +243,9 @@ static int newcamd_send_msg(module_data_t *mod, em_packet_t *packet)
 
     DES_cblock pad_bytes;
     DES_random_key((DES_cblock *)pad_bytes);
-    memcpy(&buffer[packet_size], pad_bytes, no_pad_bytes);
+    memcpy(&mod->buffer[packet_size], pad_bytes, no_pad_bytes);
     packet_size += no_pad_bytes;
-    buffer[packet_size] = xor_sum(&buffer[2], packet_size - 2);
+    mod->buffer[packet_size] = xor_sum(&mod->buffer[2], packet_size - 2);
     ++packet_size;
 
     // encrypt
@@ -253,21 +256,21 @@ static int newcamd_send_msg(module_data_t *mod, em_packet_t *packet)
         asc_log_error(MSG("send: failed to encrypt"));
         return 0;
     }
-    memcpy(&buffer[packet_size], ivec, sizeof(ivec));
-    DES_ede2_cbc_encrypt(&buffer[2], &buffer[2], packet_size - 2
+    memcpy(&mod->buffer[packet_size], ivec, sizeof(ivec));
+    DES_ede2_cbc_encrypt(&mod->buffer[2], &mod->buffer[2], packet_size - 2
                          , &mod->triple_des.ks1, &mod->triple_des.ks2
                          , (DES_cblock *)ivec, DES_ENCRYPT);
     packet_size += sizeof(ivec);
 
-    buffer[0] = (packet_size - 2) >> 8;
-    buffer[1] = (packet_size - 2) & 0xff;
+    mod->buffer[0] = (packet_size - 2) >> 8;
+    mod->buffer[1] = (packet_size - 2) & 0xff;
 
-    if(asc_socket_send_direct(mod->sock, buffer, packet_size) != packet_size)
+    if(asc_socket_send_direct(mod->sock, mod->buffer, packet_size) != packet_size)
     {
         asc_log_error(MSG("send: failed [%d]"), errno);
-        if(packet)
+        if(mod->packet)
         {
-            packet->buffer[2] = 0x00;
+            mod->packet->buffer[2] = 0x00;
             // TODO: cam_callback(mod, packet);
             --mod->msg_id;
         }
@@ -285,7 +288,7 @@ static int newcamd_send_cmd(module_data_t *mod, newcamd_cmd_t cmd)
     buffer[1] = 0;
     buffer[2] = 0;
     mod->buffer_size = 3;
-    return newcamd_send_msg(mod, NULL);
+    return newcamd_send_msg(mod);
 }
 
 /*
@@ -297,29 +300,28 @@ static int newcamd_send_cmd(module_data_t *mod, newcamd_cmd_t cmd)
  *
  */
 
-int newcamd_recv_msg(module_data_t *mod, em_packet_t *packet)
+int newcamd_recv_msg(module_data_t *mod)
 {
     if(mod->status != NEWCAMD_READY)
         newcamd_timeout_unset(mod);
 
-    uint8_t *buffer = mod->buffer;
-    buffer[NEWCAMD_HEADER_SIZE] = 0x00;
+    mod->buffer[NEWCAMD_HEADER_SIZE] = 0x00;
 
     uint16_t packet_size = 0;
 
-    if(asc_socket_recv(mod->sock, buffer, 2) != 2)
+    if(asc_socket_recv(mod->sock, mod->buffer, 2) != 2)
     {
         asc_log_error(MSG("recv: failed to read the length of message [%s]"), strerror(errno));
         return 0;
     }
-    packet_size = (buffer[0] << 8) | buffer[1];
+    packet_size = (mod->buffer[0] << 8) | mod->buffer[1];
     if(packet_size > (NEWCAMD_MSG_SIZE - 2))
     {
         asc_log_error(MSG("recv: message size %d is greater than %d")
                       , packet_size, NEWCAMD_MSG_SIZE);
         return 0;
     }
-    const ssize_t read_size = asc_socket_recv(mod->sock, &buffer[2], packet_size);
+    const ssize_t read_size = asc_socket_recv(mod->sock, &mod->buffer[2], packet_size);
     if(read_size != packet_size)
     {
         asc_log_error(MSG("recv: failed to read message [%s]"), strerror(errno));
@@ -331,30 +333,31 @@ int newcamd_recv_msg(module_data_t *mod, em_packet_t *packet)
     {
         DES_cblock ivec;
         packet_size -= sizeof(ivec);
-        memcpy(ivec, &buffer[packet_size + 2], sizeof(ivec));
-        DES_ede2_cbc_encrypt(&buffer[2], &buffer[2], packet_size
+        memcpy(ivec, &mod->buffer[packet_size + 2], sizeof(ivec));
+        DES_ede2_cbc_encrypt(&mod->buffer[2], &mod->buffer[2], packet_size
                              , &mod->triple_des.ks1, &mod->triple_des.ks2
                              , (DES_cblock *)ivec, DES_DECRYPT);
     }
-    if(xor_sum(&buffer[2], packet_size))
+    if(xor_sum(&mod->buffer[2], packet_size))
     {
         asc_log_error(MSG("recv: bad checksum"), NULL);
         return 0;
     }
 
-    const uint8_t msg_type = buffer[NEWCAMD_HEADER_SIZE];
-    if(packet && msg_type >= 0x80 && msg_type <= 0x8F)
+    const uint8_t msg_type = mod->buffer[NEWCAMD_HEADER_SIZE];
+    if(mod->packet && msg_type >= 0x80 && msg_type <= 0x8F)
     {
-        const uint16_t msg_id = (buffer[2] << 8) | buffer[3];
+        const uint16_t msg_id = (mod->buffer[2] << 8) | mod->buffer[3];
         if(msg_id != mod->msg_id)
         {
             asc_log_warning(MSG("wrong message id. required:%d receive:%d"), mod->msg_id, msg_id);
             return 0;
         }
+        newcamd_timeout_unset(mod);
     }
 
-    mod->buffer_size = (((buffer[NEWCAMD_HEADER_SIZE + 1] << 8)
-                        | buffer[NEWCAMD_HEADER_SIZE + 2]) & 0x0fff)
+    mod->buffer_size = (((mod->buffer[NEWCAMD_HEADER_SIZE + 1] << 8)
+                        | mod->buffer[NEWCAMD_HEADER_SIZE + 2]) & 0x0fff)
                         + 3;
 
     return mod->buffer_size;
@@ -362,7 +365,7 @@ int newcamd_recv_msg(module_data_t *mod, em_packet_t *packet)
 
 static newcamd_cmd_t newcamd_recv_cmd(module_data_t *mod)
 {
-    if(newcamd_recv_msg(mod, NULL))
+    if(newcamd_recv_msg(mod))
         return mod->buffer[NEWCAMD_HEADER_SIZE];
 
     return NEWCAMD_MSG_ERROR;
@@ -404,7 +407,7 @@ static int newcamd_login_1(module_data_t *mod)
     mod->buffer_size = u_len + p_len + 3;
 
     mod->status = NEWCAMD_CONNECTED;
-    return newcamd_send_msg(mod, NULL);
+    return newcamd_send_msg(mod);
 }
 
 static int newcamd_login_2(module_data_t *mod)
@@ -428,7 +431,7 @@ static int newcamd_login_3(module_data_t *mod)
 {
     uint8_t *buffer = &mod->buffer[NEWCAMD_HEADER_SIZE];
 
-    if(!newcamd_recv_msg(mod, NULL))
+    if(!newcamd_recv_msg(mod))
         return 0;
     if(buffer[0] != NEWCAMD_MSG_CARD_DATA)
     {
@@ -458,12 +461,13 @@ static int newcamd_login_3(module_data_t *mod)
         uint8_t *p = &mod->prov_buffer[i * info_size];
         memcpy(&p[0], &buffer[15 + (11 * i)], 3);
         memcpy(&p[3], &buffer[18 + (11 * i)], 8);
-        // TODO: append to the prov_list
+        module_cam_set_provider(mod, p);
         asc_log_info(MSG("Prov:%d ID:%s SA:%s"), i
                      , hex_to_str(hex_str, &p[0], 3)
                      , hex_to_str(&hex_str[8], &p[3], 8));
     }
 
+    module_cam_ready(mod);
     mod->status = NEWCAMD_READY;
     return 1;
 }
@@ -479,7 +483,7 @@ static int newcamd_login_3(module_data_t *mod)
 
 static int newcamd_response(module_data_t *mod)
 {
-    const int len = newcamd_recv_msg(mod, mod->packet);
+    const int len = newcamd_recv_msg(mod);
     if(len)
     {
         uint8_t *buffer = &mod->buffer[NEWCAMD_HEADER_SIZE];
@@ -511,11 +515,20 @@ static int newcamd_response(module_data_t *mod)
         else
         {
             mod->packet->buffer[2] = 0x00;
-            asc_log_error(MSG("pnr:%d incorrect message length %d"), mod->packet->pnr, len);
+            asc_log_error(MSG("pnr:%d incorrect message length %d")
+                          , mod->packet->decrypt->pnr, len);
             mod->packet->buffer_size = 3;
         }
 
-        // cam_callback(mod, packet);
+        module_cam_response(mod);
+    }
+
+    if(mod->packet)
+    {
+        free(mod->packet);
+        mod->packet = module_cam_queue_pop(mod);
+        if(mod->packet)
+            newcamd_send_msg(mod);
     }
 
     return len;
@@ -535,7 +548,7 @@ static void on_close(void *arg)
     module_data_t *mod = arg;
 
     asc_log_error(MSG("failed to read from socket [%s]"), strerror(errno));
-    newcamd_disconnect(mod, 0);
+    newcamd_disconnect(mod);
     newcamd_timeout_set(mod);
 }
 
@@ -573,7 +586,7 @@ static void on_connect_error(void *arg)
     module_data_t *mod = arg;
 
     asc_log_error(MSG("socket not ready [%s]"), asc_socket_error());
-    newcamd_disconnect(mod, 0);
+    newcamd_disconnect(mod);
     newcamd_timeout_set(mod);
 }
 
@@ -594,15 +607,13 @@ static void on_connect(void *arg)
  *
  */
 
-static void newcamd_connect(void *arg)
+static void newcamd_connect(module_data_t *mod)
 {
-    module_data_t *mod = arg;
-
     mod->sock = asc_socket_open_tcp4(mod);
     asc_socket_connect(mod->sock, mod->host, mod->port, on_connect, on_connect_error);
 }
 
-static void newcamd_disconnect(module_data_t *mod, int status)
+static void newcamd_disconnect(module_data_t *mod)
 {
     newcamd_timeout_unset(mod);
 
@@ -613,24 +624,80 @@ static void newcamd_disconnect(module_data_t *mod, int status)
     }
     mod->status = NEWCAMD_UNKNOWN;
 
-    // list_t *i = mod->__cam_module.prov_list;
-    // while(i)
-    //     i = list_delete(i, NULL);
-    // mod->__cam_module.prov_list = NULL;
+    module_cam_reset(mod);
+}
+
+static void newcamd_send_em(module_data_t *mod, module_decrypt_t *decrypt
+                            , uint8_t *buffer, uint16_t size)
+{
+    em_packet_t *packet = malloc(sizeof(em_packet_t));
+    memcpy(packet->buffer, buffer, size);
+    packet->buffer_size = size;
+    packet->decrypt = decrypt;
+
+    asc_list_first(mod->__cam.packet_queue);
+    while(!asc_list_eol(mod->__cam.packet_queue))
+    {
+        em_packet_t *packet = asc_list_data(mod->__cam.packet_queue);
+        if(packet->decrypt == decrypt && ((packet->buffer[0] & ~0x01) == 0x80))
+        {
+            asc_log_warning(MSG("drop old packet "
+                                "(pnr:%d drop:0x%02X set:0x%02X)")
+                            , decrypt->pnr, packet->buffer[0], buffer[0]);
+            asc_list_remove_current(mod->__cam.packet_queue);
+            break;
+        }
+        asc_list_next(mod->__cam.packet_queue);
+    }
+
+    asc_list_insert_tail(mod->__cam.packet_queue, packet);
+    if(mod->packet) // newcamd is busy
+        return;
+    mod->packet = module_cam_queue_pop(mod);
+    newcamd_send_msg(mod);
 }
 
 static void module_init(module_data_t *mod)
 {
+    module_option_string("name", &mod->name);
+    asc_assert(mod->name != NULL, "[newcamd] option 'name' is required");
 
+    module_option_string("host", &mod->host);
+    asc_assert(mod->host != NULL, MSG("option 'host' is required"));
+    module_option_number("port", &mod->port);
+    asc_assert(mod->port > 0 && mod->port < 65535, MSG("option 'port' is required"));
+
+    module_option_string("user", &mod->user);
+    asc_assert(mod->user != NULL, MSG("option 'user' is required"));
+    module_option_string("pass", &mod->pass);
+    asc_assert(mod->pass != NULL, MSG("option 'pass' is required"));
+
+    const char *key = NULL;
+    module_option_string("key", &key);
+    asc_assert(key != NULL, MSG("option 'key' is required"));
+    str_to_hex(key, mod->key, sizeof(mod->key));
+
+    module_option_number("timeout", &mod->timeout);
+    if(!mod->timeout)
+        mod->timeout = 8;
+    mod->timeout *= 1000;
+
+    module_cam_init(mod, newcamd_connect, newcamd_disconnect, newcamd_send_em);
 }
 
 static void module_destroy(module_data_t *mod)
 {
+    newcamd_disconnect(mod);
 
+    if(mod->prov_buffer)
+        free(mod->prov_buffer);
+
+    module_cam_destroy(mod);
 }
 
+MODULE_CAM_METHODS()
 MODULE_LUA_METHODS()
 {
-    { NULL, NULL }
+    MODULE_CAM_METHODS_REF()
 };
 MODULE_LUA_REGISTER(newcamd)
