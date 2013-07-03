@@ -26,9 +26,10 @@
  *      upstream    - object, stream instance returned by module_instance:stream()
  *      biss        - string, BISS key, 16 chars length. example: biss = "1122330044556600"
  *      cam         - object, cam instance returned by cam_module_instance:cam()
- *      caid        - number, CAID to select CAS
  *      cas_data    - string, additional paramters for CAS
  */
+
+// TODO: stream reload
 
 #include <astra.h>
 #include "module_cam.h"
@@ -58,12 +59,17 @@ struct module_data_t
     size_t cluster_size;
     size_t cluster_size_bytes;
 
+    int is_new_key; // 0 - not, 1 - first key, 2 - second key
+    uint8_t new_key[16];
+
     /* Base */
     mpegts_psi_t *pat;
     mpegts_psi_t *cat;
     mpegts_psi_t *pmt;
     mpegts_psi_t *custom_pmt;
     mpegts_psi_t *em;
+
+    struct timeval em_time;
 
     mpegts_packet_type_t stream[MAX_PID];
 };
@@ -131,7 +137,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     if(mod->__decrypt.cam)
     {
         mod->__decrypt.cas = module_decrypt_cas_init(mod);
-        asc_assert(mod->__decrypt.cas != NULL, "CAS with CAID:0x%04X not found");
+        asc_assert(mod->__decrypt.cas != NULL, "CAS with CAID:0x%04X not found", mod->caid);
 
         if(!mod->__decrypt.cam->disable_emm)
             mod->stream[1] = MPEGTS_PACKET_CAT;
@@ -311,7 +317,7 @@ static void on_em(void *arg, mpegts_psi_t *psi)
     }
     else
     { /* ECM */
-        ;
+        gettimeofday(&mod->em_time, NULL);
     }
 
     if(!module_cas_check_em(mod->__decrypt.cas, psi))
@@ -394,7 +400,16 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     while(i < mod->cluster_size)
         i += decrypt_packets(mod->ffdecsa, mod->cluster);
 
-    // TODO: check is new key
+    // check new key
+    if(mod->is_new_key)
+    {
+        if(mod->is_new_key == 1)
+            set_even_control_word(mod->ffdecsa, &mod->new_key[0]);
+        else if(mod->is_new_key == 2)
+            set_odd_control_word(mod->ffdecsa, &mod->new_key[8]);
+
+        mod->is_new_key = 0;
+    }
 
     // swap buffers
     uint8_t *tmp = mod->r_buffer;
@@ -408,17 +423,17 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 }
 
 /*
- * oooo     oooo  ooooooo  ooooooooo  ooooo  oooo ooooo       ooooooooooo
- *  8888o   888 o888   888o 888    88o 888    88   888         888    88
- *  88 888o8 88 888     888 888    888 888    88   888         888ooo8
- *  88  888  88 888o   o888 888    888 888    88   888      o  888    oo
- * o88o  8  o88o  88ooo88  o888ooo88    888oo88   o888ooooo88 o888ooo8888
+ *      o      oooooooooo ooooo
+ *     888      888    888 888
+ *    8  88     888oooo88  888
+ *   8oooo88    888        888
+ * o88o  o888o o888o      o888o
  *
  */
 
 static void on_cam_ready(module_data_t *mod)
 {
-    asc_log_info(MSG("%s()"), __FUNCTION__);
+    asc_log_debug(MSG("%s()"), __FUNCTION__);
     //
     mod->caid = mod->__decrypt.cam->caid;
     mod->stream[0] = MPEGTS_PACKET_PAT;
@@ -429,19 +444,87 @@ static void on_cam_ready(module_data_t *mod)
 
 static void on_cam_error(module_data_t *mod)
 {
-    asc_log_info(MSG("%s()"), __FUNCTION__);
+    asc_log_debug(MSG("%s()"), __FUNCTION__);
     //
     mod->caid = 0x0000;
     memset(mod->stream, 0, sizeof(mod->stream));
 }
 
-static void on_response(module_data_t *mod, uint8_t *data)
+static void on_response(module_data_t *mod, const uint8_t *data)
 {
-    asc_log_info(MSG("%s(): 0x%02X%02X%02X"), __FUNCTION__, data[0], data[1], data[2]);
+    if((data[0] & ~0x01) != 0x80)
+        return; /* Skip EMM */
 
-    if(!module_cas_check_keys(mod->__decrypt.cas, data))
-        return;
+    bool is_keys_ok = false;
+    do
+    {
+        if(!module_cas_check_keys(mod->__decrypt.cas, data))
+            break;
+
+        if(data[2] != 16)
+            break;
+
+        const uint8_t ck1 = (data[3] + data[4] + data[5]) & 0xFF;
+        if(ck1 != data[6])
+            break;
+
+        const uint8_t ck2 = (data[7] + data[8] + data[9]) & 0xFF;
+        if(ck2 != data[10])
+            break;
+
+        is_keys_ok = true;
+    } while(0);
+
+    struct timeval em_time_end;
+    gettimeofday(&em_time_end, NULL);
+    const double response_ms = (mod->em_time.tv_sec * 1000000 + mod->em_time.tv_usec
+                                - em_time_end.tv_sec * 1000000 + em_time_end.tv_usec)
+                             / 1000.0; // ms
+
+    if(is_keys_ok)
+    {
+        // Set keys
+        if(mod->new_key[3] == data[6] && mod->new_key[7] == data[10])
+        {
+            mod->is_new_key = 2;
+            memcpy(&mod->new_key[8], &data[11], 8);
+        }
+        else if(mod->new_key[11] == data[14] && mod->new_key[15] == data[18])
+        {
+            mod->is_new_key = 1;
+            memcpy(mod->new_key, &data[3], 8);
+        }
+        else
+        {
+            mod->is_new_key = 0;
+            set_control_words(mod->ffdecsa, &data[3], &data[11]);
+            memcpy(mod->new_key, &data[3], 16);
+            if(mod->is_keys)
+                asc_log_warning(MSG("both keys changed"));
+            else
+                mod->is_keys = 1;
+        }
+
+#if CAS_ECM_DUMP
+        char key_1[17], key_2[17];
+        hex_to_str(key_1, &data[3], 8);
+        hex_to_str(key_2, &data[11], 8);
+        asc_log_debug(MSG("ECM Found time:%.2fms [%02X:%s:%s]")
+                      , response_ms, data[0], key_1, key_2);
+#endif
+    }
+    else
+        asc_log_error(MSG("ECM Not Found time:%.2fms [%02X]"), response_ms, data[0]);
 }
+
+/*
+ * oooo     oooo  ooooooo  ooooooooo  ooooo  oooo ooooo       ooooooooooo
+ *  8888o   888 o888   888o 888    88o 888    88   888         888    88
+ *  88 888o8 88 888     888 888    888 888    88   888         888ooo8
+ *  88  888  88 888o   o888 888    888 888    88   888      o  888    oo
+ * o88o  8  o88o  88ooo88  o888ooo88    888oo88   o888ooooo88 o888ooo8888
+ *
+ */
 
 static void module_init(module_data_t *mod)
 {

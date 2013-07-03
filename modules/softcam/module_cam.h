@@ -196,7 +196,7 @@ struct module_decrypt_t
 
     void (*on_cam_ready)(module_data_t *mod);
     void (*on_cam_error)(module_data_t *mod);
-    void (*on_response)(module_data_t *mod, uint8_t *data);
+    void (*on_response)(module_data_t *mod, const uint8_t *data);
 
     module_data_t *self;
 };
