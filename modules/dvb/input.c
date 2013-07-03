@@ -311,12 +311,16 @@ static void module_options(module_data_t *mod)
 
 static void join_pid(module_data_t *mod, uint16_t pid)
 {
-    dmx_set_pid(mod, pid, 1);
+    ++mod->__stream.pid_list[pid];
+    if(mod->__stream.pid_list[pid] == 1)
+        dmx_set_pid(mod, pid, 1);
 }
 
 static void leave_pid(module_data_t *mod, uint16_t pid)
 {
-    dmx_set_pid(mod, pid, 0);
+    --mod->__stream.pid_list[pid];
+    if(mod->__stream.pid_list[pid] == 0)
+        dmx_set_pid(mod, pid, 0);
 }
 
 static void module_init(module_data_t *mod)

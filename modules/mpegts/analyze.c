@@ -15,11 +15,11 @@
  *      name        - string, analyzer name
  *      rate_stat   - boolean, dump bitrate with 10ms interval
  *      callback    - function(data), events callback:
-                      data.error    - string,
-                      data.psi      - table, psi information (PAT, PMT, CAT, SDT)
-                      data.analyze  - table, per pid information: errors, bitrate
-                      data.on_air   - boolean, comes with data.analyze, stream status
-                      data.rate     - table, rate_stat array
+ *                    data.error    - string,
+ *                    data.psi      - table, psi information (PAT, PMT, CAT, SDT)
+ *                    data.analyze  - table, per pid information: errors, bitrate
+ *                    data.on_air   - boolean, comes with data.analyze, stream status
+ *                    data.rate     - table, rate_stat array
  */
 
 #include <astra.h>
@@ -167,6 +167,8 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     lua_setfield(lua, -2, "programs");
 
     mod->pmt_count = programs_count;
+    if(mod->pmt_checksum_list)
+        free(mod->pmt_checksum_list);
     mod->pmt_checksum_list = calloc(mod->pmt_count, sizeof(pmt_checksum_t));
 
     do_callback(mod);
@@ -678,6 +680,9 @@ static void module_destroy(module_data_t *mod)
     mpegts_psi_destroy(mod->pmt);
 
     asc_timer_destroy(mod->check_stat);
+
+    if(mod->pmt_checksum_list)
+        free(mod->pmt_checksum_list);
 }
 
 MODULE_STREAM_METHODS()

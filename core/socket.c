@@ -524,8 +524,24 @@ void asc_socket_connect(asc_socket_t *sock, const char *addr, int port
     asc_assert(on_ok && on_err, MSG("connect() - on_ok/on_err not specified"));
     memset(&sock->addr, 0, sizeof(sock->addr));
     sock->addr.sin_family = sock->family;
-    sock->addr.sin_addr.s_addr = inet_addr(addr);
+    // sock->addr.sin_addr.s_addr = inet_addr(addr);
     sock->addr.sin_port = htons(port);
+
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = sock->type;
+    hints.ai_family = sock->family;
+    int err = getaddrinfo(addr, NULL, &hints, &res);
+    if(err != 0)
+    {
+        asc_log_error(MSG("getaddrinfo() failed '%s' [%s])"), addr, gai_strerror(err));
+        on_err(sock->arg);
+        return;
+    }
+    memcpy(&sock->addr.sin_addr
+           , &((struct sockaddr_in *)res->ai_addr)->sin_addr
+           , sizeof(sock->addr.sin_addr));
+    freeaddrinfo(res);
 
     if(connect(sock->fd, (struct sockaddr *)&sock->addr, sizeof(sock->addr)) == -1)
     {
