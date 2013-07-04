@@ -92,8 +92,14 @@ void __module_cam_ready(module_cam_t *cam);
 void __module_cam_reset(module_cam_t *cam);
 #define module_cam_reset(_mod) __module_cam_reset(&_mod->__cam)
 
-#define module_cam_response(_mod)                                                               \
-    _mod->packet->decrypt->on_response(_mod->packet->decrypt->self, _mod->packet->buffer)
+#define module_cam_response(_mod, _errmsg)                                                      \
+    {                                                                                           \
+        _mod->packet->decrypt->on_response(_mod->packet->decrypt->self                          \
+                                           , _mod->packet->buffer                               \
+                                           , _errmsg);                                          \
+        free(mod->packet);                                                                      \
+        mod->packet = NULL;                                                                     \
+    }
 
 #define module_cam_init(_mod, _connect, _disconnect, _send_em)                                  \
     {                                                                                           \
@@ -196,7 +202,7 @@ struct module_decrypt_t
 
     void (*on_cam_ready)(module_data_t *mod);
     void (*on_cam_error)(module_data_t *mod);
-    void (*on_response)(module_data_t *mod, const uint8_t *data);
+    void (*on_response)(module_data_t *mod, const uint8_t *data, const char *message);
 
     module_data_t *self;
 };

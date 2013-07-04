@@ -217,7 +217,7 @@ function start_reserve(channel_data)
         for input_id = 1, #channel_data.input do
             local input_data = channel_data.input[input_id]
             if input_data.on_air then
-                log.info("[" .. channel_data.config.name .. "] Activate input " .. input_id)
+                log.info("[" .. channel_data.config.name .. "] Current input " .. input_id)
                 channel_data.transmit:set_upstream(input_data.tail:stream())
                 return input_id
             end
@@ -236,7 +236,7 @@ function start_reserve(channel_data)
             end
         end
 
-        log.error("[" .. channel_data.config.name .. "] Inputs are not working")
+        log.error("[" .. channel_data.config.name .. "] No active input")
         return
     end
 
