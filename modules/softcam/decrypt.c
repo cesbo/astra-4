@@ -523,7 +523,7 @@ static void on_response(module_data_t *mod, const uint8_t *data, const char *err
 
         if(!module_cas_check_keys(mod->__decrypt.cas, data))
         {
-            errmsg = "Wrong ECM format";
+            errmsg = "Wrong ECM id";
             break;
         }
 
@@ -602,6 +602,7 @@ static void on_response(module_data_t *mod, const uint8_t *data, const char *err
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, on_ts);
+    module_stream_demux_set(mod, NULL, NULL);
 
     module_option_string("name", &mod->name);
     asc_assert(mod->name != NULL, "[decrypt] option 'name' is required");
