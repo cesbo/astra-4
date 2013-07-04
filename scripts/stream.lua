@@ -23,6 +23,83 @@ function dump_table(t, p, i)
     end
 end
 
+--      o      oooo   oooo     o      ooooo    ooooo  oooo ooooooooooo ooooooooooo
+--     888      8888o  88     888      888       888  88   88    888    888    88
+--    8  88     88 888o88    8  88     888         888         888      888ooo8
+--   8oooo88    88   8888   8oooo88    888      o  888       888    oo  888    oo
+-- o88o  o888o o88o    88 o88o  o888o o888ooooo88 o888o    o888oooo888 o888ooo8888
+
+dump_psi_info = {}
+
+dump_psi_info["pat"] = function(name, info)
+    log.info(name .. ("PAT: tsid: %d"):format(info.tsid))
+    for _, program_info in pairs(info.programs) do
+        if program_info.pnr == 0 then
+            log.info(name .. ("PAT: pid: %d NIT"):format(program_info.pid))
+        else
+            log.info(name .. ("PAT: pid: %d PMT pnr: %d"):format(program_info.pid, program_info.pnr))
+        end
+    end
+    log.info(name .. ("PAT: crc32: 0x%X"):format(info.crc32))
+end
+
+function dump_descriptor(prefix, descriptor_info)
+    if descriptor_info.type_name == "cas" then
+        local data = ""
+        if descriptor_info.data then data = " data: " .. descriptor_info.data end
+        log.info(prefix .. ("CAS: caid: 0x%04X pid: %d%s")
+                           :format(descriptor_info.caid, descriptor_info.pid, data))
+    elseif descriptor_info.type_name == "lang" then
+        log.info(prefix .. "Language: " .. descriptor_info.lang)
+    elseif descriptor_info.type_name == "stream_id" then
+        log.info(prefix .. "Stream ID: " .. descriptor_info.stream_id)
+    elseif descriptor_info.type_name == "unknown" then
+        log.info(prefix .. "descriptor: " .. descriptor_info.data)
+    else
+        log.info(prefix .. ("unknown descriptor. type: %s 0x%02X")
+                           :format(tostring(descriptor_info.type_name), descriptor_info.type_id))
+    end
+end
+
+dump_psi_info["cat"] = function(name, info)
+    for _, descriptor_info in pairs(info.descriptors) do
+        dump_descriptor(name .. "CAT: ", descriptor_info)
+    end
+end
+
+dump_psi_info["pmt"] = function(name, info)
+    log.info(name .. ("PMT: pnr: %d"):format(info.pnr))
+    log.info(name .. ("PMT: pid: %d PCR"):format(info.pcr))
+
+    for _, descriptor_info in pairs(info.descriptors) do
+        dump_descriptor(name .. "PMT: ", descriptor_info)
+    end
+
+    for _, stream_info in pairs(info.streams) do
+        log.info(name .. ("%s: pid: %d type: 0x%02X")
+                         :format(stream_info.type_name, stream_info.pid, stream_info.type_id))
+        for _, descriptor_info in pairs(stream_info.descriptors) do
+            dump_descriptor(name .. stream_info.type_name .. ": ", descriptor_info)
+        end
+    end
+    log.info(name .. ("PMT: crc32: 0x%X"):format(info.crc32))
+end
+
+function on_analyze(channel_data, data)
+    local name = "[" .. channel_data.config.name .. "] "
+
+    if data.error then
+        log.error(name .. "Error: " .. data.error)
+
+    elseif data.psi then
+        if dump_psi_info[data.psi] then
+            dump_psi_info[data.psi](name, data)
+        else
+            log.error(name .. "Unknown PSI: " .. data.psi)
+        end
+    end
+end
+
 -- ooooo  oooo oooooooooo  ooooo
 --  888    88   888    888  888
 --  888    88   888oooo88   888
@@ -31,12 +108,30 @@ end
 
 local parse_option = {}
 
+parse_option.cam = function(val, result)
+    if _G[val] then
+        result.cam = _G[val]:cam()
+    else
+        log.error("[stream.lua] CAM \"" .. val .. "\" not found")
+        astra.abort()
+    end
+end
+
 --
 
 local ifaddrs
 if utils.ifaddrs then ifaddrs = utils.ifaddrs() end
 
 local parse_addr = {}
+
+parse_addr.dvb = function(addr, result)
+    if _G[addr] then
+        result._instance = _G[addr]
+    else
+        log.error("[stream.lua] DVB \"" .. addr .. "\" not found")
+        astra.abort()
+    end
+end
 
 parse_addr.udp = function(addr, result)
     local x = addr:find("@")
@@ -122,7 +217,7 @@ function start_reserve(channel_data)
         for input_id = 1, #channel_data.input do
             local input_data = channel_data.input[input_id]
             if input_data.on_air then
-                log.info("[" .. channel_data.config.name .. "] Activate input " .. input_id)
+                log.info("[" .. channel_data.config.name .. "] Current input " .. input_id)
                 channel_data.transmit:set_upstream(input_data.tail:stream())
                 return input_id
             end
@@ -141,7 +236,7 @@ function start_reserve(channel_data)
             end
         end
 
-        log.error("[" .. channel_data.config.name .. "] Inputs are not working")
+        log.error("[" .. channel_data.config.name .. "] No active input")
         return
     end
 
@@ -163,10 +258,36 @@ end
 
 local input_list = {}
 
-local dvb_instance_list = {}
+function dvb_tune(dvb_conf)
+    if dvb_conf.freq then dvb_conf.frequency = dvb_conf.freq end
+
+    if dvb_conf.tp then
+        local _, _, freq_s, pol_s, srate_s = dvb_conf.tp:find("(%d+):(%a):(%d+)")
+        if not freq_s then
+            log.error("[stream.lua] DVB wrong \"tp\" format")
+            astra.abort()
+        end
+        dvb_conf.frequency = tonumber(freq_s)
+        dvb_conf.polarization = pol_s
+        dvb_conf.symbolrate = tonumber(srate_s)
+    end
+
+    if dvb_conf.lnb then
+        local _, eo, lof1_s, lof2_s, slof_s = dvb_conf.lnb:find("(%d+):(%d+):(%d+)")
+        if not lof1_s then
+            log.error("[stream.lua] DVB wrong \"lnb\" format")
+            astra.abort()
+        end
+        dvb_conf.lof1 = tonumber(lof1_s)
+        dvb_conf.lof2 = tonumber(lof2_s)
+        dvb_conf.slof = tonumber(slof_s)
+    end
+
+    return dvb_input(dvb_conf)
+end
 
 input_list.dvb = function(input_conf)
-    -- TODO:
+    return { tail = input_conf._instance }
 end
 
 local udp_instance_list = {}
@@ -228,9 +349,21 @@ function init_input(channel_data, input_id)
     if input_conf.biss then
         input_data.decrypt = decrypt({
             upstream = input_data.tail:stream(),
-            biss = input_conf.biss
+            name = channel_data.config.name,
+            biss = input_conf.biss,
         })
         input_data.tail = input_data.decrypt
+
+    elseif input_conf.cam then
+        local decrypt_conf = {
+            upstream = input_data.tail:stream(),
+            name = channel_data.config.name,
+            cam = input_conf.cam,
+        }
+        if input_conf.cas_data then decrypt_conf.cas_data = input_conf.cas_data end
+        input_data.decrypt = decrypt(decrypt_conf)
+        input_data.tail = input_data.decrypt
+
     end
 
     -- TODO: extra modules
@@ -239,6 +372,8 @@ function init_input(channel_data, input_id)
         upstream = input_data.tail:stream(),
         name = channel_data.config.name,
         callback = function(data)
+                on_analyze(channel_data, data)
+
                 if data.analyze then
                     if data.on_air ~= input_data.on_air then
                         input_data.on_air = data.on_air

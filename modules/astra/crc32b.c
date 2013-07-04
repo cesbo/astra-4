@@ -36,7 +36,7 @@ static void _init_crc32(void)
 
 uint32_t crc32b(const uint8_t *buffer, int size)
 {
-    if(!crc32_table[1])
+    if(!crc32_table[0])
         _init_crc32();
 
 #if 0 /* little-endian */

@@ -24,6 +24,7 @@
  *
  * Module Options:
  *      upstream    - object, stream instance returned by module_instance:stream()
+ *      name        - string, channel name
  *      biss        - string, BISS key, 16 chars length. example: biss = "1122330044556600"
  *      cam         - object, cam instance returned by cam_module_instance:cam()
  *      cas_data    - string, additional paramters for CAS
@@ -59,7 +60,7 @@ struct module_data_t
     size_t cluster_size;
     size_t cluster_size_bytes;
 
-    int is_new_key; // 0 - not, 1 - first key, 2 - second key
+    int new_key_id; // 0 - not, 1 - first key, 2 - second key
     uint8_t new_key[16];
 
     /* Base */
@@ -68,8 +69,6 @@ struct module_data_t
     mpegts_psi_t *pmt;
     mpegts_psi_t *custom_pmt;
     mpegts_psi_t *em;
-
-    struct timeval em_time;
 
     mpegts_packet_type_t stream[MAX_PID];
 };
@@ -89,8 +88,10 @@ static module_cas_t * module_decrypt_cas_init(module_data_t *mod)
 
 static void module_decrypt_cas_destroy(module_data_t *mod)
 {
-    if(mod->__decrypt.cas)
-        free(mod->__decrypt.cas->self);
+    if(!mod->__decrypt.cas)
+        return;
+    free(mod->__decrypt.cas->self);
+    mod->__decrypt.cas = NULL;
 }
 
 static void stream_reload(module_data_t *mod)
@@ -104,8 +105,6 @@ static void stream_reload(module_data_t *mod)
     mod->pmt->crc32 = 0;
 
     module_decrypt_cas_destroy(mod);
-
-    mpegts_psi_destroy(mod->custom_pmt);
 }
 
 /*
@@ -236,7 +235,12 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
     if(crc32 == psi->crc32)
+    {
+        mpegts_psi_demux(mod->custom_pmt
+                         , (void (*)(void *, const uint8_t *))__module_stream_send
+                         , &mod->__stream);
         return;
+    }
 
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
@@ -256,7 +260,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     psi->crc32 = crc32;
 
     // Make custom PMT and set descriptors for CAS
-    mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, psi->pid);
+    mod->custom_pmt->pid = psi->pid;
 
     uint16_t skip = 12;
     memcpy(mod->custom_pmt->buffer, psi->buffer, 10);
@@ -266,7 +270,8 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     {
         if(desc_pointer[0] == 0x09)
         {
-            if(DESC_CA_CAID(desc_pointer) == mod->caid
+            if(mod->caid != 0x2600 /* Not BISS */
+               && DESC_CA_CAID(desc_pointer) == mod->caid
                && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
             {
                 mod->stream[DESC_CA_PID(desc_pointer)] = MPEGTS_PACKET_ECM;
@@ -298,7 +303,8 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         {
             if(desc_pointer[0] == 0x09)
             {
-                if(DESC_CA_CAID(desc_pointer) == mod->caid
+                if(mod->caid != 0x2600 /* Not BISS */
+                   && DESC_CA_CAID(desc_pointer) == mod->caid
                    && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
                 {
                     mod->stream[DESC_CA_PID(desc_pointer)] = MPEGTS_PACKET_ECM;
@@ -323,6 +329,10 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     mod->custom_pmt->buffer_size = skip + CRC32_SIZE;
     PSI_SET_SIZE(mod->custom_pmt);
     PSI_SET_CRC32(mod->custom_pmt);
+
+    mpegts_psi_demux(mod->custom_pmt
+                     , (void (*)(void *, const uint8_t *))__module_stream_send
+                     , &mod->__stream);
 }
 
 /*
@@ -357,7 +367,7 @@ static void on_em(void *arg, mpegts_psi_t *psi)
     }
     else
     { /* ECM */
-        gettimeofday(&mod->em_time, NULL);
+        ;
     }
 
     if(!module_cas_check_em(mod->__decrypt.cas, psi))
@@ -390,21 +400,11 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             return;
         case MPEGTS_PACKET_PMT:
             mpegts_psi_mux(mod->pmt, ts, on_pmt, mod);
-            if(mod->custom_pmt)
-            {
-                mpegts_psi_demux(mod->custom_pmt
-                                 , (void (*)(void *, const uint8_t *))__module_stream_send
-                                 , &mod->__stream);
-            }
-            else
-            {
-                mpegts_psi_demux(mod->pmt
-                                 , (void (*)(void *, const uint8_t *))__module_stream_send
-                                 , &mod->__stream);
-            }
             return;
         case MPEGTS_PACKET_ECM:
         case MPEGTS_PACKET_EMM:
+            if(!mod->__decrypt.cas)
+                return;
             mpegts_psi_mux(mod->em, ts, on_em, mod);
             return;
         default:
@@ -441,14 +441,14 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         i += decrypt_packets(mod->ffdecsa, mod->cluster);
 
     // check new key
-    if(mod->is_new_key)
+    if(mod->new_key_id)
     {
-        if(mod->is_new_key == 1)
+        if(mod->new_key_id == 1)
             set_even_control_word(mod->ffdecsa, &mod->new_key[0]);
-        else if(mod->is_new_key == 2)
+        else if(mod->new_key_id == 2)
             set_odd_control_word(mod->ffdecsa, &mod->new_key[8]);
 
-        mod->is_new_key = 0;
+        mod->new_key_id = 0;
     }
 
     // swap buffers
@@ -473,21 +473,18 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 
 static void on_cam_ready(module_data_t *mod)
 {
-    asc_log_debug(MSG("%s()"), __FUNCTION__);
-    //
     mod->caid = mod->__decrypt.cam->caid;
     stream_reload(mod);
 }
 
 static void on_cam_error(module_data_t *mod)
 {
-    asc_log_debug(MSG("%s()"), __FUNCTION__);
-    //
     mod->caid = 0x0000;
-    stream_reload(mod);
+    mod->is_keys = false;
+    module_decrypt_cas_destroy(mod);
 }
 
-static void on_response(module_data_t *mod, const uint8_t *data)
+static void on_response(module_data_t *mod, const uint8_t *data, const char *errmsg)
 {
     if((data[0] & ~0x01) != 0x80)
         return; /* Skip EMM */
@@ -495,49 +492,59 @@ static void on_response(module_data_t *mod, const uint8_t *data)
     bool is_keys_ok = false;
     do
     {
-        if(!module_cas_check_keys(mod->__decrypt.cas, data))
+        if(errmsg)
             break;
+
+        if(!module_cas_check_keys(mod->__decrypt.cas, data))
+        {
+            errmsg = "Wrong ECM format";
+            break;
+        }
 
         if(data[2] != 16)
+        {
+            errmsg = "Wrong ECM length";
             break;
+        }
 
+        static const char *errmsg_checksum = "Wrong ECM checksum";
         const uint8_t ck1 = (data[3] + data[4] + data[5]) & 0xFF;
         if(ck1 != data[6])
+        {
+            errmsg = errmsg_checksum;
             break;
+        }
 
         const uint8_t ck2 = (data[7] + data[8] + data[9]) & 0xFF;
         if(ck2 != data[10])
+        {
+            errmsg = errmsg_checksum;
             break;
+        }
 
         is_keys_ok = true;
     } while(0);
-
-    struct timeval em_time_end;
-    gettimeofday(&em_time_end, NULL);
-    const double response_ms = (mod->em_time.tv_sec * 1000000 + mod->em_time.tv_usec
-                                - em_time_end.tv_sec * 1000000 + em_time_end.tv_usec)
-                             / 1000.0; // ms
 
     if(is_keys_ok)
     {
         // Set keys
         if(mod->new_key[3] == data[6] && mod->new_key[7] == data[10])
         {
-            mod->is_new_key = 2;
+            mod->new_key_id = 2;
             memcpy(&mod->new_key[8], &data[11], 8);
         }
         else if(mod->new_key[11] == data[14] && mod->new_key[15] == data[18])
         {
-            mod->is_new_key = 1;
+            mod->new_key_id = 1;
             memcpy(mod->new_key, &data[3], 8);
         }
         else
         {
-            mod->is_new_key = 0;
+            mod->new_key_id = 0;
             set_control_words(mod->ffdecsa, &data[3], &data[11]);
             memcpy(mod->new_key, &data[3], 16);
             if(mod->is_keys)
-                asc_log_warning(MSG("both keys changed"));
+                asc_log_warning(MSG("Both keys changed"));
             else
                 mod->is_keys = 1;
         }
@@ -546,12 +553,15 @@ static void on_response(module_data_t *mod, const uint8_t *data)
         char key_1[17], key_2[17];
         hex_to_str(key_1, &data[3], 8);
         hex_to_str(key_2, &data[11], 8);
-        asc_log_debug(MSG("ECM Found time:%.2fms [%02X:%s:%s]")
-                      , response_ms, data[0], key_1, key_2);
+        asc_log_debug(MSG("ECM Found [%02X:%s:%s]") , data[0], key_1, key_2);
 #endif
     }
     else
-        asc_log_error(MSG("ECM Not Found time:%.2fms [%02X]"), response_ms, data[0]);
+    {
+        if(!errmsg)
+            errmsg = "Unknown";
+        asc_log_error(MSG("ECM 0x%02X Not Found. %s"), data[0], errmsg);
+    }
 }
 
 /*
@@ -589,6 +599,7 @@ static void module_init(module_data_t *mod)
         first_key[3] = (first_key[0] + first_key[1] + first_key[2]) & 0xFF;
         first_key[7] = (first_key[4] + first_key[5] + first_key[6]) & 0xFF;
         mod->is_keys = 1;
+        mod->caid = 0x2600;
     }
     set_control_words(mod->ffdecsa, first_key, first_key);
 
@@ -628,6 +639,7 @@ static void module_init(module_data_t *mod)
     mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
     mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
     mod->em = mpegts_psi_init(MPEGTS_PACKET_CA, MAX_PID);
+    mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
 }
 
 static void module_destroy(module_data_t *mod)
