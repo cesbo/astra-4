@@ -45,6 +45,8 @@ void asc_timer_core_destroy(void)
         free(asc_list_data(timer_list));
         asc_list_remove_current(timer_list);
     }
+    asc_list_destroy(timer_list);
+    timer_list = NULL;
 }
 
 void asc_timer_core_loop(void)
