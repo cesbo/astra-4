@@ -26,17 +26,17 @@ typedef unsigned int group;
 
 /* 64 rows of 32 bits */
 
-void static inline FFTABLEIN(unsigned char *tab, int g, unsigned char *data){
+static inline void FFTABLEIN(unsigned char *tab, int g, unsigned char *data){
   *(((int *)tab)+g)=*((int *)data);
   *(((int *)tab)+32+g)=*(((int *)data)+1);
 }
 
-void static inline FFTABLEOUT(unsigned char *data, unsigned char *tab, int g){
+static inline void FFTABLEOUT(unsigned char *data, unsigned char *tab, int g){
   *((int *)data)=*(((int *)tab)+g);
   *(((int *)data)+1)=*(((int *)tab)+32+g);
 }
 
-void static inline FFTABLEOUTXORNBY(int n, unsigned char *data, unsigned char *tab, int g){
+static inline void FFTABLEOUTXORNBY(int n, unsigned char *data, unsigned char *tab, int g){
   int j;
   for(j=0;j<n;j++){
     *(data+j)^=*(tab+4*(g+(j>=4?32-1:0))+j);

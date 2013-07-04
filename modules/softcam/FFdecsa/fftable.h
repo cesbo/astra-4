@@ -21,7 +21,7 @@
 #ifndef FFTABLE_H
 #define FFTABLE_H
 
-void static inline FFTABLEIN(unsigned char *tab, int g, unsigned char *data)
+static inline void FFTABLEIN(unsigned char *tab, int g, unsigned char *data)
 {
 #if 0
   *(((int *)tab)+2*g)=*((int *)data);
@@ -31,7 +31,7 @@ void static inline FFTABLEIN(unsigned char *tab, int g, unsigned char *data)
 #endif
 }
 
-void static inline FFTABLEOUT(unsigned char *data, unsigned char *tab, int g)
+static inline void FFTABLEOUT(unsigned char *data, unsigned char *tab, int g)
 {
 #if 1
   *((int *)data)=*(((int *)tab)+2*g);
@@ -41,7 +41,7 @@ void static inline FFTABLEOUT(unsigned char *data, unsigned char *tab, int g)
 #endif
 }
 
-void static inline FFTABLEOUTXORNBY(int n, unsigned char *data, unsigned char *tab, int g)
+static inline void FFTABLEOUTXORNBY(int n, unsigned char *data, unsigned char *tab, int g)
 {
   for(int j=0;j<n;j++) *(data+j)^=*(tab+8*g+j);
 }
@@ -52,4 +52,4 @@ static inline void XOREQ_BEST_BY(unsigned char *d, unsigned char *s)
 	XOR_BEST_BY(d, d, s);
 }
 
-#endif //FFTABLE_H 
+#endif //FFTABLE_H

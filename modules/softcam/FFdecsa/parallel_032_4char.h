@@ -25,7 +25,7 @@ typedef struct group_t group;
 
 #define GROUP_PARALLELISM 32
 
-group static inline FF0(){
+static inline group FF0(void){
   group res;
   res.s1=0x0;
   res.s2=0x0;
@@ -34,7 +34,7 @@ group static inline FF0(){
   return res;
 }
 
-group static inline FF1(){
+static inline group FF1(void){
   group res;
   res.s1=0xff;
   res.s2=0xff;
@@ -43,7 +43,7 @@ group static inline FF1(){
   return res;
 }
 
-group static inline FFAND(group a,group b){
+static inline group FFAND(group a,group b){
   group res;
   res.s1=a.s1&b.s1;
   res.s2=a.s2&b.s2;
@@ -52,7 +52,7 @@ group static inline FFAND(group a,group b){
   return res;
 }
 
-group static inline FFOR(group a,group b){
+static inline group FFOR(group a,group b){
   group res;
   res.s1=a.s1|b.s1;
   res.s2=a.s2|b.s2;
@@ -61,7 +61,7 @@ group static inline FFOR(group a,group b){
   return res;
 }
 
-group static inline FFXOR(group a,group b){
+static inline group FFXOR(group a,group b){
   group res;
   res.s1=a.s1^b.s1;
   res.s2=a.s2^b.s2;
@@ -70,7 +70,7 @@ group static inline FFXOR(group a,group b){
   return res;
 }
 
-group static inline FFNOT(group a){
+static inline group FFNOT(group a){
   group res;
   res.s1=~a.s1;
   res.s2=~a.s2;
@@ -82,17 +82,17 @@ group static inline FFNOT(group a){
 
 /* 64 rows of 32 bits */
 
-void static inline FFTABLEIN(unsigned char *tab, int g, unsigned char *data){
+static inline void FFTABLEIN(unsigned char *tab, int g, unsigned char *data){
   *(((int *)tab)+g)=*((int *)data);
   *(((int *)tab)+32+g)=*(((int *)data)+1);
 }
 
-void static inline FFTABLEOUT(unsigned char *data, unsigned char *tab, int g){
+static inline void FFTABLEOUT(unsigned char *data, unsigned char *tab, int g){
   *((int *)data)=*(((int *)tab)+g);
   *(((int *)data)+1)=*(((int *)tab)+32+g);
 }
 
-void static inline FFTABLEOUTXORNBY(int n, unsigned char *data, unsigned char *tab, int g){
+static inline void FFTABLEOUTXORNBY(int n, unsigned char *data, unsigned char *tab, int g){
   int j;
   for(j=0;j<n;j++){
     *(data+j)^=*(tab+4*(g+(j>=4?32-1:0))+j);
@@ -106,7 +106,7 @@ typedef struct batch_t batch;
 
 #define BYTES_PER_BATCH 4
 
-batch static inline B_FFAND(batch a,batch b){
+static inline batch B_FFAND(batch a,batch b){
   batch res;
   res.s1=a.s1&b.s1;
   res.s2=a.s2&b.s2;
@@ -115,7 +115,7 @@ batch static inline B_FFAND(batch a,batch b){
   return res;
 }
 
-batch static inline B_FFOR(batch a,batch b){
+static inline batch B_FFOR(batch a,batch b){
   batch res;
   res.s1=a.s1|b.s1;
   res.s2=a.s2|b.s2;
@@ -124,7 +124,7 @@ batch static inline B_FFOR(batch a,batch b){
   return res;
 }
 
-batch static inline B_FFXOR(batch a,batch b){
+static inline batch B_FFXOR(batch a,batch b){
   batch res;
   res.s1=a.s1^b.s1;
   res.s2=a.s2^b.s2;
@@ -134,7 +134,7 @@ batch static inline B_FFXOR(batch a,batch b){
 }
 
 
-batch static inline B_FFN_ALL_29(){
+static inline batch B_FFN_ALL_29(void){
   batch res;
   res.s1=0x29;
   res.s2=0x29;
@@ -142,7 +142,7 @@ batch static inline B_FFN_ALL_29(){
   res.s4=0x29;
   return res;
 }
-batch static inline B_FFN_ALL_02(){
+static inline batch B_FFN_ALL_02(void){
   batch res;
   res.s1=0x02;
   res.s2=0x02;
@@ -150,7 +150,7 @@ batch static inline B_FFN_ALL_02(){
   res.s4=0x02;
   return res;
 }
-batch static inline B_FFN_ALL_04(){
+static inline batch B_FFN_ALL_04(void){
   batch res;
   res.s1=0x04;
   res.s2=0x04;
@@ -158,7 +158,7 @@ batch static inline B_FFN_ALL_04(){
   res.s4=0x04;
   return res;
 }
-batch static inline B_FFN_ALL_10(){
+static inline batch B_FFN_ALL_10(void){
   batch res;
   res.s1=0x10;
   res.s2=0x10;
@@ -166,7 +166,7 @@ batch static inline B_FFN_ALL_10(){
   res.s4=0x10;
   return res;
 }
-batch static inline B_FFN_ALL_40(){
+static inline batch B_FFN_ALL_40(void){
   batch res;
   res.s1=0x40;
   res.s2=0x40;
@@ -174,7 +174,7 @@ batch static inline B_FFN_ALL_40(){
   res.s4=0x40;
   return res;
 }
-batch static inline B_FFN_ALL_80(){
+static inline batch B_FFN_ALL_80(void){
   batch res;
   res.s1=0x80;
   res.s2=0x80;
@@ -183,7 +183,7 @@ batch static inline B_FFN_ALL_80(){
   return res;
 }
 
-batch static inline B_FFSH8L(batch a,int n){
+static inline batch B_FFSH8L(batch a,int n){
   batch res;
   res.s1=a.s1<<n;
   res.s2=a.s2<<n;
@@ -192,7 +192,7 @@ batch static inline B_FFSH8L(batch a,int n){
   return res;
 }
 
-batch static inline B_FFSH8R(batch a,int n){
+static inline batch B_FFSH8R(batch a,int n){
   batch res;
   res.s1=a.s1>>n;
   res.s2=a.s2>>n;
@@ -202,5 +202,5 @@ batch static inline B_FFSH8R(batch a,int n){
 }
 
 
-void static inline M_EMPTY(void){
+static inline void M_EMPTY(void){
 }
