@@ -35,8 +35,6 @@ struct module_data_t
         size_t size;
         uint8_t data[128]; // ???
     } shared;
-
-    uint8_t emm[512];
 };
 
 static int sort_nanos(uint8_t *dest, const uint8_t *src, size_t size)
@@ -145,9 +143,9 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
             memcpy(&emm[size], &mod->shared.data[3], s_data_size);
             size += s_data_size;
 
-            memcpy(mod->emm, em->buffer, 7);
-            mod->emm[2] = size + 4;
-            sort_nanos(&mod->emm[7], emm, size);
+            em->buffer[2] = size + 4;
+            sort_nanos(&em->buffer[7], emm, size);
+            em->buffer_size = PSI_SIZE(em->buffer);
 
             return true;
         }
