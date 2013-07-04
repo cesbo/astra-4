@@ -96,6 +96,15 @@ static void module_decrypt_cas_destroy(module_data_t *mod)
 
 static void stream_reload(module_data_t *mod)
 {
+    if(mod->stream[1] == MPEGTS_PACKET_CAT)
+        module_stream_demux_leave_pid(mod, 1);
+
+    for(uint16_t i = 2; i < MAX_PID; ++i)
+    {
+        if(mod->stream[i] & MPEGTS_PACKET_CA)
+            module_stream_demux_leave_pid(mod, i);
+    }
+
     memset(mod->stream, 0, sizeof(mod->stream));
     if(mod->__decrypt.cam->is_ready)
         mod->stream[0] = MPEGTS_PACKET_PAT;
@@ -162,7 +171,10 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         asc_assert(mod->__decrypt.cas != NULL, "CAS with CAID:0x%04X not found", mod->caid);
 
         if(!mod->__decrypt.cam->disable_emm)
+        {
             mod->stream[1] = MPEGTS_PACKET_CAT;
+            module_stream_demux_join_pid(mod, 0);
+        }
     }
 }
 
@@ -208,7 +220,12 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
            && DESC_CA_CAID(desc_pointer) == mod->caid
            && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
         {
-            mod->stream[DESC_CA_PID(desc_pointer)] = MPEGTS_PACKET_EMM;
+            const uint16_t pid = DESC_CA_PID(desc_pointer);
+            if(mod->stream[pid] == MPEGTS_PACKET_UNKNOWN)
+            {
+                mod->stream[pid] = MPEGTS_PACKET_EMM;
+                module_stream_demux_join_pid(mod, pid);
+            }
         }
         CAT_DESC_NEXT(psi, desc_pointer);
     }
@@ -274,7 +291,12 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                && DESC_CA_CAID(desc_pointer) == mod->caid
                && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
             {
-                mod->stream[DESC_CA_PID(desc_pointer)] = MPEGTS_PACKET_ECM;
+                const uint16_t pid = DESC_CA_PID(desc_pointer);
+                if(mod->stream[pid] == MPEGTS_PACKET_UNKNOWN)
+                {
+                    mod->stream[pid] = MPEGTS_PACKET_ECM;
+                    module_stream_demux_join_pid(mod, pid);
+                }
             }
         }
         else
@@ -307,7 +329,12 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                    && DESC_CA_CAID(desc_pointer) == mod->caid
                    && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
                 {
-                    mod->stream[DESC_CA_PID(desc_pointer)] = MPEGTS_PACKET_ECM;
+                    const uint16_t pid = DESC_CA_PID(desc_pointer);
+                    if(mod->stream[pid] == MPEGTS_PACKET_UNKNOWN)
+                    {
+                        mod->stream[pid] = MPEGTS_PACKET_ECM;
+                        module_stream_demux_join_pid(mod, pid);
+                    }
                 }
             }
             else
@@ -481,7 +508,6 @@ static void on_cam_error(module_data_t *mod)
 {
     mod->caid = 0x0000;
     mod->is_keys = false;
-    module_decrypt_cas_destroy(mod);
 }
 
 static void on_response(module_data_t *mod, const uint8_t *data, const char *errmsg)
