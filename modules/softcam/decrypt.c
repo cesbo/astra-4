@@ -471,16 +471,12 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 
 static void on_cam_ready(module_data_t *mod)
 {
-    asc_log_debug(MSG("%s()"), __FUNCTION__);
-    //
     mod->caid = mod->__decrypt.cam->caid;
     stream_reload(mod);
 }
 
 static void on_cam_error(module_data_t *mod)
 {
-    asc_log_debug(MSG("%s()"), __FUNCTION__);
-    //
     mod->caid = 0x0000;
     stream_reload(mod);
 }
