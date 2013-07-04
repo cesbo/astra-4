@@ -44,8 +44,7 @@ struct module_data_t
     mpegts_psi_t *pmt;
     mpegts_psi_t *sdt;
 
-    mpegts_packet_type_t _stream[MAX_PID];
-    // mpegts_psi_t *stream[MAX_PID];
+    mpegts_packet_type_t stream[MAX_PID];
 
     uint16_t tsid;
     mpegts_psi_t *custom_pat;
@@ -53,6 +52,40 @@ struct module_data_t
 };
 
 #define MSG(_msg) "[channel %s] " _msg, mod->config.name
+
+static void stream_reload(module_data_t *mod)
+{
+    memset(mod->stream, 0, sizeof(mod->stream));
+
+    for(int __i = 0; __i < MAX_PID; ++__i)
+    {
+        if(mod->__stream.pid_list[__i])
+            module_stream_demux_leave_pid(mod, __i);
+    }
+
+    mod->stream[0] = MPEGTS_PACKET_PAT;
+    mod->pat->crc32 = 0;
+    mod->pmt->crc32 = 0;
+    module_stream_demux_join_pid(mod, 0x00);
+
+    if(mod->cat)
+    {
+        mod->stream[1] = MPEGTS_PACKET_CAT;
+        mod->cat->crc32 = 0;
+        module_stream_demux_join_pid(mod, 0x01);
+    }
+
+    if(mod->config.sdt)
+    {
+        mod->stream[0x11] = MPEGTS_PACKET_SDT;
+        module_stream_demux_join_pid(mod, 0x11);
+    }
+
+    if(mod->config.eit)
+    {
+        module_stream_demux_join_pid(mod, 0x12);
+    }
+}
 
 /*
  * oooooooooo   o   ooooooooooo
@@ -69,7 +102,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 
     // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
-    if(crc32 == psi->crc32 && mod->custom_pat->buffer_size > 0)
+    if(crc32 == psi->crc32)
     {
         mpegts_psi_demux(mod->custom_pat
                          , (void (*)(void *, const uint8_t *))__module_stream_send
@@ -83,6 +116,14 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         asc_log_error(MSG("PAT checksum error"));
         return;
     }
+
+    // reload stream
+    if(psi->crc32 != 0)
+    {
+        asc_log_warning(MSG("PAT changed. Reload stream info"));
+        stream_reload(mod);
+    }
+
     psi->crc32 = crc32;
 
     mod->tsid = PAT_GET_TSID(psi);
@@ -95,6 +136,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         if(pnr == mod->config.pnr)
         {
             module_stream_demux_join_pid(mod, pid);
+            mod->stream[pid] = MPEGTS_PACKET_PMT;
             mod->pmt->pid = pid;
             mod->pmt->crc32 = 0;
             break;
@@ -143,9 +185,18 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        asc_log_error(MSG("PMT checksum error"));
+        asc_log_error(MSG("CAT checksum error"));
         return;
     }
+
+    // reload stream
+    if(psi->crc32 != 0)
+    {
+        asc_log_warning(MSG("CAT changed. Reload stream info"));
+        stream_reload(mod);
+        return;
+    }
+
     psi->crc32 = crc32;
 
     const uint8_t *desc_pointer = CAT_DESC_FIRST(psi);
@@ -190,6 +241,15 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         asc_log_error(MSG("PMT checksum error"));
         return;
     }
+
+    // reload stream
+    if(psi->crc32 != 0)
+    {
+        asc_log_warning(MSG("PMT changed. Reload stream info"));
+        stream_reload(mod);
+        return;
+    }
+
     psi->crc32 = crc32;
 
     if(mod->config.caid)
@@ -255,7 +315,7 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
 
     // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
-    if(crc32 == psi->crc32 && mod->custom_sdt->buffer_size > 0)
+    if(crc32 == psi->crc32)
     {
         mpegts_psi_demux(mod->custom_sdt
                          , (void (*)(void *, const uint8_t *))__module_stream_send
@@ -345,7 +405,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         return;
     }
 
-    switch(mod->_stream[pid])
+    switch(mod->stream[pid])
     {
         case MPEGTS_PACKET_UNKNOWN:
             break;
@@ -400,13 +460,13 @@ static void module_init(module_data_t *mod)
         mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
         mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
         mod->custom_pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
-        mod->_stream[0] = MPEGTS_PACKET_PAT;
+        mod->stream[0] = MPEGTS_PACKET_PAT;
         module_stream_demux_join_pid(mod, 0x00);
     }
 
     if(module_option_number("caid", &mod->config.caid) && mod->config.caid == 1)
     {
-        mod->_stream[1] = MPEGTS_PACKET_CAT;
+        mod->stream[1] = MPEGTS_PACKET_CAT;
         module_stream_demux_join_pid(mod, 0x01);
     }
 
@@ -414,7 +474,7 @@ static void module_init(module_data_t *mod)
     {
         mod->sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
         mod->custom_sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
-        mod->_stream[0x11] = MPEGTS_PACKET_SDT;
+        mod->stream[0x11] = MPEGTS_PACKET_SDT;
         module_stream_demux_join_pid(mod, 0x11);
     }
 
