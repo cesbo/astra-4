@@ -111,6 +111,7 @@ static void push_iso8859_1_text(luaL_Buffer *b, const uint8_t *data, uint8_t siz
         uint8_t c = data[i];
         if(c < 0x80)
         {
+            if(!c) break;
             luaL_addchar(b, c);
         }
         else
@@ -131,6 +132,7 @@ static void push_iso8859_5_text(luaL_Buffer *b, const uint8_t *data, uint8_t siz
 
         if(c < 0x80)
         {
+            if(!c) break;
             luaL_addchar(b, c);
             continue;
         }
@@ -156,6 +158,7 @@ static void push_iso8859_7_text(luaL_Buffer *b, const uint8_t *data, uint8_t siz
 
         if(c < 0x80)
         {
+            if(!c) break;
             luaL_addchar(b, c);
             continue;
         }
@@ -186,6 +189,7 @@ static void push_description_text(const uint8_t *data)
 
     switch(charset_id)
     {
+        case 0x00: luaL_addstring(&b, "not set"); break;
         case 0x01: push_iso8859_5_text(&b, &data[1], size - 1); break; // Cyrillic
         case 0x03: push_iso8859_7_text(&b, &data[1], size - 1); break; // Greek
         default:

@@ -29,6 +29,68 @@
 
 #define MSG(_msg) "[file_intput %s] " _msg, mod->filename
 
+#if 0
+
+struct module_data_t
+{
+    MODULE_LUA_DATA();
+    MODULE_STREAM_DATA();
+
+    int fd;
+    asc_event_t *event;
+    uint8_t buffer[TS_PACKET_SIZE * 7];
+};
+
+static void on_read(void *arg)
+{
+    module_data_t *mod = arg;
+
+    size_t size = read(mod->fd, mod->buffer, sizeof(mod->buffer));
+    if(size != sizeof(mod->buffer))
+    {
+        asc_event_close(mod->event);
+        mod->event = NULL;
+        close(mod->fd);
+        mod->fd = 0;
+        return;
+    }
+
+    for(size_t i = 0; i < size; i += TS_PACKET_SIZE)
+        module_stream_send(mod, &mod->buffer[i]);
+}
+
+static void module_init(module_data_t *mod)
+{
+    const char *filename =  NULL;
+    module_option_string("filename", &filename);
+
+    module_stream_init(mod, NULL);
+
+    mod->fd = open(filename, O_RDONLY);
+    if(mod->fd <= 0)
+        return;
+
+    mod->event = asc_event_init(mod->fd, mod);
+    asc_event_set_on_read(mod->event, on_read);
+}
+
+static void module_destroy(module_data_t *mod)
+{
+    asc_event_close(mod->event);
+    if(mod->fd > 0)
+        close(mod->fd);
+
+    module_stream_destroy(mod);
+}
+
+MODULE_STREAM_METHODS()
+MODULE_LUA_METHODS()
+{
+    MODULE_STREAM_METHODS_REF()
+};
+
+#else
+
 #define SYNC_BUFFER_SIZE (TS_PACKET_SIZE * 2048)
 
 struct module_data_t
@@ -584,5 +646,7 @@ MODULE_LUA_METHODS()
     { "pause", method_pause },
     { "position", method_position }
 };
+
+#endif
 
 MODULE_LUA_REGISTER(file_input)

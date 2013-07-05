@@ -336,11 +336,10 @@ function init_input(channel_data, input_id)
         {
             name = channel_data.config.name,
             upstream = input_data.tail:stream(),
-            pnr = input_conf.pnr
+            pnr = input_conf.pnr,
+            sdt = true,
+            eit = true,
         }
-        if input_conf.caid then channel_conf.caid = input_conf.caid end
-        if input_conf.sdt then channel_conf.sdt = input_conf.sdt end
-        if input_conf.eit then channel_conf.eit = input_conf.eit end
 
         input_data.channel = channel(channel_conf)
         input_data.tail = input_data.channel
