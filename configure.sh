@@ -439,9 +439,13 @@ fi
 
 makefile_linker()
 {
+    VERSION_MAJOR=`sed -n 's/.*ASTRA_VERSION_MAJOR \([0-9]*\).*/\1/p' version.h`
+    VERSION_MINOR=`sed -n 's/.*ASTRA_VERSION_MINOR \([0-9]*\).*/\1/p' version.h`
+    VERSION="$VERSION_MAJOR.$VERSION_MINOR"
     cat >&2 <<EOF
 
 Linker Flags:
+ VERSION: $VERSION
      OUT: $APP
  LDFLAGS: $APP_LDFLAGS
 EOF
@@ -450,11 +454,29 @@ EOF
 LD          = $APP_C
 LDFLAGS     = $APP_LDFLAGS
 STRIP       = $APP_STRIP
+VERSION     = $VERSION
+V_APP       = /usr/bin/\$(APP)-\$(VERSION)
+V_SCRIPTS   = /etc/astra/scripts-\$(VERSION)/
 
 \$(APP): $APP_OBJS \$(CORE_OBJS) \$(MODS_OBJS)
 	@echo "BUILD: \$@"
 	@\$(LD) \$^$APP_MODULES_A -o \$@ \$(LDFLAGS)
 	@\$(STRIP) \$@
+
+install: \$(APP)
+	@echo "INSTALL: \$(V_APP)"
+	@rm -f \$(V_APP)
+	@cp -v \$(APP) \$(V_APP)
+	@mkdir -p \$(V_SCRIPTS)
+	@cp -v $SRCDIR/scripts/stream.lua \$(V_SCRIPTS)
+	@cp -v $SRCDIR/scripts/json.lua \$(V_SCRIPTS)
+	@cp -v $SRCDIR/scripts/analyze.lua \$(V_SCRIPTS)
+
+link:
+	@rm -f /usr/bin/astra
+	@ln -nfsv \$(V_APP) /usr/bin/astra
+	@ln -nfsv \$(V_SCRIPTS)/analyze.lua /usr/bin/astra-analyze
+	@chmod +x \$(V_SCRIPTS)/analyze.lua
 
 \$(APP)-clean:
 	@echo "CLEAN: \$(APP)"

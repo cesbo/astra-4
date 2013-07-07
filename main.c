@@ -75,7 +75,8 @@ static void astra_init(int argc, const char **argv)
 
     /* change package.path */
     lua_getglobal(lua, "package");
-    lua_pushstring(lua, "./?.lua");
+    lua_pushfstring(lua, "./?.lua;/etc/astra/scripts-%d.%d/?.lua"
+                    , ASTRA_VERSION_MAJOR, ASTRA_VERSION_MINOR);
     lua_setfield(lua, -2, "path");
     lua_pushstring(lua, "");
     lua_setfield(lua, -2, "cpath");
