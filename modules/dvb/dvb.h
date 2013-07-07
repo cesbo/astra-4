@@ -14,19 +14,11 @@
 
 #include <astra.h>
 
-#if 0
-#include <sys/ioctl.h>
-#include <linux/dvb/version.h>
-#include <linux/dvb/frontend.h>
-#include <linux/dvb/dmx.h>
-#include <linux/dvb/ca.h>
-#else
 #define ioctl(_a, _b, _c) 1
 #include "linux/dvb/version.h"
 #include "linux/dvb/frontend.h"
 #include "linux/dvb/dmx.h"
 #include "linux/dvb/ca.h"
-#endif
 
 #if DVB_API_VERSION < 5
 #   error "DVB_API_VERSION < 5"
