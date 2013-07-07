@@ -14,10 +14,11 @@
 
 #include <astra.h>
 
-#include "linux/dvb/version.h"
-#include "linux/dvb/frontend.h"
-#include "linux/dvb/dmx.h"
-#include "linux/dvb/ca.h"
+#include <sys/ioctl.h>
+#include <linux/dvb/version.h>
+#include <linux/dvb/frontend.h>
+#include <linux/dvb/dmx.h>
+#include <linux/dvb/ca.h>
 
 #if DVB_API_VERSION < 5
 #   error "DVB_API_VERSION < 5"
