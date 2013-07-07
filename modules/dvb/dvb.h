@@ -14,7 +14,6 @@
 
 #include <astra.h>
 
-#define ioctl(_a, _b, _c) 1
 #include "linux/dvb/version.h"
 #include "linux/dvb/frontend.h"
 #include "linux/dvb/dmx.h"
