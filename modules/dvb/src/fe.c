@@ -271,7 +271,9 @@ static void fe_tune_s(module_data_t *mod)
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INNER_FEC,         mod->fec);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INVERSION,         INVERSION_AUTO);
     if(mod->modulation != FE_MODULATION_NONE)
+    {
         DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,    mod->modulation);
+    }
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_ROLLOFF,       mod->rolloff);
     if(!mod->diseqc)
     {
