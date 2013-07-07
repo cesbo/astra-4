@@ -169,9 +169,15 @@ function parse_options(options, result)
 
     function parse_key_val(option)
         local x = option:find("=")
-        if not x then return nil end
-        local key = option:sub(1, x - 1)
-        local val = option:sub(x + 1)
+        local key, val
+        if x then
+            key = option:sub(1, x - 1)
+            val = option:sub(x + 1)
+        else
+            key = option
+            val = true
+        end
+
         if parse_option[key] then
             parse_option[key](val, result)
         else
