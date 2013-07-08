@@ -464,6 +464,75 @@ output_list.file = function(output_conf)
     return { tail = file_output(output_conf) }
 end
 
+local http_instance_list = {}
+local http_server_header = "Server: Astra"
+
+function http_server_send_404(server, client)
+    local content = "<html>" ..
+                    "<center><h1>Not Found</h1></center>" ..
+                    "<hr />" ..
+                    "<small>Astra</small>" ..
+                    "</html>"
+
+    server:send(client, {
+        code = 404,
+        message = "Not Found",
+        headers = {
+            http_server_header,
+            "Content-Type: text/html; charset=utf-8",
+            "Content-Length: " .. #content,
+            "Connection: close",
+        },
+        content = content
+    })
+
+    server:close(client)
+end
+
+function http_server_send_200(server, client, upstream)
+    server:send(client, {
+        code = 200,
+        message = "OK",
+        headers = {
+            http_server_header,
+            "Content-Type:application/octet-stream",
+        },
+        upstream = upstream
+    })
+end
+
+output_list.http = function(output_conf)
+    local addr = output_conf.host .. ":" .. output_conf.port
+
+    local http_instance
+
+    if http_instance_list[addr] then
+        http_instance = http_instance_list[addr]
+        http_instance.uri_list[output_conf.uri] = output_conf.upstream
+        return http_instance
+    end
+
+    http_instance = { uri_list = {} }
+    http_instance.uri_list[output_conf.uri] = output_conf.upstream
+    http_instance.tail = http_server({
+        addr = output_conf.host,
+        port = output_conf.port,
+        callback = function(self, client, data)
+                if type(data) == 'table' then
+                    local http_upstream = http_instance.uri_list[data.uri]
+                    if http_upstream then
+                        http_server_send_200(self, client, http_upstream)
+                    else
+                        http_server_send_404(self, client)
+                    end
+                end
+            end
+    })
+
+    http_instance_list[addr] = http_instance
+    return http_instance
+end
+
 function init_output(channel_data, output_id)
     local output_conf = channel_data.config.output[output_id]
 
