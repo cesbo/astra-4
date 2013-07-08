@@ -347,8 +347,8 @@ function init_input(channel_data, input_id)
             eit = true,
         }
 
-        if input_conf.no_sdt then channel_conf.sdt = false end
-        if input_conf.no_eit then channel_conf.eit = false end
+        if input_conf.no_sdt or no_sdt then channel_conf.sdt = false end
+        if input_conf.no_eit or no_eit then channel_conf.eit = false end
         if channel_data.config.map then channel_conf.map = channel_data.config.map end
 
         input_data.channel = channel(channel_conf)
