@@ -53,6 +53,9 @@ function dump_descriptor(prefix, descriptor_info)
         log.info(prefix .. "Language: " .. descriptor_info.lang)
     elseif descriptor_info.type_name == "stream_id" then
         log.info(prefix .. "Stream ID: " .. descriptor_info.stream_id)
+    elseif descriptor_info.type_name == "service" then
+        log.info(prefix .. "Service: " .. descriptor_info.service_name)
+        log.info(prefix .. "Provider: " .. descriptor_info.service_provider)
     elseif descriptor_info.type_name == "unknown" then
         log.info(prefix .. "descriptor: " .. descriptor_info.data)
     else
@@ -83,6 +86,18 @@ dump_psi_info["pmt"] = function(name, info)
         end
     end
     log.info(name .. ("PMT: crc32: 0x%X"):format(info.crc32))
+end
+
+dump_psi_info["sdt"] = function(info)
+    log.info(name .. ("SDT: tsid: %d"):format(info.tsid))
+
+    for _, service in pairs(info.services) do
+        log.info(name .. ("SDT: sid: %d"):format(service.sid))
+        for _, descriptor_info in pairs(service.descriptors) do
+            dump_descriptor(name .. "SDT:    ", descriptor_info)
+        end
+    end
+    log.info(name .. ("SDT: crc32: 0x%X"):format(info.crc32))
 end
 
 function on_analyze(channel_data, data)
