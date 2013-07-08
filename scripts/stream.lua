@@ -443,6 +443,8 @@ end
 -- 888o     oo  888   888    8oooo88    88   8888   88   8888   888    oo   888      o
 --  888oooo88  o888o o888o o88o  o888o o88o    88  o88o    88  o888ooo8888 o888ooooo88
 
+local channel_list = {}
+
 function make_channel(channel_conf)
     if not channel_conf.name then
         log.error("[stream.lua] option 'name' is required")
@@ -488,4 +490,7 @@ function make_channel(channel_conf)
     for output_id,_ in pairs(channel_conf.output) do
         init_output(channel_data, output_id)
     end
+
+    table.insert(channel_list, channel_data)
+    return channel_data
 end
