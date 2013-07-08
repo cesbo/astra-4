@@ -337,7 +337,7 @@ function init_input(channel_data, input_id)
     input_data.source = init_input_type(input_conf)
     input_data.tail = input_data.source.tail
 
-    if input_conf.pnr then
+    if input_conf.pnr or channel_data.config.map then
         local channel_conf =
         {
             name = channel_data.config.name,
@@ -346,6 +346,10 @@ function init_input(channel_data, input_id)
             sdt = true,
             eit = true,
         }
+
+        if input_conf.no_sdt then channel_conf.sdt = false end
+        if input_conf.no_eit then channel_conf.eit = false end
+        if channel_data.config.map then channel_conf.map = channel_data.config.map end
 
         input_data.channel = channel(channel_conf)
         input_data.tail = input_data.channel
