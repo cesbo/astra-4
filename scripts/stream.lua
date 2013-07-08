@@ -160,6 +160,30 @@ parse_addr.file = function(addr, result)
     result.filename = addr
 end
 
+parse_addr.http = function(addr, result)
+    local x = addr:find("@")
+    if x then
+        local login_pass = addr:sub(1, x - 1)
+        result.auth = login_pass:base64_encode()
+        addr = addr:sub(x + 1)
+    end
+    local x = addr:find("/")
+    if x then
+        result.uri = addr:sub(x)
+        addr = addr:sub(1, x - 1)
+    else
+        result.uri = "/"
+    end
+    local x = addr:find(":")
+    if x then
+        result.host = addr:sub(1, x - 1)
+        result.port = tonumber(addr:sub(x + 1))
+    else
+        result.host = addr
+        result.port = 80
+    end
+end
+
 function parse_options(options, result)
     local x = options:find("?")
     if x ~= 1 then
@@ -317,6 +341,32 @@ end
 
 input_list.file = function(input_conf)
     return { tail = file_input(input_conf) }
+end
+
+input_list.http = function(input_conf)
+    local http_conf =
+    {
+        addr = input_conf.host,
+        port = input_conf.port,
+        uri = input_conf.uri,
+        headers =
+        {
+            "User-Agent: Astra",
+            "Host: " .. input_conf.host .. ":" .. input_conf.port
+        },
+        ts = true,
+        callback = function(self, data)
+                if type(data) == nil then
+                    self:close()
+                end
+            end
+    }
+
+    if input_conf.auth then
+        table.insert(http_conf.headers, "Authorization: Basic " .. input_conf.auth)
+    end
+
+    return { tail = http_request(http_conf) }
 end
 
 function init_input(channel_data, input_id)
