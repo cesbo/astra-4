@@ -76,6 +76,8 @@ struct module_data_t
 {
     MODULE_LUA_DATA();
 
+    int idx_self;
+
     const char *addr;
     int port;
 
@@ -114,9 +116,10 @@ static void on_read_error(void *arg)
     }
 
     get_lua_callback(mod);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
     lua_pushlightuserdata(lua, client);
     lua_pushnil(lua);
-    lua_call(lua, 2, 0);
+    lua_call(lua, 3, 0);
 
     if(client->idx_data)
     {
@@ -170,11 +173,12 @@ static void on_read(void *arg)
         if(!http_parse_request(client->buffer, m))
         {
             get_lua_callback(mod);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
             lua_pushlightuserdata(lua, client);
             lua_newtable(lua);
             lua_pushstring(lua, "failed to parse http request");
             lua_setfield(lua, -2, "message");
-            lua_call(lua, 2, 0);
+            lua_call(lua, 3, 0);
             return;
         }
 
@@ -275,9 +279,10 @@ static void on_read(void *arg)
         if(client->ready_state == 2)
         {
             get_lua_callback(mod);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
             lua_pushlightuserdata(lua, client);
             lua_pushvalue(lua, request);
-            lua_call(lua, 2, 0);
+            lua_call(lua, 3, 0);
 
             luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
             client->idx_request = 0;
@@ -299,18 +304,19 @@ static void on_read(void *arg)
             {
                 const int r_skip = r - skip;
                 get_lua_callback(mod);
+                lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
                 lua_pushlightuserdata(lua, client);
 
                 if(client->content_length > r_skip)
                 {
                     lua_pushlstring(lua, &client->buffer[skip], r_skip);
-                    lua_call(lua, 2, 0);
+                    lua_call(lua, 3, 0);
                     client->content_length -= r_skip;
                 }
                 else
                 {
                     lua_pushlstring(lua, &client->buffer[skip], client->content_length);
-                    lua_call(lua, 2, 0);
+                    lua_call(lua, 3, 0);
                     client->content_length = -1;
 
                     // content is done
@@ -323,6 +329,7 @@ static void on_read(void *arg)
         else
         {
             get_lua_callback(mod);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
             lua_pushlightuserdata(lua, client);
 
             if(client->is_websocket)
@@ -380,7 +387,7 @@ static void on_read(void *arg)
             else
                 lua_pushlstring(lua, &client->buffer[skip], r - skip);
 
-            lua_call(lua, 2, 0);
+            lua_call(lua, 3, 0);
         }
     }
 }
@@ -676,20 +683,6 @@ static int method_data(module_data_t *mod)
  *
  */
 
-static int method_close(module_data_t *mod)
-{
-    // close client
-    if(lua_type(lua, 2) != LUA_TLIGHTUSERDATA)
-    {
-        asc_log_error(MSG(":close() client instance required"));
-        astra_abort();
-    }
-
-    on_read_error(lua_touserdata(lua, 2));
-
-    return 0;
-}
-
 static void server_close(module_data_t *mod)
 {
     for(asc_list_first(mod->clients)
@@ -708,6 +701,33 @@ static void server_close(module_data_t *mod)
     asc_list_destroy(mod->clients);
     asc_vector_destroy(mod->write_temp_buf);
     mod->clients = NULL;
+
+    if(mod->idx_self > 0)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_self);
+        mod->idx_self = 0;
+    }
+}
+
+static int method_close(module_data_t *mod)
+{
+    // close self
+    if(lua_gettop(lua) < 2)
+    {
+        server_close(mod);
+        return 0;
+    }
+
+    // close client
+    if(lua_type(lua, 2) != LUA_TLIGHTUSERDATA)
+    {
+        asc_log_error(MSG(":close() client instance required"));
+        astra_abort();
+    }
+
+    on_read_error(lua_touserdata(lua, 2));
+
+    return 0;
 }
 
 static void on_accept_error(void *arg)
@@ -771,6 +791,10 @@ static void module_init(module_data_t *mod)
     }
     lua_pop(lua, 1); // callback
 
+    // store self in registry
+    lua_pushvalue(lua, 3);
+    mod->idx_self = luaL_ref(lua, LUA_REGISTRYINDEX);
+
     mod->clients = asc_list_init();
     mod->write_temp_buf = asc_vector_init(1);
 
@@ -786,7 +810,8 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    server_close(mod);
+    if(mod->idx_self)
+        server_close(mod);
 }
 
 MODULE_LUA_METHODS()

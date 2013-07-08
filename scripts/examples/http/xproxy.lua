@@ -13,7 +13,6 @@ function split(s,d)
     end
 end
 
-server = nil
 server_header = "Server: xproxy"
 
 function send_404(client)
@@ -37,14 +36,14 @@ end
 
 localaddr = nil -- for -l option
 
-function on_http_read(client, data)
-    local client_data = server:data(client)
+function on_http_read(self, client, data)
+    local client_data = self:data(client)
 
     if type(data) == 'table' then
         -- connected
         if data.message then
             log.error("[xproxy.lua] " .. data.message)
-            server:close(client)
+            self:close(client)
             return
         end
 
@@ -60,7 +59,7 @@ function on_http_read(client, data)
         if localaddr then udp_input_conf.localaddr = localaddr end
 
         client_data.input = udp_input(udp_input_conf)
-        server:send(client, {
+        self:send(client, {
             code = 200,
             message = "OK",
             headers = {
@@ -108,7 +107,7 @@ while i <= #argv do
     i = options[argv[i]](i)
 end
 
-server = http_server({
+http_server({
     addr = http_addr,
     port = http_port,
     callback = on_http_read

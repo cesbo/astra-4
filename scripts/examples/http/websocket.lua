@@ -58,7 +58,6 @@ $('#stop_timer').click(function(obj) {
 </html>
 ]]
 
-local server = nil
 local server_name = "Server: Astra WebSocket test"
 
 function dump_table(t, i)
@@ -73,19 +72,19 @@ function dump_table(t, i)
     end
 end
 
-function on_server_data(client, data)
+function on_server_data(self, client, data)
     if type(data) == "table" then
         -- dump_table(data)
 
         if data.message then
             log.error("[websock.lua] " .. data.message)
-            server:close(client)
+            self:close(client)
             return
         end
 
         if data.method == "GET" then
             if data.uri == "/" then
-                server:send(client, {
+                self:send(client, {
                     code = 200,
                     message = "OK",
                     headers =
@@ -119,7 +118,7 @@ function on_server_data(client, data)
                     table.insert(headers, "Sec-WebSocket-Accept: " .. ws_accept)
                 end
 
-                server:send(client, {
+                self:send(client, {
                     code = 101,
                     message = "Switching Protocols",
                     headers = headers
@@ -127,17 +126,17 @@ function on_server_data(client, data)
             end
         else
             log.error("[websock.lua] method " .. data.method .. " is not supported")
-            server:close(client)
+            self:close(client)
         end
     elseif type(data) == "string" then
-        local client_data = server:data(client)
+        local client_data = self:data(client)
         if data == "Start Timer" then
             client_data.counter = 0
             client_data.timer = timer({
                 interval = 1,
                 callback = function()
                         client_data.counter = client_data.counter + 1
-                        server:send(client, "Counter: " .. client_data.counter)
+                        self:send(client, "Counter: " .. client_data.counter)
                     end
             })
         elseif data == "Stop Timer" then
@@ -149,7 +148,7 @@ function on_server_data(client, data)
     end
 end
 
-server = http_server({
+http_server({
     addr = server_addr,
     port = server_port,
     callback = on_server_data

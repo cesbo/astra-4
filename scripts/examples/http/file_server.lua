@@ -1,7 +1,5 @@
 #!/usr/bin/env astra
 
-server = nil
-
 mime_types =
 {
     ["html"] = "text/html",
@@ -42,22 +40,22 @@ function send_404(client)
     })
 end
 
-function on_http_read(client, data)
-    local client_data = server:data(client)
+function on_http_read(self, client, data)
+    local client_data = self:data(client)
 
     if type(data) == 'table' then
         client_data.file = io.open("." .. data.uri, "rb")
 
         if not client_data.file then
             send_404(client)
-            server:close(client)
+            self:close(client)
             return
         end
 
         local file_size = client_data.file:seek("end")
         client_data.file:seek("set")
 
-        server:send(client, {
+        self:send(client, {
             headers = {
                 "Server: Astra",
                 "Content-Type: " .. get_mime_type(data.uri),
