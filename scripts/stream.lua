@@ -88,7 +88,7 @@ dump_psi_info["pmt"] = function(name, info)
     log.info(name .. ("PMT: crc32: 0x%X"):format(info.crc32))
 end
 
-dump_psi_info["sdt"] = function(info)
+dump_psi_info["sdt"] = function(name, info)
     log.info(name .. ("SDT: tsid: %d"):format(info.tsid))
 
     for _, service in pairs(info.services) do
