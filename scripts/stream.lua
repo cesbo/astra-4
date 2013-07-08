@@ -304,8 +304,6 @@ end
 local input_list = {}
 
 function dvb_tune(dvb_conf)
-    if dvb_conf.freq then dvb_conf.frequency = dvb_conf.freq end
-
     if dvb_conf.tp then
         local _, _, freq_s, pol_s, srate_s = dvb_conf.tp:find("(%d+):(%a):(%d+)")
         if not freq_s then
@@ -328,7 +326,11 @@ function dvb_tune(dvb_conf)
         dvb_conf.slof = tonumber(slof_s)
     end
 
-    return dvb_input(dvb_conf)
+    if dvb_conf.type:lower() == "asi" then
+        return asi_input(dvb_conf)
+    else
+        return dvb_input(dvb_conf)
+    end
 end
 
 input_list.dvb = function(input_conf)
