@@ -22,7 +22,7 @@ function get_mime_type(uri)
     return "text/plain"
 end
 
-function send_404(client)
+function send_404(server, client)
     local content = "<html>" ..
                     "<center><h1>Not Found</h1></center>" ..
                     "<hr />" ..
@@ -47,7 +47,7 @@ function on_http_read(self, client, data)
         client_data.file = io.open("." .. data.uri, "rb")
 
         if not client_data.file then
-            send_404(client)
+            send_404(self, client)
             self:close(client)
             return
         end

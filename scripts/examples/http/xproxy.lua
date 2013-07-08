@@ -15,7 +15,7 @@ end
 
 server_header = "Server: xproxy"
 
-function send_404(client)
+function send_404(server, client)
     local content = "<html>" ..
                     "<center><h1>Not Found</h1></center>" ..
                     "<hr />" ..
@@ -49,7 +49,7 @@ function on_http_read(self, client, data)
 
         local u = split(data.uri, "/") --> { "", "udp", "239.255.1.1:1234" }
         if #u < 3 or u[2] ~= 'udp' then
-            send_404(client)
+            send_404(self, client)
             return
         end
 
