@@ -11,19 +11,13 @@
 
 #include "core/asc.h"
 
-#include "lua/lua.h"
-#include "lua/lualib.h"
-#include "lua/lauxlib.h"
-
 #include "modules/astra/base.h"
 #include "modules/astra/module_lua.h"
 #include "modules/astra/module_stream.h"
 #include "modules/astra/module_event.h"
 
 #include "modules/mpegts/mpegts.h"
-#include "modules/mpegts/module_demux.h"
 
-extern lua_State *lua; // in main.c
 #define STACK_DEBUG(_pos) printf("%s(): stack %d: %d\n", __FUNCTION__, _pos, lua_gettop(lua))
 
 /* version */

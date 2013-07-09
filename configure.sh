@@ -108,25 +108,22 @@ if [ $ARG_CC -eq 0 -a -z "$ARG_MODULE_PACK" ]; then
    fi
 fi
 
-CRT1=`$APP_C -print-file-name=crt1.o`
 CCSYSTEM=`$APP_C -dumpmachine`
 case "$CCSYSTEM" in
 *"linux"*)
     OS="linux"
     CFLAGS="$CFLAGS -fPIC -pthread"
-    CRTI=`$APP_C -print-file-name=crti.o`
-    CRTN=`$APP_C -print-file-name=crtn.o`
-    LDFLAGS="-nostdlib $CRT1 $CRTI -lc $CRTN -ldl -lm -lpthread"
+    LDFLAGS="-ldl -lm -lpthread"
     ;;
 *"freebsd"*)
     OS="freebsd"
     CFLAGS="$CFLAGS -fPIC -pthread"
-    LDFLAGS="-nostdlib $CRT1 -lc -lm -lpthread"
+    LDFLAGS="-lm -lpthread"
     ;;
 *"darwin"*)
     OS="darwin"
     CFLAGS="$CFLAGS -fPIC -pthread"
-    LDFLAGS="-nostdlib $CRT1 -lc"
+    LDFLAGS=""
     ;;
 *"mingw"*)
     APP="$APP.exe"
@@ -203,7 +200,7 @@ cat >&5 <<EOF
 MAKEFLAGS = -rR --no-print-directory
 
 APP         = $APP
-C           = $APP_C
+CC          = $APP_C
 CFLAGS      = $APP_CFLAGS
 OS          = $OS
 
@@ -442,9 +439,13 @@ fi
 
 makefile_linker()
 {
+    VERSION_MAJOR=`sed -n 's/.*ASTRA_VERSION_MAJOR \([0-9]*\).*/\1/p' version.h`
+    VERSION_MINOR=`sed -n 's/.*ASTRA_VERSION_MINOR \([0-9]*\).*/\1/p' version.h`
+    VERSION="$VERSION_MAJOR.$VERSION_MINOR"
     cat >&2 <<EOF
 
 Linker Flags:
+ VERSION: $VERSION
      OUT: $APP
  LDFLAGS: $APP_LDFLAGS
 EOF
@@ -453,11 +454,29 @@ EOF
 LD          = $APP_C
 LDFLAGS     = $APP_LDFLAGS
 STRIP       = $APP_STRIP
+VERSION     = $VERSION
+V_APP       = /usr/bin/\$(APP)-\$(VERSION)
+V_SCRIPTS   = /etc/astra/scripts-\$(VERSION)/
 
 \$(APP): $APP_OBJS \$(CORE_OBJS) \$(MODS_OBJS)
 	@echo "BUILD: \$@"
 	@\$(LD) \$^$APP_MODULES_A -o \$@ \$(LDFLAGS)
 	@\$(STRIP) \$@
+
+install: \$(APP)
+	@echo "INSTALL: \$(V_APP)"
+	@rm -f \$(V_APP)
+	@cp -v \$(APP) \$(V_APP)
+	@mkdir -p \$(V_SCRIPTS)
+	@cp -v $SRCDIR/scripts/stream.lua \$(V_SCRIPTS)
+	@cp -v $SRCDIR/scripts/json.lua \$(V_SCRIPTS)
+	@cp -v $SRCDIR/scripts/analyze.lua \$(V_SCRIPTS)
+
+link:
+	@rm -f /usr/bin/astra
+	@ln -nfsv \$(V_APP) /usr/bin/astra
+	@ln -nfsv \$(V_SCRIPTS)/analyze.lua /usr/bin/astra-analyze
+	@chmod +x \$(V_SCRIPTS)/analyze.lua
 
 \$(APP)-clean:
 	@echo "CLEAN: \$(APP)"

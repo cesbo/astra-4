@@ -9,21 +9,21 @@
 #include "../dvb.h"
 #include <fcntl.h>
 
-static void dvr_on_read(void *arg, int is_data)
+static void dvr_on_error(void *arg)
 {
     module_data_t *mod = arg;
+    asc_log_error(MSG("dvr read error, try to reopen [%s]"), strerror(errno));
+    dvr_close(mod);
+}
 
-    if(!is_data)
-    {
-        asc_log_error(MSG("dvr read error, try to reopen [%s]"), strerror(errno));
-        dvr_close(mod);
-        return;
-    }
+static void dvr_on_read(void *arg)
+{
+    module_data_t *mod = arg;
 
     const ssize_t len = read(mod->dvr_fd, mod->dvr_buffer, DVR_BUFFER_SIZE);
     if(len <= 0)
     {
-        dvr_on_read(mod, 0);
+        dvr_on_error(mod);
         return;
     }
     mod->dvr_read += len;
@@ -53,7 +53,9 @@ void dvr_open(module_data_t *mod)
         }
     }
 
-    mod->dvr_event = asc_event_on_read(mod->dvr_fd, dvr_on_read, mod);
+    mod->dvr_event = asc_event_init(mod->dvr_fd, mod);
+    asc_event_set_on_read(mod->dvr_event, dvr_on_read);
+    asc_event_set_on_error(mod->dvr_event, dvr_on_error);
 }
 
 void dvr_close(module_data_t *mod)

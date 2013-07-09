@@ -1,5 +1,7 @@
 #!/usr/bin/env astra
 
+-- log.set({ debug = true })
+
 function split(s,d)
     local p = 1
     local t = {}
@@ -11,10 +13,9 @@ function split(s,d)
     end
 end
 
-server = nil
 server_header = "Server: xproxy"
 
-function send_404(client)
+function send_404(server, client)
     local content = "<html>" ..
                     "<center><h1>Not Found</h1></center>" ..
                     "<hr />" ..
@@ -35,30 +36,30 @@ end
 
 localaddr = nil -- for -l option
 
-function on_http_read(client, data)
-    local client_data = server:data(client)
+function on_http_read(self, client, data)
+    local client_data = self:data(client)
 
     if type(data) == 'table' then
         -- connected
         if data.message then
             log.error("[xproxy.lua] " .. data.message)
-            server:close(client)
+            self:close(client)
             return
         end
 
         local u = split(data.uri, "/") --> { "", "udp", "239.255.1.1:1234" }
         if #u < 3 or u[2] ~= 'udp' then
-            send_404(client)
+            send_404(self, client)
             return
         end
 
         local a = split(u[3], ":") --> { "239.255.1.1", "1234" }
-        local udp_input_conf = { addr = a[1], port = 1234 }
+        local udp_input_conf = { addr = a[1], port = 1234, socket_size = 0x80000 }
         if #a == 2 then udp_input_conf.port = tonumber(a[2]) end
         if localaddr then udp_input_conf.localaddr = localaddr end
 
         client_data.input = udp_input(udp_input_conf)
-        server:send(client, {
+        self:send(client, {
             code = 200,
             message = "OK",
             headers = {
@@ -106,7 +107,7 @@ while i <= #argv do
     i = options[argv[i]](i)
 end
 
-server = http_server({
+http_server({
     addr = http_addr,
     port = http_port,
     callback = on_http_read

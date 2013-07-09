@@ -20,6 +20,10 @@
 #include <linux/dvb/dmx.h>
 #include <linux/dvb/ca.h>
 
+#if DVB_API_VERSION < 5
+#   error "DVB_API_VERSION < 5"
+#endif
+
 #define DVB_API ((DVB_API_VERSION * 100) + DVB_API_VERSION_MINOR)
 #define DVR_BUFFER_SIZE (1022 * TS_PACKET_SIZE)
 
@@ -62,8 +66,8 @@ typedef struct
 
 struct module_data_t
 {
+    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
-    MODULE_DEMUX_DATA();
 
     /* Base Config */
     dvb_type_t type;

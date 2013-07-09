@@ -101,23 +101,18 @@ static void module_options_s(module_data_t *mod)
     module_option_number("diseqc", &mod->diseqc);
     module_option_number("tone", &mod->force_tone);
 
-#if DVB_API_VERSION >= 5
-    if(mod->type == DVB_TYPE_S2 && mod->modulation != FE_MODULATION_NONE)
+    static const char __rolloff[] = "rolloff";
+    if(module_option_string(__rolloff, &string_val))
     {
-        static const char __rolloff[] = "rolloff";
-        if(module_option_string(__rolloff, &string_val))
-        {
-            if(!strcasecmp(string_val, "AUTO")) mod->rolloff = ROLLOFF_AUTO;
-            else if(!strcasecmp(string_val, "35")) mod->rolloff = ROLLOFF_35;
-            else if(!strcasecmp(string_val, "20")) mod->rolloff = ROLLOFF_20;
-            else if(!strcasecmp(string_val, "25")) mod->rolloff = ROLLOFF_25;
-            else
-                option_unknown_type(mod, __rolloff, string_val);
-        }
+        if(!strcasecmp(string_val, "AUTO")) mod->rolloff = ROLLOFF_AUTO;
+        else if(!strcasecmp(string_val, "35")) mod->rolloff = ROLLOFF_35;
+        else if(!strcasecmp(string_val, "20")) mod->rolloff = ROLLOFF_20;
+        else if(!strcasecmp(string_val, "25")) mod->rolloff = ROLLOFF_25;
         else
-            mod->rolloff = ROLLOFF_35;
+            option_unknown_type(mod, __rolloff, string_val);
     }
-#endif
+    else
+        mod->rolloff = ROLLOFF_35;
 
     module_option_fec(mod);
 }
@@ -170,9 +165,7 @@ static void module_options_t(module_data_t *mod)
         if(!strcasecmp(string_val, "AUTO")) mod->transmitmode = TRANSMISSION_MODE_AUTO;
         else if(!strcasecmp(string_val, "2K")) mod->transmitmode = TRANSMISSION_MODE_2K;
         else if(!strcasecmp(string_val, "8K")) mod->transmitmode = TRANSMISSION_MODE_8K;
-#if DVB_API_VERSION >= 5
         else if(!strcasecmp(string_val, "4K")) mod->transmitmode = TRANSMISSION_MODE_4K;
-#endif
         else
             option_unknown_type(mod, __transmitmode, string_val);
     }
@@ -270,12 +263,10 @@ static void module_options(module_data_t *mod)
         else if(!strcasecmp(string_val, "AUTO")) mod->modulation = QAM_AUTO;
         else if(!strcasecmp(string_val, "VSB8")) mod->modulation = VSB_8;
         else if(!strcasecmp(string_val, "VSB16")) mod->modulation = VSB_16;
-#if DVB_API_VERSION >= 5
         else if(!strcasecmp(string_val, "PSK8")) mod->modulation = PSK_8;
         else if(!strcasecmp(string_val, "APSK16")) mod->modulation = APSK_16;
         else if(!strcasecmp(string_val, "APSK32")) mod->modulation = APSK_32;
         else if(!strcasecmp(string_val, "DQPSK")) mod->modulation = DQPSK;
-#endif
         else
             option_unknown_type(mod, __modulation, string_val);
     }
@@ -311,18 +302,22 @@ static void module_options(module_data_t *mod)
 
 static void join_pid(module_data_t *mod, uint16_t pid)
 {
-    dmx_set_pid(mod, pid, 1);
+    ++mod->__stream.pid_list[pid];
+    if(mod->__stream.pid_list[pid] == 1)
+        dmx_set_pid(mod, pid, 1);
 }
 
 static void leave_pid(module_data_t *mod, uint16_t pid)
 {
-    dmx_set_pid(mod, pid, 0);
+    --mod->__stream.pid_list[pid];
+    if(mod->__stream.pid_list[pid] == 0)
+        dmx_set_pid(mod, pid, 0);
 }
 
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, NULL);
-    module_demux_init(mod, join_pid, leave_pid);
+    module_stream_demux_set(mod, join_pid, leave_pid);
 
     module_options(mod);
 
@@ -334,7 +329,6 @@ static void module_init(module_data_t *mod)
 static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
-    module_demux_destroy(mod);
 
     dmx_close(mod);
     dvr_close(mod);
@@ -342,10 +336,8 @@ static void module_destroy(module_data_t *mod)
 }
 
 MODULE_STREAM_METHODS()
-MODULE_DEMUX_METHODS()
 MODULE_LUA_METHODS()
 {
-    MODULE_STREAM_METHODS_REF(),
-    MODULE_DEMUX_METHODS_REF()
+    MODULE_STREAM_METHODS_REF()
 };
 MODULE_LUA_REGISTER(dvb_input)

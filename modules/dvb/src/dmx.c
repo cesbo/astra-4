@@ -105,4 +105,5 @@ void dmx_close(module_data_t *mod)
         if(mod->dmx_fd_list[i])
             close(mod->dmx_fd_list[i]);
     }
+    free(mod->dmx_fd_list);
 }

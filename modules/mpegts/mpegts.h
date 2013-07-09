@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 #include <modules/astra/base.h> /* crc32b, hex_to_str */
+#include <modules/astra/module_lua.h>
 
 /*
  * ooooooooooo  oooooooo8
@@ -75,7 +76,8 @@ typedef enum
     MPEGTS_PACKET_VIDEO     = MPEGTS_PACKET_PES | 0x01,
     MPEGTS_PACKET_AUDIO     = MPEGTS_PACKET_PES | 0x02,
     MPEGTS_PACKET_SUB       = MPEGTS_PACKET_PES | 0x04,
-    MPEGTS_PACKET_DATA      = 0x01000000
+    MPEGTS_PACKET_DATA      = 0x01000000,
+    MPEGTS_PACKET_NULL      = 0x02000000
 } mpegts_packet_type_t;
 
 const char * mpegts_type_name(mpegts_packet_type_t type);
@@ -83,7 +85,7 @@ mpegts_packet_type_t mpegts_pes_type(uint8_t type_id);
 
 const char * mpeg4_profile_level_name(uint8_t type_id);
 
-void mpegts_desc_to_string(char *str, uint32_t len, const uint8_t *desc);
+void mpegts_desc_to_lua(const uint8_t *desc);
 
 /*
  * oooooooooo   oooooooo8 ooooo

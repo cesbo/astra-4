@@ -39,9 +39,17 @@
 #define MSG(_msg) "[http_server %s:%d] " _msg, mod->addr, mod->port
 
 #define HTTP_BUFFER_SIZE (64 * 1024)
+#define MAX_WRITE_PIECE 1 * 1024 * 1024
+
+#define FRAME_HEADER_SIZE 2
+#define FRAME_KEY_SIZE 4
+#define FRAME_SIZE8_SIZE 0
+#define FRAME_SIZE16_SIZE 2
+#define FRAME_SIZE64_SIZE 8
 
 typedef struct
 {
+    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
     module_data_t *mod;
@@ -53,6 +61,7 @@ typedef struct
 
     int ready_state; // 0 - not, 1 request, 2 - headers, 3 - content
 
+    int is_websocket;
     int is_close;
     int is_keep_alive;
     int content_length;
@@ -65,13 +74,18 @@ typedef struct
 
 struct module_data_t
 {
+    MODULE_LUA_DATA();
+
+    int idx_self;
+
     const char *addr;
     int port;
 
-    int idx_callback;
-
     asc_socket_t *sock;
     asc_list_t *clients;
+    asc_vector_t *write_temp_buf; /* shared across all clients,
+                                     used only during one function call,
+                                     not longer */
 };
 
 /*
@@ -83,48 +97,59 @@ struct module_data_t
  *
  */
 
-static void on_read(void *arg, int is_data)
+static void get_lua_callback(module_data_t *mod)
+{
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
+    lua_getfield(lua, -1, "callback");
+    lua_remove(lua, -2);
+}
+
+static void on_read_error(void *arg)
 {
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
-    if(!is_data)
+    if(client->idx_request)
     {
-        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
-        lua_pushlightuserdata(lua, client);
-        lua_pushnil(lua);
-        lua_call(lua, 2, 0);
-
-        if(client->idx_request)
-        {
-            luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
-            client->idx_request = 0;
-        }
-
-        if(client->idx_data)
-        {
-            luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_data);
-            client->idx_data = 0;
-        }
-
-        if(client->__stream.self)
-        {
-            __module_stream_destroy(&client->__stream);
-            client->__stream.self = NULL;
-        }
-
-        asc_list_remove_item(mod->clients, client);
-        asc_socket_close(client->sock);
-        free(client);
-        return;
+        luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
+        client->idx_request = 0;
     }
+
+    get_lua_callback(mod);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+    lua_pushlightuserdata(lua, client);
+    lua_pushnil(lua);
+    lua_call(lua, 3, 0);
+
+    if(client->idx_data)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_data);
+        client->idx_data = 0;
+    }
+    lua_gc(lua, LUA_GCCOLLECT, 0);
+
+    if(client->__stream.self)
+    {
+        __module_stream_destroy(&client->__stream);
+        client->__stream.self = NULL;
+    }
+
+    asc_list_remove_item(mod->clients, client);
+    asc_socket_close(client->sock);
+    free(client);
+}
+
+static void on_read(void *arg)
+{
+    http_client_t *client = arg;
+    module_data_t *mod = client->mod;
 
     int r = asc_socket_recv(client->sock, client->buffer, HTTP_BUFFER_SIZE);
     if(r <= 0)
     {
         if(r == -1)
             asc_log_error(MSG("failed to read a request [%s]"), strerror(errno));
-        on_read(client, 0);
+        on_read_error(client);
         return;
     }
 
@@ -147,12 +172,13 @@ static void on_read(void *arg, int is_data)
 
         if(!http_parse_request(client->buffer, m))
         {
-            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+            get_lua_callback(mod);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
             lua_pushlightuserdata(lua, client);
             lua_newtable(lua);
             lua_pushstring(lua, "failed to parse http request");
             lua_setfield(lua, -2, "message");
-            lua_call(lua, 2, 0);
+            lua_call(lua, 3, 0);
             return;
         }
 
@@ -220,6 +246,8 @@ static void on_read(void *arg, int is_data)
             static const char __connection[] = "Connection: ";
             static const char __close[] = "close";
             static const char __keep_alive[] = "keep-alive";
+            static const char __upgrade[] = "Upgrade: ";
+            static const char __websocket[] = "websocket";
             if(!strncasecmp(header, __connection, sizeof(__connection) - 1))
             {
                 const char *val = &header[sizeof(__connection) - 1];
@@ -233,6 +261,12 @@ static void on_read(void *arg, int is_data)
                 const char *val = &header[sizeof(__content_length) - 1];
                 client->content_length = strtoul(val, NULL, 10);
             }
+            else if(!strncasecmp(header, __upgrade, sizeof(__upgrade) - 1))
+            {
+                const char *val = &header[sizeof(__upgrade) - 1];
+                if(!strncasecmp(val, __websocket, sizeof(__websocket) - 1))
+                    client->is_websocket = 1;
+            }
 
             ++headers_count;
             lua_pushnumber(lua, headers_count);
@@ -244,10 +278,11 @@ static void on_read(void *arg, int is_data)
 
         if(client->ready_state == 2)
         {
-            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+            get_lua_callback(mod);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
             lua_pushlightuserdata(lua, client);
             lua_pushvalue(lua, request);
-            lua_call(lua, 2, 0);
+            lua_call(lua, 3, 0);
 
             luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
             client->idx_request = 0;
@@ -268,19 +303,20 @@ static void on_read(void *arg, int is_data)
             if(client->content_length > 0)
             {
                 const int r_skip = r - skip;
-                lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+                get_lua_callback(mod);
+                lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
                 lua_pushlightuserdata(lua, client);
 
                 if(client->content_length > r_skip)
                 {
                     lua_pushlstring(lua, &client->buffer[skip], r_skip);
-                    lua_call(lua, 2, 0);
+                    lua_call(lua, 3, 0);
                     client->content_length -= r_skip;
                 }
                 else
                 {
                     lua_pushlstring(lua, &client->buffer[skip], client->content_length);
-                    lua_call(lua, 2, 0);
+                    lua_call(lua, 3, 0);
                     client->content_length = -1;
 
                     // content is done
@@ -292,10 +328,66 @@ static void on_read(void *arg, int is_data)
         // Stream
         else
         {
-            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+            get_lua_callback(mod);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
             lua_pushlightuserdata(lua, client);
-            lua_pushlstring(lua, &client->buffer[skip], r - skip);
-            lua_call(lua, 2, 0);
+
+            if(client->is_websocket)
+            {
+                uint8_t *key = NULL;
+                uint8_t *data = (uint8_t *)client->buffer;
+                uint64_t data_size = data[1] & 0x7F;
+
+                if(data_size < 126)
+                {
+                    key = data + FRAME_HEADER_SIZE + FRAME_SIZE8_SIZE;
+                }
+                else if(data_size == 126)
+                {
+                    data_size = (data[2] << 8) | data[3];
+
+                    asc_assert(data_size < (HTTP_BUFFER_SIZE
+                                            - FRAME_HEADER_SIZE
+                                            - FRAME_SIZE16_SIZE
+                                            - FRAME_KEY_SIZE)
+                               , MSG("data_size limit"));
+
+                    key = data + FRAME_HEADER_SIZE + FRAME_SIZE16_SIZE;
+                }
+                else if(data_size == 127)
+                {
+                    data_size = (  ((uint64_t)data[2] << 56)
+                                 | ((uint64_t)data[3] << 48)
+                                 | ((uint64_t)data[4] << 40)
+                                 | ((uint64_t)data[5] << 32)
+                                 | ((uint64_t)data[6] << 24)
+                                 | ((uint64_t)data[7] << 16)
+                                 | ((uint64_t)data[8] << 8 )
+                                 | ((uint64_t)data[9]      ));
+
+                    asc_assert(data_size < (HTTP_BUFFER_SIZE
+                                            - FRAME_HEADER_SIZE
+                                            - FRAME_SIZE64_SIZE
+                                            - FRAME_KEY_SIZE)
+                               , MSG("data_size limit"));
+
+                    key = data + FRAME_HEADER_SIZE + FRAME_SIZE64_SIZE;
+                }
+                data = key + FRAME_KEY_SIZE;
+
+                // TODO: check FIN
+                // TODO: check opcode
+                // TODO: luaL_Buffer (to join several buffers)
+
+                for(size_t i = 0; i < data_size; ++i)
+                    data[i] ^= key[i % 4];
+
+                lua_pushlstring(lua, (char *)data, data_size);
+            }
+            else
+                lua_pushlstring(lua, &client->buffer[skip], r - skip);
+
+            lua_call(lua, 3, 0);
         }
     }
 }
@@ -309,36 +401,39 @@ static void on_read(void *arg, int is_data)
  *
  */
 
-static void on_write_ready(void *arg, int is_data)
+static void on_write_ready(void *arg)
 {
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
-    if(!is_data)
-    {
-        on_read(client, 0);
-        return;
-    }
+    int to_send = asc_socket_get_send_buffer_space_available(client->sock);
+    if(to_send > MAX_WRITE_PIECE)
+        to_send = MAX_WRITE_PIECE;
+    asc_vector_resize(mod->write_temp_buf, to_send);
 
-    const int read_size = fread(client->buffer, 1, HTTP_BUFFER_SIZE, client->src_file);
+    const int read_size = fread(asc_vector_get_dataptr(mod->write_temp_buf), 1, to_send, client->src_file);
     if(read_size <= 0)
     {
         asc_log_error(MSG("failed to read source file [%s]"), strerror(errno));
-        on_read(client, 0);
+        on_read_error(client);
         return;
     }
 
-    if(asc_socket_send(client->sock, client->buffer, read_size) != read_size)
+    bool ok = asc_socket_send_buffered(client->sock
+                                       , asc_vector_get_dataptr(mod->write_temp_buf)
+                                       , read_size);
+    if(!ok)
     {
-        asc_log_warning(MSG("failed to send file to client:%d"), asc_socket_fd(client->sock));
-        on_read(client, 0);
+        asc_log_warning(MSG("failed to send file part (%d bytes) to client:%d")
+                        , read_size, asc_socket_fd(client->sock));
+        on_read_error(client);
         return;
     }
 
     if(feof(client->src_file))
     {
         client->src_file = NULL;
-        asc_socket_event_on_read(client->sock, on_read, client);
+        asc_socket_set_on_send_possible(client->sock, NULL);
     }
 }
 
@@ -347,29 +442,29 @@ static void on_ts(void *arg, const uint8_t *ts)
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
+#ifdef ACCUM_TS
     if(client->buffer_skip >= HTTP_BUFFER_SIZE - TS_PACKET_SIZE)
     {
-        const int ret = asc_socket_send(client->sock, client->buffer, client->buffer_skip);
-        if(ret == client->buffer_skip)
-            client->buffer_skip = 0;
-        else if(ret == -1)
+        const bool ret = asc_socket_send_buffered(client->sock, client->buffer, client->buffer_skip);
+        if(!ret)
         {
             asc_log_warning(MSG("failed to send ts to the client [%s]"), asc_socket_error());
-            on_read(client, 0);
+            on_read_error(client);
             return;
         }
-        else
-        {
-            if(ret > 0)
-            {
-                asc_log_info(MSG("move memory"));
-                memmove(client->buffer, &client->buffer[ret], client->buffer_skip - ret);
-                client->buffer_skip -= ret;
-            }
-        }
+        client->buffer_skip = 0;
     }
     memcpy(&client->buffer[client->buffer_skip], ts, TS_PACKET_SIZE);
     client->buffer_skip += TS_PACKET_SIZE;
+#else
+    const bool ret = asc_socket_send_buffered(client->sock, ts, TS_PACKET_SIZE);
+    if(!ret)
+    {
+        asc_log_warning(MSG("failed to send ts to the client [%s]"), asc_socket_error());
+        on_read_error(client);
+        return;
+    }
+#endif
 }
 
 static void buffer_set_text(char **buffer, int capacity
@@ -413,7 +508,61 @@ static int method_send(module_data_t *mod)
     }
     http_client_t *client = lua_touserdata(lua, 2);
 
-    if(lua_type(lua, 3) != LUA_TTABLE)
+    if(lua_type(lua, 3) == LUA_TSTRING)
+    {
+        int send_ret;
+        const char *str = lua_tostring(lua, 3);
+        const uint64_t str_size = luaL_len(lua, 3);
+
+        if(client->is_websocket)
+        {
+            uint8_t *data = (uint8_t *)client->buffer;
+            uint8_t frame_header = FRAME_HEADER_SIZE;
+
+            data[0] = 0x81;
+            if(str_size <= 125)
+            {
+                data[1] = str_size & 0xFF;
+            }
+            else if(str_size <= 0xFFFF)
+            {
+                data[1] = 126;
+                data[2] = (str_size >> 8) & 0xFF;
+                data[3] = (str_size     ) & 0xFF;
+
+                frame_header += FRAME_SIZE16_SIZE;
+            }
+            else
+            {
+                data[1] = 127;
+                data[2] = (str_size >> 56) & 0xFF;
+                data[3] = (str_size >> 48) & 0xFF;
+                data[4] = (str_size >> 40) & 0xFF;
+                data[5] = (str_size >> 32) & 0xFF;
+                data[6] = (str_size >> 24) & 0xFF;
+                data[7] = (str_size >> 16) & 0xFF;
+                data[8] = (str_size >> 8 ) & 0xFF;
+                data[9] = (str_size      ) & 0xFF;
+
+                frame_header += FRAME_SIZE64_SIZE;
+            }
+
+            memcpy(&data[frame_header], str, str_size);
+
+            send_ret = asc_socket_send_buffered(client->sock, (void *)data
+                                                , frame_header + str_size);
+        }
+        else
+            send_ret = asc_socket_send_buffered(client->sock, (void *)str, str_size);
+
+        if(!send_ret)
+        {
+            asc_log_error(MSG("failed to send data to client:%d [%s]")
+                          , asc_socket_fd(client->sock), strerror(errno));
+        }
+        return 0;
+    }
+    else if(lua_type(lua, 3) != LUA_TTABLE)
     {
         asc_log_error(MSG(":send() table is required"));
         astra_abort();
@@ -455,7 +604,7 @@ static int method_send(module_data_t *mod)
     lua_pop(lua, 1);
 
     const int header_size = buffer - client->buffer;
-    if(!asc_socket_send(client->sock, client->buffer, header_size))
+    if(!asc_socket_send_buffered(client->sock, client->buffer, header_size))
     {
         asc_log_error(MSG("failed to send response to client:%d"), asc_socket_fd(client->sock));
         return 0;
@@ -467,7 +616,7 @@ static int method_send(module_data_t *mod)
     {
         const int content_size = luaL_len(lua, -1);
         const char *content = lua_tostring(lua, -1);
-        if(!asc_socket_send(client->sock, (void *)content, content_size))
+        if(!asc_socket_send_buffered(client->sock, (void *)content, content_size))
         {
             asc_log_error(MSG("failed to send content to client:%d [%s]")
                           , asc_socket_fd(client->sock), strerror(errno));
@@ -482,8 +631,7 @@ static int method_send(module_data_t *mod)
     {
         luaL_Stream *stream = luaL_checkudata(lua, -1, LUA_FILEHANDLE);
         client->src_file = stream->f;
-
-        asc_socket_event_on_write(client->sock, on_write_ready, client);
+        asc_socket_set_on_send_possible(client->sock, on_write_ready);
     }
     lua_pop(lua, 1);
 
@@ -499,7 +647,8 @@ static int method_send(module_data_t *mod)
     }
     lua_pop(lua, 1);
 
-    client->ready_state = 0;
+    if(!client->is_websocket)
+        client->ready_state = 0;
 
     return 0;
 }
@@ -534,20 +683,6 @@ static int method_data(module_data_t *mod)
  *
  */
 
-static int method_close(module_data_t *mod)
-{
-    // close client
-    if(lua_type(lua, 2) != LUA_TLIGHTUSERDATA)
-    {
-        asc_log_error(MSG(":close() client instance required"));
-        astra_abort();
-    }
-
-    on_read(lua_touserdata(lua, 2), 0);
-
-    return 0;
-}
-
 static void server_close(module_data_t *mod)
 {
     for(asc_list_first(mod->clients)
@@ -563,37 +698,59 @@ static void server_close(module_data_t *mod)
     asc_socket_close(mod->sock);
     mod->sock = NULL;
 
-    if(mod->idx_callback)
-    {
-        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_callback);
-        mod->idx_callback = 0;
-    }
-
     asc_list_destroy(mod->clients);
+    asc_vector_destroy(mod->write_temp_buf);
     mod->clients = NULL;
+
+    if(mod->idx_self > 0)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_self);
+        mod->idx_self = 0;
+    }
 }
 
-static void on_accept(void *arg, int is_data)
+static int method_close(module_data_t *mod)
+{
+    // close self
+    if(lua_gettop(lua) < 2)
+    {
+        server_close(mod);
+        return 0;
+    }
+
+    // close client
+    if(lua_type(lua, 2) != LUA_TLIGHTUSERDATA)
+    {
+        asc_log_error(MSG(":close() client instance required"));
+        astra_abort();
+    }
+
+    on_read_error(lua_touserdata(lua, 2));
+
+    return 0;
+}
+
+static void on_accept_error(void *arg)
+{
+    server_close(arg);
+}
+
+static void on_accept(void *arg)
 {
     module_data_t *mod = arg;
 
-    if(!is_data)
-    {
-        server_close(mod);
-        return;
-    }
-
     http_client_t *client = calloc(1, sizeof(http_client_t));
-    if(!asc_socket_accept(mod->sock, &client->sock))
+    if(!asc_socket_accept(mod->sock, &client->sock, client))
     {
         free(client);
-        on_accept(mod, 0);
+        on_accept_error(mod);
         return;
     }
     client->mod = mod;
     asc_list_insert_tail(mod->clients, client);
 
-    asc_socket_event_on_read(client->sock, on_read, client);
+    asc_socket_set_on_read(client->sock, on_read);
+    asc_socket_set_on_close(client->sock, on_read_error);
 
     if(asc_log_is_debug())
     {
@@ -632,25 +789,29 @@ static void module_init(module_data_t *mod)
         asc_log_error(MSG("option 'callback' is required"));
         astra_abort();
     }
-    mod->idx_callback = luaL_ref(lua, LUA_REGISTRYINDEX);
+    lua_pop(lua, 1); // callback
+
+    // store self in registry
+    lua_pushvalue(lua, 3);
+    mod->idx_self = luaL_ref(lua, LUA_REGISTRYINDEX);
 
     mod->clients = asc_list_init();
+    mod->write_temp_buf = asc_vector_init(1);
 
-    mod->sock = asc_socket_open_tcp4();
+    mod->sock = asc_socket_open_tcp4(mod);
     asc_socket_set_reuseaddr(mod->sock, 1);
-    asc_socket_set_non_delay(mod->sock, 1);
     if(!asc_socket_bind(mod->sock, mod->addr, mod->port))
     {
         server_close(mod);
         astra_abort();
     }
-
-    asc_socket_event_on_accept(mod->sock, on_accept, mod);
+    asc_socket_listen(mod->sock, on_accept, on_accept_error);
 }
 
 static void module_destroy(module_data_t *mod)
 {
-    server_close(mod);
+    if(mod->idx_self)
+        server_close(mod);
 }
 
 MODULE_LUA_METHODS()

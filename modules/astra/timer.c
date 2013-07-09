@@ -19,7 +19,7 @@
 
 struct module_data_t
 {
-    int idx_cb;
+    MODULE_LUA_DATA();
 
     asc_timer_t *timer;
 };
@@ -29,8 +29,10 @@ struct module_data_t
 static void timer_callback(void *arg)
 {
     module_data_t *mod = arg;
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_cb);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
+    lua_getfield(lua, -1, "callback");
     lua_call(lua, 0, 0);
+    lua_pop(lua, 1); // options
 }
 
 /* required */
@@ -50,7 +52,7 @@ static void module_init(module_data_t *mod)
         asc_log_error("[timer] option 'callback' must be a function");
         astra_abort();
     }
-    mod->idx_cb = luaL_ref(lua, LUA_REGISTRYINDEX);
+    lua_pop(lua, 1);
 
     mod->timer = asc_timer_init(interval * 1000, timer_callback, mod);
 }
@@ -62,9 +64,6 @@ static void module_destroy(module_data_t *mod)
         asc_timer_destroy(mod->timer);
         mod->timer = NULL;
     }
-
-    luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_cb);
-    mod->idx_cb = 0;
 }
 
 MODULE_LUA_METHODS()

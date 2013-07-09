@@ -10,8 +10,6 @@
 #include <fcntl.h>
 #include <poll.h>
 
-#if DVB_API_VERSION >= 5
-
 #define DTV_PROPERTY_BEGIN(_cmdseq, _cmdlist)                                                   \
     _cmdseq.num = 0;                                                                            \
     _cmdseq.props = _cmdlist
@@ -21,11 +19,8 @@
     _cmdlist[_cmdseq.num].u.data = _data;                                                       \
     ++_cmdseq.num
 
-#endif
-
 static void fe_clear(module_data_t *mod)
 {
-#if DVB_API_VERSION >= 5
     static struct dtv_property clear[] = { { .cmd = DTV_CLEAR } };
     static struct dtv_properties cmdclear = { .num = 1, .props = clear };
     if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdclear ) != 0)
@@ -33,7 +28,7 @@ static void fe_clear(module_data_t *mod)
         asc_log_error(MSG("FE_SET_PROPERTY DTV_CLEAR failed [%s]"), strerror(errno));
         astra_abort();
     }
-#endif
+
     struct dvb_frontend_event fe_event;
     while(ioctl(mod->fe_fd, FE_GET_EVENT, &fe_event) != -1)
         ;
@@ -264,68 +259,35 @@ static void fe_tune_s(module_data_t *mod)
 
     fe_clear(mod);
 
-    if(mod->type == DVB_TYPE_S)
+    struct dtv_properties cmdseq;
+    struct dtv_property cmdlist[12];
+
+    const fe_delivery_system_t dvb_sys = (mod->type == DVB_TYPE_S) ? SYS_DVBS : SYS_DVBS2;
+
+    DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   dvb_sys);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_FREQUENCY,         freq);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_SYMBOL_RATE,       mod->symbolrate);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INNER_FEC,         mod->fec);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INVERSION,         INVERSION_AUTO);
+    if(mod->modulation != FE_MODULATION_NONE)
     {
-        struct dvb_frontend_parameters feparams;
-        memset(&feparams, 0, sizeof(feparams));
-        feparams.frequency = freq;
-        feparams.inversion = INVERSION_AUTO;
-        feparams.u.qpsk.symbol_rate = mod->symbolrate;
-        feparams.u.qpsk.fec_inner = mod->fec;
-
-        if(!mod->diseqc)
-        {
-            if(ioctl(mod->fe_fd, FE_SET_TONE, tone) != 0)
-            {
-                asc_log_error(MSG("FE_SET_TONE failed [%s]"), strerror(errno));
-                astra_abort();
-            }
-
-            if(ioctl(mod->fe_fd, FE_SET_VOLTAGE, voltage) != 0)
-            {
-                asc_log_error(MSG("FE_SET_VOLTAGE failed [%s]"), strerror(errno));
-                astra_abort();
-            }
-        }
-
-        if(ioctl(mod->fe_fd, FE_SET_FRONTEND, &feparams) != 0)
-        {
-            asc_log_error(MSG("FE_SET_FRONTEND failed [%s]"), strerror(errno));
-            astra_abort();
-        }
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,    mod->modulation);
     }
-#if DVB_API_VERSION >= 5
-    else
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_ROLLOFF,       mod->rolloff);
+    if(!mod->diseqc)
     {
-        struct dtv_properties cmdseq;
-        struct dtv_property cmdlist[12];
-
-        DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   SYS_DVBS2);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_FREQUENCY,         freq);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_SYMBOL_RATE,       mod->symbolrate);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INNER_FEC,         mod->fec);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INVERSION,         INVERSION_AUTO);
-        if(mod->modulation != FE_MODULATION_NONE)
-        {
-            DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,    mod->modulation);
-            DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_ROLLOFF,       mod->rolloff);
-        }
-        if(!mod->diseqc)
-        {
-            DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_VOLTAGE,       voltage);
-            DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TONE,          tone);
-        }
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_PILOT,             PILOT_AUTO);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TUNE,              0);
-
-        if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
-        {
-            asc_log_error(MSG("FE_SET_PROPERTY DTV_TUNE failed [%s]"), strerror(errno));
-            astra_abort();
-        }
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_VOLTAGE,       voltage);
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TONE,          tone);
     }
-#endif
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_PILOT,             PILOT_AUTO);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TUNE,              0);
+
+    if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
+    {
+        asc_log_error(MSG("FE_SET_PROPERTY DTV_TUNE failed [%s]"), strerror(errno));
+        astra_abort();
+    }
 }
 
 /*
@@ -341,71 +303,43 @@ static void fe_tune_t(module_data_t *mod)
 {
     fe_clear(mod);
 
-    if(mod->type == DVB_TYPE_T)
+    struct dtv_properties cmdseq;
+    struct dtv_property cmdlist[12];
+
+    DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   SYS_DVBT);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_FREQUENCY,         mod->frequency);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,        mod->modulation);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INVERSION,         INVERSION_AUTO);
+
+    switch(mod->bandwidth)
     {
-        struct dvb_frontend_parameters feparams;
-
-        memset(&feparams, 0, sizeof(feparams));
-        feparams.frequency = mod->frequency;
-        feparams.inversion = INVERSION_AUTO;
-
-        feparams.u.ofdm.code_rate_HP = FEC_AUTO;
-        feparams.u.ofdm.code_rate_LP = FEC_AUTO;
-
-        feparams.u.ofdm.bandwidth = mod->bandwidth;
-        feparams.u.ofdm.constellation = mod->modulation;
-        feparams.u.ofdm.transmission_mode = mod->transmitmode;
-        feparams.u.ofdm.guard_interval = mod->guardinterval;
-        feparams.u.ofdm.hierarchy_information = mod->hierarchy;
-
-        if(ioctl(mod->fe_fd, FE_SET_FRONTEND, &feparams) != 0)
-        {
-            asc_log_error(MSG("FE_SET_FRONTEND failed [%s]"), strerror(errno));
-            astra_abort();
-        }
+        case BANDWIDTH_8_MHZ:
+            DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 8000000);
+            break;
+        case BANDWIDTH_7_MHZ:
+            DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 7000000);
+            break;
+        case BANDWIDTH_6_MHZ:
+            DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 6000000);
+            break;
+        default:
+            DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 0);
+            break;
     }
-#if DVB_API_VERSION >= 5
-    else
+
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_CODE_RATE_HP,      FEC_AUTO);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_CODE_RATE_LP,      FEC_AUTO);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_GUARD_INTERVAL,    mod->guardinterval);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TRANSMISSION_MODE, mod->transmitmode);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_HIERARCHY,         mod->hierarchy);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TUNE,              0);
+
+    if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
     {
-        struct dtv_properties cmdseq;
-        struct dtv_property cmdlist[12];
-
-        DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   SYS_DVBT);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_FREQUENCY,         mod->frequency);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,        mod->modulation);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INVERSION,         INVERSION_AUTO);
-
-        switch(mod->bandwidth)
-        {
-            case BANDWIDTH_8_MHZ:
-                DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 8000000);
-                break;
-            case BANDWIDTH_7_MHZ:
-                DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 7000000);
-                break;
-            case BANDWIDTH_6_MHZ:
-                DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 6000000);
-                break;
-            default:
-                DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 0);
-                break;
-        }
-
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_CODE_RATE_HP,      FEC_AUTO);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_CODE_RATE_LP,      FEC_AUTO);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_GUARD_INTERVAL,    mod->guardinterval);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TRANSMISSION_MODE, mod->transmitmode);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_HIERARCHY,         mod->hierarchy);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TUNE,              0);
-
-        if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
-        {
-            asc_log_error(MSG("FE_SET_PROPERTY DTV_TUNE failed [%s]"), strerror(errno));
-            astra_abort();
-        }
+        asc_log_error(MSG("FE_SET_PROPERTY DTV_TUNE failed [%s]"), strerror(errno));
+        astra_abort();
     }
-#endif
 }
 
 /*
