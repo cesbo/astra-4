@@ -16,6 +16,8 @@ Usage: $0 [OPTIONS]
 
     --module-pack=PATH          - build module package
 
+    --debug                     - build debug version
+
     CFLAGS="..."                - custom compiler flags
     LDFLAGS="..."               - custom linker flags
     LIBS="..."                  - static linked libraries
@@ -39,6 +41,7 @@ ARG_BUILD_STATIC=0
 ARG_CFLAGS=""
 ARG_LDFLAGS=""
 ARG_MODULE_PACK=""
+ARG_DEBUG=0
 
 set_cc()
 {
@@ -76,6 +79,9 @@ while [ $# -ne 0 ] ; do
         "--module-pack="*)
             ARG_MODULE_PACK=`echo $OPT | sed -e 's/^[a-z-]*=//'`
             ;;
+        "--debug")
+            ARG_DEBUG=1
+            ;;
         *)
             echo "Unknown option: $OPT"
             echo "For more information see: $0 --help"
@@ -89,7 +95,13 @@ if ! which $APP_C >/dev/null ; then
     exit 1
 fi
 
-CFLAGS="-g -O3 -I. -Wall -Wextra -pedantic \
+CFLAGS_DEBUG="-O3"
+if [ $ARG_DEBUG -ne 0 ] ; then
+    CFLAGS_DEBUG="-g -O0"
+    APP_STRIP=":"
+fi
+
+CFLAGS="$CFLAGS_DEBUG -I. -Wall -Wextra -pedantic \
 -fno-builtin -funit-at-a-time -ffast-math"
 
 if [ $ARG_CC -eq 0 -a -z "$ARG_MODULE_PACK" ]; then
