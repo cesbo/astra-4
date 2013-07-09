@@ -140,6 +140,7 @@ function on_server_data(self, client, data)
                     end
             })
         elseif data == "Stop Timer" then
+            client_data.timer:close()
             client_data.timer = nil
             collectgarbage()
         end

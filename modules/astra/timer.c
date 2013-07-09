@@ -21,21 +21,36 @@ struct module_data_t
 {
     MODULE_LUA_DATA();
 
+    int idx_self;
     asc_timer_t *timer;
 };
-
-/* callbacks */
 
 static void timer_callback(void *arg)
 {
     module_data_t *mod = arg;
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
     lua_getfield(lua, -1, "callback");
-    lua_call(lua, 0, 0);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+    lua_call(lua, 1, 0);
     lua_pop(lua, 1); // options
 }
 
-/* required */
+static int method_close(module_data_t *mod)
+{
+    if(mod->idx_self > 0)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_self);
+        mod->idx_self = 0;
+    }
+
+    if(mod->timer)
+    {
+        asc_timer_destroy(mod->timer);
+        mod->timer = NULL;
+    }
+
+    return 0;
+}
 
 static void module_init(module_data_t *mod)
 {
@@ -54,20 +69,21 @@ static void module_init(module_data_t *mod)
     }
     lua_pop(lua, 1);
 
+    // store self in registry
+    lua_pushvalue(lua, 3);
+    mod->idx_self = luaL_ref(lua, LUA_REGISTRYINDEX);
+
     mod->timer = asc_timer_init(interval * 1000, timer_callback, mod);
 }
 
 static void module_destroy(module_data_t *mod)
 {
-    if(mod->timer)
-    {
-        asc_timer_destroy(mod->timer);
-        mod->timer = NULL;
-    }
+    if(mod->idx_self)
+        method_close(mod);
 }
 
 MODULE_LUA_METHODS()
 {
-    { NULL, NULL }
+    { "close", method_close }
 };
 MODULE_LUA_REGISTER(timer)
