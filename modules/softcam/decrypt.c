@@ -607,6 +607,15 @@ static void module_init(module_data_t *mod)
     module_option_string("name", &mod->name);
     asc_assert(mod->name != NULL, "[decrypt] option 'name' is required");
 
+    mod->buffer = malloc(mod->cluster_size_bytes * 2);
+    mod->r_buffer = mod->buffer; // s_buffer = NULL
+
+    mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
+    mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
+    mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
+    mod->em = mpegts_psi_init(MPEGTS_PACKET_CA, MAX_PID);
+    mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
+
     mod->ffdecsa = get_key_struct();
     mod->cluster_size = get_suggested_cluster_size();
     mod->cluster_size_bytes = mod->cluster_size * TS_PACKET_SIZE;
@@ -658,15 +667,6 @@ static void module_init(module_data_t *mod)
         module_cam_attach_decrypt(mod->__decrypt.cam, &mod->__decrypt);
     }
     // ---
-
-    mod->buffer = malloc(mod->cluster_size_bytes * 2);
-    mod->r_buffer = mod->buffer; // s_buffer = NULL
-
-    mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
-    mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
-    mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
-    mod->em = mpegts_psi_init(MPEGTS_PACKET_CA, MAX_PID);
-    mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
 }
 
 static void module_destroy(module_data_t *mod)
