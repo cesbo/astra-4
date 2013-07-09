@@ -14,11 +14,19 @@
 
 #include <astra.h>
 
+#if 0
 #include <sys/ioctl.h>
 #include <linux/dvb/version.h>
 #include <linux/dvb/frontend.h>
 #include <linux/dvb/dmx.h>
 #include <linux/dvb/ca.h>
+#else
+#define ioctl(_a, _b, _c) 1
+#include "linux/dvb/version.h"
+#include "linux/dvb/frontend.h"
+#include "linux/dvb/dmx.h"
+#include "linux/dvb/ca.h"
+#endif
 
 #if DVB_API_VERSION < 5
 #   error "DVB_API_VERSION < 5"
@@ -37,31 +45,34 @@ typedef enum
     DVB_TYPE_C
 } dvb_type_t;
 
-#define CA_MAX_CONNECTIONS 16
-
-typedef enum
-{
-    CA_CONN_IDLE    = 0x01,
-    CA_CONN_CREATE  = 0x02, /* awaiting c_t_c_reply TPDU */
-    CA_CONN_DELETE  = 0x04, /* awaiting d_t_c_reply TPDU */
-    CA_CONN_ACTIVE  = 0x08
-} ca_connection_state_t;
-
+#define MAX_SESSIONS 32
 #define MAX_TPDU_SIZE 2048
 
 typedef struct
 {
-    ca_connection_state_t state;
-    struct timeval tx_time;
-
     uint8_t buffer[MAX_TPDU_SIZE];
-    uint16_t buffer_size;
-} ca_connection_t;
+    uint32_t buffer_size;
+} ca_tpdu_message_t;
 
 typedef struct
 {
-    int is_active;
-    ca_connection_t connections[CA_MAX_CONNECTIONS];
+    int resource_id;
+} ca_session_t;
+
+typedef struct
+{
+    bool is_active;
+    bool is_busy;
+
+    // send
+    asc_list_t *queue;
+
+    // recv
+    uint8_t buffer[MAX_TPDU_SIZE];
+    uint16_t buffer_size;
+
+    // session
+    ca_session_t sessions[MAX_SESSIONS];
 } ca_slot_t;
 
 struct module_data_t
