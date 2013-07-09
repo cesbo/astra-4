@@ -586,8 +586,7 @@ static void on_response(module_data_t *mod, const uint8_t *data, const char *err
     {
         if(!errmsg)
             errmsg = "Unknown";
-        asc_log_error(MSG("ECM 0x%02X%02X%02X Not Found. %s")
-                      , data[0], data[1], data[2], errmsg);
+        asc_log_error(MSG("ECM:0x%02X size:%d Not Found. %s") , data[0], data[2], errmsg);
     }
 }
 
