@@ -20,6 +20,7 @@ typedef struct item_s
 
 struct asc_list_t
 {
+    size_t size;
     struct item_s *current;
     TAILQ_HEAD(list_head_s, item_s) list;
 };
@@ -28,6 +29,7 @@ asc_list_t * asc_list_init(void)
 {
     asc_list_t *list = malloc(sizeof(asc_list_t));
     TAILQ_INIT(&list->list);
+    list->size = 0;
     list->current = NULL;
     return list;
 }
@@ -60,8 +62,14 @@ inline void * asc_list_data(asc_list_t *list)
     return list->current->data;
 }
 
+inline size_t asc_list_size(asc_list_t *list)
+{
+    return list->size;
+}
+
 void asc_list_insert_head(asc_list_t *list, void *data)
 {
+    ++list->size;
     item_t *item = malloc(sizeof(item_t));
     item->data = data;
     item->entries.tqe_next = NULL;
@@ -71,6 +79,7 @@ void asc_list_insert_head(asc_list_t *list, void *data)
 
 void asc_list_insert_tail(asc_list_t *list, void *data)
 {
+    ++list->size;
     item_t *item = malloc(sizeof(item_t));
     item->data = data;
     item->entries.tqe_next = NULL;
@@ -80,6 +89,7 @@ void asc_list_insert_tail(asc_list_t *list, void *data)
 
 void asc_list_remove_current(asc_list_t *list)
 {
+    --list->size;
     asc_assert(list->current != NULL, "[core/list] failed to remove item");
     item_t *next = TAILQ_NEXT(list->current, entries);
     TAILQ_REMOVE(&list->list, list->current, entries);

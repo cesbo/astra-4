@@ -20,6 +20,7 @@ void asc_list_first(asc_list_t *list);
 void asc_list_next(asc_list_t *list);
 int asc_list_eol(asc_list_t *list) __wur;
 void * asc_list_data(asc_list_t *list) __wur;
+size_t asc_list_size(asc_list_t *list) __wur;
 
 void asc_list_insert_head(asc_list_t *list, void *data);
 void asc_list_insert_tail(asc_list_t *list, void *data);
