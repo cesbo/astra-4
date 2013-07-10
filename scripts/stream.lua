@@ -100,8 +100,8 @@ dump_psi_info["sdt"] = function(name, info)
     log.info(name .. ("SDT: crc32: 0x%X"):format(info.crc32))
 end
 
-function on_analyze(channel_data, data)
-    local name = "[" .. channel_data.config.name .. "] "
+function on_analyze(channel_data, input_id, data)
+    local name = "[" .. channel_data.config.name .. " #" .. input_id .. "] "
 
     if data.error then
         log.error(name .. "Error: " .. data.error)
@@ -262,7 +262,7 @@ function start_reserve(channel_data)
         for input_id = 1, #channel_data.input do
             local input_data = channel_data.input[input_id]
             if input_data.on_air then
-                log.info("[" .. channel_data.config.name .. "] Current input " .. input_id)
+                log.info("[" .. channel_data.config.name .. "] Activate input #" .. input_id)
                 channel_data.transmit:set_upstream(input_data.tail:stream())
                 return input_id
             end
@@ -288,11 +288,35 @@ function start_reserve(channel_data)
     for input_id = active_input_id + 1, #channel_data.input do
         local input_data = channel_data.input[input_id]
         if input_data.source then
-            log.debug("[" .. channel_data.config.name .. "] Destroy input " .. input_id)
+            log.debug("[" .. channel_data.config.name .. "] Destroy input #" .. input_id)
             channel_data.input[input_id] = { on_air = false, }
         end
     end
     collectgarbage()
+end
+
+function log_analyze_error(channel_data, input_id, analyze_data)
+    local bitrate = 0
+    local sc_errors = 0
+    local pes_errors = 0
+
+    for _,item in pairs(analyze_data.analyze) do
+        bitrate = bitrate + item.bitrate
+        sc_errors = sc_errors + item.sc_error
+        pes_errors = pes_errors + item.pes_error
+    end
+
+    local analyze_message = "[" .. channel_data.config.name .. " #" .. input_id .. "] " .. "Bitrate:" .. bitrate .. "Kbit/s"
+
+    if sc_errors > 0 then
+        analyze_message = analyze_message .. " Scrambled"
+    end
+
+    if pes_errors > 0 then
+        analyze_message = analyze_message .. " PES-Error"
+    end
+
+    log.error(analyze_message)
 end
 
 -- ooooo oooo   oooo oooooooooo ooooo  oooo ooooooooooo
@@ -396,11 +420,11 @@ function init_input(channel_data, input_id)
 
     local init_input_type = input_list[input_conf.module_name]
     if not init_input_type then
-        log.error("[" .. channel_data.config.name .. "] Unknown type of input " .. input_id)
+        log.error("[" .. channel_data.config.name .. " #" .. input_id .. "] Unknown type of input " .. input_id)
         astra.abort()
     end
 
-    local input_data = {}
+    local input_data = { on_air = false }
     input_data.source = init_input_type(input_conf)
     input_data.tail = input_data.source.tail
 
@@ -448,10 +472,13 @@ function init_input(channel_data, input_id)
         upstream = input_data.tail:stream(),
         name = channel_data.config.name,
         callback = function(data)
-                on_analyze(channel_data, data)
+                on_analyze(channel_data, input_id, data)
 
                 if data.analyze then
                     if data.on_air ~= input_data.on_air then
+                        if data.on_air == false then
+                            log_analyze_error(channel_data, input_id, data)
+                        end
                         input_data.on_air = data.on_air
                         start_reserve(channel_data)
                     end
