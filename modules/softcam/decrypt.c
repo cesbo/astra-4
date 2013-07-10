@@ -607,9 +607,6 @@ static void module_init(module_data_t *mod)
     module_option_string("name", &mod->name);
     asc_assert(mod->name != NULL, "[decrypt] option 'name' is required");
 
-    mod->buffer = malloc(mod->cluster_size_bytes * 2);
-    mod->r_buffer = mod->buffer; // s_buffer = NULL
-
     mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
     mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
     mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
@@ -620,6 +617,9 @@ static void module_init(module_data_t *mod)
     mod->cluster_size = get_suggested_cluster_size();
     mod->cluster_size_bytes = mod->cluster_size * TS_PACKET_SIZE;
     mod->cluster = malloc(sizeof(void *) * (mod->cluster_size * 2 + 2));
+
+    mod->buffer = malloc(mod->cluster_size_bytes * 2);
+    mod->r_buffer = mod->buffer; // s_buffer = NULL
 
     uint8_t first_key[8] = { 0 };
     const char *string_value = NULL;
