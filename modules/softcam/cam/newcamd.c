@@ -702,6 +702,8 @@ static void module_init(module_data_t *mod)
     asc_assert(key != NULL, MSG("option 'key' is required"));
     str_to_hex(key, mod->key, sizeof(mod->key));
 
+    module_option_number("disable_emm", &mod->__cam.disable_emm);
+
     module_option_number("timeout", &mod->timeout);
     if(!mod->timeout)
         mod->timeout = 8;
