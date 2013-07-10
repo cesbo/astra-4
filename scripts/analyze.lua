@@ -174,7 +174,7 @@ end
 
 function on_analyze(data)
     if data.error then
-        dump_table(log.error, data)
+        log.error(data.error)
     elseif data.psi then
         if dump_psi_info[data.psi] then
             dump_psi_info[data.psi](data)
