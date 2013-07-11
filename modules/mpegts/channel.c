@@ -227,6 +227,9 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
     psi->crc32 = crc32;
 
+    const uint16_t pcr_pid = PMT_GET_PCR(psi);
+    bool join_pcr = true;
+
     // Make custom PMT and set descriptors for CAS
     mod->custom_pmt->pid = psi->pid;
     memcpy(mod->custom_pmt->buffer, psi->buffer, psi->buffer_size);
@@ -237,6 +240,9 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     {
         const uint16_t pid = PMT_ITEM_GET_PID(psi, pointer);
         module_stream_demux_join_pid(mod, pid);
+
+        if(pid == pcr_pid)
+            join_pcr = false;
 
         if(mod->map)
         {
@@ -293,15 +299,17 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         PMT_ITEMS_NEXT(psi, pointer);
     }
 
+    if(join_pcr)
+        module_stream_demux_join_pid(mod, pcr_pid);
+
     if(mod->map)
     {
-        uint16_t pcr_pid = PMT_GET_PCR(psi);
         if(mod->pid_map[pcr_pid])
         {
-            pcr_pid = mod->pid_map[pcr_pid];
+            const uint16_t custom_pcr_pid = mod->pid_map[pcr_pid];
             mod->custom_pmt->buffer[8] = (mod->custom_pmt->buffer[8] & ~0x1F)
-                                       | ((pcr_pid >> 8) & 0x1F);
-            mod->custom_pmt->buffer[9] = pcr_pid & 0xFF;
+                                       | ((custom_pcr_pid >> 8) & 0x1F);
+            mod->custom_pmt->buffer[9] = custom_pcr_pid & 0xFF;
         }
     }
 
@@ -429,7 +437,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             return;
         case MPEGTS_PACKET_SDT:
             mpegts_psi_mux(mod->sdt, ts, on_sdt, mod);
-            break;
+            return;
         default:
             break;
     }

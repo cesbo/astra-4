@@ -20,6 +20,7 @@ cas_init_t cas_init_list[] =
     irdeto_cas_init,
     viaccess_cas_init,
     dre_cas_init,
+    conax_cas_init,
     nagra_cas_init,
     videoguard_cas_init,
     mediaguard_cas_init,
