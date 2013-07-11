@@ -57,6 +57,12 @@ typedef struct
 typedef struct
 {
     int resource_id;
+
+    void (*event)(module_data_t *mod, uint8_t slot_id, uint16_t session_id);
+    void (*close)(module_data_t *mod, uint8_t slot_id, uint16_t session_id);
+    void (*manage)(module_data_t *mod, uint8_t slot_id, uint16_t session_id);
+
+    void *data;
 } ca_session_t;
 
 typedef struct
