@@ -424,7 +424,7 @@ function init_input(channel_data, input_id)
         astra.abort()
     end
 
-    local input_data = { on_air = true }
+    local input_data = { }
     input_data.source = init_input_type(input_conf)
     input_data.tail = input_data.source.tail
 
