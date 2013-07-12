@@ -512,7 +512,7 @@ static void module_init(module_data_t *mod)
     mod->stream[0] = MPEGTS_PACKET_PAT;
     module_stream_demux_join_pid(mod, 0x00);
 
-    if(module_option_number("sdt", &mod->config.sdt))
+    if(module_option_number("sdt", &mod->config.sdt) && mod->config.sdt)
     {
         mod->sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
         mod->custom_sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
@@ -520,7 +520,7 @@ static void module_init(module_data_t *mod)
         module_stream_demux_join_pid(mod, 0x11);
     }
 
-    if(module_option_number("eit", &mod->config.eit))
+    if(module_option_number("eit", &mod->config.eit) && mod->config.eit)
         module_stream_demux_join_pid(mod, 0x12);
 
     lua_getfield(lua, 2, "map");

@@ -438,8 +438,8 @@ function init_input(channel_data, input_id)
             eit = true,
         }
 
-        if input_conf.no_sdt or no_sdt then channel_conf.sdt = false end
-        if input_conf.no_eit or no_eit then channel_conf.eit = false end
+        if (input_conf.no_sdt or no_sdt) then channel_conf.sdt = nil end
+        if (input_conf.no_eit or no_eit) then channel_conf.eit = nil end
         if channel_data.config.map then channel_conf.map = channel_data.config.map end
 
         input_data.channel = channel(channel_conf)
@@ -647,7 +647,7 @@ function make_channel(channel_conf)
     end
     init_input(channel_data, 1)
 
-    channel_data.transmit = transmit({})
+    channel_data.transmit = transmit({ upstream = channel_data.input[1].tail:stream() })
     channel_data.tail = channel_data.transmit
 
     for output_id,_ in pairs(channel_conf.output) do
