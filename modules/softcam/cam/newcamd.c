@@ -646,16 +646,12 @@ static void newcamd_disconnect(module_data_t *mod)
     }
     mod->status = NEWCAMD_UNKNOWN;
 
-    if(!mod->__cam.is_ready)
-        module_cam_reset(mod);
+    module_cam_reset(mod);
 }
 
 static void newcamd_send_em(module_data_t *mod, module_decrypt_t *decrypt
                             , uint8_t *buffer, uint16_t size)
 {
-    if(!mod->__cam.is_ready)
-        return;
-
     em_packet_t *packet = malloc(sizeof(em_packet_t));
     memcpy(packet->buffer, buffer, size);
     packet->buffer_size = size;

@@ -375,6 +375,9 @@ static void on_em(void *arg, mpegts_psi_t *psi)
 {
     module_data_t *mod = arg;
 
+    if(!mod->__decrypt.cam->is_ready)
+        return;
+
     if(psi->buffer_size > EM_MAX_SIZE)
     {
         asc_log_error(MSG("Entitlement message size is greater than %d"), EM_MAX_SIZE);
