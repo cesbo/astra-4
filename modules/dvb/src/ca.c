@@ -112,16 +112,36 @@ enum
 #define SPDU_HEADER_SIZE 4
 #define APDU_TAG_SIZE 3
 
+#define DATA_INDICATOR 0x80
+
+static void ca_tpdu_send(module_data_t *mod, uint8_t slot_id
+                         , uint8_t tag, const uint8_t *data, uint16_t size);
+
+static void ca_apdu_send(module_data_t *mod, uint8_t slot_id, uint16_t session_id
+                         , uint32_t tag, const uint8_t *data, uint16_t size);
+
+static uint32_t ca_apdu_get_tag(module_data_t *mod, uint8_t slot_id);
+static uint8_t * ca_apdu_get_buffer(module_data_t *mod, uint8_t slot_id, uint16_t *size);
+
+/*
+ *      o       oooooooo8 oooo   oooo      oo
+ *     888     888         8888o  88     o888
+ *    8  88     888oooooo  88 888o88      888
+ *   8oooo88           888 88   8888 ooo  888
+ * o88o  o888o o88oooo888 o88o    88 888 o888o
+ *
+ */
+
 #define SIZE_INDICATOR 0x80
 
-static uint8_t set_message_size(uint8_t *data, uint16_t size)
+static uint8_t asn_1_encode(uint8_t *data, uint16_t size)
 {
-    if(size <= 0x7F)
+    if(size < SIZE_INDICATOR)
     {
         data[0] = size;
         return 1;
     }
-    else if(size < 0xFF)
+    else if(size <= 0xFF)
     {
         data[0] = SIZE_INDICATOR | 1;
         data[1] = size;
@@ -136,33 +156,29 @@ static uint8_t set_message_size(uint8_t *data, uint16_t size)
     }
 }
 
-static uint8_t get_message_size(const uint8_t *data, uint16_t *size)
+static uint8_t asc_1_decode(const uint8_t *data, uint16_t *size)
 {
-    switch(data[0] & ~SIZE_INDICATOR)
+    if(data[0] < SIZE_INDICATOR)
     {
-        case 0:
-            *size = data[0];
-            return 1;
-        case 1:
-            *size = data[1];
-            return 2;
-        case 2:
-            *size = (data[1] << 8) | (data[2]);
-            return 3;
-        default:
-            *size = 0;
-            return 1;
+        *size = data[0];
+        return 1;
+    }
+    else if(data[0] == (SIZE_INDICATOR | 1))
+    {
+        *size = data[1];
+        return 2;
+    }
+    else if(data[0] == (SIZE_INDICATOR | 2))
+    {
+        *size = (data[1] << 8) | (data[2]);
+        return 3;
+    }
+    else
+    {
+        *size = 0;
+        return 1;
     }
 }
-
-static void ca_tpdu_send(module_data_t *mod, uint8_t slot_id
-                              , uint8_t tag, const uint8_t *data, uint16_t size);
-
-static void ca_apdu_send(module_data_t *mod, uint8_t slot_id, uint16_t session_id
-                         , uint32_t tag, const uint8_t *data, uint16_t size);
-
-static uint32_t ca_apdu_get_tag(module_data_t *mod, uint8_t slot_id);
-static uint8_t * ca_apdu_get_buffer(module_data_t *mod, uint8_t slot_id, uint16_t *size);
 
 /*
  * oooooooooo  ooooooooooo  oooooooo8
@@ -238,7 +254,7 @@ static void application_information_event(module_data_t *mod, uint8_t slot_id, u
             const uint16_t product = (buffer[3] << 8) | (buffer[4]);
             buffer += 1 + 2 + 2;
 
-            buffer += get_message_size(buffer, &size);
+            buffer += asc_1_decode(buffer, &size);
             char *name = malloc(size + 1);
             memcpy(name, buffer, size);
             name[size] = '\0';
@@ -434,7 +450,12 @@ static void date_time_open(module_data_t *mod, uint8_t slot_id, uint16_t session
 }
 
 /*
- * MMI
+ * oooo     oooo oooo     oooo ooooo
+ *  8888o   888   8888o   888   888
+ *  88 888o8 88   88 888o8 88   888
+ *  88  888  88   88  888  88   888
+ * o88o  8  o88o o88o  8  o88o o888o
+ *
  */
 
 /* Display Control Commands */
@@ -586,7 +607,7 @@ static uint8_t * ca_apdu_get_buffer(module_data_t *mod, uint8_t slot_id, uint16_
         return NULL;
     }
     uint8_t *buffer = &slot->buffer[SPDU_HEADER_SIZE + APDU_TAG_SIZE];
-    const uint8_t skip = get_message_size(buffer, size);
+    const uint8_t skip = asc_1_decode(buffer, size);
     return &buffer[skip];
 }
 
@@ -608,7 +629,7 @@ static void ca_apdu_send(module_data_t *mod, uint8_t slot_id, uint16_t session_i
     buffer[5] = (tag >>  8) & 0xFF;
     buffer[6] = (tag      ) & 0xFF;
     skip += APDU_TAG_SIZE;
-    skip += set_message_size(&buffer[skip], size);
+    skip += asn_1_encode(&buffer[skip], size);
 
     // Data
     if(size)
@@ -654,11 +675,11 @@ static void ca_spdu_open(module_data_t *mod, uint8_t slot_id)
 
     uint16_t session_id = 0;
     ca_session_t *session = NULL;
-    for(int i = 0; i < MAX_SESSIONS; ++i)
+    for(uint16_t i = 1; i < MAX_SESSIONS; ++i)
     {
         if(slot->sessions[i].resource_id == 0)
         {
-            session_id = i + 1;
+            session_id = i;
             session = &slot->sessions[i];
             break;
         }
@@ -696,6 +717,8 @@ static void ca_spdu_open(module_data_t *mod, uint8_t slot_id)
     response[8] = session_id & 0xFF;
 
     ca_tpdu_send(mod, slot_id, TT_DATA_LAST, response, 9);
+
+    slot->pending_session_id = session_id;
 }
 
 static void ca_spdu_close(module_data_t *mod, uint8_t slot_id)
@@ -824,72 +847,6 @@ static void ca_spdu_event(module_data_t *mod, uint8_t slot_id)
  *
  */
 
-static void ca_tpdu_event(module_data_t *mod)
-{
-    int buffer_size = read(mod->ca_fd, mod->ca_buffer, MAX_TPDU_SIZE);
-    if(buffer_size < 5)
-    {
-        if(buffer_size == -1)
-            asc_log_error(MSG("CA: read failed. [%s]"), strerror(errno));
-        else
-            asc_log_error(MSG("CA: read failed. size:%d"), buffer_size);
-
-        return;
-    }
-
-    const uint8_t slot_id = mod->ca_buffer[1] - 1;
-    asc_log_debug(MSG("CA: Slot %d"), slot_id);
-    const uint8_t tag = mod->ca_buffer[2];
-
-    if(slot_id >= mod->slots_num)
-    {
-        asc_log_error(MSG("CA: read failed. wrong slot id %d"), slot_id);
-        return;
-    }
-
-    ca_slot_t *slot = &mod->slots[slot_id];
-    slot->is_busy = false;
-
-    switch(tag)
-    {
-        case TT_CTC_REPLY:
-        {
-            slot->is_active = true;
-            asc_log_info(MSG("CA: Slot %d is active"), slot_id);
-            break;
-        }
-        case TT_DATA_LAST:
-        case TT_DATA_MORE:
-        {
-            uint16_t buffer_skip = 3;
-            uint16_t message_size = 0;
-            buffer_skip += get_message_size(&mod->ca_buffer[3], &message_size);
-            if(message_size <= 1)
-                break;
-
-            ++buffer_skip;
-            --message_size;
-
-            memcpy(&slot->buffer[slot->buffer_size]
-                   , &mod->ca_buffer[buffer_skip]
-                   , message_size);
-            slot->buffer_size += message_size;
-
-            if(tag == TT_DATA_LAST)
-            {
-                ca_spdu_event(mod, slot_id);
-                slot->buffer_size = 0;
-            }
-            break;
-        }
-        case TT_SB:
-            break;
-        default:
-            asc_log_warning(MSG("CA: Slot %d wrong tag 0x%02X"), slot_id, tag);
-            break;
-    }
-}
-
 static void ca_tpdu_write(module_data_t *mod, uint8_t slot_id)
 {
     ca_slot_t *slot = &mod->slots[slot_id];
@@ -919,7 +876,7 @@ static void ca_tpdu_write(module_data_t *mod, uint8_t slot_id)
 }
 
 static void ca_tpdu_send(module_data_t *mod, uint8_t slot_id
-                              , uint8_t tag, const uint8_t *data, uint16_t size)
+                         , uint8_t tag, const uint8_t *data, uint16_t size)
 {
     ca_slot_t *slot = &mod->slots[slot_id];
 
@@ -959,7 +916,7 @@ static void ca_tpdu_send(module_data_t *mod, uint8_t slot_id
         case TT_DATA_LAST:
         case TT_DATA_MORE:
         {
-            buffer_size += set_message_size(&buffer[buffer_size], size + 1);
+            buffer_size += asn_1_encode(&buffer[buffer_size], size + 1);
 
             buffer[buffer_size] = buffer[1];
             ++buffer_size;
@@ -979,8 +936,119 @@ static void ca_tpdu_send(module_data_t *mod, uint8_t slot_id
     m->buffer_size = buffer_size;
     asc_list_insert_tail(slot->queue, m);
 
-    if(!slot->is_busy && asc_list_size(slot->queue) == 1)
+    if(slot->is_busy)
+        return;
+
+    ca_tpdu_write(mod, slot_id);
+}
+
+static void ca_tpdu_event(module_data_t *mod)
+{
+    int buffer_size = read(mod->ca_fd, mod->ca_buffer, MAX_TPDU_SIZE);
+    if(buffer_size < 5)
+    {
+        if(buffer_size == -1)
+            asc_log_error(MSG("CA: read failed. [%s]"), strerror(errno));
+        else
+            asc_log_error(MSG("CA: read failed. size:%d"), buffer_size);
+
+        return;
+    }
+
+    const uint8_t slot_id = mod->ca_buffer[1] - 1;
+    const uint8_t tag = mod->ca_buffer[2];
+
+    if(slot_id >= mod->slots_num)
+    {
+        asc_log_error(MSG("CA: read failed. wrong slot id %d"), slot_id);
+        return;
+    }
+
+    ca_slot_t *slot = &mod->slots[slot_id];
+    slot->is_busy = false;
+    const bool has_data = (   (mod->ca_buffer[buffer_size - 4] == TT_SB)
+                           && (mod->ca_buffer[buffer_size - 3] == 2)
+                           && (mod->ca_buffer[buffer_size - 1] & DATA_INDICATOR));
+
+    switch(tag)
+    {
+        case TT_CTC_REPLY:
+        {
+            slot->is_active = true;
+            asc_log_info(MSG("CA: Slot %d is active"), slot_id);
+            break;
+        }
+        case TT_DATA_LAST:
+        case TT_DATA_MORE:
+        {
+            uint16_t buffer_skip = 3;
+            uint16_t message_size = 0;
+            buffer_skip += asc_1_decode(&mod->ca_buffer[3], &message_size);
+            if(message_size <= 1)
+                break;
+
+            ++buffer_skip;
+            --message_size;
+
+            memcpy(&slot->buffer[slot->buffer_size]
+                   , &mod->ca_buffer[buffer_skip]
+                   , message_size);
+            slot->buffer_size += message_size;
+
+            if(tag == TT_DATA_LAST)
+            {
+                ca_spdu_event(mod, slot_id);
+                slot->buffer_size = 0;
+            }
+            break;
+        }
+        case TT_SB:
+            break;
+        default:
+            asc_log_warning(MSG("CA: Slot %d wrong tag 0x%02X"), slot_id, tag);
+            break;
+    }
+
+    if(slot->is_busy)
+        return;
+
+    if(asc_list_size(slot->queue) > 0)
         ca_tpdu_write(mod, slot_id);
+
+    if(slot->pending_session_id)
+    {
+        const uint16_t session_id = slot->pending_session_id;
+        slot->pending_session_id = 0;
+
+        const uint32_t resource_id = slot->sessions[session_id].resource_id;
+        switch(resource_id)
+        {
+            case RI_RESOURCE_MANAGER:
+                resource_manager_open(mod, slot_id, session_id);
+                break;
+            case RI_APPLICATION_INFORMATION:
+                application_information_open(mod, slot_id, session_id);
+                break;
+            case RI_CONDITIONAL_ACCESS_SUPPORT:
+                conditional_access_open(mod, slot_id, session_id);
+                break;
+            case RI_DATE_TIME:
+                date_time_open(mod, slot_id, session_id);
+                break;
+            case RI_MMI:
+                mmi_open(mod, slot_id, session_id);
+                break;
+            case RI_HOST_CONTROL:
+            default:
+                asc_log_error(MSG("CA: Slot %d session %d unknown resource %d")
+                              , slot_id, session_id, resource_id);
+                slot->sessions[session_id].resource_id = 0;
+                break;
+        }
+    }
+
+    if(has_data)
+        ca_tpdu_send(mod, slot_id, TT_RCV, NULL, 0);
 }
 
 /*
@@ -1011,7 +1079,7 @@ static void ca_slot_reset(module_data_t *mod, uint8_t slot_id)
         asc_list_remove_current(slot->queue);
     }
 
-    for(int i = 0; i < MAX_SESSIONS; ++i)
+    for(int i = 1; i < MAX_SESSIONS; ++i)
     {
         ca_session_t *session = &slot->sessions[i];
         if(session->resource_id)
@@ -1025,15 +1093,15 @@ static void ca_slot_reset(module_data_t *mod, uint8_t slot_id)
 
 static void ca_slot_loop(module_data_t *mod)
 {
-    for(int i = 0; i < mod->slots_num; ++i)
+    for(uint8_t slot_id = 0; slot_id < mod->slots_num; ++slot_id)
     {
-        ca_slot_t *slot = &mod->slots[i];
+        ca_slot_t *slot = &mod->slots[slot_id];
 
         ca_slot_info_t slot_info;
-        slot_info.num = i;
+        slot_info.num = slot_id;
         if(ioctl(mod->ca_fd, CA_GET_SLOT_INFO, &slot_info) != 0)
         {
-            asc_log_error(MSG("CA: Slot %d CA_GET_SLOT_INFO failed"), i);
+            asc_log_error(MSG("CA: Slot %d CA_GET_SLOT_INFO failed"), slot_id);
             continue;
         }
 
@@ -1041,27 +1109,39 @@ static void ca_slot_loop(module_data_t *mod)
         {
             if(slot->is_active)
             {
-                asc_log_warning(MSG("CA: Slot %d is not ready"), i);
-                ca_slot_reset(mod, i);
+                asc_log_warning(MSG("CA: Slot %d is not ready"), slot_id);
+                ca_slot_reset(mod, slot_id);
             }
             continue;
         }
         else if(!slot->is_active)
         {
-            if(slot->is_busy)
-            {
-                asc_log_warning(MSG("CA: Slot %d resetting. timeout"), i);
-                ca_slot_reset(mod, i);
-            }
+            if(!slot->is_busy)
+                ca_tpdu_send(mod, slot_id, TT_CREATE_TC, NULL, 0);
             else
             {
-                // Slot initializing
-                ca_tpdu_send(mod, i, TT_CREATE_TC, NULL, 0);
+                asc_log_warning(MSG("CA: Slot %d timeout. reset slot"), slot_id);
+                ca_slot_reset(mod, slot_id);
+            }
+        }
+
+        for(uint16_t session_id = 1; session_id < MAX_SESSIONS; ++session_id)
+        {
+            ca_session_t *session = &slot->sessions[session_id];
+            if(session->resource_id && session->manage && !slot->is_busy)
+                session->manage(mod, slot_id, session_id);
+        }
+
+        if(!slot->is_busy)
+        {
+            ca_tpdu_send(mod, slot_id, TT_DATA_LAST, NULL, 0);
+            if(!slot->is_busy)
+            {
+                asc_log_error(MSG("CA: Slot %d failed to send poll command. reset slot"), slot_id);
+                ca_slot_reset(mod, slot_id);
             }
         }
     }
-
-    // TODO: continue here...
 }
 
 /*

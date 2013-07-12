@@ -45,7 +45,8 @@ typedef enum
     DVB_TYPE_C
 } dvb_type_t;
 
-#define MAX_SESSIONS 32
+// 1 - sessions[0] is empty
+#define MAX_SESSIONS (32 + 1)
 #define MAX_TPDU_SIZE 2048
 
 typedef struct
@@ -56,7 +57,7 @@ typedef struct
 
 typedef struct
 {
-    int resource_id;
+    uint32_t resource_id;
 
     void (*event)(module_data_t *mod, uint8_t slot_id, uint16_t session_id);
     void (*close)(module_data_t *mod, uint8_t slot_id, uint16_t session_id);
@@ -78,6 +79,7 @@ typedef struct
     uint16_t buffer_size;
 
     // session
+    uint16_t pending_session_id;
     ca_session_t sessions[MAX_SESSIONS];
 } ca_slot_t;
 
