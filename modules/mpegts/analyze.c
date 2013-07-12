@@ -65,6 +65,9 @@ struct module_data_t
     int pmt_count;
     pmt_checksum_t *pmt_checksum_list;
 
+    uint8_t sdt_max_section_id;
+    uint32_t *sdt_checksum_list;
+
     // rate_stat
     struct timeval last_ts;
     uint32_t ts_count;
@@ -371,26 +374,53 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
     if(mod->tsid != SDT_GET_TSID(psi))
         return;
 
-    // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
-    if(crc32 == psi->crc32)
-        return;
-
-    lua_newtable(lua);
-
-    lua_pushnumber(lua, psi->pid);
-    lua_setfield(lua, -2, __pid);
 
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
+        lua_newtable(lua);
+
+        lua_pushnumber(lua, psi->pid);
+        lua_setfield(lua, -2, __pid);
+
         lua_pushstring(lua, "SDT checksum error");
         lua_setfield(lua, -2, __err);
         do_callback(mod);
         lua_pop(lua, 1); // info
         return;
     }
-    psi->crc32 = crc32;
+
+    // check changes
+    if(!mod->sdt_checksum_list)
+    {
+        const uint8_t max_section_id = SDT_GET_LAST_SECTION_NUMBER(psi);
+        mod->sdt_max_section_id = max_section_id;
+        mod->sdt_checksum_list = calloc(max_section_id + 1, sizeof(uint32_t));
+    }
+    const uint8_t section_id = SDT_GET_SECTION_NUMBER(psi);
+    if(section_id > mod->sdt_max_section_id)
+    {
+        asc_log_warning(MSG("SDT: section_number is greater then section_last_number"));
+        return;
+    }
+    if(mod->sdt_checksum_list[section_id] == crc32)
+        return;
+
+    if(mod->sdt_checksum_list[section_id] != 0)
+    {
+        // Reload stream
+        free(mod->sdt_checksum_list);
+        mod->sdt_checksum_list = NULL;
+        return;
+    }
+
+    mod->sdt_checksum_list[section_id] = crc32;
+
+    lua_newtable(lua);
+
+    lua_pushnumber(lua, psi->pid);
+    lua_setfield(lua, -2, __pid);
 
     lua_pushstring(lua, "sdt");
     lua_setfield(lua, -2, __psi);
@@ -683,6 +713,8 @@ static void module_destroy(module_data_t *mod)
 
     if(mod->pmt_checksum_list)
         free(mod->pmt_checksum_list);
+    if(mod->sdt_checksum_list)
+        free(mod->sdt_checksum_list);
 }
 
 MODULE_STREAM_METHODS()

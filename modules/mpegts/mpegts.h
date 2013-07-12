@@ -336,6 +336,12 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
         _psi->buffer[4] = __tsid & 0xFF;                                                        \
     }
 
+#define SDT_GET_SECTION_NUMBER(_psi) (_psi->buffer[6])
+#define SDT_SET_SECTION_NUMBER(_psi, _id) _psi->buffer[6] = _id
+
+#define SDT_GET_LAST_SECTION_NUMBER(_psi) (_psi->buffer[7])
+#define SDT_SET_LAST_SECTION_NUMBER(_psi, _id) _psi->buffer[7] = _id
+
 #define __SDT_ITEM_DESC_SIZE(_pointer) (((_pointer[3] & 0x0F) << 8) | _pointer[4])
 
 #define SDT_ITEMS_FIRST(_psi) (&_psi->buffer[11])

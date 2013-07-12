@@ -62,6 +62,11 @@ struct module_data_t
     mpegts_psi_t *custom_pat;
     mpegts_psi_t *custom_pmt;
     mpegts_psi_t *custom_sdt;
+
+    /* */
+    uint8_t sdt_original_section_id;
+    uint8_t sdt_max_section_id;
+    uint32_t *sdt_checksum_list;
 };
 
 #define MSG(_msg) "[channel %s] " _msg, mod->config.name
@@ -85,6 +90,11 @@ static void stream_reload(module_data_t *mod)
     {
         mod->stream[0x11] = MPEGTS_PACKET_SDT;
         module_stream_demux_join_pid(mod, 0x11);
+        if(mod->sdt_checksum_list)
+        {
+            free(mod->sdt_checksum_list);
+            mod->sdt_checksum_list = NULL;
+        }
     }
 
     if(mod->config.eit)
@@ -339,15 +349,7 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
     if(mod->tsid != SDT_GET_TSID(psi))
         return;
 
-    // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
-    if(crc32 == psi->crc32)
-    {
-        mpegts_psi_demux(mod->custom_sdt
-                         , (void (*)(void *, const uint8_t *))__module_stream_send
-                         , &mod->__stream);
-        return;
-    }
 
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
@@ -355,7 +357,39 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
         asc_log_error(MSG("SDT checksum error"));
         return;
     }
-    psi->crc32 = crc32;
+
+    // check changes
+    if(!mod->sdt_checksum_list)
+    {
+        const uint8_t max_section_id = SDT_GET_LAST_SECTION_NUMBER(psi);
+        mod->sdt_max_section_id = max_section_id;
+        mod->sdt_checksum_list = calloc(max_section_id + 1, sizeof(uint32_t));
+    }
+    const uint8_t section_id = SDT_GET_SECTION_NUMBER(psi);
+    if(section_id > mod->sdt_max_section_id)
+    {
+        asc_log_warning(MSG("SDT: section_number is greater then section_last_number"));
+        return;
+    }
+    if(mod->sdt_checksum_list[section_id] == crc32)
+    {
+        if(mod->sdt_original_section_id == section_id)
+        {
+            mpegts_psi_demux(mod->custom_sdt
+                             , (void (*)(void *, const uint8_t *))__module_stream_send
+                             , &mod->__stream);
+        }
+        return;
+    }
+
+    if(mod->sdt_checksum_list[section_id] != 0)
+    {
+        asc_log_warning(MSG("SDT changed. Reload stream info"));
+        stream_reload(mod);
+        return;
+    }
+
+    mod->sdt_checksum_list[section_id] = crc32;
 
     const uint8_t *pointer = SDT_ITEMS_FIRST(psi);
     while(!SDT_ITEMS_EOL(psi, pointer))
@@ -367,13 +401,14 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
     }
 
     if(SDT_ITEMS_EOL(psi, pointer))
-    {
-        mod->custom_sdt->buffer_size = 0;
-        asc_log_error(MSG("SDT: stream with id %d is not found"), mod->config.pnr);
         return;
-    }
 
-    memcpy(mod->custom_sdt->buffer, psi->buffer, 11);
+    mod->sdt_original_section_id = section_id;
+
+    memcpy(mod->custom_sdt->buffer, psi->buffer, 11); // copy SDT header
+    SDT_SET_SECTION_NUMBER(mod->custom_sdt, 0);
+    SDT_SET_LAST_SECTION_NUMBER(mod->custom_sdt, 0);
+
     const uint16_t item_length = __SDT_ITEM_DESC_SIZE(pointer) + 5;
     memcpy(&mod->custom_sdt->buffer[11], pointer, item_length);
     const uint16_t section_length = item_length + 8 + CRC32_SIZE;
@@ -552,6 +587,9 @@ static void module_destroy(module_data_t *mod)
     {
         mpegts_psi_destroy(mod->sdt);
         mpegts_psi_destroy(mod->custom_sdt);
+
+        if(mod->sdt_checksum_list)
+            free(mod->sdt_checksum_list);
     }
 
     if(mod->map)
