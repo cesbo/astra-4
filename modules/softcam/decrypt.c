@@ -213,6 +213,8 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
 
     psi->crc32 = crc32;
 
+    bool is_emm_selected = false;
+
     const uint8_t *desc_pointer = CAT_DESC_FIRST(psi);
     while(!CAT_DESC_EOL(psi, desc_pointer))
     {
@@ -225,10 +227,15 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
             {
                 mod->stream[pid] = MPEGTS_PACKET_EMM;
                 module_stream_demux_join_pid(mod, pid);
+                asc_log_debug(MSG("Select EMM pid:%d"), pid);
+                is_emm_selected = true;
             }
         }
         CAT_DESC_NEXT(psi, desc_pointer);
     }
+
+    if(!is_emm_selected)
+        asc_log_error(MSG("EMM is not found"));
 }
 
 /*
@@ -279,6 +286,8 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     // Make custom PMT and set descriptors for CAS
     mod->custom_pmt->pid = psi->pid;
 
+    bool is_ecm_selected = false;
+
     uint16_t skip = 12;
     memcpy(mod->custom_pmt->buffer, psi->buffer, 10);
 
@@ -294,8 +303,15 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                 const uint16_t pid = DESC_CA_PID(desc_pointer);
                 if(mod->stream[pid] == MPEGTS_PACKET_UNKNOWN)
                 {
-                    mod->stream[pid] = MPEGTS_PACKET_ECM;
-                    module_stream_demux_join_pid(mod, pid);
+                    if(!is_ecm_selected)
+                    {
+                        mod->stream[pid] = MPEGTS_PACKET_ECM;
+                        module_stream_demux_join_pid(mod, pid);
+                        asc_log_debug(MSG("Select ECM pid:%d"), pid);
+                        is_ecm_selected = true;
+                    }
+                    else
+                        asc_log_warning(MSG("Skip ECM pid:%d"), pid);
                 }
             }
         }
@@ -332,8 +348,15 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                     const uint16_t pid = DESC_CA_PID(desc_pointer);
                     if(mod->stream[pid] == MPEGTS_PACKET_UNKNOWN)
                     {
-                        mod->stream[pid] = MPEGTS_PACKET_ECM;
-                        module_stream_demux_join_pid(mod, pid);
+                        if(!is_ecm_selected)
+                        {
+                            mod->stream[pid] = MPEGTS_PACKET_ECM;
+                            module_stream_demux_join_pid(mod, pid);
+                            asc_log_debug(MSG("Select ECM pid:%d"), pid);
+                            is_ecm_selected = true;
+                        }
+                        else
+                            asc_log_warning(MSG("Skip ECM pid:%d"), pid);
                     }
                 }
             }
@@ -353,9 +376,18 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         PMT_ITEMS_NEXT(psi, pointer);
     }
 
-    mod->custom_pmt->buffer_size = skip + CRC32_SIZE;
-    PSI_SET_SIZE(mod->custom_pmt);
-    PSI_SET_CRC32(mod->custom_pmt);
+    if(!is_ecm_selected)
+    {
+        asc_log_error(MSG("ECM is not found"));
+        memcpy(mod->custom_pmt->buffer, psi->buffer, psi->buffer_size);
+        mod->custom_pmt->buffer_size = psi->buffer_size;
+    }
+    else
+    {
+        mod->custom_pmt->buffer_size = skip + CRC32_SIZE;
+        PSI_SET_SIZE(mod->custom_pmt);
+        PSI_SET_CRC32(mod->custom_pmt);
+    }
 
     mpegts_psi_demux(mod->custom_pmt
                      , (void (*)(void *, const uint8_t *))__module_stream_send
@@ -532,7 +564,7 @@ static void on_response(module_data_t *mod, const uint8_t *data, const char *err
 
         if(data[2] != 16)
         {
-            errmsg = "Wrong ECM length";
+            errmsg = (data[2] == 0) ? "" : "Wrong ECM length";
             break;
         }
 
