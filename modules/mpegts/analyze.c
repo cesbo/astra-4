@@ -630,7 +630,7 @@ static void on_check_stat(void *arg)
         lua_pushnumber(lua, item->pes_error);
         lua_setfield(lua, -2, "pes_error");
 
-        if(item->type == MPEGTS_PACKET_VIDEO)
+        if(item->type == MPEGTS_PACKET_VIDEO || item->type == MPEGTS_PACKET_AUDIO)
         {
             if(item->sc_error)
                 on_air = false;
