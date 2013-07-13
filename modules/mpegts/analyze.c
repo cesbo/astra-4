@@ -647,11 +647,12 @@ static void on_check_stat(void *arg)
     }
     lua_setfield(lua, -2, "analyze");
 
-    const uint32_t half_last_bitrate = mod->last_bitrate / 2;
-    if(bitrate <= half_last_bitrate)
-        on_air = false;
-    else
+    if(bitrate > mod->last_bitrate / 2)
         mod->last_bitrate = bitrate;
+    else if(bitrate > mod->last_bitrate / 4)
+        ;
+    else
+        on_air = false;
 
     lua_pushboolean(lua, on_air);
     lua_setfield(lua, -2, "on_air");
