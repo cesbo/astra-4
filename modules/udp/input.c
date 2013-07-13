@@ -42,8 +42,19 @@ struct module_data_t
 void on_close(void *arg)
 {
     module_data_t *mod = (module_data_t *)arg;
-    asc_socket_close(mod->sock);
-    mod->sock = NULL;
+
+    if(mod->sock)
+    {
+        asc_socket_multicast_leave(mod->sock);
+        asc_socket_close(mod->sock);
+        mod->sock = NULL;
+    }
+
+    if(mod->timer_renew)
+    {
+        asc_timer_destroy(mod->timer_renew);
+        mod->timer_renew = NULL;
+    }
 }
 
 void on_read(void *arg)
@@ -114,14 +125,7 @@ static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
 
-    if(mod->timer_renew)
-        asc_timer_destroy(mod->timer_renew);
-
-    if(mod->sock)
-    {
-        asc_socket_multicast_leave(mod->sock);
-        asc_socket_close(mod->sock);
-    }
+    on_close(mod);
 }
 
 MODULE_STREAM_METHODS()
