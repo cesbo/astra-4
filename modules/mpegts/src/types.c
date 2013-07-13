@@ -40,31 +40,16 @@ mpegts_packet_type_t mpegts_pes_type(uint8_t type_id)
 {
     switch(type_id)
     {
-        case 0x01:  // MPEG-1 video
-        case 0x02:  // MPEG-2 video
-        case 0x80:  // MPEG-2 MOTO video
-        case 0x10:  // MPEG-4 video
-        case 0x1B:  // H264 video
-        case 0xA0:  // MSCodec vlc video
+        case 0x01:  // ISO/IEC 11172 Video
+        case 0x02:  // ISO/IEC 13818-2 Video
+        case 0x10:  // ISO/IEC 14496-2 Visual
+        case 0x1B:  // ISO/IEC 14496-10 Video | H.264 video
             return MPEGTS_PACKET_VIDEO;
-        case 0x03:  // MPEG-1 audio
-        case 0x04:  // MPEG-2 audio
-        case 0x06:  // AC3 audio
-        case 0x11:  // MPEG-4 audio (LATM)
-        case 0x0F:  // Audio with ADTS
-        case 0x81:  // A52 audio
-        case 0x83:  // LPCM audio
-        case 0x84:  // SDDS audio
-        case 0x85:  // DTS audio
-        case 0x87:  // E-AC3
-        case 0x91:  // A52 vls audio
-        case 0x94:  // SDDS audio
+        case 0x03:  // ISO/IEC 11172 Audio
+        case 0x04:  // ISO/IEC 13818-3 Audio
+        case 0x0F:  // ISO/IEC 13818-7 Audio (ADTS)
+        case 0x11:  // ISO/IEC 14496-3 Audio (LATM)
             return MPEGTS_PACKET_AUDIO;
-        case 0x82:  // DVB_SPU
-        case 0x92:  // DVB_SPU vls
-            return MPEGTS_PACKET_SUB;
-        case 0x12:  // MPEG-4 generic (sub/scene/...)
-        case 0xEA:  // privately managed ES
         default:
             return MPEGTS_PACKET_DATA;
     }
