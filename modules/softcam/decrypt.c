@@ -199,7 +199,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        asc_log_error(MSG("PMT checksum mismatch"));
+        asc_log_error(MSG("CAT checksum mismatch"));
         return;
     }
 
