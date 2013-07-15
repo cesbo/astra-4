@@ -224,8 +224,6 @@ static void resource_manager_event(module_data_t *mod, uint8_t slot_id, uint16_t
 
 static void resource_manager_open(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
 {
-    asc_log_debug(MSG("CA: %s(): slot_id:%d session_id:%d"), __FUNCTION__, slot_id, session_id);
-
     ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
     session->event = resource_manager_event;
     ca_apdu_send(mod, slot_id, session_id, AOT_PROFILE_ENQ, NULL, 0);
@@ -271,8 +269,6 @@ static void application_information_event(module_data_t *mod, uint8_t slot_id, u
 
 static void application_information_open(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
 {
-    asc_log_debug(MSG("CA: %s(): slot_id:%d session_id:%d"), __FUNCTION__, slot_id, session_id);
-
     ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
     session->event = application_information_event;
     ca_apdu_send(mod, slot_id, session_id, AOT_APPLICATION_INFO_ENQ, NULL, 0);
@@ -315,7 +311,7 @@ static void conditional_access_event(module_data_t *mod, uint8_t slot_id, uint16
                 asc_log_info(MSG("CA: Module CAID:0x%04X"), caid);
             }
 
-            // TODO: send PMT to CAM
+            mod->ca_ready = true;
             break;
         }
         case AOT_CA_UPDATE:
@@ -340,8 +336,6 @@ static void conditional_access_close(module_data_t *mod, uint8_t slot_id, uint16
 
 static void conditional_access_open(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
 {
-    asc_log_debug(MSG("CA: %s(): slot_id:%d session_id:%d"), __FUNCTION__, slot_id, session_id);
-
     ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
     session->event = conditional_access_event;
     session->close = conditional_access_close;
@@ -438,8 +432,6 @@ static void date_time_close(module_data_t *mod, uint8_t slot_id, uint16_t sessio
 
 static void date_time_open(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
 {
-    asc_log_debug(MSG("CA: %s(): slot_id:%d session_id:%d"), __FUNCTION__, slot_id, session_id);
-
     ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
     session->event = date_time_event;
     session->manage = date_time_manage;
@@ -489,10 +481,62 @@ enum
     DRI_UNKNOWN_CHARACTER_TABLE                     = 0xF2
 };
 
+/* MMI Object Types */
+enum
+{
+    EN50221_MMI_NONE                                = 0x00,
+    EN50221_MMI_ENQ                                 = 0x01,
+    EN50221_MMI_ANSW                                = 0x02,
+    EN50221_MMI_MENU                                = 0x03,
+    EN50221_MMI_MENU_ANSW                           = 0x04,
+    EN50221_MMI_LIST                                = 0x05
+};
+
 typedef struct
 {
-    int emtpy;
+    int object_type;
+    union
+    {
+        struct
+        {
+            bool blind;
+            char *text;
+        } enq;
+        struct
+        {
+            char *title;
+            char *subtitle;
+            char *bottom;
+            asc_list_t *choices;
+        } menu;
+    } object;
 } mmi_data_t;
+
+static void mmi_free(mmi_data_t *mmi)
+{
+    switch(mmi->object_type)
+    {
+        case EN50221_MMI_ENQ:
+            free(mmi->object.enq.text);
+            break;
+        case EN50221_MMI_MENU:
+        case EN50221_MMI_LIST:
+            free(mmi->object.menu.title);
+            free(mmi->object.menu.subtitle);
+            free(mmi->object.menu.bottom);
+            for(asc_list_first(mmi->object.menu.choices)
+                ; !asc_list_eol(mmi->object.menu.choices)
+                ; asc_list_first(mmi->object.menu.choices))
+            {
+                free(asc_list_data(mmi->object.menu.choices));
+                asc_list_remove_current(mmi->object.menu.choices);
+            }
+            asc_list_destroy(mmi->object.menu.choices);
+            break;
+        default:
+            break;
+    }
+}
 
 static void mmi_display_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
 {
@@ -521,16 +565,94 @@ static void mmi_display_event(module_data_t *mod, uint8_t slot_id, uint16_t sess
 
 static void mmi_enq_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
 {
-    // TODO: continue...
+    uint16_t size = 0;
+    const uint8_t *buffer = ca_apdu_get_buffer(mod, slot_id, &size);
+    if(!size)
+        return;
+
+    mmi_data_t *mmi = mod->slots[slot_id].sessions[session_id].data;
+    mmi_free(mmi);
+    mmi->object_type = EN50221_MMI_ENQ;
+    mmi->object.enq.blind = (buffer[0] & 0x01) ? true : false;
+    buffer += 2; size -= 2; /* skip answer_text_length */
+    mmi->object.enq.text = malloc(size + 1);
+    memcpy(mmi->object.enq.text, buffer, size);
+    mmi->object.enq.text[size] = '\0';
+}
+
+static uint16_t mmi_get_text(module_data_t *mod
+                             , const uint8_t *buffer, uint16_t size
+                             , char **text)
+{
+    uint32_t tag = 0;
+    if(size >= 3)
+        tag = (buffer[0] << 16) | (buffer[1] << 8) | (buffer[2]);
+
+    if(tag != AOT_TEXT_LAST)
+    {
+        asc_log_error(MSG("CA: MMI: wrong text tag 0x%08X"), tag);
+        *text = strdup("");
+        return 0;
+    }
+
+    uint8_t skip = 3;
+    uint16_t length;
+    skip += asc_1_decode(&buffer[3], &length);
+    skip += length;
+
+    // TODO: encode string
+    *text = strdup("TODO: encode string");
+
+    return skip;
 }
 
 static void mmi_menu_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
 {
-    // TODO: continue...
+    uint16_t size = 0;
+    const uint8_t *buffer = ca_apdu_get_buffer(mod, slot_id, &size);
+    if(!size)
+        return;
+
+    mmi_data_t *mmi = mod->slots[slot_id].sessions[session_id].data;
+    mmi_free(mmi);
+
+    const uint32_t tag = ca_apdu_get_tag(mod, slot_id);
+    mmi->object_type = (tag == AOT_MENU_LAST) ? EN50221_MMI_MENU : EN50221_MMI_LIST;
+
+    uint16_t skip = 1; /* choice_nb */
+
+    if(skip < size)
+    {
+        skip += mmi_get_text(mod, &buffer[skip], size - skip, &mmi->object.menu.title);
+        asc_log_debug(MSG("CA: MMI: Title: %s"), mmi->object.menu.title);
+    }
+
+    if(skip < size)
+    {
+        skip += mmi_get_text(mod, &buffer[skip], size - skip, &mmi->object.menu.subtitle);
+        asc_log_debug(MSG("CA: MMI: Subtitle: %s"), mmi->object.menu.subtitle);
+    }
+
+    if(skip < size)
+    {
+        skip += mmi_get_text(mod, &buffer[skip], size - skip, &mmi->object.menu.bottom);
+        asc_log_debug(MSG("CA: MMI: Bottom: %s"), mmi->object.menu.bottom);
+    }
+
+    mmi->object.menu.choices = asc_list_init();
+    while(skip < size)
+    {
+        char *text;
+        skip += mmi_get_text(mod, &buffer[skip], size - skip, &text);
+        asc_log_debug(MSG("CA: MMI: Choice: %s"), mmi->object.menu.title);
+
+        asc_list_insert_tail(mmi->object.menu.choices, text);
+    }
 }
 
 static void mmi_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
 {
+    asc_log_debug(MSG("CA: MMI: event"));
     const uint32_t tag = ca_apdu_get_tag(mod, slot_id);
     switch(tag)
     {
@@ -555,7 +677,7 @@ static void mmi_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
             break;
         }
         default:
-            asc_log_error(MSG("CA: MMI. Wrong event:0x%08X"), tag);
+            asc_log_error(MSG("CA: MMI: wrong event:0x%08X"), tag);
             break;
     }
 }
@@ -563,13 +685,12 @@ static void mmi_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
 static void mmi_close(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
 {
     ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
+    mmi_free(session->data);
     free(session->data);
 }
 
 static void mmi_open(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
 {
-    asc_log_debug(MSG("CA: %s(): slot_id:%d session_id:%d"), __FUNCTION__, slot_id, session_id);
-
     ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
     session->event = mmi_event;
     session->close = mmi_close;
@@ -1145,6 +1266,193 @@ static void ca_slot_loop(module_data_t *mod)
 }
 
 /*
+ * ooooooooooo  oooooooo8
+ * 88  888  88 888
+ *     888      888oooooo
+ *     888             888
+ *    o888o    o88oooo888
+ *
+ */
+
+static void on_pat(void *arg, mpegts_psi_t *psi)
+{
+    module_data_t *mod = arg;
+
+    // check changes
+    const uint32_t crc32 = PSI_GET_CRC32(psi);
+    if(crc32 == psi->crc32)
+        return;
+
+    // check crc
+    if(crc32 != PSI_CALC_CRC32(psi))
+    {
+        asc_log_error(MSG("CA: PAT checksum error"));
+        return;
+    }
+
+    // reload stream
+    if(psi->crc32 != 0)
+    {
+        asc_log_warning(MSG("CA: PAT changed. Reset CAM"));
+        // TODO: reset CAM
+    }
+
+    psi->crc32 = crc32;
+
+    memset(mod->stream, 0, sizeof(mod->stream));
+    mod->stream[0] = MPEGTS_PACKET_PAT;
+
+    int programs_count = 0;
+    const uint8_t *pointer = PAT_ITEMS_FIRST(psi);
+    while(!PAT_ITEMS_EOL(psi, pointer))
+    {
+        const uint16_t pnr = PAT_ITEMS_GET_PNR(psi, pointer);
+
+        if(pnr)
+        {
+            programs_count++;
+            const uint16_t pid = PAT_ITEMS_GET_PID(psi, pointer);
+            mod->stream[pid] = MPEGTS_PACKET_PMT;
+        }
+
+        PAT_ITEMS_NEXT(psi, pointer);
+    }
+
+    mod->pmt_count = programs_count;
+    if(mod->pmt_checksum_list)
+        free(mod->pmt_checksum_list);
+    mod->pmt_checksum_list = calloc(mod->pmt_count, sizeof(pmt_checksum_t));
+}
+
+static uint16_t ca_pmt_copy_desc(const uint8_t *src, uint16_t size, uint8_t cmd_id, uint8_t *dst)
+{
+    uint16_t ca_pmt_skip = 3; // info_length + ca_pmt_cmd_id
+    uint16_t src_skip = 0;
+
+    while(src_skip < size)
+    {
+        const uint8_t *desc = &src[src_skip];
+        const uint8_t desc_size = desc[1] + 2;
+
+        if(desc[0] == 0x09)
+        {
+            memcpy(&dst[ca_pmt_skip], desc, desc_size);
+            ca_pmt_skip += desc_size;
+        }
+
+        src_skip += desc_size;
+    }
+
+    if(ca_pmt_skip > 3)
+    {
+        const uint16_t info_length = ca_pmt_skip - 3;
+        dst[0] = 0xF0 | ((info_length >> 8) & 0x0F);
+        dst[1] = (info_length & 0xFF);
+        dst[2] = cmd_id;
+        return ca_pmt_skip;
+    }
+    else
+    {
+        dst[0] = 0xF0;
+        dst[1] = 0x00;
+        return 2;
+    }
+}
+
+static void on_pmt(void *arg, mpegts_psi_t *psi)
+{
+    module_data_t *mod = arg;
+
+    const uint32_t crc32 = PSI_GET_CRC32(psi);
+
+    // check crc
+    if(crc32 != PSI_CALC_CRC32(psi))
+    {
+        asc_log_error(MSG("CA: PMT checksum error"));
+        return;
+    }
+
+    const uint16_t pnr = PMT_GET_PNR(psi);
+
+    // check changes
+    for(int i = 0; i < mod->pmt_count; ++i)
+    {
+        if(mod->pmt_checksum_list[i].pnr == pnr || mod->pmt_checksum_list[i].pnr == 0)
+        {
+            if(mod->pmt_checksum_list[i].crc == crc32)
+                return;
+
+            if(mod->pmt_checksum_list[i].crc != 0)
+                asc_log_warning(MSG("CA: PMT changed. Resend PMT to CAM"));
+
+            mod->pmt_checksum_list[i].pnr = pnr;
+            mod->pmt_checksum_list[i].crc = crc32;
+            break;
+        }
+    }
+
+    // build ca_pmt
+    const uint8_t ca_list_management = 0x03; // only
+    const uint8_t ca_cmd = 0x01; // ok_descrambling
+
+    uint8_t *ca_pmt = malloc(PSI_MAX_SIZE);
+    ca_pmt[0] = ca_list_management;
+    ca_pmt[1] = (pnr >> 8);
+    ca_pmt[2] = (pnr & 0xFF);
+    ca_pmt[3] = 0xC1 | (PMT_GET_VERSION(psi) << 1);
+
+    uint16_t ca_size = 4; // skip header
+
+    const uint8_t *pmt_info = PMT_DESC_FIRST(psi);
+    const uint16_t pmt_info_length = __PMT_DESC_SIZE(psi);
+    ca_size += ca_pmt_copy_desc(pmt_info, pmt_info_length, ca_cmd, &ca_pmt[ca_size]);
+
+    const uint8_t *pointer = PMT_ITEMS_FIRST(psi);
+    while(!PMT_ITEMS_EOL(psi, pointer))
+    {
+        ca_pmt[ca_size + 0] = PMT_ITEM_GET_TYPE(psi, pointer);
+        const uint16_t pid = PMT_ITEM_GET_PID(psi, pointer);
+        ca_pmt[ca_size + 1] = 0xE0 | ((pid >> 8) & 0x1F);
+        ca_pmt[ca_size + 2] = pid & 0xFF;
+
+        const uint8_t *es_info = PMT_ITEM_DESC_FIRST(pointer);
+        const uint16_t es_info_length = __PMT_ITEM_DESC_SIZE(pointer);
+        ca_size += ca_pmt_copy_desc(es_info, es_info_length, ca_cmd, &ca_pmt[ca_size]);
+
+        PMT_ITEMS_NEXT(psi, pointer);
+    }
+
+    // send ca_pmt
+    for(int slot_id = 0; slot_id < mod->slots_num; ++slot_id)
+    {
+        for(int session_id = 0; session_id < MAX_SESSIONS; ++session_id)
+        {
+            ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
+            if(session->resource_id == RI_CONDITIONAL_ACCESS_SUPPORT)
+                ca_apdu_send(mod, slot_id, session_id, AOT_CA_PMT, ca_pmt, ca_size);
+        }
+    }
+
+    free(ca_pmt);
+}
+
+void ca_on_ts(module_data_t *mod, const uint8_t *ts)
+{
+    const uint16_t pid = TS_PID(ts);
+    switch(mod->stream[pid])
+    {
+        case MPEGTS_PACKET_PAT:
+            mpegts_psi_mux(mod->pat, ts, on_pat, mod);
+            return;
+        case MPEGTS_PACKET_PMT:
+            mpegts_psi_mux(mod->pmt, ts, on_pmt, mod);
+            return;
+        default:
+            return;
+    }
+}
+
+/*
  * oooooooooo      o       oooooooo8 ooooooooooo
  *  888    888    888     888         888    88
  *  888oooo88    8  88     888oooooo  888ooo8
@@ -1231,6 +1539,10 @@ void ca_open(module_data_t *mod)
         else
             asc_log_info(MSG("CA: Slot %d is not ready"), i);
     }
+
+    mod->stream[0] = MPEGTS_PACKET_PAT;
+    mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0x00);
+    mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
 }
 
 void ca_close(module_data_t *mod)
@@ -1256,6 +1568,9 @@ void ca_close(module_data_t *mod)
         free(mod->slots);
         mod->slots = NULL;
     }
+
+    mpegts_psi_destroy(mod->pat);
+    mpegts_psi_destroy(mod->pmt);
 }
 
 void ca_loop(module_data_t *mod, int is_data)

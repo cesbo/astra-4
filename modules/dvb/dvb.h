@@ -83,6 +83,12 @@ typedef struct
     ca_session_t sessions[MAX_SESSIONS];
 } ca_slot_t;
 
+typedef struct
+{
+    uint16_t pnr;
+    uint32_t crc;
+} pmt_checksum_t;
+
 struct module_data_t
 {
     MODULE_LUA_DATA();
@@ -156,6 +162,16 @@ struct module_data_t
     ca_slot_t *slots;
 
     uint8_t ca_buffer[MAX_TPDU_SIZE];
+
+    /* CA PMT */
+    bool ca_ready;
+
+    mpegts_packet_type_t stream[MAX_PID];
+    mpegts_psi_t *pat;
+    mpegts_psi_t *pmt;
+
+    int pmt_count;
+    pmt_checksum_t *pmt_checksum_list;
 };
 
 #define MSG(_msg) "[dvb_input %d:%d] " _msg, mod->adapter, mod->device
@@ -170,6 +186,7 @@ void fe_loop(module_data_t *mod, int is_data);
 void ca_open(module_data_t *mod);
 void ca_close(module_data_t *mod);
 void ca_loop(module_data_t *mod, int is_data);
+void ca_on_ts(module_data_t *mod, const uint8_t *ts);
 
 void dvr_open(module_data_t *mod);
 void dvr_close(module_data_t *mod);
