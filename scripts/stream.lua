@@ -626,6 +626,7 @@ function make_channel(channel_conf)
     end
 
     if (channel_conf.enable == false) or (channel_conf.enable == 0) then
+        log.info("[" ..channel_conf.name .. "] channel is disabled")
         return nil
     end
 
