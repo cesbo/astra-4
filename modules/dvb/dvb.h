@@ -37,10 +37,53 @@ typedef enum
     DVB_TYPE_C
 } dvb_type_t;
 
+// 1 - sessions[0] is empty
+#define MAX_SESSIONS (32 + 1)
+#define MAX_TPDU_SIZE 2048
+
 typedef struct
 {
-    int is_active;
+    uint8_t buffer[MAX_TPDU_SIZE];
+    uint32_t buffer_size;
+} ca_tpdu_message_t;
+
+typedef struct
+{
+    uint32_t resource_id;
+
+    void (*event)(module_data_t *mod, uint8_t slot_id, uint16_t session_id);
+    void (*close)(module_data_t *mod, uint8_t slot_id, uint16_t session_id);
+    void (*manage)(module_data_t *mod, uint8_t slot_id, uint16_t session_id);
+
+    void *data;
+} ca_session_t;
+
+typedef struct
+{
+    bool is_active;
+    bool is_busy;
+    bool is_first_ca_pmt;
+
+    // send
+    asc_list_t *queue;
+
+    // recv
+    uint8_t buffer[MAX_TPDU_SIZE];
+    uint16_t buffer_size;
+
+    // session
+    uint16_t pending_session_id;
+    ca_session_t sessions[MAX_SESSIONS];
 } ca_slot_t;
+
+typedef struct
+{
+    uint16_t pnr;
+    uint32_t crc;
+
+    uint8_t buffer[PSI_MAX_SIZE];
+    uint16_t buffer_size;
+} ca_pmt_t;
 
 struct module_data_t
 {
@@ -111,7 +154,20 @@ struct module_data_t
 
     /* CA Base */
     int ca_fd;
-    ca_slot_t *ca;
+    int slots_num;
+    ca_slot_t *slots;
+
+    uint8_t ca_buffer[MAX_TPDU_SIZE];
+
+    /* CA PMT */
+    bool ca_ready;
+
+    mpegts_packet_type_t stream[MAX_PID];
+    mpegts_psi_t *pat;
+    mpegts_psi_t *pmt;
+
+    int ca_pmt_count;
+    ca_pmt_t **ca_pmt_list;
 };
 
 #define MSG(_msg) "[dvb_input %d:%d] " _msg, mod->adapter, mod->device
@@ -126,6 +182,7 @@ void fe_loop(module_data_t *mod, int is_data);
 void ca_open(module_data_t *mod);
 void ca_close(module_data_t *mod);
 void ca_loop(module_data_t *mod, int is_data);
+void ca_on_ts(module_data_t *mod, const uint8_t *ts);
 
 void dvr_open(module_data_t *mod);
 void dvr_close(module_data_t *mod);

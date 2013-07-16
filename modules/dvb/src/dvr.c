@@ -29,7 +29,12 @@ static void dvr_on_read(void *arg)
     mod->dvr_read += len;
 
     for(int i = 0; i < len; i += TS_PACKET_SIZE)
+    {
+        if(mod->ca_ready)
+            ca_on_ts(mod, &mod->dvr_buffer[i]);
+
         module_stream_send(mod, &mod->dvr_buffer[i]);
+    }
 }
 
 void dvr_open(module_data_t *mod)
