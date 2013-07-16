@@ -1246,7 +1246,10 @@ static void ca_slot_loop(module_data_t *mod)
         else if(!slot->is_active)
         {
             if(!slot->is_busy)
+            {
+                asc_log_info(MSG("CA: Slot %d ready to go"), slot_id);
                 ca_tpdu_send(mod, slot_id, TT_CREATE_TC, NULL, 0);
+            }
             else
             {
                 asc_log_warning(MSG("CA: Slot %d timeout. reset slot"), slot_id);
@@ -1535,18 +1538,7 @@ void ca_open(module_data_t *mod)
         ca_slot_t *slot = &mod->slots[slot_id];
         slot->queue = asc_list_init();
 
-        ca_slot_info_t slot_info;
-        slot_info.num = slot_id;
-        if(ioctl(mod->ca_fd, CA_GET_SLOT_INFO, &slot_info) != 0)
-        {
-            asc_log_error(MSG("CA: Slot %d CA_GET_SLOT_INFO failed"), slot_id);
-            continue;
-        }
-
-        if(slot_info.flags & CA_CI_MODULE_READY)
-            asc_log_info(MSG("CA: Slot %d ready to go"), slot_id);
-        else
-            asc_log_info(MSG("CA: Slot %d is not ready"), slot_id);
+        ca_slot_reset(mod, slot_id);
     }
 
     mod->stream[0] = MPEGTS_PACKET_PAT;
