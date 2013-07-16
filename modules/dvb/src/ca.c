@@ -351,7 +351,15 @@ static void conditional_access_open(module_data_t *mod, uint8_t slot_id, uint16_
 typedef struct
 {
     uint8_t interval;
+    int64_t last_utime;
 } date_time_data_t;
+
+static int64_t utime(void)
+{
+    struct timeval ctv;
+    gettimeofday(&ctv, NULL);
+    return (int64_t)((ctv.tv_sec * 1000000) + ctv.tv_usec);
+}
 
 static void date_time_send(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
 {
@@ -388,6 +396,9 @@ static void date_time_send(module_data_t *mod, uint8_t slot_id, uint16_t session
     buffer[6] = (gmtoff     ) & 0xFF;
 
     ca_apdu_send(mod, slot_id, session_id, AOT_DATE_TIME, buffer, 7);
+
+    date_time_data_t *dt = mod->slots[slot_id].sessions[session_id].data;
+    dt->last_utime = utime();
 }
 
 static void date_time_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
@@ -417,11 +428,8 @@ static void date_time_manage(module_data_t *mod, uint8_t slot_id, uint16_t sessi
 {
     date_time_data_t *data = mod->slots[slot_id].sessions[session_id].data;
 
-    if(data->interval)
-    {
-        // TODO:
-        // date_time_send(mod, slot_id, session_id);
-    }
+    if((data->interval > 0) && (utime() > (data->last_utime + data->interval * 1000000)))
+        date_time_send(mod, slot_id, session_id);
 }
 
 static void date_time_close(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
@@ -1345,7 +1353,7 @@ static uint16_t ca_pmt_copy_desc(const uint8_t *src, uint16_t size, uint8_t cmd_
 
     if(ca_pmt_skip > 3)
     {
-        const uint16_t info_length = ca_pmt_skip - 3;
+        const uint16_t info_length = ca_pmt_skip - 2; // except info_length
         dst[0] = 0xF0 | ((info_length >> 8) & 0x0F);
         dst[1] = (info_length & 0xFF);
         dst[2] = cmd_id;
@@ -1414,6 +1422,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         const uint16_t pid = PMT_ITEM_GET_PID(psi, pointer);
         ca_pmt[ca_size + 1] = 0xE0 | ((pid >> 8) & 0x1F);
         ca_pmt[ca_size + 2] = pid & 0xFF;
+        ca_size += 3; // skip type and pid
 
         const uint8_t *es_info = PMT_ITEM_DESC_FIRST(pointer);
         const uint16_t es_info_length = __PMT_ITEM_DESC_SIZE(pointer);
@@ -1521,23 +1530,23 @@ void ca_open(module_data_t *mod)
 
     mod->slots = calloc(caps.slot_num, sizeof(ca_slot_t));
 
-    for(int i = 0; i < mod->slots_num; ++i)
+    for(uint8_t slot_id = 0; slot_id < mod->slots_num; ++slot_id)
     {
-        ca_slot_t *slot = &mod->slots[i];
+        ca_slot_t *slot = &mod->slots[slot_id];
         slot->queue = asc_list_init();
 
         ca_slot_info_t slot_info;
-        slot_info.num = i;
+        slot_info.num = slot_id;
         if(ioctl(mod->ca_fd, CA_GET_SLOT_INFO, &slot_info) != 0)
         {
-            asc_log_error(MSG("CA: Slot %d CA_GET_SLOT_INFO failed"), i);
+            asc_log_error(MSG("CA: Slot %d CA_GET_SLOT_INFO failed"), slot_id);
             continue;
         }
 
         if(slot_info.flags & CA_CI_MODULE_READY)
-            asc_log_info(MSG("CA: Slot %d ready to go"), i);
+            asc_log_info(MSG("CA: Slot %d ready to go"), slot_id);
         else
-            asc_log_info(MSG("CA: Slot %d is not ready"), i);
+            asc_log_info(MSG("CA: Slot %d is not ready"), slot_id);
     }
 
     mod->stream[0] = MPEGTS_PACKET_PAT;
