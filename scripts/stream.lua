@@ -621,6 +621,14 @@ function make_channel(channel_conf)
 
     if not channel_conf.output then channel_conf.output = {} end
 
+    if type(channel_conf.enable) == 'nil' then
+        channel_conf.enable = true
+    end
+
+    if (channel_conf.enable == false) or (channel_conf.enable == 0) then
+        return nil
+    end
+
     function parse_conf(list)
         for key,val in pairs(list) do
             if type(val) == 'string' then
