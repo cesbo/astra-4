@@ -70,6 +70,7 @@ typedef struct
 {
     bool is_active;
     bool is_busy;
+    bool is_first_ca_pmt;
 
     // send
     asc_list_t *queue;
@@ -87,7 +88,10 @@ typedef struct
 {
     uint16_t pnr;
     uint32_t crc;
-} pmt_checksum_t;
+
+    uint8_t buffer[PSI_MAX_SIZE];
+    uint16_t buffer_size;
+} ca_pmt_t;
 
 struct module_data_t
 {
@@ -170,8 +174,8 @@ struct module_data_t
     mpegts_psi_t *pat;
     mpegts_psi_t *pmt;
 
-    int pmt_count;
-    pmt_checksum_t *pmt_checksum_list;
+    int ca_pmt_count;
+    ca_pmt_t **ca_pmt_list;
 };
 
 #define MSG(_msg) "[dvb_input %d:%d] " _msg, mod->adapter, mod->device
