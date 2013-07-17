@@ -444,6 +444,8 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         if(TS_PUSI(ts))
         {
             const uint8_t *payload = TS_PTR(ts);
+            if(!payload)
+                return;
             payload = payload + payload[0] + 1;
 
             mod->send_eit = 0;
