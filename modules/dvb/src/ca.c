@@ -996,7 +996,7 @@ static void ca_tpdu_write(module_data_t *mod, uint8_t slot_id)
     ca_tpdu_message_t *message = asc_list_data(slot->queue);
     asc_list_remove_current(slot->queue);
 
-    if(write(mod->ca_fd, message->buffer, message->buffer_size) != message->buffer_size)
+    if(write(mod->ca_fd, message->buffer, message->buffer_size) != (ssize_t)message->buffer_size)
         asc_log_error(MSG("CA: Slot %d write failed"), slot_id);
     else
         slot->is_busy = true;

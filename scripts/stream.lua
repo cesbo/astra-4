@@ -325,9 +325,32 @@ end
 --  888   88   8888   888        888    88      888
 -- o888o o88o    88  o888o        888oo88      o888o
 
+local dvb_list
+if dvbls then dvb_list = dvbls() end
+
 local input_list = {}
 
 function dvb_tune(dvb_conf)
+    if dvb_conf.mac and dvb_list then
+        dvb_conf.mac = dvb_conf.mac:upper()
+        for _, adapter_info in pairs(dvb_list) do
+            if dvb_conf.mac and adapter_info.mac == dvb_conf.mac then
+                dvb_conf.adapter = adapter_info.adapter
+                if adapter_info.device > 0 then
+                    dvb_conf.device = adapter_info.device
+                else
+                    dvb_conf.device = nil
+                end
+                dvb_conf.mac = nil
+                break
+            end
+        end
+        if dvb_conf.mac then
+            log.error("[stream.lua] failed to get DVB by MAC")
+            astra.abort()
+        end
+    end
+
     if dvb_conf.tp then
         local _, _, freq_s, pol_s, srate_s = dvb_conf.tp:find("(%d+):(%a):(%d+)")
         if not freq_s then

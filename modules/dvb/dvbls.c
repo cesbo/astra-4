@@ -135,31 +135,34 @@ static void check_device_fe(void)
 {
     sprintf(dev_name, "/dev/dvb/adapter%d/frontend%d", adapter, device);
 
-    int is_busy = 0;
+    bool is_busy = false;
 
     int fd = open(dev_name, O_RDWR | O_NONBLOCK);
     if(fd <= 0)
     {
-        is_busy = 1;
+        is_busy = true;
         fd = open(dev_name, O_RDONLY | O_NONBLOCK);
     }
 
-    if(fd > 0)
+    if(fd <= 0)
     {
-        lua_pushboolean(lua, is_busy);
-        lua_setfield(lua, -2, "busy");
-
-        struct dvb_frontend_info feinfo;
-        if(ioctl(fd, FE_GET_INFO, &feinfo) != 0)
-            lua_pushstring(lua, "unknown");
-        else
-            lua_pushstring(lua, feinfo.name);
-        close(fd);
-    }
-    else
         lua_pushfstring(lua, "failed to open [%s]", strerror(errno));
+        lua_setfield(lua, -2, "error");
+        return;
+    }
 
+    lua_pushboolean(lua, is_busy);
+    lua_setfield(lua, -2, "busy");
+
+    struct dvb_frontend_info feinfo;
+    if(ioctl(fd, FE_GET_INFO, &feinfo) != 0)
+        lua_pushstring(lua, "unknown");
+    else
+        lua_pushstring(lua, feinfo.name);
+    close(fd);
     lua_setfield(lua, -2, "frontend");
+
+    check_device_net();
 }
 
 static void check_device(const char *item)
@@ -172,7 +175,6 @@ static void check_device(const char *item)
     lua_pushnumber(lua, device);
     lua_setfield(lua, -2, __device);
     check_device_fe();
-    check_device_net();
 
     ++count;
     lua_rawseti(lua, -2, count);
