@@ -105,6 +105,7 @@ char * base64_decode(const char *in, size_t *out_size)
         if (j < *out_size)
             out[j++] = (triple >> 0 * 8) & 0xFF;
     }
+    out[*out_size] = '\0';
 
     return out;
 }
@@ -133,7 +134,6 @@ static void TEST(int id, const char *s, const char *r)
     }
     free(data);
     data = base64_decode(r, &r_size);
-    data[r_size] = '\0';
     if(s_size != r_size)
     {
         printf("ERROR [%d.3] %ld != %ld\n", id, s_size, r_size);
