@@ -288,6 +288,8 @@ function start_reserve(channel_data)
     for input_id = active_input_id + 1, #channel_data.input do
         local input_data = channel_data.input[input_id]
         if input_data.source then
+            kill_input(channel_data, input_id)
+
             log.debug("[" .. channel_data.config.name .. "] Destroy input #" .. input_id)
             channel_data.input[input_id] = { on_air = false, }
         end
@@ -329,6 +331,7 @@ local dvb_list
 if dvbls then dvb_list = dvbls() end
 
 local input_list = {}
+local kill_input_list = {}
 
 function dvb_tune(dvb_conf)
     if dvb_conf.mac and dvb_list then
@@ -384,6 +387,10 @@ input_list.dvb = function(input_conf)
     return { tail = input_conf._instance }
 end
 
+kill_input_list.dvb = function(input_conf, input_data)
+    --
+end
+
 local udp_instance_list = {}
 
 input_list.udp = function(input_conf)
@@ -395,16 +402,36 @@ input_list.udp = function(input_conf)
     local udp_instance
     if udp_instance_list[addr] then
         udp_instance = udp_instance_list[addr]
+        udp_instance.count = udp_instance.count + 1
     else
-        udp_instance = udp_input(input_conf)
+        udp_instance = {}
+        udp_instance.tail = udp_input(input_conf)
+        udp_instance.count = 1
         udp_instance_list[addr] = udp_instance
     end
 
-    return { tail = udp_instance }
+    return udp_instance
+end
+
+kill_input_list.udp = function(input_conf, input_data)
+    local addr = input_conf.addr .. ":" .. input_conf.port
+    if input_conf.localaddr then addr = input_conf.localaddr .. "@" .. addr end
+
+    local udp_instance = udp_instance_list[addr]
+    udp_instance.count = udp_instance.count - 1
+
+    if udp_instance.count > 0 then return nil end
+
+    udp_instance.tail = nil
+    udp_instance_list[addr] = nil
 end
 
 input_list.file = function(input_conf)
     return { tail = file_input(input_conf) }
+end
+
+kill_input_list.file = function(input_conf, input_data)
+    --
 end
 
 input_list.http = function(input_conf)
@@ -431,6 +458,10 @@ input_list.http = function(input_conf)
     end
 
     return { tail = http_request(http_conf) }
+end
+
+kill_input_list.http = function(input_conf, input_data)
+    input_data.tail:close()
 end
 
 function init_input(channel_data, input_id)
@@ -512,6 +543,19 @@ function init_input(channel_data, input_id)
     channel_data.input[input_id] = input_data
 end
 
+function kill_input(channel_data, input_id)
+    local input_conf = channel_data.config.input[input_id]
+    local input_data = channel_data.input[input_id]
+    if not input_data.source then return nil end
+    kill_input_list[input_conf.module_name](input_conf, input_data)
+    input_data.source = nil
+    input_data.channel = nil
+    input_data.decrypt = nil
+    input_data.analyze = nil
+    input_data.tail = nil
+    channel_data.input[input_id] = nil
+end
+
 --   ooooooo  ooooo  oooo ooooooooooo oooooooooo ooooo  oooo ooooooooooo
 -- o888   888o 888    88  88  888  88  888    888 888    88  88  888  88
 -- 888     888 888    88      888      888oooo88  888    88      888
@@ -519,6 +563,7 @@ end
 --   88ooo88    888oo88      o888o    o888o        888oo88      o888o
 
 local output_list = {}
+local kill_output_list = {}
 
 output_list.udp = function(output_conf)
     if not output_conf.port then output_conf.port = 1234 end
@@ -527,8 +572,16 @@ output_list.udp = function(output_conf)
     return { tail = udp_output(output_conf) }
 end
 
+kill_output_list.udp = function(output_conf, output_data)
+    --
+end
+
 output_list.file = function(output_conf)
     return { tail = file_output(output_conf) }
+end
+
+kill_output_list.file = function(output_conf, output_data)
+    --
 end
 
 local http_instance_list = {}
@@ -600,6 +653,25 @@ output_list.http = function(output_conf)
     return http_instance
 end
 
+kill_output_list.http = function(output_conf, output_data)
+    local addr = output_conf.host .. ":" .. output_conf.port
+
+    local http_instance = http_instance_list[addr]
+
+    http_instance.uri_list[output_conf.uri] = nil
+    local has_uri = false
+    for _ in pairs(http_instance.uri_list) do
+        has_uri = true
+        break
+    end
+
+    if has_uri == true then return nil end
+
+    http_instance.tail:close()
+    http_instance.tail = nil
+    http_instance_list[addr] = nil
+end
+
 function init_output(channel_data, output_id)
     local output_conf = channel_data.config.output[output_id]
 
@@ -621,6 +693,14 @@ function init_output(channel_data, output_id)
     output_data.instance = init_output_type(output_conf)
 
     channel_data.output[output_id] = output_data
+end
+
+function kill_output(channel_data, output_id)
+    local output_conf = channel_data.config.output[output_id]
+    local output_data = channel_data.output[output_id]
+    kill_output_list[output_conf.module_name](output_conf, output_data)
+    output_data.instance = nil
+    channel_data.output[output_id] = nil
 end
 
 --   oooooooo8 ooooo ooooo      o      oooo   oooo oooo   oooo ooooooooooo ooooo
@@ -688,4 +768,44 @@ function make_channel(channel_conf)
 
     table.insert(channel_list, channel_data)
     return channel_data
+end
+
+function kill_channel(channel_data)
+    local channel_id = 0
+    for key, value in pairs(channel_list) do
+        if value == channel_data then
+            channel_id = key
+            break
+        end
+    end
+    if channel_id == 0 then
+        log.error("[stream.lua] channel is not found")
+        return
+    end
+
+    for input_id = 1, #channel_data.config.input do
+        kill_input(channel_data, input_id)
+    end
+    channel_data.input = nil
+
+    for output_id = 1, #channel_data.config.output do
+        kill_output(channel_data, output_id)
+    end
+    channel_data.output = nil
+
+    channel_data.transmit = nil
+    channel_data.config = nil
+    channel_data.tail = nil
+
+    table.remove(channel_list, channel_id)
+
+    collectgarbage()
+end
+
+function find_channel(key, value)
+    for _, channel_data in pairs(channel_list) do
+        if channel_data.config[key] == value then
+            return channel_data
+        end
+    end
 end
