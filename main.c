@@ -49,6 +49,8 @@ static void signal_handler(int signum)
         asc_log_hup();
         return;
     }
+    if(signum == SIGPIPE)
+        return;
 #else
     (void)signum;
 #endif
@@ -60,6 +62,7 @@ static void astra_init(int argc, const char **argv)
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 #ifndef _WIN32
+    signal(SIGPIPE, signal_handler);
     signal(SIGHUP, signal_handler);
     signal(SIGQUIT, signal_handler);
 #endif
