@@ -24,10 +24,20 @@ void astra_exit(void)
 
 void astra_abort(void)
 {
+    asc_log_error("[main] abort execution. Lua backtrace:");
+
     lua_Debug ar;
-    lua_getstack(lua, 1, &ar);
-    lua_getinfo(lua, "nSl", &ar);
-    asc_log_error("[main] abort execution. line:%d source:%s", ar.currentline, ar.source);
+    int level = 1;
+    while(lua_getstack(lua, level, &ar))
+    {
+        lua_getinfo(lua, "nSl", &ar);
+        asc_log_error("[main] %d: %s:%d -- %s [%s]"
+                      , level, ar.short_src, ar.currentline
+                      , (ar.name) ? ar.name : "<unknown>"
+                      , ar.what);
+        ++level;
+    }
+
     abort();
 }
 
