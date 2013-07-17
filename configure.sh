@@ -97,8 +97,24 @@ fi
 
 CFLAGS_DEBUG="-O3"
 if [ $ARG_DEBUG -ne 0 ] ; then
+    if test -f $MAKEFILE ; then
+        if ! grep -q "^CFLAGS[ =]*\-g" $MAKEFILE ; then
+            echo "Cleaning previous build..." >&2
+            make distclean
+            echo >&2
+        fi
+    fi
+
     CFLAGS_DEBUG="-g -O0"
     APP_STRIP=":"
+else
+    if test -f $MAKEFILE ; then
+        if grep -q "^CFLAGS[ =]*\-g" $MAKEFILE ; then
+            echo "Cleaning previous build..." >&2
+            make distclean
+            echo >&2
+        fi
+    fi
 fi
 
 CFLAGS="$CFLAGS_DEBUG -I. -Wall -Wextra -pedantic \
