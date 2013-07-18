@@ -97,6 +97,7 @@ struct module_data_t
 
     /* Base */
     asc_thread_t *thread;
+    bool thread_ready;
 
     /* DVR Config */
     int dvr_buffer_size;
@@ -166,8 +167,7 @@ struct module_data_t
     mpegts_psi_t *pat;
     mpegts_psi_t *pmt;
 
-    int ca_pmt_count;
-    ca_pmt_t **ca_pmt_list;
+    asc_list_t *ca_pmt_list;
 };
 
 #define MSG(_msg) "[dvb_input %d:%d] " _msg, mod->adapter, mod->device
@@ -183,6 +183,8 @@ void ca_open(module_data_t *mod);
 void ca_close(module_data_t *mod);
 void ca_loop(module_data_t *mod, int is_data);
 void ca_on_ts(module_data_t *mod, const uint8_t *ts);
+void ca_append_pnr(module_data_t *mod, uint16_t pnr);
+void ca_remove_pnr(module_data_t *mod, uint16_t pnr);
 
 void dvr_open(module_data_t *mod);
 void dvr_close(module_data_t *mod);

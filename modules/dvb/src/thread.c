@@ -32,6 +32,8 @@ static void dvb_thread_loop(void *arg)
         ++nfds;
     }
 
+    mod->thread_ready = true;
+
     asc_thread_while(mod->thread)
     {
         const int ret = poll(fds, nfds, 1000);

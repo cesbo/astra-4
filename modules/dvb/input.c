@@ -300,6 +300,17 @@ static void module_options(module_data_t *mod)
  *
  */
 
+static int method_ca_set_pnr(module_data_t *mod)
+{
+    if(!mod->ca_fd)
+        return 0;
+
+    const uint16_t pnr = lua_tonumber(lua, 2);
+    const bool is_set = lua_toboolean(lua, 3);
+    ((is_set) ? ca_append_pnr : ca_remove_pnr)(mod, pnr);
+    return 0;
+}
+
 static void join_pid(module_data_t *mod, uint16_t pid)
 {
     ++mod->__stream.pid_list[pid];
@@ -324,6 +335,10 @@ static void module_init(module_data_t *mod)
     dvb_thread_open(mod);
     dvr_open(mod);
     dmx_open(mod);
+
+    struct timespec ts = { .tv_sec = 0, .tv_nsec = 500000 };
+    while(!mod->thread_ready)
+        nanosleep(&ts, NULL);
 }
 
 static void module_destroy(module_data_t *mod)
@@ -338,6 +353,7 @@ static void module_destroy(module_data_t *mod)
 MODULE_STREAM_METHODS()
 MODULE_LUA_METHODS()
 {
+    { "ca_set_pnr", method_ca_set_pnr },
     MODULE_STREAM_METHODS_REF()
 };
 MODULE_LUA_REGISTER(dvb_input)

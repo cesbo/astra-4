@@ -1341,19 +1341,13 @@ static uint16_t ca_pmt_copy_desc(const uint8_t *src, uint16_t size, uint8_t cmd_
     }
 }
 
-static ca_pmt_t * ca_pmt_init(module_data_t *mod, mpegts_psi_t *pmt)
+static void ca_pmt_build(module_data_t *mod, ca_pmt_t *ca_pmt, mpegts_psi_t *pmt)
 {
     __uarg(mod);
 
-    const uint16_t pnr = PMT_GET_PNR(pmt);
-
-    ca_pmt_t *ca_pmt = malloc(sizeof(ca_pmt_t));
-    ca_pmt->pnr = pnr;
-    ca_pmt->crc = pmt->crc32;
-
     ca_pmt->buffer[0] = 0x00;
-    ca_pmt->buffer[1] = (pnr >> 8);
-    ca_pmt->buffer[2] = (pnr & 0xFF);
+    ca_pmt->buffer[1] = (ca_pmt->pnr >> 8);
+    ca_pmt->buffer[2] = (ca_pmt->pnr & 0xFF);
     ca_pmt->buffer[3] = 0xC1 | (PMT_GET_VERSION(pmt) << 1);
 
     uint16_t ca_size = 4; // skip header
@@ -1378,8 +1372,6 @@ static ca_pmt_t * ca_pmt_init(module_data_t *mod, mpegts_psi_t *pmt)
         PMT_ITEMS_NEXT(pmt, pointer);
     }
     ca_pmt->buffer_size = ca_size;
-
-    return ca_pmt;
 }
 
 static void ca_pmt_send(module_data_t *mod, ca_pmt_t *ca_pmt, uint8_t list_manage, uint8_t cmd)
@@ -1446,19 +1438,6 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     if(psi->crc32 != 0)
     {
         asc_log_warning(MSG("CA: PAT changed. Reload stream info"));
-
-        if(mod->ca_pmt_list)
-        {
-            for(int i = 0; i < mod->ca_pmt_count; ++i)
-            {
-                if(!mod->ca_pmt_list[i])
-                    break;
-                ca_pmt_send(mod, mod->ca_pmt_list[i], CA_PMT_LM_UPDATE, CA_PMT_CMD_NOT_SELECTED);
-                free(mod->ca_pmt_list[i]);
-            }
-            free(mod->ca_pmt_list);
-            mod->ca_pmt_list = NULL;
-        }
     }
 
     psi->crc32 = crc32;
@@ -1466,7 +1445,6 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     memset(mod->stream, 0, sizeof(mod->stream));
     mod->stream[0] = MPEGTS_PACKET_PAT;
 
-    int pmt_count = 0;
     const uint8_t *pointer = PAT_ITEMS_FIRST(psi);
     while(!PAT_ITEMS_EOL(psi, pointer))
     {
@@ -1474,16 +1452,12 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 
         if(pnr)
         {
-            ++pmt_count;
             const uint16_t pid = PAT_ITEMS_GET_PID(psi, pointer);
             mod->stream[pid] = MPEGTS_PACKET_PMT;
         }
 
         PAT_ITEMS_NEXT(psi, pointer);
     }
-
-    mod->ca_pmt_count = pmt_count;
-    mod->ca_pmt_list = calloc(pmt_count, sizeof(ca_pmt_t *));
 }
 
 static void on_pmt(void *arg, mpegts_psi_t *psi)
@@ -1505,34 +1479,25 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     bool is_update = false;
 
     ca_pmt_t *ca_pmt = NULL;
-    for(int i = 0; i < mod->ca_pmt_count; ++i)
+    asc_list_for(mod->ca_pmt_list)
     {
-        if(mod->ca_pmt_list[i])
+        ca_pmt = asc_list_data(mod->ca_pmt_list);
+        if(ca_pmt->pnr == pnr)
         {
-            if(mod->ca_pmt_list[i]->pnr == pnr)
-            {
-                if(mod->ca_pmt_list[i]->crc == crc32)
-                    return;
+            if(ca_pmt->crc == crc32)
+                return;
 
+            if(ca_pmt->crc != 0)
                 asc_log_warning(MSG("CA: PMT changed. Reload channel info"));
 
-                is_update = true;
-                free(mod->ca_pmt_list[i]);
-                psi->crc32 = crc32; // for ca_pmt_init
-                ca_pmt = ca_pmt_init(mod, psi);
-                mod->ca_pmt_list[i] = ca_pmt;
-
-                break;
-            }
-        }
-        else
-        {
-            psi->crc32 = crc32; // for ca_pmt_init
-            ca_pmt = ca_pmt_init(mod, psi);
-            mod->ca_pmt_list[i] = ca_pmt;
+            ca_pmt->crc = crc32;
+            ca_pmt_build(mod, ca_pmt, psi);
+            is_update = true;
             break;
         }
     }
+    if(asc_list_eol(mod->ca_pmt_list))
+        return;
 
     ca_pmt_send(mod, ca_pmt
                 , (!is_update) ? CA_PMT_LM_ADD : CA_PMT_LM_UPDATE
@@ -1563,6 +1528,40 @@ void ca_on_ts(module_data_t *mod, const uint8_t *ts)
  * o888ooo888 o88o  o888o o88oooo888 o888ooo8888
  *
  */
+
+void ca_append_pnr(module_data_t *mod, uint16_t pnr)
+{
+    ca_pmt_t *ca_pmt;
+    asc_list_for(mod->ca_pmt_list)
+    {
+        ca_pmt = asc_list_data(mod->ca_pmt_list);
+        if(ca_pmt->pnr == pnr)
+            return;
+    }
+    ca_pmt = malloc(sizeof(ca_pmt_t));
+    ca_pmt->pnr = pnr;
+    ca_pmt->crc = 0;
+    ca_pmt->buffer_size = 0;
+    asc_list_insert_tail(mod->ca_pmt_list, ca_pmt);
+}
+
+void ca_remove_pnr(module_data_t *mod, uint16_t pnr)
+{
+    ca_pmt_t *ca_pmt;
+    asc_list_for(mod->ca_pmt_list)
+    {
+        ca_pmt = asc_list_data(mod->ca_pmt_list);
+        if(ca_pmt->pnr == pnr)
+        {
+            if(ca_pmt->buffer_size > 0)
+                ca_pmt_send(mod, ca_pmt, CA_PMT_LM_UPDATE, CA_PMT_CMD_NOT_SELECTED);
+
+            free(ca_pmt);
+            asc_list_remove_current(mod->ca_pmt_list);
+            return;
+        }
+    }
+}
 
 void ca_open(module_data_t *mod)
 {
@@ -1635,6 +1634,8 @@ void ca_open(module_data_t *mod)
     mod->stream[0] = MPEGTS_PACKET_PAT;
     mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0x00);
     mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
+
+    mod->ca_pmt_list = asc_list_init();
 }
 
 void ca_close(module_data_t *mod)
@@ -1664,16 +1665,14 @@ void ca_close(module_data_t *mod)
     mpegts_psi_destroy(mod->pat);
     mpegts_psi_destroy(mod->pmt);
 
-    if(mod->ca_pmt_count > 0)
+    for(asc_list_first(mod->ca_pmt_list)
+        ; !asc_list_eol(mod->ca_pmt_list)
+        ; asc_list_first(mod->ca_pmt_list))
     {
-        for(int i = 0; i < mod->ca_pmt_count; ++i)
-        {
-            if(!mod->ca_pmt_list[i])
-                break;
-            free(mod->ca_pmt_list[i]);
-        }
-        free(mod->ca_pmt_list);
+        free(asc_list_data(mod->ca_pmt_list));
+        asc_list_remove_current(mod->ca_pmt_list);
     }
+    asc_list_destroy(mod->ca_pmt_list);
 }
 
 void ca_loop(module_data_t *mod, int is_data)
