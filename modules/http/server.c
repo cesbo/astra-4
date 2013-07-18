@@ -202,6 +202,8 @@ static void on_read(void *arg)
         skip = m[0].eo;
         client->ready_state = 1;
 
+        lua_pop(lua, 1); // request
+
         if(skip >= r)
             return;
     }
@@ -209,11 +211,8 @@ static void on_read(void *arg)
     // parse headers
     if(client->ready_state == 1)
     {
-        if(!request)
-        {
-            lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_request);
-            request = lua_gettop(lua);
-        }
+        lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_request);
+        request = lua_gettop(lua);
 
         int headers_count = 0;
         static const char __headers[] = "headers";
