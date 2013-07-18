@@ -173,7 +173,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         if(!mod->__decrypt.cam->disable_emm)
         {
             mod->stream[1] = MPEGTS_PACKET_CAT;
-            module_stream_demux_join_pid(mod, 0);
+            module_stream_demux_join_pid(mod, 1);
         }
     }
 }
