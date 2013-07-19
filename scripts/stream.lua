@@ -399,7 +399,7 @@ end
 
 kill_input_list.dvb = function(input_conf, input_data)
     if input_conf.dvb_cam and input_conf.pnr then
-        input_conf._instance:ca_set_pnr(input_conf.pnr, false)
+        input_data.source.tail:ca_set_pnr(input_conf.pnr, false)
     end
 end
 
@@ -487,9 +487,19 @@ input_list.http = function(input_conf)
     http_conf.callback = function(self, data)
         if type(data) == 'table' then
             if data.code == 200 then
+                if instance.timeout then
+                    instance.timeout:close()
+                    instance.timeout = nil
+                end
+
                 instance.tail:set_upstream(self:stream())
 
             elseif data.code == 301 then
+                if instance.timeout then
+                    instance.timeout:close()
+                    instance.timeout = nil
+                end
+
                 local addr, port, uri = http_parse_location(data.headers)
                 if addr then
                     http_conf.addr = addr
@@ -498,11 +508,27 @@ input_list.http = function(input_conf)
                     http_conf.headers[2] = "Host: " .. addr .. ":" .. port
                     -- TODO: check is data.keep_alive then use instance.send(http_conf)
                     instance.request = http_request(http_conf)
+                    instance.timeout = timer({
+                        interval = 5,
+                        callback = function(self)
+                            instance.request:close()
+                            instance.request = http_request(http_conf)
+                        end
+                    })
                     self:close()
                 else
                     self:close()
                 end
             end
+        elseif type(data) == 'nil' then
+            if instance.timeout then instance.timeout:close() end
+            instance.timeout = timer({
+                interval = 5,
+                callback = function(self)
+                    instance.request:close()
+                    instance.request = http_request(http_conf)
+                end
+            })
         end
     end
 
@@ -512,13 +538,24 @@ input_list.http = function(input_conf)
 
     instance.tail = transmit({})
     instance.request = http_request(http_conf)
+    instance.timeout = timer({
+        interval = 5,
+        callback = function(self)
+            instance.request:close()
+            instance.request = http_request(http_conf)
+        end
+    })
 
     return instance
 end
 
 kill_input_list.http = function(input_conf, input_data)
-    input_data.request:close()
-    input_data.request = nil
+    if input_data.source.timeout then
+        input_data.source.timeout:close()
+        input_data.source.timeout = nil
+    end
+    input_data.source.request:close()
+    input_data.source.request = nil
 end
 
 function init_input(channel_data, input_id)
