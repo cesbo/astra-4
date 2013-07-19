@@ -446,34 +446,79 @@ kill_input_list.file = function(input_conf, input_data)
     --
 end
 
+function http_parse_location(headers)
+    for _, header in pairs(headers) do
+        local _,_,location = header:find("^Location: http://(.*)")
+        if location then
+            local port, uri
+            local p,_ = location:find("/")
+            if p then
+                uri = location:sub(p)
+                location = location:sub(1, p - 1)
+            else
+                uri = "/"
+            end
+            local p,_ = location:find(":")
+            if p then
+                port = tonumber(location:sub(p + 1))
+                location = location:sub(1, p - 1)
+            else
+                port = 80
+            end
+            return location, port, uri
+        end
+    end
+    return nil
+end
+
 input_list.http = function(input_conf)
-    local http_conf =
+    local instance = {}
+    local http_conf = {}
+
+    http_conf.addr = input_conf.host
+    http_conf.port = input_conf.port
+    http_conf.uri = input_conf.uri
+    http_conf.headers =
     {
-        addr = input_conf.host,
-        port = input_conf.port,
-        uri = input_conf.uri,
-        headers =
-        {
-            "User-Agent: Astra",
-            "Host: " .. input_conf.host .. ":" .. input_conf.port
-        },
-        ts = true,
-        callback = function(self, data)
-                if type(data) == nil then
+        "User-Agent: Astra",
+        "Host: " .. input_conf.host .. ":" .. input_conf.port
+    }
+    http_conf.ts = true
+    http_conf.callback = function(self, data)
+        if type(data) == 'table' then
+            if data.code == 200 then
+                instance.tail:set_upstream(self:stream())
+
+            elseif data.code == 301 then
+                local addr, port, uri = http_parse_location(data.headers)
+                if addr then
+                    http_conf.addr = addr
+                    http_conf.port = port
+                    http_conf.uri = uri
+                    http_conf.headers[2] = "Host: " .. addr .. ":" .. port
+                    -- TODO: check is data.keep_alive then use instance.send(http_conf)
+                    instance.request = http_request(http_conf)
+                    self:close()
+                else
                     self:close()
                 end
             end
-    }
+        end
+    end
 
     if input_conf.auth then
         table.insert(http_conf.headers, "Authorization: Basic " .. input_conf.auth)
     end
 
-    return { tail = http_request(http_conf) }
+    instance.tail = transmit({})
+    instance.request = http_request(http_conf)
+
+    return instance
 end
 
 kill_input_list.http = function(input_conf, input_data)
-    input_data.tail:close()
+    input_data.request:close()
+    input_data.request = nil
 end
 
 function init_input(channel_data, input_id)
