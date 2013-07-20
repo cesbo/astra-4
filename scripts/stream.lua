@@ -475,7 +475,7 @@ input_list.http = function(input_conf)
     local instance = {}
     local http_conf = {}
 
-    http_conf.addr = input_conf.host
+    http_conf.host = input_conf.host
     http_conf.port = input_conf.port
     http_conf.uri = input_conf.uri
     http_conf.headers =
@@ -500,13 +500,13 @@ input_list.http = function(input_conf)
                     instance.timeout = nil
                 end
 
-                local addr, port, uri = http_parse_location(data.headers)
-                if addr then
-                    http_conf.addr = addr
+                local host, port, uri = http_parse_location(data.headers)
+                if host then
+                    http_conf.host = host
                     http_conf.port = port
                     http_conf.uri = uri
-                    http_conf.headers[2] = "Host: " .. addr .. ":" .. port
-                    -- TODO: check is data.keep_alive then use instance.send(http_conf)
+                    http_conf.headers[2] = "Host: " .. host .. ":" .. port
+
                     instance.request = http_request(http_conf)
                     instance.timeout = timer({
                         interval = 5,
@@ -515,10 +515,8 @@ input_list.http = function(input_conf)
                             instance.request = http_request(http_conf)
                         end
                     })
-                    self:close()
-                else
-                    self:close()
                 end
+                self:close()
             end
         elseif type(data) == 'nil' then
             if instance.timeout then instance.timeout:close() end

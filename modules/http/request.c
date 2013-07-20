@@ -12,7 +12,7 @@
  *
  * Module Options:
  *      ts          - true to push data to upstream instead of callback [optional, default : false]
- *      addr        - string, server IP address
+ *      host        - string, server hostname or IP address
  *      port        - number, server port
  *      callback    - function,
  *      method      - string, HTTP method ("GET" by default)
@@ -33,7 +33,7 @@ struct module_data_t
     MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
-    const char *addr;
+    const char *host;
     int port;
 
     asc_socket_t *sock;
@@ -44,8 +44,9 @@ struct module_data_t
     int is_ts; /* Using TS (true) or send data to callback (false) */
 
     int idx_self;
+    int idx_data;
 
-    int ready_state; // 0 - not, 1 response, 2 - headers, 3 - content
+    int ready_state;  // 0 - response, 1 - headers, 2 - content
     int ts_len_in_buf;// useful ts bytes in TS buffer
 
     size_t chunk_left; // is_chunked || is_content_length
@@ -78,7 +79,7 @@ static const char __chunked[] = "chunked";
 static const char __close[] = "close";
 static const char __keep_alive[] = "keep-alive";
 
-/* module code */
+static int method_close(module_data_t *);
 
 static void buffer_set_text(char **buffer, int capacity
                             , const char *default_value, int default_len
@@ -112,54 +113,17 @@ static void buffer_set_text(char **buffer, int capacity
     *buffer = ptr;
 }
 
-/* callbacks */
-
-static int method_close(module_data_t *);
-
-void timeout_callback(void *arg)
+static void get_lua_callback(module_data_t *mod)
 {
-    module_data_t *mod = arg;
-
-    asc_timer_destroy(mod->timeout_timer);
-    mod->timeout_timer = NULL;
-
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
-    const int self = lua_gettop(lua);
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
-
-    // callback
-    lua_getfield(lua, -1, __callback);
-    lua_pushvalue(lua, self);
-    lua_newtable(lua);
-    lua_pushnumber(lua, 0);
-    lua_setfield(lua, -2, __code);
-    switch(mod->is_connected)
-    {
-        case 0:
-            lua_pushstring(lua, "connection timeout");
-            break;
-        case 1:
-            lua_pushstring(lua, "connection failed");
-            break;
-        case 2:
-            lua_pushstring(lua, "response timeout");
-            break;
-        default:
-            lua_pushstring(lua, "unknown error");
-            break;
-    }
-    lua_setfield(lua, -2, __message);
-    lua_call(lua, 2, 0);
-
-    lua_pop(lua, 2); // options + self
-
-    method_close(mod);
+    lua_getfield(lua, -1, "callback");
+    lua_remove(lua, -2);
 }
 
-static void call_error(int callback, int self, const char *msg)
+static void call_error(module_data_t *mod, const char *msg)
 {
-    lua_pushvalue(lua, callback);
-    lua_pushvalue(lua, self);
+    get_lua_callback(mod);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
 
     lua_newtable(lua);
     lua_pushnumber(lua, 0);
@@ -170,32 +134,62 @@ static void call_error(int callback, int self, const char *msg)
     lua_call(lua, 2, 0);
 }
 
-static void call_nil(int callback, int self)
+static void call_nil(module_data_t *mod)
 {
-    lua_pushvalue(lua, callback);
-    lua_pushvalue(lua, self);
+    get_lua_callback(mod);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
 
     lua_pushnil(lua);
 
     lua_call(lua, 2, 0);
 }
 
-static void on_close(void *arg)
+void timeout_callback(void *arg)
 {
     module_data_t *mod = arg;
 
     asc_timer_destroy(mod->timeout_timer);
     mod->timeout_timer = NULL;
 
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
-    const int self = lua_gettop(lua);
+    switch(mod->is_connected)
+    {
+        case 0:
+            call_error(mod, "connection timeout");
+            break;
+        case 1:
+            call_error(mod, "connection failed");
+            break;
+        case 2:
+            call_error(mod, "response timeout");
+            break;
+        default:
+            call_error(mod, "unknown error");
+            break;
+    }
 
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
-    lua_getfield(lua, -1, __callback);
-    const int callback = lua_gettop(lua);
+    method_close(mod);
+}
 
-    call_nil(callback, self);
-    lua_pop(lua, 3); // self + options + callback
+/*
+ * oooooooooo  ooooooooooo      o      ooooooooo
+ *  888    888  888    88      888      888    88o
+ *  888oooo88   888ooo8       8  88     888    888
+ *  888  88o    888    oo    8oooo88    888    888
+ * o888o  88o8 o888ooo8888 o88o  o888o o888ooo88
+ *
+ */
+
+static void on_close(void *arg)
+{
+    module_data_t *mod = arg;
+
+    if(mod->timeout_timer)
+    {
+        asc_timer_destroy(mod->timeout_timer);
+        mod->timeout_timer = NULL;
+    }
+
+    call_nil(mod);
     method_close(mod);
 }
 
@@ -206,26 +200,13 @@ static void on_read(void *arg)
     asc_timer_destroy(mod->timeout_timer);
     mod->timeout_timer = NULL;
 
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
-    const int self = lua_gettop(lua);
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
-    const int options = lua_gettop(lua);
-    lua_getfield(lua, -1, __callback);
-    const int callback = lua_gettop(lua);
-
     char *buffer = mod->buffer;
-    /* Small explanation:
-     * When we process response body, and it is treated as MPEG-TS, we should divide it to TS_PACKET_SIZE parts.
-     * So, when it occurs, that part of MPEG-TS packet is not parsed, we move it to begin of buffer, and parse it with next
-     * data portion.
-     * Later it may be used for proper HTTP parsing :-)
-     */
+
     int skip = mod->ts_len_in_buf;
     int r = asc_socket_recv(mod->sock, buffer + skip, HTTP_BUFFER_SIZE - skip);
     if(r <= 0)
     {
-        call_nil(callback, self);
-        lua_pop(lua, 3); // self + options + callback
+        call_nil(mod);
         method_close(mod);
         return;
     }
@@ -240,15 +221,18 @@ static void on_read(void *arg)
     {
         if(!http_parse_response(buffer, m))
         {
-            call_error(callback, self, "invalid response");
-            lua_pop(lua, 3); // self + options + callback
+            call_error(mod, "invalid response");
+            method_close(mod);
             return;
         }
 
         lua_newtable(lua);
         response = lua_gettop(lua);
-        lua_pushvalue(lua, -1); // duplicate table
-        lua_setfield(lua, options, __response);
+
+        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
+        lua_pushvalue(lua, -2); // duplicate table
+        lua_setfield(lua, -2, __response);
+        lua_pop(lua, 1); // options
 
         lua_pushnumber(lua, atoi(&buffer[m[2].so]));
         lua_setfield(lua, response, __code);
@@ -260,7 +244,7 @@ static void on_read(void *arg)
 
         if(skip >= r)
         {
-            lua_pop(lua, 4); // self + options + callback + response
+            lua_pop(lua, 1); // response
             return;
         }
     }
@@ -270,7 +254,9 @@ static void on_read(void *arg)
     {
         if(!response)
         {
-            lua_getfield(lua, options, __response);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
+            lua_getfield(lua, -1, __response);
+            lua_remove(lua, -2);
             response = lua_gettop(lua);
         }
 
@@ -301,27 +287,21 @@ static void on_read(void *arg)
             }
             const char *header = &buffer[skip + so];
 
-            if(!strncasecmp(header, __transfer_encoding
-                            , sizeof(__transfer_encoding) - 1))
+            if(!strncasecmp(header, __transfer_encoding, sizeof(__transfer_encoding) - 1))
             {
                 const char *val = &header[sizeof(__transfer_encoding) - 1];
                 if(!strncasecmp(val, __chunked, sizeof(__chunked) - 1))
                     mod->is_chunked = 1;
             }
-            else if(!strncasecmp(header, __connection
-                                 , sizeof(__connection) - 1))
+            else if(!strncasecmp(header, __connection, sizeof(__connection) - 1))
             {
                 const char *val = &header[sizeof(__connection) - 1];
                 if(!strncasecmp(val, __close, sizeof(__close) - 1))
                     mod->is_close = 1;
-                else if(!strncasecmp(val, __keep_alive
-                                     , sizeof(__keep_alive) - 1))
-                {
+                else if(!strncasecmp(val, __keep_alive, sizeof(__keep_alive) - 1))
                     mod->is_keep_alive = 1;
-                }
             }
-            else if(!strncasecmp(header, __content_length
-                                 , sizeof(__content_length) - 1))
+            else if(!strncasecmp(header, __content_length, sizeof(__content_length) - 1))
             {
                 const char *val = &header[sizeof(__content_length) - 1];
                 mod->is_content_length = 1;
@@ -339,22 +319,21 @@ static void on_read(void *arg)
 
         if(mod->ready_state == 2)
         {
-            lua_pushvalue(lua, callback);
-            lua_pushvalue(lua, self);
+            get_lua_callback(mod);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
             lua_pushvalue(lua, response);
             lua_call(lua, 2, 0);
 
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
             lua_pushnil(lua);
-            lua_setfield(lua, options, __response);
+            lua_setfield(lua, -2, __response);
+            lua_pop(lua, 1); // options
         }
 
         lua_pop(lua, 1); // response
 
         if(skip >= r)
-        {
-            lua_pop(lua, 3); // self + options + callback
             return;
-        }
     }
 
     // content
@@ -379,6 +358,7 @@ static void on_read(void *arg)
                 mod->ts_len_in_buf = 0;
             }
         }
+
         // Transfer-Encoding: chunked
         else if(mod->is_chunked)
         {
@@ -388,9 +368,8 @@ static void on_read(void *arg)
                 {
                     if(!http_parse_chunk(&buffer[skip], m))
                     {
-                        call_error(callback, self, "invalid chunk");
-                        lua_pop(lua, 3); // self + options + callback
-                        mod->ready_state = 3;
+                        call_error(mod, "invalid chunk");
+                        method_close(mod);
                         return;
                     }
 
@@ -409,17 +388,27 @@ static void on_read(void *arg)
 
                     if(!mod->chunk_left)
                     {
-                        // close connection
-                        call_nil(callback, self);
-                        lua_pop(lua, 3); // self + options + callback
-                        method_close(mod);
+                        if(mod->is_keep_alive)
+                        {
+                            // keep-alive connection
+                            get_lua_callback(mod);
+                            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+                            lua_pushstring(lua, "");
+                            lua_call(lua, 2, 0);
+                        }
+                        else
+                        {
+                            // close connection
+                            call_nil(mod);
+                            method_close(mod);
+                        }
                         return;
                     }
                 }
 
                 const size_t r_skip = r - skip;
-                lua_pushvalue(lua, callback);
-                lua_pushvalue(lua, self);
+                get_lua_callback(mod);
+                lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
                 if(mod->chunk_left < r_skip)
                 {
                     lua_pushlstring(lua, &buffer[skip], mod->chunk_left);
@@ -432,9 +421,8 @@ static void on_read(void *arg)
                         ++skip;
                     else
                     {
-                        call_error(callback, self, "invalid chunk");
-                        lua_pop(lua, 3); // self + options + callback
-                        mod->ready_state = 3;
+                        call_error(mod, "invalid chunk");
+                        method_close(mod);
                         return;
                     }
                 }
@@ -454,8 +442,8 @@ static void on_read(void *arg)
             if(mod->chunk_left > 0)
             {
                 const size_t r_skip = r - skip;
-                lua_pushvalue(lua, callback);
-                lua_pushvalue(lua, self);
+                get_lua_callback(mod);
+                lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
                 if(mod->chunk_left > r_skip)
                 {
                     lua_pushlstring(lua, &buffer[skip], r_skip);
@@ -468,10 +456,20 @@ static void on_read(void *arg)
                     lua_call(lua, 2, 0);
                     mod->chunk_left = 0;
 
-                    // close connection
-                    call_nil(callback, self);
-                    lua_pop(lua, 3); // self + options + callback
-                    method_close(mod);
+                    if(mod->is_keep_alive)
+                    {
+                        // keep-alive connection
+                        get_lua_callback(mod);
+                        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+                        lua_pushstring(lua, "");
+                        lua_call(lua, 2, 0);
+                    }
+                    else
+                    {
+                        // close connection
+                        call_nil(mod);
+                        method_close(mod);
+                    }
                     return;
                 }
             }
@@ -480,47 +478,41 @@ static void on_read(void *arg)
         // Stream
         else
         {
-            lua_pushvalue(lua, callback);
-            lua_pushvalue(lua, self);
+            get_lua_callback(mod);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
             lua_pushlstring(lua, &buffer[skip], r - skip);
             lua_call(lua, 2, 0);
         }
     }
-
-    lua_pop(lua, 3); // self + options + callback
 } /* on_read */
 
-static void on_connect_err(void *arg)
+/*
+ *   oooooooo8   ooooooo  oooo   oooo oooo   oooo ooooooooooo  oooooooo8 ooooooooooo
+ * o888     88 o888   888o 8888o  88   8888o  88   888    88 o888     88 88  888  88
+ * 888         888     888 88 888o88   88 888o88   888ooo8   888             888
+ * 888o     oo 888o   o888 88   8888   88   8888   888    oo 888o     oo     888
+ *  888oooo88    88ooo88  o88o    88  o88o    88  o888ooo8888 888oooo88     o888o
+ *
+ */
+
+static void send_request(module_data_t *mod)
 {
-    module_data_t *mod = arg;
-    mod->is_connected = 1;
-    timeout_callback(mod);
-    method_close(mod);
-}
-
-static void on_connect(void *arg)
-{
-    module_data_t *mod = arg;
-
-    asc_timer_destroy(mod->timeout_timer);
-    mod->timeout_timer = NULL;
-
-    asc_socket_set_on_read(mod->sock, on_read);
-    asc_socket_set_on_close(mod->sock, on_close);
-
-    mod->is_connected = 2;
+    if(mod->timeout_timer)
+    {
+        asc_timer_destroy(mod->timeout_timer);
+        mod->timeout_timer = NULL;
+    }
     mod->timeout_timer = asc_timer_init(REQUEST_TIMEOUT_INTERVAL, timeout_callback, mod);
+
+    mod->ready_state = 0;
 
     // default values
     static const char def_method[] = "GET";
     static const char def_uri[] = "/";
     static const char def_version[] = "HTTP/1.1";
 
-    // send request
     char *buffer = mod->buffer;
     const char *buffer_tail = mod->buffer + HTTP_BUFFER_SIZE;
-
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
 
     lua_getfield(lua, -1, __method);
     buffer_set_text(&buffer, buffer_tail - buffer
@@ -561,11 +553,46 @@ static void on_connect(void *arg)
         asc_socket_send_buffered(mod->sock, (void *)content, content_size);
     }
     lua_pop(lua, 1); // content
+}
 
+static void on_connect_err(void *arg)
+{
+    module_data_t *mod = arg;
+    mod->is_connected = 1;
+    timeout_callback(mod);
+    method_close(mod);
+}
+
+static void on_connect(void *arg)
+{
+    module_data_t *mod = arg;
+
+    asc_socket_set_on_read(mod->sock, on_read);
+    asc_socket_set_on_close(mod->sock, on_close);
+
+    mod->is_connected = 2;
+
+    // send request
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
+    send_request(mod);
     lua_pop(lua, 1); // options
 } /* on_connect */
 
 /* methods */
+
+static int method_data(module_data_t *mod)
+{
+    if(!mod->idx_data)
+    {
+        lua_newtable(lua);
+        lua_pushvalue(lua, -1);
+        mod->idx_data = luaL_ref(lua, LUA_REGISTRYINDEX);
+    }
+    else
+        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_data);
+
+    return 1;
+}
 
 static int method_close(module_data_t *mod)
 {
@@ -587,33 +614,63 @@ static int method_close(module_data_t *mod)
         mod->idx_self = 0;
     }
 
+    if(mod->idx_data > 0)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_data);
+        mod->idx_data = 0;
+    }
+
     return 0;
 }
+
+/*
+ *  oooooooo8 ooooooooooo oooo   oooo ooooooooo
+ * 888         888    88   8888o  88   888    88o
+ *  888oooooo  888ooo8     88 888o88   888    888
+ *         888 888    oo   88   8888   888    888
+ * o88oooo888 o888ooo8888 o88o    88  o888ooo88
+ *
+ */
 
 static int method_send(module_data_t *mod)
 {
-    if(mod->ready_state == 2)
+    switch(lua_type(lua, -1))
     {
-        const int content_size = luaL_len(lua, 2);
-        const char *content = lua_tostring(lua, 2);
-        asc_socket_send_buffered(mod->sock, (void *)content, content_size);
-        return 0;
+        case LUA_TSTRING:
+        {
+            const int content_size = luaL_len(lua, 2);
+            const char *content = lua_tostring(lua, 2);
+            asc_socket_send_buffered(mod->sock, (void *)content, content_size);
+            break;
+        }
+        case LUA_TTABLE:
+        {
+            send_request(mod);
+            break;
+        }
+        default:
+            break;
     }
-
-    // TODO: save for use in future
 
     return 0;
 }
 
-/* required */
+/*
+ * oooo     oooo  ooooooo  ooooooooo  ooooo  oooo ooooo       ooooooooooo
+ *  8888o   888 o888   888o 888    88o 888    88   888         888    88
+ *  88 888o8 88 888     888 888    888 888    88   888         888ooo8
+ *  88  888  88 888o   o888 888    888 888    88   888      o  888    oo
+ * o88o  8  o88o  88ooo88  o888ooo88    888oo88   o888ooooo88 o888ooo8888
+ *
+ */
 
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, NULL);
 
-    if(!module_option_string("addr", &mod->addr) || !mod->addr)
+    if(!module_option_string("host", &mod->host) || !mod->host)
     {
-        asc_log_error(MSG("option 'addr' is required"));
+        asc_log_error(MSG("option 'host' is required"));
         astra_abort();
     }
 
@@ -642,7 +699,7 @@ static void module_init(module_data_t *mod)
         return;
     }
     mod->timeout_timer = asc_timer_init(CONNECT_TIMEOUT_INTERVAL, timeout_callback, mod);
-    asc_socket_connect(mod->sock, mod->addr, mod->port, on_connect, on_connect_err);
+    asc_socket_connect(mod->sock, mod->host, mod->port, on_connect, on_connect_err);
 }
 
 static void module_destroy(module_data_t *mod)
@@ -656,7 +713,8 @@ MODULE_LUA_METHODS()
 {
     MODULE_STREAM_METHODS_REF(),
     { "close", method_close },
-    { "send", method_send }
+    { "send", method_send },
+    { "data", method_data }
 };
 
 MODULE_LUA_REGISTER(http_request)

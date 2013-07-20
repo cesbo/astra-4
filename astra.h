@@ -18,7 +18,8 @@
 
 #include "modules/mpegts/mpegts.h"
 
-#define STACK_DEBUG(_pos) printf("%s(): stack %d: %d\n", __FUNCTION__, _pos, lua_gettop(lua))
+#define STACK_DEBUG() printf("%s:%d %s(): stack:%d\n"                                           \
+                             , __FILE__, __LINE__, __FUNCTION__, lua_gettop(lua))
 
 /* version */
 
