@@ -620,6 +620,8 @@ static int method_close(module_data_t *mod)
         mod->idx_data = 0;
     }
 
+    mod->ready_state = -1;
+
     return 0;
 }
 

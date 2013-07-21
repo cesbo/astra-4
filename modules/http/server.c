@@ -318,12 +318,18 @@ static void on_read(void *arg)
                 }
                 else
                 {
+                    lua_pushvalue(lua, -3);
+                    lua_pushvalue(lua, -3);
+                    lua_pushvalue(lua, -3);
                     lua_pushlstring(lua, &client->buffer[skip], client->content_length);
                     lua_call(lua, 3, 0);
                     client->content_length = -1;
 
                     // content is done
                     client->ready_state = 0;
+
+                    lua_pushstring(lua, "");
+                    lua_call(lua, 3, 0);
                 }
             }
         }
