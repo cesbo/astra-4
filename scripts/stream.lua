@@ -580,6 +580,9 @@ end
 --  888   88   8888   888        888    88      888
 -- o888o o88o    88  o888o        888oo88      o888o
 
+input_module = {}
+kill_input_module = {}
+
 function init_input(channel_data, input_id)
     local input_conf = channel_data.config.input[input_id]
 
@@ -636,7 +639,11 @@ function init_input(channel_data, input_id)
 
     end
 
-    -- TODO: extra modules
+    for key,_ in pairs(input_conf) do
+        if input_module[key] then
+            input_module[key](input_conf, input_data)
+        end
+    end
 
     input_data.analyze = analyze({
         upstream = input_data.tail:stream(),
@@ -664,6 +671,13 @@ function kill_input(channel_data, input_id)
     local input_data = channel_data.input[input_id]
     if not input_data.source then return nil end
     kill_input_list[input_conf.module_name](input_conf, input_data)
+
+    for key,_ in pairs(input_conf) do
+        if kill_input_module[key] then
+            kill_input_module[key](input_conf, input_data)
+        end
+    end
+
     input_data.source = nil
     input_data.channel = nil
     input_data.decrypt = nil
@@ -806,6 +820,9 @@ end
 -- 888o   o888 888    88      888      888        888    88      888
 --   88ooo88    888oo88      o888o    o888o        888oo88      o888o
 
+output_module = {}
+kill_output_module = {}
+
 function init_output(channel_data, output_id)
     local output_conf = channel_data.config.output[output_id]
 
@@ -820,10 +837,16 @@ function init_output(channel_data, output_id)
         astra.abort()
     end
 
-    -- TODO: extra modules
-
-    output_conf.upstream = channel_data.tail:stream()
     local output_data = {}
+    output_data.tail = channel_data.tail
+
+    for key,_ in pairs(output_conf) do
+        if output_module[key] then
+            output_module[key](output_conf, output_data)
+        end
+    end
+
+    output_conf.upstream = output_data.tail:stream()
     output_data.instance = init_output_type(output_conf)
 
     channel_data.output[output_id] = output_data
@@ -832,8 +855,16 @@ end
 function kill_output(channel_data, output_id)
     local output_conf = channel_data.config.output[output_id]
     local output_data = channel_data.output[output_id]
+
+    for key,_ in pairs(output_conf) do
+        if kill_output_module[key] then
+            kill_output_module[key](output_conf, output_data)
+        end
+    end
+
     kill_output_list[output_conf.module_name](output_conf, output_data)
     output_data.instance = nil
+    output_data.tail = nil
     channel_data.output[output_id] = nil
 end
 
