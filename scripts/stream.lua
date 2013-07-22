@@ -327,11 +327,11 @@ function log_analyze_error(channel_data, input_id, analyze_data)
     log.error(analyze_message)
 end
 
--- ooooo oooo   oooo oooooooooo ooooo  oooo ooooooooooo
---  888   8888o  88   888    888 888    88  88  888  88
---  888   88 888o88   888oooo88  888    88      888
---  888   88   8888   888        888    88      888
--- o888o o88o    88  o888o        888oo88      o888o
+-- ooooo         ooooooooo  ooooo  oooo oooooooooo
+--  888           888    88o 888    88   888    888
+--  888 ooooooooo 888    888  888  88    888oooo88
+--  888           888    888   88888     888    888
+-- o888o         o888ooo88      888     o888ooo888
 
 local dvb_list
 if dvbls then dvb_list = dvbls() end
@@ -403,6 +403,12 @@ kill_input_list.dvb = function(input_conf, input_data)
     end
 end
 
+-- ooooo         ooooo  oooo ooooooooo  oooooooooo
+--  888           888    88   888    88o 888    888
+--  888 ooooooooo 888    88   888    888 888oooo88
+--  888           888    88   888    888 888
+-- o888o           888oo88   o888ooo88  o888o
+
 local udp_instance_list = {}
 
 input_list.udp = function(input_conf)
@@ -438,6 +444,12 @@ kill_input_list.udp = function(input_conf, input_data)
     udp_instance_list[addr] = nil
 end
 
+-- ooooo         ooooooooooo ooooo ooooo       ooooooooooo
+--  888           888    88   888   888         888    88
+--  888 ooooooooo 888oo8      888   888         888ooo8
+--  888           888         888   888      o  888    oo
+-- o888o         o888o       o888o o888ooooo88 o888ooo8888
+
 input_list.file = function(input_conf)
     return { tail = file_input(input_conf) }
 end
@@ -445,6 +457,12 @@ end
 kill_input_list.file = function(input_conf, input_data)
     --
 end
+
+-- ooooo         ooooo ooooo ooooooooooo ooooooooooo oooooooooo
+--  888           888   888  88  888  88 88  888  88  888    888
+--  888 ooooooooo 888ooo888      888         888      888oooo88
+--  888           888   888      888         888      888
+-- o888o         o888o o888o    o888o       o888o    o888o
 
 function http_parse_location(headers)
     for _, header in pairs(headers) do
@@ -556,6 +574,12 @@ kill_input_list.http = function(input_conf, input_data)
     input_data.source.request = nil
 end
 
+-- ooooo oooo   oooo oooooooooo ooooo  oooo ooooooooooo
+--  888   8888o  88   888    888 888    88  88  888  88
+--  888   88 888o88   888oooo88  888    88      888
+--  888   88   8888   888        888    88      888
+-- o888o o88o    88  o888o        888oo88      o888o
+
 function init_input(channel_data, input_id)
     local input_conf = channel_data.config.input[input_id]
 
@@ -648,11 +672,11 @@ function kill_input(channel_data, input_id)
     channel_data.input[input_id] = nil
 end
 
---   ooooooo  ooooo  oooo ooooooooooo oooooooooo ooooo  oooo ooooooooooo
--- o888   888o 888    88  88  888  88  888    888 888    88  88  888  88
--- 888     888 888    88      888      888oooo88  888    88      888
--- 888o   o888 888    88      888      888        888    88      888
---   88ooo88    888oo88      o888o    o888o        888oo88      o888o
+--   ooooooo            ooooo  oooo ooooooooo  oooooooooo
+-- o888   888o           888    88   888    88o 888    888
+-- 888     888 ooooooooo 888    88   888    888 888oooo88
+-- 888o   o888           888    88   888    888 888
+--   88ooo88              888oo88   o888ooo88  o888o
 
 local output_list = {}
 local kill_output_list = {}
@@ -668,6 +692,12 @@ kill_output_list.udp = function(output_conf, output_data)
     --
 end
 
+--   ooooooo            ooooooooooo ooooo ooooo       ooooooooooo
+-- o888   888o           888    88   888   888         888    88
+-- 888     888 ooooooooo 888oo8      888   888         888ooo8
+-- 888o   o888           888         888   888      o  888    oo
+--   88ooo88            o888o       o888o o888ooooo88 o888ooo8888
+
 output_list.file = function(output_conf)
     return { tail = file_output(output_conf) }
 end
@@ -675,6 +705,12 @@ end
 kill_output_list.file = function(output_conf, output_data)
     --
 end
+
+--   ooooooo            ooooo ooooo ooooooooooo ooooooooooo oooooooooo
+-- o888   888o           888   888  88  888  88 88  888  88  888    888
+-- 888     888 ooooooooo 888ooo888      888         888      888oooo88
+-- 888o   o888           888   888      888         888      888
+--   88ooo88            o888o o888o    o888o       o888o    o888o
 
 local http_instance_list = {}
 local http_server_header = "Server: Astra"
@@ -763,6 +799,12 @@ kill_output_list.http = function(output_conf, output_data)
     http_instance.tail = nil
     http_instance_list[addr] = nil
 end
+
+--   ooooooo  ooooo  oooo ooooooooooo oooooooooo ooooo  oooo ooooooooooo
+-- o888   888o 888    88  88  888  88  888    888 888    88  88  888  88
+-- 888     888 888    88      888      888oooo88  888    88      888
+-- 888o   o888 888    88      888      888        888    88      888
+--   88ooo88    888oo88      o888o    o888o        888oo88      o888o
 
 function init_output(channel_data, output_id)
     local output_conf = channel_data.config.output[output_id]
