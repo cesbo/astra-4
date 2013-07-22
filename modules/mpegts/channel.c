@@ -67,6 +67,8 @@ struct module_data_t
     uint8_t sdt_original_section_id;
     uint8_t sdt_max_section_id;
     uint32_t *sdt_checksum_list;
+
+    uint8_t eit_cc;
 };
 
 #define MSG(_msg) "[channel %s] " _msg, mod->config.name
@@ -457,7 +459,12 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         }
 
         if(mod->send_eit)
-            module_stream_send(mod, ts);
+        {
+            memcpy(mod->custom_ts, ts, TS_PACKET_SIZE);
+            mod->custom_ts[3] = (ts[3] & 0xF0) | mod->eit_cc;
+            mod->eit_cc = (mod->eit_cc + 1) & 0x0F;
+            module_stream_send(mod, mod->custom_ts);
+        }
 
         return;
     }
