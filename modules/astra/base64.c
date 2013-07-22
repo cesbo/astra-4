@@ -41,9 +41,9 @@ char * base64_encode(const char *in, size_t size, size_t *out_size)
 
     for(size_t i = 0, j = 0; i < size;)
     {
-        uint32_t octet_a = (i < size) ? in[i++] : 0;
-        uint32_t octet_b = (i < size) ? in[i++] : 0;
-        uint32_t octet_c = (i < size) ? in[i++] : 0;
+        uint32_t octet_a = (i < size) ? (uint8_t)in[i++] : 0;
+        uint32_t octet_b = (i < size) ? (uint8_t)in[i++] : 0;
+        uint32_t octet_c = (i < size) ? (uint8_t)in[i++] : 0;
 
         uint32_t triple = (octet_a << 0x10) + (octet_b << 0x08) + octet_c;
 
