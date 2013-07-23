@@ -608,7 +608,7 @@ static void on_check_stat(void *arg)
     {
         analyze_item_t *item = &mod->stream[i];
 
-        if(item->type == MPEGTS_PACKET_UNKNOWN)
+        if(item->type == MPEGTS_PACKET_UNKNOWN && item->packets == 0)
             continue;
 
         lua_pushnumber(lua, items_count++);
@@ -693,6 +693,8 @@ static void module_init(module_data_t *mod)
     // SDT
     mod->stream[0x11].type = MPEGTS_PACKET_SDT;
     mod->sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
+    // EIT
+    mod->stream[0x12].type = MPEGTS_PACKET_EIT;
     // PMT
     mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
     // NULL
