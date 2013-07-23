@@ -9,5 +9,22 @@ CFLAGS="-DPARALLEL_MODE=1286 -funroll-loops --param max-unrolled-insns=500"
 if [ "$OS" = "darwin" ] ; then
     CFLAGS="$CFLAGS -Wno-deprecated-declarations"
 fi
-
 LDFLAGS="-lcrypto"
+
+libssl_test_c()
+{
+    cat <<EOF
+#include <stdio.h>
+#include <openssl/des.h>
+int main(void) { return 0; }
+EOF
+}
+
+check_libssl()
+{
+    libssl_test_c | $APP_C -Werror $CFLAGS $IN_CFLAGS $LDFLAGS $IN_LDFLAGS -o /dev/null -x c - >/dev/null 2>&1
+}
+
+if ! check_libssl ; then
+    ERROR="libssl-dev is not found"
+fi
