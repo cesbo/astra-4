@@ -463,8 +463,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         case MPEGTS_PACKET_PMT:
             mpegts_psi_mux(mod->pmt, ts, on_pmt, mod);
             return;
-        case MPEGTS_PACKET_ECM:
-        case MPEGTS_PACKET_EMM:
+        case MPEGTS_PACKET_CA:
             if(!mod->__decrypt.cas)
                 return;
             mpegts_psi_mux(mod->em, ts, on_em, mod);
