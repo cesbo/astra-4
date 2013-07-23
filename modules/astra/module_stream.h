@@ -111,14 +111,20 @@ void __module_stream_send(module_stream_t *stream, const uint8_t *ts);
         const uint16_t __pid = _pid;                                                            \
         asc_assert(_mod->__stream.pid_list != NULL                                              \
                    , "%s:%d module_stream_demux_set() is required", __FILE__, __LINE__);        \
-        asc_assert(_mod->__stream.pid_list[__pid] > 0                                           \
-                   , "%s:%d module_stream_demux_leave_pid() double call", __FILE__, __LINE__);  \
-        --_mod->__stream.pid_list[__pid];                                                       \
-        if(_mod->__stream.pid_list[__pid] == 0                                                  \
-           && _mod->__stream.parent                                                             \
-           && _mod->__stream.parent->leave_pid)                                                 \
+        if(_mod->__stream.pid_list[__pid] > 0)                                                  \
         {                                                                                       \
-            _mod->__stream.parent->leave_pid(_mod->__stream.parent->self, __pid);               \
+            --_mod->__stream.pid_list[__pid];                                                   \
+            if(_mod->__stream.pid_list[__pid] == 0                                              \
+               && _mod->__stream.parent                                                         \
+               && _mod->__stream.parent->leave_pid)                                             \
+            {                                                                                   \
+                _mod->__stream.parent->leave_pid(_mod->__stream.parent->self, __pid);           \
+            }                                                                                   \
+        }                                                                                       \
+        else                                                                                    \
+        {                                                                                       \
+            asc_log_error("%s:%d module_stream_demux_leave_pid() double call pid:%d"            \
+                          , __FILE__, __LINE__, __pid);                                         \
         }                                                                                       \
     }
 

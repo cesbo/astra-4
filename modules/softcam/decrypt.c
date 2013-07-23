@@ -101,7 +101,7 @@ static void stream_reload(module_data_t *mod)
 
     for(uint16_t i = 2; i < MAX_PID; ++i)
     {
-        if(mod->stream[i] & MPEGTS_PACKET_CA)
+        if(mod->stream[i] == MPEGTS_PACKET_CA)
             module_stream_demux_leave_pid(mod, i);
     }
 
@@ -225,7 +225,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
             const uint16_t pid = DESC_CA_PID(desc_pointer);
             if(mod->stream[pid] == MPEGTS_PACKET_UNKNOWN)
             {
-                mod->stream[pid] = MPEGTS_PACKET_EMM;
+                mod->stream[pid] = MPEGTS_PACKET_CA;
                 module_stream_demux_join_pid(mod, pid);
                 asc_log_debug(MSG("Select EMM pid:%d"), pid);
                 is_emm_selected = true;
@@ -305,7 +305,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                 {
                     if(!is_ecm_selected)
                     {
-                        mod->stream[pid] = MPEGTS_PACKET_ECM;
+                        mod->stream[pid] = MPEGTS_PACKET_CA;
                         module_stream_demux_join_pid(mod, pid);
                         asc_log_debug(MSG("Select ECM pid:%d"), pid);
                         is_ecm_selected = true;
@@ -350,7 +350,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                     {
                         if(!is_ecm_selected)
                         {
-                            mod->stream[pid] = MPEGTS_PACKET_ECM;
+                            mod->stream[pid] = MPEGTS_PACKET_CA;
                             module_stream_demux_join_pid(mod, pid);
                             asc_log_debug(MSG("Select ECM pid:%d"), pid);
                             is_ecm_selected = true;
