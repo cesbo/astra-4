@@ -1488,20 +1488,19 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                 return;
 
             if(ca_pmt->crc != 0)
+            {
                 asc_log_warning(MSG("CA: PMT changed. Reload channel info"));
+                is_update = true;
+            }
 
             ca_pmt->crc = crc32;
             ca_pmt_build(mod, ca_pmt, psi);
-            is_update = true;
-            break;
+            ca_pmt_send(mod, ca_pmt
+                        , (is_update == false) ? CA_PMT_LM_ADD : CA_PMT_LM_UPDATE
+                        , CA_PMT_CMD_OK_DESCRAMBLING);
+            return;
         }
     }
-    if(asc_list_eol(mod->ca_pmt_list))
-        return;
-
-    ca_pmt_send(mod, ca_pmt
-                , (!is_update) ? CA_PMT_LM_ADD : CA_PMT_LM_UPDATE
-                , CA_PMT_CMD_OK_DESCRAMBLING);
 }
 
 void ca_on_ts(module_data_t *mod, const uint8_t *ts)
@@ -1640,39 +1639,47 @@ void ca_open(module_data_t *mod)
 
 void ca_close(module_data_t *mod)
 {
-    if(!mod->ca_fd)
-        return;
-
-    close(mod->ca_fd);
-    mod->ca_fd = 0;
-
-    for(int i = 0; i < mod->slots_num; ++i)
+    if(mod->ca_fd)
     {
-        ca_slot_t *slot = &mod->slots[i];
-        for(asc_list_first(slot->queue)
-            ; !asc_list_eol(slot->queue)
-            ; asc_list_first(slot->queue))
+        close(mod->ca_fd);
+        mod->ca_fd = 0;
+    }
+
+    if(mod->slots)
+    {
+        for(int i = 0; i < mod->slots_num; ++i)
         {
-            free(asc_list_data(slot->queue));
-            asc_list_remove_current(slot->queue);
+            ca_slot_t *slot = &mod->slots[i];
+            for(asc_list_first(slot->queue)
+                ; !asc_list_eol(slot->queue)
+                ; asc_list_first(slot->queue))
+            {
+                free(asc_list_data(slot->queue));
+                asc_list_remove_current(slot->queue);
+            }
+            asc_list_destroy(slot->queue);
         }
-        asc_list_destroy(slot->queue);
+
+        free(mod->slots);
+        mod->slots = NULL;
     }
 
-    free(mod->slots);
-    mod->slots = NULL;
+    if(mod->pat)
+        mpegts_psi_destroy(mod->pat);
+    if(mod->pmt)
+        mpegts_psi_destroy(mod->pmt);
 
-    mpegts_psi_destroy(mod->pat);
-    mpegts_psi_destroy(mod->pmt);
-
-    for(asc_list_first(mod->ca_pmt_list)
-        ; !asc_list_eol(mod->ca_pmt_list)
-        ; asc_list_first(mod->ca_pmt_list))
+    if(mod->ca_pmt_list)
     {
-        free(asc_list_data(mod->ca_pmt_list));
-        asc_list_remove_current(mod->ca_pmt_list);
+        for(asc_list_first(mod->ca_pmt_list)
+            ; !asc_list_eol(mod->ca_pmt_list)
+            ; asc_list_first(mod->ca_pmt_list))
+        {
+            free(asc_list_data(mod->ca_pmt_list));
+            asc_list_remove_current(mod->ca_pmt_list);
+        }
+        asc_list_destroy(mod->ca_pmt_list);
     }
-    asc_list_destroy(mod->ca_pmt_list);
 }
 
 void ca_loop(module_data_t *mod, int is_data)
