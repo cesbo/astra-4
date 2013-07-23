@@ -1640,27 +1640,27 @@ void ca_open(module_data_t *mod)
 
 void ca_close(module_data_t *mod)
 {
-    if(mod->ca_fd > 0)
+    if(!mod->ca_fd)
+        return;
+
+    close(mod->ca_fd);
+    mod->ca_fd = 0;
+
+    for(int i = 0; i < mod->slots_num; ++i)
     {
-        close(mod->ca_fd);
-        mod->ca_fd = 0;
-
-        for(int i = 0; i < mod->slots_num; ++i)
+        ca_slot_t *slot = &mod->slots[i];
+        for(asc_list_first(slot->queue)
+            ; !asc_list_eol(slot->queue)
+            ; asc_list_first(slot->queue))
         {
-            ca_slot_t *slot = &mod->slots[i];
-            for(asc_list_first(slot->queue)
-                ; !asc_list_eol(slot->queue)
-                ; asc_list_first(slot->queue))
-            {
-                free(asc_list_data(slot->queue));
-                asc_list_remove_current(slot->queue);
-            }
-            asc_list_destroy(slot->queue);
+            free(asc_list_data(slot->queue));
+            asc_list_remove_current(slot->queue);
         }
-
-        free(mod->slots);
-        mod->slots = NULL;
+        asc_list_destroy(slot->queue);
     }
+
+    free(mod->slots);
+    mod->slots = NULL;
 
     mpegts_psi_destroy(mod->pat);
     mpegts_psi_destroy(mod->pmt);
