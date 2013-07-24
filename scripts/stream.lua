@@ -515,7 +515,7 @@ input_list.http = function(input_conf)
 
                 instance.tail:set_upstream(self:stream())
 
-            elseif data.code == 301 then
+            elseif data.code == 301 or data.code == 302 then
                 if instance.timeout then
                     instance.timeout:close()
                     instance.timeout = nil
