@@ -202,12 +202,6 @@ parse_addr.http = function(addr, result)
 end
 
 function parse_options(options, result)
-    local x = options:find("?")
-    if x ~= 1 then
-        return
-    end
-    options = options:sub(2)
-
     function parse_key_val(option)
         local x = option:find("=")
         local key, val
@@ -240,10 +234,23 @@ function parse_options(options, result)
 end
 
 function parse_url(url)
-    local x,_,module_name,url_addr,url_options = url:find("^(%a+)://([%a%d%.:@_/%-]+)(.*)$" )
-    if not module_name then
-        return nil
+    local module_name, url_addr, url_options
+    local b, e = url:find("://")
+    if not b then return nil end
+    module_name = url:sub(1, b - 1)
+    local b = url:find("#", e + 1)
+    if b then
+        url_addr = url:sub(e + 1, b - 1)
+        url_options = url:sub(b + 1)
+    else
+        url_addr = url:sub(e + 1)
     end
+
+    if module_name ~= "http" and module_name ~= "rtsp" and url_addr:find("?") then
+        log.error("[stream.lua] please, replace '?' with '#' for options")
+        astra.abort()
+    end
+
     if type(parse_addr[module_name]) ~= 'function' then return nil end
 
     local result = { module_name = module_name }
