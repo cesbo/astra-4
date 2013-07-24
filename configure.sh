@@ -496,6 +496,8 @@ install: \$(APP)
 	@rm -f \$(V_APP)
 	@cp \$(APP) \$(V_APP)
 	@mkdir -p \$(V_SCRIPTS)
+	@echo "INSTALL: \$(V_SCRIPTS)/stream.lua"
+	@cp $SRCDIR/scripts/stream.lua \$(V_SCRIPTS)/stream.lua
 	@echo "INSTALL: \$(V_SCRIPTS)/json.lua"
 	@cp $SRCDIR/scripts/json.lua \$(V_SCRIPTS)/json.lua
 	@echo "INSTALL: \$(V_SCRIPTS)/analyze.lua"
