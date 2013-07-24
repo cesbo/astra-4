@@ -6,9 +6,11 @@
  * Licensed under the MIT license.
  */
 
-#include "../dvb.h"
+#include "fe.h"
+
 #include <fcntl.h>
-#include <poll.h>
+
+#define MSG(_msg) "[dvb_input %d:%d] " _msg, fe->adapter, fe->device
 
 #define DTV_PROPERTY_BEGIN(_cmdseq, _cmdlist)                                                   \
     _cmdseq.num = 0;                                                                            \
@@ -19,18 +21,18 @@
     _cmdlist[_cmdseq.num].u.data = _data;                                                       \
     ++_cmdseq.num
 
-static void fe_clear(module_data_t *mod)
+static void fe_clear(dvb_fe_t *fe)
 {
     static struct dtv_property clear[] = { { .cmd = DTV_CLEAR } };
     static struct dtv_properties cmdclear = { .num = 1, .props = clear };
-    if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdclear ) != 0)
+    if(ioctl(fe->fe_fd, FE_SET_PROPERTY, &cmdclear ) != 0)
     {
         asc_log_error(MSG("FE_SET_PROPERTY DTV_CLEAR failed [%s]"), strerror(errno));
         astra_abort();
     }
 
     struct dvb_frontend_event fe_event;
-    while(ioctl(mod->fe_fd, FE_GET_EVENT, &fe_event) != -1)
+    while(ioctl(fe->fe_fd, FE_GET_EVENT, &fe_event) != -1)
         ;
 }
 
@@ -43,14 +45,14 @@ static void fe_clear(module_data_t *mod)
  *
  */
 
-static void fe_event(module_data_t *mod)
+static void fe_event(dvb_fe_t *fe)
 {
     struct dvb_frontend_event dvb_fe_event;
     fe_status_t fe_status, fe_status_diff;
 
     while(1) /* read all events */
     {
-        if(ioctl(mod->fe_fd, FE_GET_EVENT, &dvb_fe_event) != 0)
+        if(ioctl(fe->fe_fd, FE_GET_EVENT, &dvb_fe_event) != 0)
         {
             if(errno == EWOULDBLOCK)
                 return;
@@ -59,8 +61,8 @@ static void fe_event(module_data_t *mod)
         }
 
         fe_status = dvb_fe_event.status;
-        fe_status_diff = fe_status ^ mod->fe_status;
-        mod->fe_status = fe_status;
+        fe_status_diff = fe_status ^ fe->fe_status;
+        fe->fe_status = fe_status;
 
         const char ss = (fe_status & FE_HAS_SIGNAL) ? 'S' : '_';
         const char sc = (fe_status & FE_HAS_CARRIER) ? 'C' : '_';
@@ -70,35 +72,35 @@ static void fe_event(module_data_t *mod)
 
         if(fe_status_diff & FE_HAS_LOCK)
         {
-            mod->lock = fe_status & FE_HAS_LOCK;
-            if(mod->lock)
+            fe->lock = fe_status & FE_HAS_LOCK;
+            if(fe->lock)
             {
-                if(ioctl(mod->fe_fd, FE_READ_SIGNAL_STRENGTH, &mod->signal) != 0)
-                    mod->signal = -2;
+                if(ioctl(fe->fe_fd, FE_READ_SIGNAL_STRENGTH, &fe->signal) != 0)
+                    fe->signal = -2;
                 else
-                    mod->signal = (mod->signal * 100) / 0xFFFF;
+                    fe->signal = (fe->signal * 100) / 0xFFFF;
 
-                if(ioctl(mod->fe_fd, FE_READ_SNR, &mod->snr) != 0)
-                    mod->snr = -2;
+                if(ioctl(fe->fe_fd, FE_READ_SNR, &fe->snr) != 0)
+                    fe->snr = -2;
                 else
-                    mod->snr = (mod->snr * 100) / 0xFFFF;
+                    fe->snr = (fe->snr * 100) / 0xFFFF;
 
-                if(ioctl(mod->fe_fd, FE_READ_BER, &mod->ber) != 0)
-                    mod->ber = -2;
+                if(ioctl(fe->fe_fd, FE_READ_BER, &fe->ber) != 0)
+                    fe->ber = -2;
 
-                if(ioctl(mod->fe_fd, FE_READ_UNCORRECTED_BLOCKS, &mod->unc) != 0)
-                    mod->unc = -2;
+                if(ioctl(fe->fe_fd, FE_READ_UNCORRECTED_BLOCKS, &fe->unc) != 0)
+                    fe->unc = -2;
 
                 asc_log_info(MSG("fe has lock. status:%c%c%c%c%c signal:%d%% snr:%d%%")
                              , ss, sc, sv, sy, sl
-                             , mod->signal, mod->snr);
+                             , fe->signal, fe->snr);
             }
             else
             {
                 asc_log_warning(MSG("fe has lost lock. status:%c%c%c%c%c")
                                 , ss, sc, sv, sy, sl);
-                fe_clear(mod);
-                mod->do_retune = 1;
+                fe_clear(fe);
+                fe->do_retune = 1;
             }
         }
 
@@ -107,8 +109,8 @@ static void fe_event(module_data_t *mod)
             if(fe_status & FE_REINIT)
             {
                 asc_log_warning(MSG("fe was reinitialized"));
-                fe_clear(mod);
-                mod->do_retune = 1;
+                fe_clear(fe);
+                fe->do_retune = 1;
             }
         }
     }
@@ -123,37 +125,37 @@ static void fe_event(module_data_t *mod)
  *
  */
 
-static void fe_status(module_data_t *mod)
+static void fe_status(dvb_fe_t *fe)
 {
     fe_status_t fe_status;
-    if(ioctl(mod->fe_fd, FE_READ_STATUS, &fe_status) != 0)
+    if(ioctl(fe->fe_fd, FE_READ_STATUS, &fe_status) != 0)
     {
         asc_log_error(MSG("FE_READ_STATUS failed [%s]"), strerror(errno));
         astra_abort();
     }
 
-    mod->lock = fe_status & FE_HAS_LOCK;
-    if(!mod->lock)
+    fe->lock = fe_status & FE_HAS_LOCK;
+    if(!fe->lock)
     {
-        mod->do_retune = 1;
+        fe->do_retune = 1;
         return;
     }
 
-    if(ioctl(mod->fe_fd, FE_READ_SIGNAL_STRENGTH, &mod->signal) != 0)
-        mod->signal = -2;
+    if(ioctl(fe->fe_fd, FE_READ_SIGNAL_STRENGTH, &fe->signal) != 0)
+        fe->signal = -2;
     else
-        mod->signal = (mod->signal * 100) / 0xFFFF;
+        fe->signal = (fe->signal * 100) / 0xFFFF;
 
-    if(ioctl(mod->fe_fd, FE_READ_SNR, &mod->snr) != 0)
-        mod->snr = -2;
+    if(ioctl(fe->fe_fd, FE_READ_SNR, &fe->snr) != 0)
+        fe->snr = -2;
     else
-        mod->snr = (mod->snr * 100) / 0xFFFF;
+        fe->snr = (fe->snr * 100) / 0xFFFF;
 
-    if(ioctl(mod->fe_fd, FE_READ_BER, &mod->ber) != 0)
-        mod->ber = -2;
+    if(ioctl(fe->fe_fd, FE_READ_BER, &fe->ber) != 0)
+        fe->ber = -2;
 
-    if(ioctl(mod->fe_fd, FE_READ_UNCORRECTED_BLOCKS, &mod->unc) != 0)
-        mod->unc = -2;
+    if(ioctl(fe->fe_fd, FE_READ_UNCORRECTED_BLOCKS, &fe->unc) != 0)
+        fe->unc = -2;
 }
 
 /*
@@ -165,17 +167,17 @@ static void fe_status(module_data_t *mod)
  *                                                888o
  */
 
-static void diseqc_setup(module_data_t *mod, int voltage, int tone)
+static void diseqc_setup(dvb_fe_t *fe, int voltage, int tone)
 {
     static struct timespec ns = { .tv_sec = 0, .tv_nsec = 15 * 1000 * 1000 };
 
-    if(ioctl(mod->fe_fd, FE_SET_TONE, SEC_TONE_OFF) != 0)
+    if(ioctl(fe->fe_fd, FE_SET_TONE, SEC_TONE_OFF) != 0)
     {
         asc_log_error(MSG("diseqc: FE_SET_TONE failed [%s]"), strerror(errno));
         astra_abort();
     }
 
-    if(ioctl(mod->fe_fd, FE_SET_VOLTAGE, voltage) != 0)
+    if(ioctl(fe->fe_fd, FE_SET_VOLTAGE, voltage) != 0)
     {
         asc_log_error(MSG("diseqc: FE_SET_VOLTAGE failed [%s]"), strerror(errno));
         astra_abort();
@@ -184,7 +186,7 @@ static void diseqc_setup(module_data_t *mod, int voltage, int tone)
     nanosleep(&ns, NULL);
 
     const int data0 = 0xF0
-                    | ((mod->diseqc - 1) << 2)
+                    | ((fe->diseqc - 1) << 2)
                     | ((voltage == SEC_VOLTAGE_18) << 1)
                     | (tone == SEC_TONE_ON);
 
@@ -194,7 +196,7 @@ static void diseqc_setup(module_data_t *mod, int voltage, int tone)
         .msg_len = 4
     };
 
-    if(ioctl(mod->fe_fd, FE_DISEQC_SEND_MASTER_CMD, &cmd) != 0)
+    if(ioctl(fe->fe_fd, FE_DISEQC_SEND_MASTER_CMD, &cmd) != 0)
     {
         asc_log_error(MSG("diseqc: FE_DISEQC_SEND_MASTER_CMD failed [%s]"), strerror(errno));
         astra_abort();
@@ -202,8 +204,8 @@ static void diseqc_setup(module_data_t *mod, int voltage, int tone)
 
     nanosleep(&ns, NULL);
 
-    fe_sec_mini_cmd_t burst = ((mod->diseqc - 1) & 1) ? SEC_MINI_B : SEC_MINI_A;
-    if(ioctl(mod->fe_fd, FE_DISEQC_SEND_BURST, burst) != 0)
+    fe_sec_mini_cmd_t burst = ((fe->diseqc - 1) & 1) ? SEC_MINI_B : SEC_MINI_A;
+    if(ioctl(fe->fe_fd, FE_DISEQC_SEND_BURST, burst) != 0)
     {
         asc_log_error(MSG("diseqc: FE_DISEQC_SEND_BURST failed [%s]"), strerror(errno));
         astra_abort();
@@ -211,7 +213,7 @@ static void diseqc_setup(module_data_t *mod, int voltage, int tone)
 
     nanosleep(&ns, NULL);
 
-    if(ioctl(mod->fe_fd, FE_SET_TONE, tone) != 0)
+    if(ioctl(fe->fe_fd, FE_SET_TONE, tone) != 0)
     {
         asc_log_error(MSG("diseqc: FE_SET_TONE failed [%s]"), strerror(errno));
         astra_abort();
@@ -227,55 +229,55 @@ static void diseqc_setup(module_data_t *mod, int voltage, int tone)
  *
  */
 
-static void fe_tune_s(module_data_t *mod)
+static void fe_tune_s(dvb_fe_t *fe)
 {
-    int freq = mod->frequency;
+    int freq = fe->frequency;
 
     int hiband = 0;
-    if(mod->lnb_slof && mod->lnb_lof2 && freq >= mod->lnb_slof)
+    if(fe->lnb_slof && fe->lnb_lof2 && freq >= fe->lnb_slof)
         hiband = 1;
 
     if(hiband)
-        freq = freq - mod->lnb_lof2;
+        freq = freq - fe->lnb_lof2;
     else
     {
-        if(freq < mod->lnb_lof1)
-            freq = mod->lnb_lof1 - freq;
+        if(freq < fe->lnb_lof1)
+            freq = fe->lnb_lof1 - freq;
         else
-            freq = freq - mod->lnb_lof1;
+            freq = freq - fe->lnb_lof1;
     }
 
     int voltage = SEC_VOLTAGE_OFF;
     int tone = SEC_TONE_OFF;
-    if(!mod->lnb_sharing)
+    if(!fe->lnb_sharing)
     {
-        voltage = mod->polarization;
-        if(hiband || mod->force_tone)
+        voltage = fe->polarization;
+        if(hiband || fe->force_tone)
             tone = SEC_TONE_ON;
 
-        if(mod->diseqc)
-            diseqc_setup(mod, voltage, tone);
+        if(fe->diseqc)
+            diseqc_setup(fe, voltage, tone);
     }
 
-    fe_clear(mod);
+    fe_clear(fe);
 
     struct dtv_properties cmdseq;
     struct dtv_property cmdlist[12];
 
-    const fe_delivery_system_t dvb_sys = (mod->type == DVB_TYPE_S) ? SYS_DVBS : SYS_DVBS2;
+    const fe_delivery_system_t dvb_sys = (fe->type == DVB_TYPE_S) ? SYS_DVBS : SYS_DVBS2;
 
     DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   dvb_sys);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_FREQUENCY,         freq);
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_SYMBOL_RATE,       mod->symbolrate);
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INNER_FEC,         mod->fec);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_SYMBOL_RATE,       fe->symbolrate);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INNER_FEC,         fe->fec);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INVERSION,         INVERSION_AUTO);
-    if(mod->modulation != FE_MODULATION_NONE)
+    if(fe->modulation != FE_MODULATION_NONE)
     {
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,    mod->modulation);
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,    fe->modulation);
     }
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_ROLLOFF,       mod->rolloff);
-    if(!mod->diseqc)
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_ROLLOFF,       fe->rolloff);
+    if(!fe->diseqc)
     {
         DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_VOLTAGE,       voltage);
         DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TONE,          tone);
@@ -283,7 +285,7 @@ static void fe_tune_s(module_data_t *mod)
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_PILOT,             PILOT_AUTO);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TUNE,              0);
 
-    if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
+    if(ioctl(fe->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
     {
         asc_log_error(MSG("FE_SET_PROPERTY DTV_TUNE failed [%s]"), strerror(errno));
         astra_abort();
@@ -299,20 +301,20 @@ static void fe_tune_s(module_data_t *mod)
  *
  */
 
-static void fe_tune_t(module_data_t *mod)
+static void fe_tune_t(dvb_fe_t *fe)
 {
-    fe_clear(mod);
+    fe_clear(fe);
 
     struct dtv_properties cmdseq;
     struct dtv_property cmdlist[12];
 
     DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   SYS_DVBT);
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_FREQUENCY,         mod->frequency);
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,        mod->modulation);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_FREQUENCY,         fe->frequency);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,        fe->modulation);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INVERSION,         INVERSION_AUTO);
 
-    switch(mod->bandwidth)
+    switch(fe->bandwidth)
     {
         case BANDWIDTH_8_MHZ:
             DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_BANDWIDTH_HZ, 8000000);
@@ -330,12 +332,12 @@ static void fe_tune_t(module_data_t *mod)
 
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_CODE_RATE_HP,      FEC_AUTO);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_CODE_RATE_LP,      FEC_AUTO);
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_GUARD_INTERVAL,    mod->guardinterval);
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TRANSMISSION_MODE, mod->transmitmode);
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_HIERARCHY,         mod->hierarchy);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_GUARD_INTERVAL,    fe->guardinterval);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TRANSMISSION_MODE, fe->transmitmode);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_HIERARCHY,         fe->hierarchy);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TUNE,              0);
 
-    if(ioctl(mod->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
+    if(ioctl(fe->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
     {
         asc_log_error(MSG("FE_SET_PROPERTY DTV_TUNE failed [%s]"), strerror(errno));
         astra_abort();
@@ -351,18 +353,18 @@ static void fe_tune_t(module_data_t *mod)
  *
  */
 
-static void fe_tune_c(module_data_t *mod)
+static void fe_tune_c(dvb_fe_t *fe)
 {
     struct dvb_frontend_parameters feparams;
 
     memset(&feparams, 0, sizeof(feparams));
-    feparams.frequency = mod->frequency;
+    feparams.frequency = fe->frequency;
     feparams.inversion = INVERSION_AUTO;
-    feparams.u.qam.symbol_rate = mod->symbolrate;
-    feparams.u.qam.modulation = mod->modulation;
-    feparams.u.qam.fec_inner = mod->fec;
+    feparams.u.qam.symbol_rate = fe->symbolrate;
+    feparams.u.qam.modulation = fe->modulation;
+    feparams.u.qam.fec_inner = fe->fec;
 
-    if(ioctl(mod->fe_fd, FE_SET_FRONTEND, &feparams) != 0)
+    if(ioctl(fe->fe_fd, FE_SET_FRONTEND, &feparams) != 0)
     {
         asc_log_error(MSG("FE_SET_FRONTEND failed [%s]"), strerror(errno));
         astra_abort();
@@ -378,62 +380,62 @@ static void fe_tune_c(module_data_t *mod)
  *
  */
 
-static void fe_tune(module_data_t *mod)
+static void fe_tune(dvb_fe_t *fe)
 {
-    switch(mod->type)
+    switch(fe->type)
     {
         case DVB_TYPE_S:
         case DVB_TYPE_S2:
-            fe_tune_s(mod);
+            fe_tune_s(fe);
             break;
         case DVB_TYPE_T:
         case DVB_TYPE_T2:
-            fe_tune_t(mod);
+            fe_tune_t(fe);
             break;
         case DVB_TYPE_C:
-            fe_tune_c(mod);
+            fe_tune_c(fe);
             break;
         default:
             astra_abort();
     }
 }
 
-void fe_open(module_data_t *mod)
+void fe_open(dvb_fe_t *fe)
 {
     char dev_name[32];
-    sprintf(dev_name, "/dev/dvb/adapter%d/frontend%d", mod->adapter, mod->device);
+    sprintf(dev_name, "/dev/dvb/adapter%d/frontend%d", fe->adapter, fe->device);
 
-    mod->fe_fd = open(dev_name, O_RDWR | O_NONBLOCK);
-    if(mod->fe_fd <= 0)
+    fe->fe_fd = open(dev_name, O_RDWR | O_NONBLOCK);
+    if(fe->fe_fd <= 0)
     {
         asc_log_error(MSG("failed to open frontend [%s]"), strerror(errno));
         astra_abort();
     }
 
-    fe_tune(mod);
+    fe_tune(fe);
 }
 
-void fe_close(module_data_t *mod)
+void fe_close(dvb_fe_t *fe)
 {
-    if(mod->fe_fd > 0)
-        close(mod->fe_fd);
+    if(fe->fe_fd > 0)
+        close(fe->fe_fd);
 }
 
-void fe_loop(module_data_t *mod, int is_data)
+void fe_loop(dvb_fe_t *fe, int is_data)
 {
     if(is_data)
     {
-        fe_event(mod);
+        fe_event(fe);
         return;
     }
 
-    if(!mod->do_retune)
-        fe_status(mod);
+    if(!fe->do_retune)
+        fe_status(fe);
 
-    if(mod->do_retune)
+    if(fe->do_retune)
     {
-        mod->do_retune = 0;
-        fe_tune(mod);
+        fe->do_retune = 0;
+        fe_tune(fe);
         sleep(2);
     }
 }

@@ -6,9 +6,12 @@
  * Licensed under the MIT license.
  */
 
-#include "../dvb.h"
+#include "ca.h"
+
 #include <fcntl.h>
 #include <netinet/in.h>
+
+#define MSG(_msg) "[dvb_input %d:%d] " _msg, ca->adapter, ca->device
 
 /* en50221: A.4.1.13 List of transport tags */
 enum
@@ -114,14 +117,14 @@ enum
 
 #define DATA_INDICATOR 0x80
 
-static void ca_tpdu_send(module_data_t *mod, uint8_t slot_id
+static void ca_tpdu_send(dvb_ca_t *ca, uint8_t slot_id
                          , uint8_t tag, const uint8_t *data, uint16_t size);
 
-static void ca_apdu_send(module_data_t *mod, uint8_t slot_id, uint16_t session_id
+static void ca_apdu_send(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id
                          , uint32_t tag, const uint8_t *data, uint16_t size);
 
-static uint32_t ca_apdu_get_tag(module_data_t *mod, uint8_t slot_id);
-static uint8_t * ca_apdu_get_buffer(module_data_t *mod, uint8_t slot_id, uint16_t *size);
+static uint32_t ca_apdu_get_tag(dvb_ca_t *ca, uint8_t slot_id);
+static uint8_t * ca_apdu_get_buffer(dvb_ca_t *ca, uint8_t slot_id, uint16_t *size);
 
 /*
  *      o       oooooooo8 oooo   oooo      oo
@@ -193,9 +196,9 @@ static uint8_t asc_1_decode(const uint8_t *data, uint16_t *size)
  * Resource Manager
  */
 
-static void resource_manager_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void resource_manager_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
-    const uint32_t tag = ca_apdu_get_tag(mod, slot_id);
+    const uint32_t tag = ca_apdu_get_tag(ca, slot_id);
     switch(tag)
     {
         case AOT_PROFILE_ENQ:
@@ -208,12 +211,12 @@ static void resource_manager_event(module_data_t *mod, uint8_t slot_id, uint16_t
                 htonl(RI_DATE_TIME),
                 htonl(RI_MMI)
             };
-            ca_apdu_send(mod, slot_id, session_id, AOT_PROFILE, (const uint8_t *)res, sizeof(res));
+            ca_apdu_send(ca, slot_id, session_id, AOT_PROFILE, (const uint8_t *)res, sizeof(res));
             break;
         }
         case AOT_PROFILE:
         {
-            ca_apdu_send(mod, slot_id, session_id, AOT_PROFILE_CHANGE, NULL, 0);
+            ca_apdu_send(ca, slot_id, session_id, AOT_PROFILE_CHANGE, NULL, 0);
             break;
         }
         default:
@@ -222,28 +225,28 @@ static void resource_manager_event(module_data_t *mod, uint8_t slot_id, uint16_t
     }
 }
 
-static void resource_manager_open(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void resource_manager_open(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
-    ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
+    ca_session_t *session = &ca->slots[slot_id].sessions[session_id];
     session->event = resource_manager_event;
-    ca_apdu_send(mod, slot_id, session_id, AOT_PROFILE_ENQ, NULL, 0);
+    ca_apdu_send(ca, slot_id, session_id, AOT_PROFILE_ENQ, NULL, 0);
 }
 
 /*
  * Application Information
  */
 
-static void application_information_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void application_information_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
     __uarg(session_id);
 
-    const uint32_t tag = ca_apdu_get_tag(mod, slot_id);
+    const uint32_t tag = ca_apdu_get_tag(ca, slot_id);
     switch(tag)
     {
         case AOT_APPLICATION_INFO:
         {
             uint16_t size = 0;
-            const uint8_t *buffer = ca_apdu_get_buffer(mod, slot_id, &size);
+            const uint8_t *buffer = ca_apdu_get_buffer(ca, slot_id, &size);
             if(size < 4)
                 break;
 
@@ -267,11 +270,11 @@ static void application_information_event(module_data_t *mod, uint8_t slot_id, u
     }
 }
 
-static void application_information_open(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void application_information_open(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
-    ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
+    ca_session_t *session = &ca->slots[slot_id].sessions[session_id];
     session->event = application_information_event;
-    ca_apdu_send(mod, slot_id, session_id, AOT_APPLICATION_INFO_ENQ, NULL, 0);
+    ca_apdu_send(ca, slot_id, session_id, AOT_APPLICATION_INFO_ENQ, NULL, 0);
 }
 
 /*
@@ -284,19 +287,19 @@ typedef struct
     uint16_t *caid_list;
 } conditional_access_data_t;
 
-static void conditional_access_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void conditional_access_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
-    const uint32_t tag = ca_apdu_get_tag(mod, slot_id);
+    const uint32_t tag = ca_apdu_get_tag(ca, slot_id);
     switch(tag)
     {
         case AOT_CA_INFO:
         {
             uint16_t size = 0;
-            const uint8_t *buffer = ca_apdu_get_buffer(mod, slot_id, &size);
+            const uint8_t *buffer = ca_apdu_get_buffer(ca, slot_id, &size);
             if(size < 2)
                 break;
 
-            conditional_access_data_t *data = mod->slots[slot_id].sessions[session_id].data;
+            conditional_access_data_t *data = ca->slots[slot_id].sessions[session_id].data;
 
             if(data->caid_list)
                 free(data->caid_list);
@@ -311,7 +314,7 @@ static void conditional_access_event(module_data_t *mod, uint8_t slot_id, uint16
                 asc_log_info(MSG("CA: Module CAID:0x%04X"), caid);
             }
 
-            mod->ca_ready = true;
+            ca->ca_ready = true;
             break;
         }
         case AOT_CA_UPDATE:
@@ -323,9 +326,9 @@ static void conditional_access_event(module_data_t *mod, uint8_t slot_id, uint16
     }
 }
 
-static void conditional_access_close(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void conditional_access_close(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
-    ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
+    ca_session_t *session = &ca->slots[slot_id].sessions[session_id];
     conditional_access_data_t *data = session->data;
 
     if(data->caid_list)
@@ -334,14 +337,14 @@ static void conditional_access_close(module_data_t *mod, uint8_t slot_id, uint16
     free(data);
 }
 
-static void conditional_access_open(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void conditional_access_open(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
-    ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
+    ca_session_t *session = &ca->slots[slot_id].sessions[session_id];
     session->event = conditional_access_event;
     session->close = conditional_access_close;
     session->data = calloc(1, sizeof(conditional_access_data_t));
 
-    ca_apdu_send(mod, slot_id, session_id, AOT_CA_INFO_ENQ, NULL, 0);
+    ca_apdu_send(ca, slot_id, session_id, AOT_CA_INFO_ENQ, NULL, 0);
 }
 
 /*
@@ -361,7 +364,7 @@ static int64_t utime(void)
     return (int64_t)((ctv.tv_sec * 1000000) + ctv.tv_usec);
 }
 
-static void date_time_send(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void date_time_send(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
     time_t ct = time(NULL);
     struct tm tm_gmtime;
@@ -395,27 +398,27 @@ static void date_time_send(module_data_t *mod, uint8_t slot_id, uint16_t session
     buffer[5] = (gmtoff >> 8) & 0xFF;
     buffer[6] = (gmtoff     ) & 0xFF;
 
-    ca_apdu_send(mod, slot_id, session_id, AOT_DATE_TIME, buffer, 7);
+    ca_apdu_send(ca, slot_id, session_id, AOT_DATE_TIME, buffer, 7);
 
-    date_time_data_t *dt = mod->slots[slot_id].sessions[session_id].data;
+    date_time_data_t *dt = ca->slots[slot_id].sessions[session_id].data;
     dt->last_utime = utime();
 }
 
-static void date_time_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void date_time_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
-    const uint32_t tag = ca_apdu_get_tag(mod, slot_id);
+    const uint32_t tag = ca_apdu_get_tag(ca, slot_id);
     switch(tag)
     {
         case AOT_DATE_TIME_ENQ:
         {
             uint16_t size = 0;
-            const uint8_t *buffer = ca_apdu_get_buffer(mod, slot_id, &size);
+            const uint8_t *buffer = ca_apdu_get_buffer(ca, slot_id, &size);
 
-            date_time_data_t *data = mod->slots[slot_id].sessions[session_id].data;
+            date_time_data_t *data = ca->slots[slot_id].sessions[session_id].data;
 
             data->interval = (size > 0) ? buffer[0] : 0;
 
-            date_time_send(mod, slot_id, session_id);
+            date_time_send(ca, slot_id, session_id);
             break;
         }
         default:
@@ -424,29 +427,29 @@ static void date_time_event(module_data_t *mod, uint8_t slot_id, uint16_t sessio
     }
 }
 
-static void date_time_manage(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void date_time_manage(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
-    date_time_data_t *data = mod->slots[slot_id].sessions[session_id].data;
+    date_time_data_t *data = ca->slots[slot_id].sessions[session_id].data;
 
     if((data->interval > 0) && (utime() > (data->last_utime + data->interval * 1000000)))
-        date_time_send(mod, slot_id, session_id);
+        date_time_send(ca, slot_id, session_id);
 }
 
-static void date_time_close(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void date_time_close(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
-    ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
+    ca_session_t *session = &ca->slots[slot_id].sessions[session_id];
     free(session->data);
 }
 
-static void date_time_open(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void date_time_open(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
-    ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
+    ca_session_t *session = &ca->slots[slot_id].sessions[session_id];
     session->event = date_time_event;
     session->manage = date_time_manage;
     session->close = date_time_close;
     session->data = calloc(1, sizeof(date_time_data_t));
 
-    date_time_send(mod, slot_id, session_id);
+    date_time_send(ca, slot_id, session_id);
 }
 
 /*
@@ -546,10 +549,10 @@ static void mmi_free(mmi_data_t *mmi)
     }
 }
 
-static void mmi_display_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void mmi_display_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
     uint16_t size = 0;
-    const uint8_t *buffer = ca_apdu_get_buffer(mod, slot_id, &size);
+    const uint8_t *buffer = ca_apdu_get_buffer(ca, slot_id, &size);
     if(!size)
         return;
 
@@ -568,17 +571,17 @@ static void mmi_display_event(module_data_t *mod, uint8_t slot_id, uint16_t sess
     uint8_t response[2];
     response[0] = DRI_MMI_MODE_ACK;
     response[1] = MM_HIGH_LEVEL;
-    ca_apdu_send(mod, slot_id, session_id, AOT_DISPLAY_REPLY, response, 2);
+    ca_apdu_send(ca, slot_id, session_id, AOT_DISPLAY_REPLY, response, 2);
 }
 
-static void mmi_enq_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void mmi_enq_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
     uint16_t size = 0;
-    const uint8_t *buffer = ca_apdu_get_buffer(mod, slot_id, &size);
+    const uint8_t *buffer = ca_apdu_get_buffer(ca, slot_id, &size);
     if(!size)
         return;
 
-    mmi_data_t *mmi = mod->slots[slot_id].sessions[session_id].data;
+    mmi_data_t *mmi = ca->slots[slot_id].sessions[session_id].data;
     mmi_free(mmi);
     mmi->object_type = EN50221_MMI_ENQ;
     mmi->object.enq.blind = (buffer[0] & 0x01) ? true : false;
@@ -588,7 +591,7 @@ static void mmi_enq_event(module_data_t *mod, uint8_t slot_id, uint16_t session_
     mmi->object.enq.text[size] = '\0';
 }
 
-static uint16_t mmi_get_text(module_data_t *mod
+static uint16_t mmi_get_text(dvb_ca_t *ca
                              , const uint8_t *buffer, uint16_t size
                              , char **text)
 {
@@ -614,36 +617,36 @@ static uint16_t mmi_get_text(module_data_t *mod
     return skip;
 }
 
-static void mmi_menu_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void mmi_menu_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
     uint16_t size = 0;
-    const uint8_t *buffer = ca_apdu_get_buffer(mod, slot_id, &size);
+    const uint8_t *buffer = ca_apdu_get_buffer(ca, slot_id, &size);
     if(!size)
         return;
 
-    mmi_data_t *mmi = mod->slots[slot_id].sessions[session_id].data;
+    mmi_data_t *mmi = ca->slots[slot_id].sessions[session_id].data;
     mmi_free(mmi);
 
-    const uint32_t tag = ca_apdu_get_tag(mod, slot_id);
+    const uint32_t tag = ca_apdu_get_tag(ca, slot_id);
     mmi->object_type = (tag == AOT_MENU_LAST) ? EN50221_MMI_MENU : EN50221_MMI_LIST;
 
     uint16_t skip = 1; /* choice_nb */
 
     if(skip < size)
     {
-        skip += mmi_get_text(mod, &buffer[skip], size - skip, &mmi->object.menu.title);
+        skip += mmi_get_text(ca, &buffer[skip], size - skip, &mmi->object.menu.title);
         asc_log_debug(MSG("CA: MMI: Title: %s"), mmi->object.menu.title);
     }
 
     if(skip < size)
     {
-        skip += mmi_get_text(mod, &buffer[skip], size - skip, &mmi->object.menu.subtitle);
+        skip += mmi_get_text(ca, &buffer[skip], size - skip, &mmi->object.menu.subtitle);
         asc_log_debug(MSG("CA: MMI: Subtitle: %s"), mmi->object.menu.subtitle);
     }
 
     if(skip < size)
     {
-        skip += mmi_get_text(mod, &buffer[skip], size - skip, &mmi->object.menu.bottom);
+        skip += mmi_get_text(ca, &buffer[skip], size - skip, &mmi->object.menu.bottom);
         asc_log_debug(MSG("CA: MMI: Bottom: %s"), mmi->object.menu.bottom);
     }
 
@@ -651,28 +654,28 @@ static void mmi_menu_event(module_data_t *mod, uint8_t slot_id, uint16_t session
     while(skip < size)
     {
         char *text;
-        skip += mmi_get_text(mod, &buffer[skip], size - skip, &text);
+        skip += mmi_get_text(ca, &buffer[skip], size - skip, &text);
         asc_log_debug(MSG("CA: MMI: Choice: %s"), mmi->object.menu.title);
 
         asc_list_insert_tail(mmi->object.menu.choices, text);
     }
 }
 
-static void mmi_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void mmi_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
     asc_log_debug(MSG("CA: MMI: event"));
-    const uint32_t tag = ca_apdu_get_tag(mod, slot_id);
+    const uint32_t tag = ca_apdu_get_tag(ca, slot_id);
     switch(tag)
     {
         case AOT_DISPLAY_CONTROL:
-            mmi_display_event(mod, slot_id, session_id);
+            mmi_display_event(ca, slot_id, session_id);
             break;
         case AOT_ENQ:
-            mmi_enq_event(mod, slot_id, session_id);
+            mmi_enq_event(ca, slot_id, session_id);
             break;
         case AOT_LIST_LAST:
         case AOT_MENU_LAST:
-            mmi_menu_event(mod, slot_id, session_id);
+            mmi_menu_event(ca, slot_id, session_id);
             break;
         case AOT_CLOSE_MMI:
         {
@@ -681,7 +684,7 @@ static void mmi_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
             response[1] = 0x02;
             response[2] = (session_id >> 8) & 0xFF;
             response[3] = (session_id     ) & 0xFF;
-            ca_tpdu_send(mod, slot_id, TT_DATA_LAST, response, 4);
+            ca_tpdu_send(ca, slot_id, TT_DATA_LAST, response, 4);
             break;
         }
         default:
@@ -690,16 +693,16 @@ static void mmi_event(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
     }
 }
 
-static void mmi_close(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void mmi_close(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
-    ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
+    ca_session_t *session = &ca->slots[slot_id].sessions[session_id];
     mmi_free(session->data);
     free(session->data);
 }
 
-static void mmi_open(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
+static void mmi_open(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
-    ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
+    ca_session_t *session = &ca->slots[slot_id].sessions[session_id];
     session->event = mmi_event;
     session->close = mmi_close;
     session->data = calloc(1, sizeof(mmi_data_t));
@@ -714,9 +717,9 @@ static void mmi_open(module_data_t *mod, uint8_t slot_id, uint16_t session_id)
  *
  */
 
-static uint32_t ca_apdu_get_tag(module_data_t *mod, uint8_t slot_id)
+static uint32_t ca_apdu_get_tag(dvb_ca_t *ca, uint8_t slot_id)
 {
-    ca_slot_t *slot = &mod->slots[slot_id];
+    ca_slot_t *slot = &ca->slots[slot_id];
 
     if(slot->buffer_size >= SPDU_HEADER_SIZE + APDU_TAG_SIZE)
     {
@@ -727,9 +730,9 @@ static uint32_t ca_apdu_get_tag(module_data_t *mod, uint8_t slot_id)
     return 0;
 }
 
-static uint8_t * ca_apdu_get_buffer(module_data_t *mod, uint8_t slot_id, uint16_t *size)
+static uint8_t * ca_apdu_get_buffer(dvb_ca_t *ca, uint8_t slot_id, uint16_t *size)
 {
-    ca_slot_t *slot = &mod->slots[slot_id];
+    ca_slot_t *slot = &ca->slots[slot_id];
     if(slot->buffer_size < SPDU_HEADER_SIZE + APDU_TAG_SIZE + 1)
     {
         *size = 0;
@@ -740,7 +743,7 @@ static uint8_t * ca_apdu_get_buffer(module_data_t *mod, uint8_t slot_id, uint16_
     return &buffer[skip];
 }
 
-static void ca_apdu_send(module_data_t *mod, uint8_t slot_id, uint16_t session_id
+static void ca_apdu_send(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id
                          , uint32_t tag, const uint8_t *data, uint16_t size)
 {
     uint8_t *buffer = malloc(size + SPDU_HEADER_SIZE + 12);
@@ -775,12 +778,12 @@ static void ca_apdu_send(module_data_t *mod, uint8_t slot_id, uint16_t session_i
         const uint32_t block_size = size - skip;
         if(block_size > MAX_TPDU_SIZE)
         {
-            ca_tpdu_send(mod, slot_id, TT_DATA_MORE, &buffer[skip], MAX_TPDU_SIZE);
+            ca_tpdu_send(ca, slot_id, TT_DATA_MORE, &buffer[skip], MAX_TPDU_SIZE);
             skip += MAX_TPDU_SIZE;
         }
         else
         {
-            ca_tpdu_send(mod, slot_id, TT_DATA_LAST, &buffer[skip], block_size);
+            ca_tpdu_send(ca, slot_id, TT_DATA_LAST, &buffer[skip], block_size);
             skip += block_size;
             break;
         }
@@ -798,9 +801,9 @@ static void ca_apdu_send(module_data_t *mod, uint8_t slot_id, uint16_t session_i
  *
  */
 
-static void ca_spdu_open(module_data_t *mod, uint8_t slot_id)
+static void ca_spdu_open(dvb_ca_t *ca, uint8_t slot_id)
 {
-    ca_slot_t *slot = &mod->slots[slot_id];
+    ca_slot_t *slot = &ca->slots[slot_id];
 
     uint16_t session_id = 0;
     ca_session_t *session = NULL;
@@ -845,18 +848,18 @@ static void ca_spdu_open(module_data_t *mod, uint8_t slot_id)
     response[7] = session_id >> 8;
     response[8] = session_id & 0xFF;
 
-    ca_tpdu_send(mod, slot_id, TT_DATA_LAST, response, 9);
+    ca_tpdu_send(ca, slot_id, TT_DATA_LAST, response, 9);
 
     slot->pending_session_id = session_id;
 }
 
-static void ca_spdu_close(module_data_t *mod, uint8_t slot_id)
+static void ca_spdu_close(dvb_ca_t *ca, uint8_t slot_id)
 {
-    ca_slot_t *slot = &mod->slots[slot_id];
+    ca_slot_t *slot = &ca->slots[slot_id];
     const uint16_t session_id = (slot->buffer[2] << 8) | slot->buffer[3];
 
     if(slot->sessions[session_id].close)
-        slot->sessions[session_id].close(mod, slot_id, session_id);
+        slot->sessions[session_id].close(ca, slot_id, session_id);
     memset(&slot->sessions[session_id], 0, sizeof(ca_session_t));
 
     uint8_t response[8];
@@ -866,12 +869,12 @@ static void ca_spdu_close(module_data_t *mod, uint8_t slot_id)
     response[3] = session_id >> 8;
     response[4] = session_id & 0xFF;
 
-    ca_tpdu_send(mod, slot_id, TT_DATA_LAST, response, 5);
+    ca_tpdu_send(ca, slot_id, TT_DATA_LAST, response, 5);
 }
 
-static void ca_spdu_response_open(module_data_t *mod, uint8_t slot_id)
+static void ca_spdu_response_open(dvb_ca_t *ca, uint8_t slot_id)
 {
-    ca_slot_t *slot = &mod->slots[slot_id];
+    ca_slot_t *slot = &ca->slots[slot_id];
 
     const uint16_t session_id = (slot->buffer[7] << 8) | slot->buffer[8];
     ca_session_t *session = &slot->sessions[session_id];
@@ -892,19 +895,19 @@ static void ca_spdu_response_open(module_data_t *mod, uint8_t slot_id)
     switch(resource_id)
     {
         case RI_RESOURCE_MANAGER:
-            resource_manager_open(mod, slot_id, session_id);
+            resource_manager_open(ca, slot_id, session_id);
             break;
         case RI_APPLICATION_INFORMATION:
-            application_information_open(mod, slot_id, session_id);
+            application_information_open(ca, slot_id, session_id);
             break;
         case RI_CONDITIONAL_ACCESS_SUPPORT:
-            conditional_access_open(mod, slot_id, session_id);
+            conditional_access_open(ca, slot_id, session_id);
             break;
         case RI_DATE_TIME:
-            date_time_open(mod, slot_id, session_id);
+            date_time_open(ca, slot_id, session_id);
             break;
         case RI_MMI:
-            mmi_open(mod, slot_id, session_id);
+            mmi_open(ca, slot_id, session_id);
             break;
         case RI_HOST_CONTROL:
         default:
@@ -915,9 +918,9 @@ static void ca_spdu_response_open(module_data_t *mod, uint8_t slot_id)
     }
 }
 
-static void ca_spdu_event(module_data_t *mod, uint8_t slot_id)
+static void ca_spdu_event(dvb_ca_t *ca, uint8_t slot_id)
 {
-    ca_slot_t *slot = &mod->slots[slot_id];
+    ca_slot_t *slot = &ca->slots[slot_id];
 
     switch(slot->buffer[0])
     {
@@ -927,28 +930,28 @@ static void ca_spdu_event(module_data_t *mod, uint8_t slot_id)
                 break;
             const uint16_t session_id = (slot->buffer[2] << 8) | slot->buffer[3];
             if(slot->sessions[session_id].event)
-                slot->sessions[session_id].event(mod, slot_id, session_id);
+                slot->sessions[session_id].event(ca, slot_id, session_id);
             break;
         }
         case ST_OPEN_SESSION_REQUEST:
         {
             if(slot->buffer_size != 6 || slot->buffer[1] != 0x04)
                 break;
-            ca_spdu_open(mod, slot_id);
+            ca_spdu_open(ca, slot_id);
             break;
         }
         case ST_CLOSE_SESSION_REQUEST:
         {
             if(slot->buffer_size != 4 || slot->buffer[1] != 0x02)
                 break;
-            ca_spdu_close(mod, slot_id);
+            ca_spdu_close(ca, slot_id);
             break;
         }
         case ST_CREATE_SESSION_RESPONSE:
         {
             if(slot->buffer_size != 9 || slot->buffer[1] != 0x07)
                 break;
-            ca_spdu_response_open(mod, slot_id);
+            ca_spdu_response_open(ca, slot_id);
             break;
         }
         case ST_CLOSE_SESSION_RESPONSE:
@@ -957,7 +960,7 @@ static void ca_spdu_event(module_data_t *mod, uint8_t slot_id)
                 break;
             const uint16_t session_id = (slot->buffer[3] << 8) | slot->buffer[4];
             if(slot->sessions[session_id].close)
-                slot->sessions[session_id].close(mod, slot_id, session_id);
+                slot->sessions[session_id].close(ca, slot_id, session_id);
             slot->sessions[session_id].resource_id = 0;
             break;
         }
@@ -976,9 +979,9 @@ static void ca_spdu_event(module_data_t *mod, uint8_t slot_id)
  *
  */
 
-static void ca_tpdu_write(module_data_t *mod, uint8_t slot_id)
+static void ca_tpdu_write(dvb_ca_t *ca, uint8_t slot_id)
 {
-    ca_slot_t *slot = &mod->slots[slot_id];
+    ca_slot_t *slot = &ca->slots[slot_id];
 
     if(slot->is_busy)
     {
@@ -996,7 +999,7 @@ static void ca_tpdu_write(module_data_t *mod, uint8_t slot_id)
     ca_tpdu_message_t *message = asc_list_data(slot->queue);
     asc_list_remove_current(slot->queue);
 
-    if(write(mod->ca_fd, message->buffer, message->buffer_size) != (ssize_t)message->buffer_size)
+    if(write(ca->ca_fd, message->buffer, message->buffer_size) != (ssize_t)message->buffer_size)
         asc_log_error(MSG("CA: Slot %d write failed"), slot_id);
     else
         slot->is_busy = true;
@@ -1004,10 +1007,10 @@ static void ca_tpdu_write(module_data_t *mod, uint8_t slot_id)
     free(message);
 }
 
-static void ca_tpdu_send(module_data_t *mod, uint8_t slot_id
+static void ca_tpdu_send(dvb_ca_t *ca, uint8_t slot_id
                          , uint8_t tag, const uint8_t *data, uint16_t size)
 {
-    ca_slot_t *slot = &mod->slots[slot_id];
+    ca_slot_t *slot = &ca->slots[slot_id];
 
     ca_tpdu_message_t *m = malloc(sizeof(ca_tpdu_message_t));
     uint8_t *buffer = m->buffer;
@@ -1068,12 +1071,12 @@ static void ca_tpdu_send(module_data_t *mod, uint8_t slot_id
     if(slot->is_busy)
         return;
 
-    ca_tpdu_write(mod, slot_id);
+    ca_tpdu_write(ca, slot_id);
 }
 
-static void ca_tpdu_event(module_data_t *mod)
+static void ca_tpdu_event(dvb_ca_t *ca)
 {
-    int buffer_size = read(mod->ca_fd, mod->ca_buffer, MAX_TPDU_SIZE);
+    int buffer_size = read(ca->ca_fd, ca->ca_buffer, MAX_TPDU_SIZE);
     if(buffer_size < 5)
     {
         if(buffer_size == -1)
@@ -1084,20 +1087,20 @@ static void ca_tpdu_event(module_data_t *mod)
         return;
     }
 
-    const uint8_t slot_id = mod->ca_buffer[1] - 1;
-    const uint8_t tag = mod->ca_buffer[2];
+    const uint8_t slot_id = ca->ca_buffer[1] - 1;
+    const uint8_t tag = ca->ca_buffer[2];
 
-    if(slot_id >= mod->slots_num)
+    if(slot_id >= ca->slots_num)
     {
         asc_log_error(MSG("CA: read failed. wrong slot id %d"), slot_id);
         return;
     }
 
-    ca_slot_t *slot = &mod->slots[slot_id];
+    ca_slot_t *slot = &ca->slots[slot_id];
     slot->is_busy = false;
-    const bool has_data = (   (mod->ca_buffer[buffer_size - 4] == TT_SB)
-                           && (mod->ca_buffer[buffer_size - 3] == 2)
-                           && (mod->ca_buffer[buffer_size - 1] & DATA_INDICATOR));
+    const bool has_data = (   (ca->ca_buffer[buffer_size - 4] == TT_SB)
+                           && (ca->ca_buffer[buffer_size - 3] == 2)
+                           && (ca->ca_buffer[buffer_size - 1] & DATA_INDICATOR));
 
     switch(tag)
     {
@@ -1112,7 +1115,7 @@ static void ca_tpdu_event(module_data_t *mod)
         {
             uint16_t buffer_skip = 3;
             uint16_t message_size = 0;
-            buffer_skip += asc_1_decode(&mod->ca_buffer[3], &message_size);
+            buffer_skip += asc_1_decode(&ca->ca_buffer[3], &message_size);
             if(message_size <= 1)
                 break;
 
@@ -1120,13 +1123,13 @@ static void ca_tpdu_event(module_data_t *mod)
             --message_size;
 
             memcpy(&slot->buffer[slot->buffer_size]
-                   , &mod->ca_buffer[buffer_skip]
+                   , &ca->ca_buffer[buffer_skip]
                    , message_size);
             slot->buffer_size += message_size;
 
             if(tag == TT_DATA_LAST)
             {
-                ca_spdu_event(mod, slot_id);
+                ca_spdu_event(ca, slot_id);
                 slot->buffer_size = 0;
             }
             break;
@@ -1142,7 +1145,7 @@ static void ca_tpdu_event(module_data_t *mod)
         return;
 
     if(asc_list_size(slot->queue) > 0)
-        ca_tpdu_write(mod, slot_id);
+        ca_tpdu_write(ca, slot_id);
 
     if(slot->pending_session_id)
     {
@@ -1153,19 +1156,19 @@ static void ca_tpdu_event(module_data_t *mod)
         switch(resource_id)
         {
             case RI_RESOURCE_MANAGER:
-                resource_manager_open(mod, slot_id, session_id);
+                resource_manager_open(ca, slot_id, session_id);
                 break;
             case RI_APPLICATION_INFORMATION:
-                application_information_open(mod, slot_id, session_id);
+                application_information_open(ca, slot_id, session_id);
                 break;
             case RI_CONDITIONAL_ACCESS_SUPPORT:
-                conditional_access_open(mod, slot_id, session_id);
+                conditional_access_open(ca, slot_id, session_id);
                 break;
             case RI_DATE_TIME:
-                date_time_open(mod, slot_id, session_id);
+                date_time_open(ca, slot_id, session_id);
                 break;
             case RI_MMI:
-                mmi_open(mod, slot_id, session_id);
+                mmi_open(ca, slot_id, session_id);
                 break;
             case RI_HOST_CONTROL:
             default:
@@ -1177,7 +1180,7 @@ static void ca_tpdu_event(module_data_t *mod)
     }
 
     if(has_data)
-        ca_tpdu_send(mod, slot_id, TT_RCV, NULL, 0);
+        ca_tpdu_send(ca, slot_id, TT_RCV, NULL, 0);
 }
 
 /*
@@ -1189,11 +1192,11 @@ static void ca_tpdu_event(module_data_t *mod)
  *
  */
 
-static void ca_slot_reset(module_data_t *mod, uint8_t slot_id)
+static void ca_slot_reset(dvb_ca_t *ca, uint8_t slot_id)
 {
-    ca_slot_t *slot = &mod->slots[slot_id];
+    ca_slot_t *slot = &ca->slots[slot_id];
 
-    if(ioctl(mod->ca_fd, CA_RESET, 1 << slot_id) != 0)
+    if(ioctl(ca->ca_fd, CA_RESET, 1 << slot_id) != 0)
     {
         asc_log_error(MSG("CA: Slot %d CA_RESET failed"));
         return;
@@ -1215,21 +1218,21 @@ static void ca_slot_reset(module_data_t *mod, uint8_t slot_id)
         if(session->resource_id)
         {
             if(session->close)
-                session->close(mod, slot_id, i);
+                session->close(ca, slot_id, i);
             memset(session, 0, sizeof(ca_session_t));
         }
     }
 }
 
-static void ca_slot_loop(module_data_t *mod)
+static void ca_slot_loop(dvb_ca_t *ca)
 {
-    for(uint8_t slot_id = 0; slot_id < mod->slots_num; ++slot_id)
+    for(uint8_t slot_id = 0; slot_id < ca->slots_num; ++slot_id)
     {
-        ca_slot_t *slot = &mod->slots[slot_id];
+        ca_slot_t *slot = &ca->slots[slot_id];
 
         ca_slot_info_t slot_info;
         slot_info.num = slot_id;
-        if(ioctl(mod->ca_fd, CA_GET_SLOT_INFO, &slot_info) != 0)
+        if(ioctl(ca->ca_fd, CA_GET_SLOT_INFO, &slot_info) != 0)
         {
             asc_log_error(MSG("CA: Slot %d CA_GET_SLOT_INFO failed"), slot_id);
             continue;
@@ -1240,7 +1243,7 @@ static void ca_slot_loop(module_data_t *mod)
             if(slot->is_active)
             {
                 asc_log_warning(MSG("CA: Slot %d is not ready"), slot_id);
-                ca_slot_reset(mod, slot_id);
+                ca_slot_reset(ca, slot_id);
             }
             continue;
         }
@@ -1249,12 +1252,12 @@ static void ca_slot_loop(module_data_t *mod)
             if(!slot->is_busy)
             {
                 asc_log_info(MSG("CA: Slot %d ready to go"), slot_id);
-                ca_tpdu_send(mod, slot_id, TT_CREATE_TC, NULL, 0);
+                ca_tpdu_send(ca, slot_id, TT_CREATE_TC, NULL, 0);
             }
             else
             {
                 asc_log_warning(MSG("CA: Slot %d timeout. reset slot"), slot_id);
-                ca_slot_reset(mod, slot_id);
+                ca_slot_reset(ca, slot_id);
             }
         }
 
@@ -1262,16 +1265,16 @@ static void ca_slot_loop(module_data_t *mod)
         {
             ca_session_t *session = &slot->sessions[session_id];
             if(session->resource_id && session->manage && !slot->is_busy)
-                session->manage(mod, slot_id, session_id);
+                session->manage(ca, slot_id, session_id);
         }
 
         if(!slot->is_busy)
         {
-            ca_tpdu_send(mod, slot_id, TT_DATA_LAST, NULL, 0);
+            ca_tpdu_send(ca, slot_id, TT_DATA_LAST, NULL, 0);
             if(!slot->is_busy)
             {
                 asc_log_error(MSG("CA: Slot %d failed to send poll command. reset slot"), slot_id);
-                ca_slot_reset(mod, slot_id);
+                ca_slot_reset(ca, slot_id);
             }
         }
     }
@@ -1341,9 +1344,9 @@ static uint16_t ca_pmt_copy_desc(const uint8_t *src, uint16_t size, uint8_t *dst
     }
 }
 
-static void ca_pmt_build(module_data_t *mod, ca_pmt_t *ca_pmt, mpegts_psi_t *pmt)
+static void ca_pmt_build(dvb_ca_t *ca, ca_pmt_t *ca_pmt, mpegts_psi_t *pmt)
 {
-    __uarg(mod);
+    __uarg(ca);
 
     ca_pmt->buffer[0] = 0x00;
     ca_pmt->buffer[1] = (ca_pmt->pnr >> 8);
@@ -1374,7 +1377,7 @@ static void ca_pmt_build(module_data_t *mod, ca_pmt_t *ca_pmt, mpegts_psi_t *pmt
     ca_pmt->buffer_size = ca_size;
 }
 
-static void ca_pmt_send(module_data_t *mod, ca_pmt_t *ca_pmt, uint8_t list_manage, uint8_t cmd)
+static void ca_pmt_send(dvb_ca_t *ca, ca_pmt_t *ca_pmt, uint8_t list_manage, uint8_t cmd)
 {
     ca_pmt->buffer[0] = list_manage;
 
@@ -1393,23 +1396,23 @@ static void ca_pmt_send(module_data_t *mod, ca_pmt_t *ca_pmt, uint8_t list_manag
     }
 
     // send ca_pmt
-    for(int slot_id = 0; slot_id < mod->slots_num; ++slot_id)
+    for(int slot_id = 0; slot_id < ca->slots_num; ++slot_id)
     {
         if(list_manage == CA_PMT_LM_ADD)
         {
-            if(mod->slots[slot_id].is_first_ca_pmt)
+            if(ca->slots[slot_id].is_first_ca_pmt)
             {
                 ca_pmt->buffer[0] = CA_PMT_LM_ONLY;
-                mod->slots[slot_id].is_first_ca_pmt = false;
+                ca->slots[slot_id].is_first_ca_pmt = false;
             }
         }
 
         for(int session_id = 0; session_id < MAX_SESSIONS; ++session_id)
         {
-            ca_session_t *session = &mod->slots[slot_id].sessions[session_id];
+            ca_session_t *session = &ca->slots[slot_id].sessions[session_id];
             if(session->resource_id == RI_CONDITIONAL_ACCESS_SUPPORT)
             {
-                ca_apdu_send(mod, slot_id, session_id, AOT_CA_PMT
+                ca_apdu_send(ca, slot_id, session_id, AOT_CA_PMT
                              , ca_pmt->buffer, ca_pmt->buffer_size);
             }
         }
@@ -1420,7 +1423,7 @@ static void ca_pmt_send(module_data_t *mod, ca_pmt_t *ca_pmt, uint8_t list_manag
 
 static void on_pat(void *arg, mpegts_psi_t *psi)
 {
-    module_data_t *mod = arg;
+    dvb_ca_t *ca = arg;
 
     // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
@@ -1442,8 +1445,8 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 
     psi->crc32 = crc32;
 
-    memset(mod->stream, 0, sizeof(mod->stream));
-    mod->stream[0] = MPEGTS_PACKET_PAT;
+    memset(ca->stream, 0, sizeof(ca->stream));
+    ca->stream[0] = MPEGTS_PACKET_PAT;
 
     const uint8_t *pointer = PAT_ITEMS_FIRST(psi);
     while(!PAT_ITEMS_EOL(psi, pointer))
@@ -1453,7 +1456,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         if(pnr)
         {
             const uint16_t pid = PAT_ITEMS_GET_PID(psi, pointer);
-            mod->stream[pid] = MPEGTS_PACKET_PMT;
+            ca->stream[pid] = MPEGTS_PACKET_PMT;
         }
 
         PAT_ITEMS_NEXT(psi, pointer);
@@ -1462,7 +1465,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 
 static void on_pmt(void *arg, mpegts_psi_t *psi)
 {
-    module_data_t *mod = arg;
+    dvb_ca_t *ca = arg;
 
     const uint32_t crc32 = PSI_GET_CRC32(psi);
 
@@ -1479,9 +1482,9 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     bool is_update = false;
 
     ca_pmt_t *ca_pmt = NULL;
-    asc_list_for(mod->ca_pmt_list)
+    asc_list_for(ca->ca_pmt_list)
     {
-        ca_pmt = asc_list_data(mod->ca_pmt_list);
+        ca_pmt = asc_list_data(ca->ca_pmt_list);
         if(ca_pmt->pnr == pnr)
         {
             if(ca_pmt->crc == crc32)
@@ -1494,8 +1497,8 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
             }
 
             ca_pmt->crc = crc32;
-            ca_pmt_build(mod, ca_pmt, psi);
-            ca_pmt_send(mod, ca_pmt
+            ca_pmt_build(ca, ca_pmt, psi);
+            ca_pmt_send(ca, ca_pmt
                         , (is_update == false) ? CA_PMT_LM_ADD : CA_PMT_LM_UPDATE
                         , CA_PMT_CMD_OK_DESCRAMBLING);
             return;
@@ -1503,16 +1506,16 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     }
 }
 
-void ca_on_ts(module_data_t *mod, const uint8_t *ts)
+void ca_on_ts(dvb_ca_t *ca, const uint8_t *ts)
 {
     const uint16_t pid = TS_PID(ts);
-    switch(mod->stream[pid])
+    switch(ca->stream[pid])
     {
         case MPEGTS_PACKET_PAT:
-            mpegts_psi_mux(mod->pat, ts, on_pat, mod);
+            mpegts_psi_mux(ca->pat, ts, on_pat, ca);
             return;
         case MPEGTS_PACKET_PMT:
-            mpegts_psi_mux(mod->pmt, ts, on_pmt, mod);
+            mpegts_psi_mux(ca->pmt, ts, on_pmt, ca);
             return;
         default:
             return;
@@ -1528,12 +1531,12 @@ void ca_on_ts(module_data_t *mod, const uint8_t *ts)
  *
  */
 
-void ca_append_pnr(module_data_t *mod, uint16_t pnr)
+void ca_append_pnr(dvb_ca_t *ca, uint16_t pnr)
 {
     ca_pmt_t *ca_pmt;
-    asc_list_for(mod->ca_pmt_list)
+    asc_list_for(ca->ca_pmt_list)
     {
-        ca_pmt = asc_list_data(mod->ca_pmt_list);
+        ca_pmt = asc_list_data(ca->ca_pmt_list);
         if(ca_pmt->pnr == pnr)
             return;
     }
@@ -1541,57 +1544,57 @@ void ca_append_pnr(module_data_t *mod, uint16_t pnr)
     ca_pmt->pnr = pnr;
     ca_pmt->crc = 0;
     ca_pmt->buffer_size = 0;
-    asc_list_insert_tail(mod->ca_pmt_list, ca_pmt);
+    asc_list_insert_tail(ca->ca_pmt_list, ca_pmt);
 }
 
-void ca_remove_pnr(module_data_t *mod, uint16_t pnr)
+void ca_remove_pnr(dvb_ca_t *ca, uint16_t pnr)
 {
     ca_pmt_t *ca_pmt;
-    asc_list_for(mod->ca_pmt_list)
+    asc_list_for(ca->ca_pmt_list)
     {
-        ca_pmt = asc_list_data(mod->ca_pmt_list);
+        ca_pmt = asc_list_data(ca->ca_pmt_list);
         if(ca_pmt->pnr == pnr)
         {
             if(ca_pmt->buffer_size > 0)
-                ca_pmt_send(mod, ca_pmt, CA_PMT_LM_UPDATE, CA_PMT_CMD_NOT_SELECTED);
+                ca_pmt_send(ca, ca_pmt, CA_PMT_LM_UPDATE, CA_PMT_CMD_NOT_SELECTED);
 
             free(ca_pmt);
-            asc_list_remove_current(mod->ca_pmt_list);
+            asc_list_remove_current(ca->ca_pmt_list);
             return;
         }
     }
 }
 
-void ca_open(module_data_t *mod)
+void ca_open(dvb_ca_t *ca)
 {
     char dev_name[32];
-    sprintf(dev_name, "/dev/dvb/adapter%d/ca%d", mod->adapter, mod->device);
+    sprintf(dev_name, "/dev/dvb/adapter%d/ca%d", ca->adapter, ca->device);
 
-    mod->ca_fd = open(dev_name, O_RDWR | O_NONBLOCK);
-    if(mod->ca_fd <= 0)
+    ca->ca_fd = open(dev_name, O_RDWR | O_NONBLOCK);
+    if(ca->ca_fd <= 0)
     {
         if(errno != ENOENT)
             asc_log_error(MSG("CA: failed to open ca [%s]"), strerror(errno));
-        mod->ca_fd = 0;
+        ca->ca_fd = 0;
         return;
     }
 
     ca_caps_t caps;
     memset(&caps, 0, sizeof(ca_caps_t));
-    if(ioctl(mod->ca_fd, CA_GET_CAP, &caps) != 0)
+    if(ioctl(ca->ca_fd, CA_GET_CAP, &caps) != 0)
     {
         asc_log_error(MSG("CA: CA_GET_CAP failed [%s]"), strerror(errno));
-        ca_close(mod);
+        ca_close(ca);
         return;
     }
 
     asc_log_info(MSG("CA: Slots:%d"), caps.slot_num);
     if(!caps.slot_num)
     {
-        ca_close(mod);
+        ca_close(ca);
         return;
     }
-    mod->slots_num = caps.slot_num;
+    ca->slots_num = caps.slot_num;
 
     if(caps.slot_type & CA_CI)
         asc_log_info(MSG("CA:   CI high level interface"));
@@ -1616,40 +1619,40 @@ void ca_open(module_data_t *mod)
     if(!(caps.slot_type & CA_CI_LINK))
     {
         asc_log_error(MSG("CI link layer level interface is not supported"));
-        ca_close(mod);
+        ca_close(ca);
         return;
     }
 
-    mod->slots = calloc(caps.slot_num, sizeof(ca_slot_t));
+    ca->slots = calloc(caps.slot_num, sizeof(ca_slot_t));
 
-    for(uint8_t slot_id = 0; slot_id < mod->slots_num; ++slot_id)
+    for(uint8_t slot_id = 0; slot_id < ca->slots_num; ++slot_id)
     {
-        ca_slot_t *slot = &mod->slots[slot_id];
+        ca_slot_t *slot = &ca->slots[slot_id];
         slot->queue = asc_list_init();
 
-        ca_slot_reset(mod, slot_id);
+        ca_slot_reset(ca, slot_id);
     }
 
-    mod->stream[0] = MPEGTS_PACKET_PAT;
-    mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0x00);
-    mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
+    ca->stream[0] = MPEGTS_PACKET_PAT;
+    ca->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0x00);
+    ca->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
 
-    mod->ca_pmt_list = asc_list_init();
+    ca->ca_pmt_list = asc_list_init();
 }
 
-void ca_close(module_data_t *mod)
+void ca_close(dvb_ca_t *ca)
 {
-    if(mod->ca_fd)
+    if(ca->ca_fd)
     {
-        close(mod->ca_fd);
-        mod->ca_fd = 0;
+        close(ca->ca_fd);
+        ca->ca_fd = 0;
     }
 
-    if(mod->slots)
+    if(ca->slots)
     {
-        for(int i = 0; i < mod->slots_num; ++i)
+        for(int i = 0; i < ca->slots_num; ++i)
         {
-            ca_slot_t *slot = &mod->slots[i];
+            ca_slot_t *slot = &ca->slots[i];
             for(asc_list_first(slot->queue)
                 ; !asc_list_eol(slot->queue)
                 ; asc_list_first(slot->queue))
@@ -1660,35 +1663,35 @@ void ca_close(module_data_t *mod)
             asc_list_destroy(slot->queue);
         }
 
-        free(mod->slots);
-        mod->slots = NULL;
+        free(ca->slots);
+        ca->slots = NULL;
     }
 
-    if(mod->pat)
-        mpegts_psi_destroy(mod->pat);
-    if(mod->pmt)
-        mpegts_psi_destroy(mod->pmt);
+    if(ca->pat)
+        mpegts_psi_destroy(ca->pat);
+    if(ca->pmt)
+        mpegts_psi_destroy(ca->pmt);
 
-    if(mod->ca_pmt_list)
+    if(ca->ca_pmt_list)
     {
-        for(asc_list_first(mod->ca_pmt_list)
-            ; !asc_list_eol(mod->ca_pmt_list)
-            ; asc_list_first(mod->ca_pmt_list))
+        for(asc_list_first(ca->ca_pmt_list)
+            ; !asc_list_eol(ca->ca_pmt_list)
+            ; asc_list_first(ca->ca_pmt_list))
         {
-            free(asc_list_data(mod->ca_pmt_list));
-            asc_list_remove_current(mod->ca_pmt_list);
+            free(asc_list_data(ca->ca_pmt_list));
+            asc_list_remove_current(ca->ca_pmt_list);
         }
-        asc_list_destroy(mod->ca_pmt_list);
+        asc_list_destroy(ca->ca_pmt_list);
     }
 }
 
-void ca_loop(module_data_t *mod, int is_data)
+void ca_loop(dvb_ca_t *ca, int is_data)
 {
     if(is_data)
     {
-        ca_tpdu_event(mod);
+        ca_tpdu_event(ca);
         return;
     }
 
-    ca_slot_loop(mod);
+    ca_slot_loop(ca);
 }

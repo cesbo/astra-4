@@ -14,9 +14,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 
-#include <linux/dvb/version.h>
-#include <linux/dvb/frontend.h>
-#include <linux/dvb/net.h>
+#include "dvb.h"
 
 static int count;
 static char dev_name[512];
