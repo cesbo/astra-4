@@ -1306,7 +1306,7 @@ enum
     CA_PMT_CMD_NOT_SELECTED     = 0x04
 };
 
-static uint16_t ca_pmt_copy_desc(const uint8_t *src, uint16_t size, uint8_t cmd_id, uint8_t *dst)
+static uint16_t ca_pmt_copy_desc(const uint8_t *src, uint16_t size, uint8_t *dst)
 {
     uint16_t ca_pmt_skip = 3; // info_length + ca_pmt_cmd_id
     uint16_t src_skip = 0;
@@ -1330,7 +1330,7 @@ static uint16_t ca_pmt_copy_desc(const uint8_t *src, uint16_t size, uint8_t cmd_
         const uint16_t info_length = ca_pmt_skip - 2; // except info_length
         dst[0] = 0xF0 | ((info_length >> 8) & 0x0F);
         dst[1] = (info_length & 0xFF);
-        dst[2] = cmd_id;
+        dst[2] = 0x00;
         return ca_pmt_skip;
     }
     else
@@ -1354,7 +1354,7 @@ static void ca_pmt_build(module_data_t *mod, ca_pmt_t *ca_pmt, mpegts_psi_t *pmt
 
     const uint8_t *pmt_info = PMT_DESC_FIRST(pmt);
     const uint16_t pmt_info_length = __PMT_DESC_SIZE(pmt);
-    ca_size += ca_pmt_copy_desc(pmt_info, pmt_info_length, 0x00, &ca_pmt->buffer[ca_size]);
+    ca_size += ca_pmt_copy_desc(pmt_info, pmt_info_length, &ca_pmt->buffer[ca_size]);
 
     const uint8_t *pointer = PMT_ITEMS_FIRST(pmt);
     while(!PMT_ITEMS_EOL(pmt, pointer))
@@ -1367,7 +1367,7 @@ static void ca_pmt_build(module_data_t *mod, ca_pmt_t *ca_pmt, mpegts_psi_t *pmt
 
         const uint8_t *es_info = PMT_ITEM_DESC_FIRST(pointer);
         const uint16_t es_info_length = __PMT_ITEM_DESC_SIZE(pointer);
-        ca_size += ca_pmt_copy_desc(es_info, es_info_length, 0x00, &ca_pmt->buffer[ca_size]);
+        ca_size += ca_pmt_copy_desc(es_info, es_info_length, &ca_pmt->buffer[ca_size]);
 
         PMT_ITEMS_NEXT(pmt, pointer);
     }

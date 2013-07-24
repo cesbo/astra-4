@@ -8,6 +8,8 @@
 
 #include "dvb.h"
 
+#include <poll.h> // in dvb_thread_loop
+
 /*
  *   ooooooo  oooooooooo  ooooooooooo ooooo  ooooooo  oooo   oooo oooooooo8
  * o888   888o 888    888 88  888  88  888 o888   888o 8888o  88 888
@@ -292,6 +294,66 @@ static void module_options(module_data_t *mod)
 }
 
 /*
+ * ooooooooooo ooooo ooooo oooooooooo  ooooooooooo      o      ooooooooo
+ * 88  888  88  888   888   888    888  888    88      888      888    88o
+ *     888      888ooo888   888oooo88   888ooo8       8  88     888    888
+ *     888      888   888   888  88o    888    oo    8oooo88    888    888
+ *    o888o    o888o o888o o888o  88o8 o888ooo8888 o88o  o888o o888ooo88
+ *
+ */
+
+static void dvb_thread_loop(void *arg)
+{
+    module_data_t *mod = arg;
+
+    fe_open(mod);
+    ca_open(mod);
+
+    nfds_t nfds = 0;
+
+    struct pollfd fds[2];
+    memset(fds, 0, sizeof(fds));
+
+    fds[nfds].fd = mod->fe_fd;
+    fds[nfds].events = POLLIN;
+    ++nfds;
+
+    if(mod->ca_fd)
+    {
+        fds[nfds].fd = mod->ca_fd;
+        fds[nfds].events = POLLIN;
+        ++nfds;
+    }
+
+    mod->thread_ready = true;
+
+    asc_thread_while(mod->thread)
+    {
+        const int ret = poll(fds, nfds, 1000);
+        if(ret > 0)
+        {
+            if(fds[0].revents)
+                fe_loop(mod, fds[0].revents & (POLLPRI | POLLIN));
+            if(fds[1].revents)
+                ca_loop(mod, fds[1].revents & (POLLPRI | POLLIN));
+        }
+        else if(ret == 0)
+        {
+            fe_loop(mod, 0);
+            ca_loop(mod, 0);
+        }
+        else
+        {
+            asc_log_error(MSG("poll() failed [%s]"), strerror(errno));
+            astra_abort();
+        }
+    }
+
+    fe_close(mod);
+    ca_close(mod);
+}
+
+/*
  * oooo     oooo  ooooooo  ooooooooo  ooooo  oooo ooooo       ooooooooooo
  *  8888o   888 o888   888o 888    88o 888    88   888         888    88
  *  88 888o8 88 888     888 888    888 888    88   888         888ooo8
@@ -332,7 +394,7 @@ static void module_init(module_data_t *mod)
 
     module_options(mod);
 
-    dvb_thread_open(mod);
+    asc_thread_init(&mod->thread, dvb_thread_loop, mod);
     dvr_open(mod);
     dmx_open(mod);
 
@@ -347,7 +409,7 @@ static void module_destroy(module_data_t *mod)
 
     dmx_close(mod);
     dvr_close(mod);
-    dvb_thread_close(mod);
+    asc_thread_destroy(&mod->thread);
 }
 
 MODULE_STREAM_METHODS()
