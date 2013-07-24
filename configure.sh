@@ -484,7 +484,7 @@ LDFLAGS     = $APP_LDFLAGS
 STRIP       = $APP_STRIP
 VERSION     = $VERSION
 V_APP       = /usr/bin/\$(APP)-\$(VERSION)
-V_SCRIPTS   = /etc/astra/scripts-\$(VERSION)/
+V_SCRIPTS   = /etc/astra/scripts-\$(VERSION)
 
 \$(APP): $APP_OBJS \$(CORE_OBJS) \$(MODS_OBJS)
 	@echo "BUILD: \$@"
@@ -494,17 +494,21 @@ V_SCRIPTS   = /etc/astra/scripts-\$(VERSION)/
 install: \$(APP)
 	@echo "INSTALL: \$(V_APP)"
 	@rm -f \$(V_APP)
-	@cp -v \$(APP) \$(V_APP)
+	@cp \$(APP) \$(V_APP)
 	@mkdir -p \$(V_SCRIPTS)
-	@cp -v $SRCDIR/scripts/stream.lua \$(V_SCRIPTS)
-	@cp -v $SRCDIR/scripts/json.lua \$(V_SCRIPTS)
-	@cp -v $SRCDIR/scripts/analyze.lua \$(V_SCRIPTS)
+	@echo "INSTALL: \$(V_SCRIPTS)/json.lua"
+	@cp $SRCDIR/scripts/json.lua \$(V_SCRIPTS)/json.lua
+	@echo "INSTALL: \$(V_SCRIPTS)/analyze.lua"
+	@sed '1 s/\$\$/-\$(VERSION)/g' $SRCDIR/scripts/analyze.lua >\$(V_SCRIPTS)/analyze.lua
+	@chmod +x \$(V_SCRIPTS)/analyze.lua
+	@echo "INSTALL: \$(V_SCRIPTS)/dvbls.lua"
+	@sed '1 s/\$\$/-\$(VERSION)/g' $SRCDIR/scripts/dvbls.lua >\$(V_SCRIPTS)/dvbls.lua
+	@chmod +x \$(V_SCRIPTS)/dvbls.lua
 
 link:
 	@rm -f /usr/bin/astra
 	@ln -nfsv \$(V_APP) /usr/bin/astra
 	@ln -nfsv \$(V_SCRIPTS)/analyze.lua /usr/bin/astra-analyze
-	@chmod +x \$(V_SCRIPTS)/analyze.lua
 
 \$(APP)-clean:
 	@echo "CLEAN: \$(APP)"
