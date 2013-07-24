@@ -11,7 +11,7 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 
-#define MSG(_msg) "[dvb_input %d:%d] " _msg, ca->adapter, ca->device
+#define MSG(_msg) "[dvb_ca %d:%d] " _msg, ca->adapter, ca->device
 
 /* en50221: A.4.1.13 List of transport tags */
 enum

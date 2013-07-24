@@ -125,11 +125,7 @@ local parse_option = {}
 
 parse_option.cam = function(val, result)
     if val == true then
-        if result.module_name ~= "dvb" then
-            log.error("[stream.lua] CAM without value available only for DVB")
-            astra.abort()
-        end
-        result.dvb_cam = true
+        result.dvbcam = true
     elseif _G[val] then
         result.cam = _G[val]:cam()
     else
@@ -390,7 +386,7 @@ function dvb_tune(dvb_conf)
 end
 
 input_list.dvb = function(input_conf)
-    if input_conf.dvb_cam and input_conf.pnr then
+    if input_conf.dvbcam and input_conf.pnr then
         input_conf._instance:ca_set_pnr(input_conf.pnr, true)
     end
 
@@ -398,7 +394,7 @@ input_list.dvb = function(input_conf)
 end
 
 kill_input_list.dvb = function(input_conf, input_data)
-    if input_conf.dvb_cam and input_conf.pnr then
+    if input_conf.dvbcam and input_conf.pnr then
         input_data.source.tail:ca_set_pnr(input_conf.pnr, false)
     end
 end
