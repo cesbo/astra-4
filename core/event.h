@@ -3,7 +3,6 @@
  * http://cesbo.com
  *
  * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
- * Revised 2013 Krasheninnikov Alexander
  * Licensed under the MIT license.
  */
 

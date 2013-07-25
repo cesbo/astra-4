@@ -10,7 +10,6 @@
 #include "socket.h"
 #include "event.h"
 #include "log.h"
-#include "vector.h"
 
 #ifdef _WIN32
 #   define _WIN32_WINNT 0x0501

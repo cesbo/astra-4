@@ -1,3 +1,3 @@
 
-SOURCES="event.c list.c vector.c log.c socket.c thread.c timer.c"
+SOURCES="event.c list.c log.c socket.c thread.c timer.c"
 

@@ -3,24 +3,22 @@
  * http://cesbo.com
  *
  * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
- * Revised 2013 Krasheninnikov Alexander
- *
  * Licensed under the MIT license.
  */
 
 #include "assert.h"
 #include "event.h"
+#include "list.h"
 #include "log.h"
-#include "vector.h"
 
 #ifdef _WIN32
 #   include <windows.h>
 #   include <winsock2.h>
 #endif
 
-#   ifndef EV_LIST_SIZE
-#       define EV_LIST_SIZE 1024
-#   endif
+#ifndef EV_LIST_SIZE
+#   define EV_LIST_SIZE 1024
+#endif
 
 #if defined(WITH_POLL)
 #   define EV_TYPE_POLL
@@ -45,9 +43,6 @@
 #   else
 #       define EV_FLAGS (EPOLLERR | EPOLLRDHUP)
 #   endif
-#   ifndef EV_LIST_SIZE
-#       define EV_LIST_SIZE 1024
-#   endif
 #   define MSG(_msg) "[core/event epoll] " _msg
 #endif
 
@@ -56,19 +51,11 @@ struct asc_event_t
     int fd;
     event_callback_t on_read;
     event_callback_t on_write;
-    event_callback_t on_error; /* TODO: Will work properly only if one of read/write
-                                * is assigned.
-                                * NOTE!!! Callback_error should destroy event!
-                                */
+    event_callback_t on_error;
     void *arg;
 };
 
-static void __asc_event_core_init_common(void);
-static void __asc_event_core_destroy_common(void);
-
-/* Returns true if event vec changes */
-static bool __asc_event_process(asc_event_t *event, bool is_rd, bool is_wr, bool is_er);
-
+#if defined(EV_TYPE_KQUEUE) || defined(EV_TYPE_EPOLL)
 
 /*
  * ooooooooooo oooooooooo    ooooooo  ooooo       ooooo
@@ -77,16 +64,20 @@ static bool __asc_event_process(asc_event_t *event, bool is_rd, bool is_wr, bool
  *  888    oo   888        888o   o888 888      o  888      o
  * o888ooo8888 o888o         88ooo88  o888ooooo88 o888ooooo88
  *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+ *
+ * oooo   oooo ooooooo  ooooo  oooo ooooooooooo ooooo  oooo ooooooooooo
+ *  888  o88 o888   888o 888    88   888    88   888    88   888    88
+ *  888888   888     888 888    88   888ooo8     888    88   888ooo8
+ *  888  88o 888o  8o888 888    88   888    oo   888    88   888    oo
+ * o888o o888o 88ooo88    888oo88   o888ooo8888   888oo88   o888ooo8888
+ *                  88o8
  */
-#if defined(EV_TYPE_KQUEUE) || defined(EV_TYPE_EPOLL)
 
 typedef struct
 {
-    /* Common */
-    asc_ptrvector_t *event_vec;
-    bool event_vec_changed;
-
-    /* EPOLL specific */
+    asc_list_t *event_list;
+    bool is_changed;
 
     int fd;
     EV_OTYPE ed_list[EV_LIST_SIZE];
@@ -96,7 +87,8 @@ static event_observer_t event_observer;
 
 void asc_event_core_init(void)
 {
-    __asc_event_core_init_common();
+    memset(&event_observer, 0, sizeof(event_observer));
+    event_observer.event_list = asc_list_init();
 
 #if defined(EV_TYPE_KQUEUE)
     event_observer.fd = kqueue();
@@ -104,7 +96,8 @@ void asc_event_core_init(void)
     event_observer.fd = epoll_create(EV_LIST_SIZE);
 #endif
 
-    asc_assert(event_observer.fd != -1, MSG("failed to init event observer [%s]")
+    asc_assert(event_observer.fd != -1
+               , MSG("failed to init event observer [%s]")
                , strerror(errno));
 }
 
@@ -115,13 +108,29 @@ void asc_event_core_destroy(void)
 
     close(event_observer.fd);
     event_observer.fd = 0;
-    __asc_event_core_destroy_common();
+
+    asc_event_t *prev_event = NULL;
+    for(asc_list_first(event_observer.event_list)
+        ; !asc_list_eol(event_observer.event_list)
+        ; asc_list_first(event_observer.event_list))
+    {
+        asc_event_t *event = asc_list_data(event_observer.event_list);
+        asc_assert(event != prev_event
+                   , MSG("loop on asc_event_core_destroy() event:%p")
+                   , event);
+        if(event->on_error)
+            event->on_error(event->arg);
+        prev_event = event;
+    }
+
+    asc_list_destroy(event_observer.event_list);
+    event_observer.event_list = NULL;
 }
 
 void asc_event_core_loop(void)
 {
     static struct timespec tv = { 0, 10000000 };
-    if(asc_ptrvector_count(event_observer.event_vec) <= 0)
+    if(!asc_list_size(event_observer.event_list))
     {
         nanosleep(&tv, NULL);
         return;
@@ -139,17 +148,17 @@ void asc_event_core_loop(void)
         return;
     }
 
-    event_observer.event_vec_changed = false;
+    event_observer.is_changed = false;
     for(int i = 0; i < ret; ++i)
     {
         EV_OTYPE *ed = &event_observer.ed_list[i];
 #if defined(EV_TYPE_KQUEUE)
         asc_event_t *event = ed->udata;
-        const bool is_probably_rdwr = (ed->flags & EV_ADD)
-                                      && !(ed->fflags & EV_FFLAGS)
-                                      && (ed->data > 0);
-        const bool is_rd = is_probably_rdwr && (ed->filter == EVFILT_READ);
-        const bool is_wr = is_probably_rdwr && (ed->filter == EVFILT_WRITE);
+        const bool is_rdwr = (ed->flags & EV_ADD)
+                             && !(ed->fflags & EV_FFLAGS)
+                             && (ed->data > 0);
+        const bool is_rd = is_rdwr && (ed->filter == EVFILT_READ);
+        const bool is_wr = is_rdwr && (ed->filter == EVFILT_WRITE);
         const bool is_er = (!is_rd && !is_wr && (ed->flags & ~EV_ADD));
 #else
         asc_event_t *event = ed->data.ptr;
@@ -157,75 +166,129 @@ void asc_event_core_loop(void)
         const bool is_wr = ed->events & EPOLLOUT;
         const bool is_er = ed->events & EPOLLERR;
 #endif
-        if(__asc_event_process(event, is_rd, is_wr, is_er))
-            break; /* Go out of cycle due to vector change */
+        if(event->on_read && is_rd)
+        {
+            event->on_read(event->arg);
+            if(event_observer.is_changed)
+                break;
+        }
+        if(event->on_write && is_wr)
+        {
+            event->on_write(event->arg);
+            if(event_observer.is_changed)
+                break;
+        }
+        if(event->on_error && is_er)
+        {
+            event->on_error(event->arg);
+            if(event_observer.is_changed)
+                break;
+        }
     }
 }
+
+static void asc_event_subscribe(asc_event_t *event)
+{
+    int ret = 0;
+    EV_OTYPE ed;
 
 #if defined(EV_TYPE_KQUEUE)
-static void asc_event_subscribe(asc_event_t *event, bool is_add, bool is_delete)
-{
-    __uarg(is_add);
-
-    int ret;
-    EV_OTYPE ed;
-    if(event->on_read && !is_delete)
+    do
     {
-        EV_SET(&ed, event->fd, EVFILT_READ, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, event);
-        ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
-        asc_assert(ret != -1, MSG("failed to attach (read) fd=%d [%s]")
-                   , event->fd, strerror(errno));
-    }
-    else
+        if(event->on_read)
+        {
+            EV_SET(&ed, event->fd, EVFILT_READ, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, event);
+            ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
+            if(ret == -1)
+                break;
+        }
+        else
+        {
+            EV_SET(&ed, event->fd, EVFILT_READ, EV_DELETE, 0, 0, event);
+            kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
+        }
+
+        if(event->on_write)
+        {
+            EV_SET(&ed, event->fd, EVFILT_WRITE, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, event);
+            ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
+            if(ret == -1)
+                break;
+        }
+        else
+        {
+            EV_SET(&ed, event->fd, EVFILT_WRITE, EV_DELETE, 0, 0, event);
+            kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
+        }
+
+        return;
+    } while(0);
+
+#else /* EV_TYPE_EPOLL */
+
+    ed.data.ptr = event;
+    ed.events = EV_FLAGS;
+    if(event->on_read)
+        ed.events |= EPOLLIN;
+    if(event->on_write)
+        ed.events |= EPOLLOUT;
+    ret = epoll_ctl(event_observer.fd, EPOLL_CTL_MOD, event->fd, &ed);
+#endif
+
+    asc_assert(ret != -1, MSG("failed to set fd=%d [%s]"), event->fd, strerror(errno));
+}
+
+asc_event_t * asc_event_init(int fd, void *arg)
+{
+    asc_event_t *event = calloc(1, sizeof(asc_event_t));
+    event->fd = fd;
+    event->arg = arg;
+
+#if defined(EV_TYPE_EPOLL)
+    EV_OTYPE ed;
+    ed.data.ptr = event;
+    ed.events = EV_FLAGS;
+    const int ret = epoll_ctl(event_observer.fd, EPOLL_CTL_ADD, event->fd, &ed);
+    asc_assert(ret != -1, MSG("failed to attach fd=%d [%s]"), event->fd, strerror(errno));
+#endif
+
+    asc_list_insert_tail(event_observer.event_list, event);
+    event_observer.is_changed = true;
+
+    return event;
+}
+
+void asc_event_close(asc_event_t *event)
+{
+    if(!event)
+        return;
+
+#if defined(EV_TYPE_KQUEUE)
+    EV_OTYPE ed;
+
+    if(event->on_read)
     {
         EV_SET(&ed, event->fd, EVFILT_READ, EV_DELETE, 0, 0, event);
-        ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
-        /* Result is not checked, because it could happen,
-         * that there is nothing to delete, but we delete
-         */
+        kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
     }
-
-    if(event->on_write && !is_delete)
-    {
-        EV_SET(&ed, event->fd, EVFILT_WRITE, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, event);
-        ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
-        asc_assert(ret != -1, MSG("failed to attach (write) fd=%d [%s]")
-                   , event->fd, strerror(errno));
-    }
-    else
+    if(event->on_write)
     {
         EV_SET(&ed, event->fd, EVFILT_WRITE, EV_DELETE, 0, 0, event);
-        ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
-        /* Result is not checked, because it could happen,
-         * that there is nothing to delete, but we delete
-         */
+        kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
     }
-}
 
-#else /* EPOLL */
-static void asc_event_subscribe(asc_event_t *event, bool is_add, bool is_delete)
-{
+#else /* EV_TYPE_EPOLL */
 
-    int ret;
-    if(is_delete)
-    {
-        ret = epoll_ctl(event_observer.fd, EPOLL_CTL_DEL, event->fd, NULL);
-    }
-    else
-    {
-        EV_OTYPE ed;
-        ed.data.ptr = event;
-        ed.events = EV_FLAGS;
-        if(event->on_read)
-            ed.events |= EPOLLIN;
-        if(event->on_write)
-            ed.events |= EPOLLOUT;
-        ret = epoll_ctl(event_observer.fd, (is_add) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD
-                        , event->fd, &ed);
-    }
-    asc_assert(ret != -1, MSG("failed to attach fd=%d [%s]"), event->fd, strerror(errno));
-}
+    epoll_ctl(event_observer.fd, EPOLL_CTL_DEL, event->fd, NULL);
 #endif
+
+    event_observer.is_changed = true;
+    asc_list_remove_item(event_observer.event_list, event);
+
+    free(event);
+}
+
+#elif defined(EV_TYPE_POLL)
 
 /*
  * oooooooooo    ooooooo  ooooo       ooooo
@@ -236,16 +299,13 @@ static void asc_event_subscribe(asc_event_t *event, bool is_add, bool is_delete)
  *
  */
 
-#elif defined(EV_TYPE_POLL)
-
 typedef struct
 {
-    /* Common */
-    asc_ptrvector_t *event_vec;
-    bool event_vec_changed;
+    asc_event_t *event_list[EV_LIST_SIZE];
+    bool is_changed;
+    int fd_count;
 
-    /* POLL specific */
-    asc_vector_t *ed_vec;/* holds vector of struct pollfd */
+    struct pollfd fd_list[EV_LIST_SIZE];
 } event_observer_t;
 
 #define ED_SIZE (int)(sizeof(struct pollfd))
@@ -254,96 +314,134 @@ static event_observer_t event_observer;
 
 void asc_event_core_init(void)
 {
-    __asc_event_core_init_common();
-    event_observer.ed_vec = asc_vector_init(sizeof(struct pollfd));
+    memset(&event_observer, 0, sizeof(event_observer));
 }
 
 void asc_event_core_destroy(void)
 {
-    if(!event_observer.ed_vec)
-        return;
-    asc_vector_destroy(event_observer.ed_vec);
-    event_observer.ed_vec = NULL;
+    while(event_observer.fd_count > 0)
+    {
+        const int next_fd_count = event_observer.fd_count - 1;
 
-    __asc_event_core_destroy_common();
+        asc_event_t *event = event_observer.event_list[next_fd_count];
+        if(event->on_error)
+            event->on_error(event->arg);
+
+        asc_assert(event_observer.fd_count == next_fd_count
+                   , MSG("loop on asc_event_core_destroy() event:%p")
+                   , event);
+    }
 }
 
 void asc_event_core_loop(void)
 {
     static struct timespec tv = { 0, 10000000 };
-    if(asc_ptrvector_count(event_observer.event_vec) <= 0)
+    if(!event_observer.fd_count)
     {
         nanosleep(&tv, NULL);
         return;
     }
 
-    int count = asc_vector_count(event_observer.ed_vec);
-    int ret = poll(asc_vector_get_dataptr(event_observer.ed_vec), count, 10);
+    int ret = poll(event_observer.fd_list, event_observer.fd_count, 10);
     if(ret == -1)
     {
         asc_assert(errno == EINTR, MSG("event observer critical error [%s]"), strerror(errno));
         return;
     }
 
-    int i;
-
-    event_observer.event_vec_changed = false;
-
-    for(i = 0; i < count && ret > 0; ++i)
+    event_observer.is_changed = false;
+    for(int i = 0; i < event_observer.fd_count && ret > 0; ++i)
     {
-        struct pollfd *f = asc_vector_get_dataptr_at(event_observer.ed_vec, i);
-        const int revents = f->revents;
+        const short revents = event_observer.fd_list[i].revents;
         if(revents == 0)
             continue;
+
         --ret;
-        asc_event_t *event = asc_ptrvector_get_at(event_observer.event_vec, i);
-        if(__asc_event_process(event, revents & POLLIN, revents & POLLOUT
-                               , revents & (POLLERR | POLLHUP | POLLNVAL)))
+        asc_event_t *event = event_observer.event_list[i];
+        if(event->on_read && (revents & POLLIN))
         {
-            break; /* Vector change */
-        }
-    }
-}
-
-static void asc_event_subscribe(asc_event_t *event, bool is_add, bool is_delete)
-{
-    int pos;
-    if(is_add)
-    {
-        pos = asc_vector_count(event_observer.ed_vec);
-        struct pollfd tmp;
-        tmp.events = 0;
-        tmp.fd = event->fd;
-        tmp.revents = 0;
-        asc_vector_append_end(event_observer.ed_vec, &tmp, 1);
-    }
-    else
-    { /* Need to find a place in ed_vec and event_vec */
-        int count = asc_ptrvector_count(event_observer.event_vec);
-        bool found = false;
-        for(pos = 0; pos < count; ++pos)
-        {
-            if(asc_ptrvector_get_at(event_observer.event_vec, pos) == event)
-            {
-                found = true;
+            event->on_read(event->arg);
+            if(event_observer.is_changed)
                 break;
-            }
         }
-        asc_assert(found, MSG("failed to find event in vector"));
+        if(event->on_write && (revents & POLLOUT))
+        {
+            event->on_write(event->arg);
+            if(event_observer.is_changed)
+                break;
+        }
+        if(event->on_error && (revents & (POLLERR | POLLHUP | POLLNVAL)))
+        {
+            event->on_error(event->arg);
+            if(event_observer.is_changed)
+                break;
+        }
     }
-    if(is_delete)
-    {
-        asc_vector_remove_middle(event_observer.ed_vec, pos, 1);
-        return;
-    }
-
-    struct pollfd *f = asc_vector_get_dataptr_at(event_observer.ed_vec, pos);
-    f->events = 0;
-    if(event->on_read)
-        f->events |= POLLIN;
-    if(event->on_write)
-        f->events |= POLLOUT;
 }
+
+static void asc_event_subscribe(asc_event_t *event)
+{
+    int i;
+    for(i = 0; i < event_observer.fd_count; ++i)
+    {
+        if(event_observer.event_list[i]->fd == event->fd)
+            break;
+    }
+    asc_assert(i < event_observer.fd_count, MSG("filed to set fd=%d"), event->fd);
+
+    event_observer.fd_list[i].events = 0;
+    if(event->on_read)
+        event_observer.fd_list[i].events |= POLLIN;
+    if(event->on_write)
+        event_observer.fd_list[i].events |= POLLOUT;
+}
+
+asc_event_t * asc_event_init(int fd, void *arg)
+{
+    const int i = event_observer.fd_count;
+    memset(&event_observer.fd_list[i], 0, sizeof(struct pollfd));
+    event_observer.fd_list[i].fd = fd;
+
+    asc_event_t *event = calloc(1, sizeof(asc_event_t));
+    event_observer.event_list[i] = event;
+    event->fd = fd;
+    event->arg = arg;
+
+    event_observer.fd_count += 1;
+    event_observer.is_changed = true;
+
+    return event;
+}
+
+void asc_event_close(asc_event_t *event)
+{
+    if(!event)
+        return;
+
+    int i;
+    for(i = 0; i < event_observer.fd_count; ++i)
+    {
+        if(event_observer.event_list[i]->fd == event->fd)
+            break;
+    }
+    asc_assert(i < event_observer.fd_count, MSG("filed to detach fd=%d"), event->fd);
+
+    for(; i < event_observer.fd_count; ++i)
+    {
+        memcpy(&event_observer.fd_list[i], &event_observer.fd_list[i + 1]
+               , sizeof(struct pollfd));
+        event_observer.event_list[i] = event_observer.event_list[i + 1];
+    }
+    memset(&event_observer.fd_list[i], 0, sizeof(struct pollfd));
+    event_observer.event_list[i] = NULL;
+
+    event_observer.fd_count -= 1;
+    event_observer.is_changed = true;
+
+    free(event);
+}
+
+#elif defined(EV_TYPE_SELECT)
 
 /*
  *  oooooooo8 ooooooooooo ooooo       ooooooooooo  oooooooo8 ooooooooooo
@@ -354,15 +452,11 @@ static void asc_event_subscribe(asc_event_t *event, bool is_add, bool is_delete)
  *
  */
 
-#elif defined(EV_TYPE_SELECT)
-
 typedef struct
 {
-    /* Common */
-    asc_ptrvector_t *event_vec;
-    bool event_vec_changed;
+    asc_list_t *event_list;
+    bool is_changed;
 
-    /* SELECT specific */
     int max_fd;
     fd_set rmaster;
     fd_set wmaster;
@@ -373,17 +467,33 @@ static event_observer_t event_observer;
 
 void asc_event_core_init(void)
 {
-    __asc_event_core_init_common();
+    memset(&event_observer, 0, sizeof(event_observer));
+    event_observer.event_list = asc_list_init();
 }
 
 void asc_event_core_destroy(void)
 {
-    __asc_event_core_destroy_common();
+    asc_event_t *prev_event = NULL;
+    for(asc_list_first(event_observer.event_list)
+        ; !asc_list_eol(event_observer.event_list)
+        ; asc_list_first(event_observer.event_list))
+    {
+        asc_event_t *event = asc_list_data(event_observer.event_list);
+        asc_assert(event != prev_event
+                   , MSG("loop on asc_event_core_destroy() event:%p")
+                   , event);
+        if(event->on_error)
+            event->on_error(event->arg);
+        prev_event = event;
+    }
+
+    asc_list_destroy(event_observer.event_list);
+    event_observer.event_list = NULL;
 }
 
 void asc_event_core_loop(void)
 {
-    if(asc_ptrvector_count(event_observer.event_vec) <= 0)
+    if(!asc_list_size(event_observer.event_list))
     {
 #ifdef _WIN32
         Sleep(10);
@@ -415,57 +525,90 @@ void asc_event_core_loop(void)
     }
     else if(ret > 0)
     {
-        int sz = asc_ptrvector_count(event_observer.event_vec);
-        event_observer.event_vec_changed = false;
-        for(int i = 0; i < sz; ++i)
+        event_observer.is_changed = false;
+        asc_list_for(event_observer.event_list)
         {
-            asc_event_t *event = asc_ptrvector_get_at(event_observer.event_vec, i);
-            if(__asc_event_process(event, FD_ISSET(event->fd, &rset)
-                                   , FD_ISSET(event->fd, &wset), FD_ISSET(event->fd, &eset)))
+            asc_event_t *event = asc_list_data(event_observer.event_list);
+            if(event->on_read && FD_ISSET(event->fd, &rset))
             {
-                break; /* Vector change */
+                event->on_read(event->arg);
+                if(event_observer.is_changed)
+                    break;
+            }
+            if(event->on_write && FD_ISSET(event->fd, &wset))
+            {
+                event->on_write(event->arg);
+                if(event_observer.is_changed)
+                    break;
+            }
+            if(event->on_error && FD_ISSET(event->fd, &eset))
+            {
+                event->on_error(event->arg);
+                if(event_observer.is_changed)
+                    break;
             }
         }
     }
 }
 
-static void asc_event_subscribe(asc_event_t *event, bool is_add, bool is_delete)
+static void asc_event_subscribe(asc_event_t *event)
 {
-    if(event->on_read && !is_delete)
+    if(event->on_read)
         FD_SET(event->fd, &event_observer.rmaster);
     else
         FD_CLR(event->fd, &event_observer.rmaster);
 
-    if(event->on_write && !is_delete)
+    if(event->on_write)
         FD_SET(event->fd, &event_observer.wmaster);
     else
         FD_CLR(event->fd, &event_observer.wmaster);
 
-    if(event->on_error && !is_delete)
+    if(event->on_error)
         FD_SET(event->fd, &event_observer.emaster);
     else
         FD_CLR(event->fd, &event_observer.emaster);
+}
 
-    if(is_delete)
+asc_event_t * asc_event_init(int fd, void *arg)
+{
+    asc_event_t *event = calloc(1, sizeof(asc_event_t));
+    event->fd = fd;
+    event->arg = arg;
+
+    if(fd > event_observer.max_fd)
+        event_observer.max_fd = fd;
+
+    asc_list_insert_tail(event_observer.event_list, event);
+    event_observer.is_changed = true;
+
+    return event;
+}
+
+void asc_event_close(asc_event_t *event)
+{
+    if(!event)
+        return;
+
+    event_observer.max_fd = 0;
+    for(asc_list_first(event_observer.event_list)
+        ; !asc_list_eol(event_observer.event_list)
+        ; )
     {
-        /* now recalc maximum FD */
-        int sz = asc_ptrvector_count(event_observer.event_vec);
-        event_observer.max_fd = 0;
-        for(int i = 0; i < sz; ++i)
+        asc_event_t *i_event = asc_list_data(event_observer.event_list);
+        if(i_event == event)
         {
-            asc_event_t *event = asc_ptrvector_get_at(event_observer.event_vec, i);
-            if(event->fd > event_observer.max_fd)
-                event_observer.max_fd = event->fd;
+            asc_list_remove_current(event_observer.event_list);
+            free(event);
+        }
+        else
+        {
+            if(i_event->fd > event_observer.max_fd)
+                event_observer.max_fd = i_event->fd;
+            asc_list_next(event_observer.event_list);
         }
     }
-    else
-    {
-        if(is_add)
-        {
-            if(event->fd > event_observer.max_fd)
-                event_observer.max_fd = event->fd;
-        }
-    }
+
+    event_observer.is_changed = true;
 }
 
 #endif
@@ -479,144 +622,29 @@ static void asc_event_subscribe(asc_event_t *event, bool is_add, bool is_delete)
  *
  */
 
-asc_event_t * asc_event_init(int fd, void *arg)
-{
-#ifdef DEBUG
-    asc_log_debug(MSG("asc_event_init for fd=%d, %c%c%c")
-                   , fd
-                   , (on_read) ? 'R' : '-'
-                   , (on_write) ? 'W' : '-'
-                   , (on_error) ? 'E' : '-');
-#endif
-    asc_event_t *event = malloc(sizeof(asc_event_t));
-    event->fd = fd;
-    event->on_read = NULL;
-    event->on_write = NULL;
-    event->on_error = NULL;
-    event->arg = arg;
-    asc_event_subscribe(event, true, false);
-    asc_ptrvector_append_end(event_observer.event_vec, event);
-    event_observer.event_vec_changed = true;
-    return event;
-}
-
 void asc_event_set_on_read(asc_event_t *event, event_callback_t on_read)
 {
-    if (event->on_read == on_read) return;
-#ifdef DEBUG
-    asc_log_debug(MSG("asc_event_set_read for fd=%d, %c")
-                  , event->fd
-                  , (on_read) ? 'R' : '-');
-#endif
+    if(event->on_read == on_read)
+        return;
+
     event->on_read = on_read;
-    asc_event_subscribe(event, false, false);
+    asc_event_subscribe(event);
 }
 
 void asc_event_set_on_write(asc_event_t *event, event_callback_t on_write)
 {
-    if (event->on_write == on_write) return;
-#ifdef DEBUG
-    asc_log_debug(MSG("asc_event_set_write for fd=%d, %c")
-                  , event->fd
-                  , (on_write) ? 'W' : '-');
-#endif
+    if(event->on_write == on_write)
+        return;
+
     event->on_write = on_write;
-    asc_event_subscribe(event, false, false);
+    asc_event_subscribe(event);
 }
 
 void asc_event_set_on_error(asc_event_t *event, event_callback_t on_error)
 {
-    if (event->on_error == on_error) return;
-#ifdef DEBUG
-    asc_log_debug(MSG("asc_event_set_error for fd=%d, %c")
-                  , event->fd
-                  , (on_error) ? 'E' : '-');
-#endif
-    event->on_error = on_error;
-    asc_event_subscribe(event, false, false);
-}
-
-void asc_event_close(asc_event_t *event)
-{
-    if(!event)
+    if(event->on_error == on_error)
         return;
 
-#ifdef DEBUG
-    asc_log_debug(MSG("detach fd=%d"), event->fd);
-#endif
-    asc_event_subscribe(event, false, true);
-    event_observer.event_vec_changed = true;
-
-    /* Need to find this event in vector of events */
-    int sz = asc_ptrvector_count(event_observer.event_vec);
-    bool found = false;
-    for (int i = 0; i < sz; ++i)
-    {
-        asc_event_t *event1 = asc_ptrvector_get_at(event_observer.event_vec, i);
-        if(event1 == event)
-        {
-            asc_ptrvector_remove_middle(event_observer.event_vec, i);
-            found = true;
-            break;
-        }
-    }
-    asc_assert(found, MSG("Event %p not found during event_close"), (void*)event);
-
-    free(event);
-}
-
-static void __asc_event_core_init_common(void)
-{
-    memset(&event_observer, 0, sizeof(event_observer));
-    event_observer.event_vec_changed = false;
-    event_observer.event_vec = asc_ptrvector_init();
-}
-
-static void __asc_event_core_destroy_common(void)
-{
-    while(1)
-    {
-        int count = asc_ptrvector_count(event_observer.event_vec);
-        if(!count)
-            break;
-
-        asc_event_t *event = asc_ptrvector_get_at(event_observer.event_vec, 0);
-        if(event->on_error) /* Callback error SHOULD destroy event! */
-            event->on_error(event->arg);
-        else /* Help them! */
-            asc_event_close(event);
-
-        asc_assert(asc_ptrvector_count(event_observer.event_vec) < count
-                   , MSG("Events should go away during destroy, but they do not... [event %p]")
-                   , (void*) event);
-    }
-    asc_ptrvector_destroy(event_observer.event_vec);
-    event_observer.event_vec = NULL;
-}
-
-/* Returns true if event vec changes */
-static bool __asc_event_process(asc_event_t *event, bool is_rd, bool is_wr, bool is_er)
-{
-    if(event->on_read && is_rd)
-    {
-        event->on_read(event->arg);
-        if(event_observer.event_vec_changed)
-            return true;
-    }
-
-    if(event->on_write && is_wr)
-    {
-        event->on_write(event->arg);
-        if(event_observer.event_vec_changed)
-            return true;
-    }
-
-    if(event->on_error && is_er)
-    {
-        event->on_error(event->arg);
-        if(event_observer.event_vec_changed)
-            return true;
-    }
-
-    return false; /* No changes in event vec */
+    event->on_error = on_error;
+    asc_event_subscribe(event);
 }
