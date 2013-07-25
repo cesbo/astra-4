@@ -96,15 +96,6 @@ static void module_decrypt_cas_destroy(module_data_t *mod)
 
 static void stream_reload(module_data_t *mod)
 {
-    if(mod->stream[1] == MPEGTS_PACKET_CAT)
-        module_stream_demux_leave_pid(mod, 1);
-
-    for(uint16_t i = 2; i < MAX_PID; ++i)
-    {
-        if(mod->stream[i] == MPEGTS_PACKET_CA)
-            module_stream_demux_leave_pid(mod, i);
-    }
-
     memset(mod->stream, 0, sizeof(mod->stream));
     if(mod->__decrypt.cam->is_ready)
         mod->stream[0] = MPEGTS_PACKET_PAT;
@@ -171,10 +162,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         asc_assert(mod->__decrypt.cas != NULL, "CAS with CAID:0x%04X not found", mod->caid);
 
         if(!mod->__decrypt.cam->disable_emm)
-        {
             mod->stream[1] = MPEGTS_PACKET_CAT;
-            module_stream_demux_join_pid(mod, 1);
-        }
     }
 }
 
@@ -226,7 +214,6 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
             if(mod->stream[pid] == MPEGTS_PACKET_UNKNOWN)
             {
                 mod->stream[pid] = MPEGTS_PACKET_CA;
-                module_stream_demux_join_pid(mod, pid);
                 asc_log_debug(MSG("Select EMM pid:%d"), pid);
                 is_emm_selected = true;
             }
@@ -306,7 +293,6 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                     if(!is_ecm_selected)
                     {
                         mod->stream[pid] = MPEGTS_PACKET_CA;
-                        module_stream_demux_join_pid(mod, pid);
                         asc_log_debug(MSG("Select ECM pid:%d"), pid);
                         is_ecm_selected = true;
                     }
@@ -351,7 +337,6 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                         if(!is_ecm_selected)
                         {
                             mod->stream[pid] = MPEGTS_PACKET_CA;
-                            module_stream_demux_join_pid(mod, pid);
                             asc_log_debug(MSG("Select ECM pid:%d"), pid);
                             is_ecm_selected = true;
                         }
@@ -464,9 +449,8 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             mpegts_psi_mux(mod->pmt, ts, on_pmt, mod);
             return;
         case MPEGTS_PACKET_CA:
-            if(!mod->__decrypt.cas)
-                return;
-            mpegts_psi_mux(mod->em, ts, on_em, mod);
+            if(mod->__decrypt.cas)
+                mpegts_psi_mux(mod->em, ts, on_em, mod);
             return;
         default:
             break;
@@ -636,7 +620,6 @@ static void on_response(module_data_t *mod, const uint8_t *data, const char *err
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, on_ts);
-    module_stream_demux_set(mod, NULL, NULL);
 
     module_option_string("name", &mod->name);
     asc_assert(mod->name != NULL, "[decrypt] option 'name' is required");
