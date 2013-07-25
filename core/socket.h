@@ -26,7 +26,7 @@ asc_socket_t * asc_socket_open_udp4(void * arg) __wur;
 
 void asc_socket_set_on_read(asc_socket_t * sock, socket_callback_t on_read);
 void asc_socket_set_on_close(asc_socket_t * sock, socket_callback_t on_close);
-void asc_socket_set_on_send_possible(asc_socket_t * sock, socket_callback_t on_send_possible);
+void asc_socket_set_on_ready(asc_socket_t * sock, socket_callback_t on_ready);
 
 void asc_socket_shutdown_recv(asc_socket_t *sock);
 void asc_socket_shutdown_send(asc_socket_t *sock);
@@ -35,17 +35,15 @@ void asc_socket_close(asc_socket_t *sock);
 
 bool asc_socket_bind(asc_socket_t *sock, const char *addr, int port) __wur;
 void asc_socket_listen(asc_socket_t *sock
-                       , socket_callback_t on_ok, socket_callback_t on_err);
+                       , socket_callback_t on_accept, socket_callback_t on_error);
 bool asc_socket_accept(asc_socket_t *sock, asc_socket_t **client_ptr, void *arg) __wur;
 void asc_socket_connect(asc_socket_t *sock, const char *addr, int port
-                        , socket_callback_t on_ok, socket_callback_t on_err);
+                        , socket_callback_t on_connect, socket_callback_t on_error);
 
 ssize_t asc_socket_recv(asc_socket_t *sock, void *buffer, size_t size) __wur;
 ssize_t asc_socket_recvfrom(asc_socket_t *sock, void *buffer, size_t size) __wur;
 
-bool asc_socket_send_buffered(asc_socket_t *sock, const void *buffer, int size);
-int  asc_socket_get_send_buffer_space_available(asc_socket_t *sock);
-ssize_t asc_socket_send_direct(asc_socket_t *sock, const void *buffer, size_t size) __wur;
+ssize_t asc_socket_send(asc_socket_t *sock, const void *buffer, size_t size) __wur;
 ssize_t asc_socket_sendto(asc_socket_t *sock, const void *buffer, size_t size) __wur;
 
 int asc_socket_fd(asc_socket_t *sock) __wur;

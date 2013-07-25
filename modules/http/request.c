@@ -542,7 +542,12 @@ static void send_request(module_data_t *mod)
     lua_pop(lua, 1); // empty line
 
     const int header_size = buffer - mod->buffer;
-    asc_socket_send_buffered(mod->sock, mod->buffer, header_size);
+    if(asc_socket_send(mod->sock, mod->buffer, header_size) != header_size)
+    {
+        asc_log_error(MSG("failed to send header"));
+        // call error
+        return;
+    }
 
     // send request content
     lua_getfield(lua, -1, __content);
@@ -550,7 +555,11 @@ static void send_request(module_data_t *mod)
     {
         const int content_size = luaL_len(lua, -1);
         const char *content = lua_tostring(lua, -1);
-        asc_socket_send_buffered(mod->sock, (void *)content, content_size);
+        // TODO: send partially
+        if(asc_socket_send(mod->sock, (void *)content, content_size) != content_size)
+        {
+            asc_log_error(MSG("failed to send content"));
+        }
     }
     lua_pop(lua, 1); // content
 }
@@ -642,7 +651,11 @@ static int method_send(module_data_t *mod)
         {
             const int content_size = luaL_len(lua, 2);
             const char *content = lua_tostring(lua, 2);
-            asc_socket_send_buffered(mod->sock, (void *)content, content_size);
+            // TODO: send partially
+            if(asc_socket_send(mod->sock, (void *)content, content_size) != content_size)
+            {
+                asc_log_error(MSG("failed to send content"));
+            }
             break;
         }
         case LUA_TTABLE:
