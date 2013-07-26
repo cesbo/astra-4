@@ -12,14 +12,6 @@
 #include "base.h"
 #include "module_lua.h"
 #include <core/asc.h>
-#include <sys/queue.h>
-
-#ifndef TAILQ_FOREACH_SAFE
-#define TAILQ_FOREACH_SAFE(var, head, field, tvar)                      \
-        for ((var) = TAILQ_FIRST((head));                               \
-            (var) && ((tvar) = TAILQ_NEXT((var), field), 1);            \
-            (var) = (tvar))
-#endif
 
 typedef struct module_stream_t module_stream_t;
 struct module_stream_t

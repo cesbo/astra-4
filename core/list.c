@@ -10,8 +10,6 @@
 #include "list.h"
 #include "log.h"
 
-#include <sys/queue.h>
-
 typedef struct item_s
 {
     void *data;
