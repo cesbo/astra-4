@@ -279,7 +279,7 @@ static int newcamd_send_msg(module_data_t *mod)
     mod->buffer[0] = (packet_size - 2) >> 8;
     mod->buffer[1] = (packet_size - 2) & 0xff;
 
-    if(asc_socket_send_direct(mod->sock, mod->buffer, packet_size) != packet_size)
+    if(asc_socket_send(mod->sock, mod->buffer, packet_size) != packet_size)
     {
         asc_log_error(MSG("send: failed [%d]"), errno);
         if(mod->packet)

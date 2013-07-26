@@ -38,8 +38,7 @@
 
 #define MSG(_msg) "[http_server %s:%d] " _msg, mod->addr, mod->port
 
-#define HTTP_BUFFER_SIZE (64 * 1024)
-#define MAX_WRITE_PIECE 1 * 1024 * 1024
+#define HTTP_BUFFER_SIZE (128 * 1024)
 
 #define FRAME_HEADER_SIZE 2
 #define FRAME_KEY_SIZE 4
@@ -83,9 +82,6 @@ struct module_data_t
 
     asc_socket_t *sock;
     asc_list_t *clients;
-    asc_vector_t *write_temp_buf; /* shared across all clients,
-                                     used only during one function call,
-                                     not longer */
 };
 
 /*
@@ -410,70 +406,98 @@ static void on_read(void *arg)
  *
  */
 
-static void on_write_ready(void *arg)
+static void on_ready_send_file(void *arg)
 {
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
-    int to_send = asc_socket_get_send_buffer_space_available(client->sock);
-    if(to_send > MAX_WRITE_PIECE)
-        to_send = MAX_WRITE_PIECE;
-    asc_vector_resize(mod->write_temp_buf, to_send);
+    const int capacity_size = sizeof(client->buffer) - client->buffer_skip;
+    if(capacity_size <= 0)
+    {
+        // TODO: overflow
+        return;
+    }
 
-    const int read_size = fread(asc_vector_get_dataptr(mod->write_temp_buf), 1, to_send, client->src_file);
-    if(read_size <= 0)
+    const int block_size = fread(&client->buffer[client->buffer_skip], 1, capacity_size
+                                 , client->src_file);
+    if(block_size <= 0)
     {
         asc_log_error(MSG("failed to read source file [%s]"), strerror(errno));
         on_read_error(client);
         return;
     }
 
-    bool ok = asc_socket_send_buffered(client->sock
-                                       , asc_vector_get_dataptr(mod->write_temp_buf)
-                                       , read_size);
-    if(!ok)
+    client->buffer_skip += block_size;
+
+    const ssize_t send_size = asc_socket_send(client->sock, client->buffer, client->buffer_skip);
+    if(send_size <= 0)
     {
         asc_log_warning(MSG("failed to send file part (%d bytes) to client:%d")
-                        , read_size, asc_socket_fd(client->sock));
+                        , client->buffer_skip, asc_socket_fd(client->sock));
         on_read_error(client);
         return;
+    }
+
+    if(send_size == client->buffer_skip)
+    {
+        client->buffer_skip = 0;
+    }
+    else
+    {
+        client->buffer_skip -= send_size;
+        memmove(client->buffer, &client->buffer[send_size], client->buffer_skip);
     }
 
     if(feof(client->src_file))
     {
         client->src_file = NULL;
-        asc_socket_set_on_send_possible(client->sock, NULL);
+        asc_socket_set_on_ready(client->sock, NULL);
+    }
+}
+
+static void on_ready_send_ts(void *arg)
+{
+    http_client_t *client = arg;
+    module_data_t *mod = client->mod;
+
+    const ssize_t send_size = asc_socket_send(client->sock, client->buffer, client->buffer_skip);
+    if(send_size <= 0)
+    {
+        asc_log_warning(MSG("failed to send ts (%d bytes) to client:%d")
+                        , client->buffer_skip, asc_socket_fd(client->sock));
+        on_read_error(client);
+        return;
+    }
+
+    if(send_size == client->buffer_skip)
+    {
+        client->buffer_skip = 0;
+        asc_socket_set_on_ready(client->sock, NULL);
+    }
+    else
+    {
+        asc_socket_set_on_ready(client->sock, on_ready_send_ts);
+        client->buffer_skip -= send_size;
+        memmove(client->buffer, &client->buffer[send_size], client->buffer_skip);
     }
 }
 
 static void on_ts(void *arg, const uint8_t *ts)
 {
     http_client_t *client = arg;
-    module_data_t *mod = client->mod;
 
-#ifdef ACCUM_TS
-    if(client->buffer_skip >= HTTP_BUFFER_SIZE - TS_PACKET_SIZE)
+    if(client->buffer_skip > HTTP_BUFFER_SIZE - TS_PACKET_SIZE)
     {
-        const bool ret = asc_socket_send_buffered(client->sock, client->buffer, client->buffer_skip);
-        if(!ret)
-        {
-            asc_log_warning(MSG("failed to send ts to the client [%s]"), asc_socket_error());
-            on_read_error(client);
-            return;
-        }
-        client->buffer_skip = 0;
-    }
-    memcpy(&client->buffer[client->buffer_skip], ts, TS_PACKET_SIZE);
-    client->buffer_skip += TS_PACKET_SIZE;
-#else
-    const bool ret = asc_socket_send_buffered(client->sock, ts, TS_PACKET_SIZE);
-    if(!ret)
-    {
-        asc_log_warning(MSG("failed to send ts to the client [%s]"), asc_socket_error());
-        on_read_error(client);
+        // TODO: overflow
         return;
     }
-#endif
+    else if(client->buffer_skip > HTTP_BUFFER_SIZE / 2)
+    {
+        asc_socket_set_on_ready(client->sock, on_ready_send_ts);
+    }
+
+    memcpy(&client->buffer[client->buffer_skip], ts, TS_PACKET_SIZE);
+    client->buffer_skip += TS_PACKET_SIZE;
 }
 
 static void buffer_set_text(char **buffer, int capacity
@@ -558,11 +582,10 @@ static int method_send(module_data_t *mod)
 
             memcpy(&data[frame_header], str, str_size);
 
-            send_ret = asc_socket_send_buffered(client->sock, (void *)data
-                                                , frame_header + str_size);
+            send_ret = asc_socket_send(client->sock, (void *)data, frame_header + str_size);
         }
         else
-            send_ret = asc_socket_send_buffered(client->sock, (void *)str, str_size);
+            send_ret = asc_socket_send(client->sock, (void *)str, str_size);
 
         if(!send_ret)
         {
@@ -613,7 +636,7 @@ static int method_send(module_data_t *mod)
     lua_pop(lua, 1);
 
     const int header_size = buffer - client->buffer;
-    if(!asc_socket_send_buffered(client->sock, client->buffer, header_size))
+    if(!asc_socket_send(client->sock, client->buffer, header_size))
     {
         asc_log_error(MSG("failed to send response to client:%d"), asc_socket_fd(client->sock));
         return 0;
@@ -625,7 +648,7 @@ static int method_send(module_data_t *mod)
     {
         const int content_size = luaL_len(lua, -1);
         const char *content = lua_tostring(lua, -1);
-        if(!asc_socket_send_buffered(client->sock, (void *)content, content_size))
+        if(!asc_socket_send(client->sock, (void *)content, content_size))
         {
             asc_log_error(MSG("failed to send content to client:%d [%s]")
                           , asc_socket_fd(client->sock), strerror(errno));
@@ -640,7 +663,7 @@ static int method_send(module_data_t *mod)
     {
         luaL_Stream *stream = luaL_checkudata(lua, -1, LUA_FILEHANDLE);
         client->src_file = stream->f;
-        asc_socket_set_on_send_possible(client->sock, on_write_ready);
+        asc_socket_set_on_ready(client->sock, on_ready_send_file);
     }
     lua_pop(lua, 1);
 
@@ -708,7 +731,6 @@ static void server_close(module_data_t *mod)
     mod->sock = NULL;
 
     asc_list_destroy(mod->clients);
-    asc_vector_destroy(mod->write_temp_buf);
     mod->clients = NULL;
 
     if(mod->idx_self > 0)
@@ -805,7 +827,6 @@ static void module_init(module_data_t *mod)
     mod->idx_self = luaL_ref(lua, LUA_REGISTRYINDEX);
 
     mod->clients = asc_list_init();
-    mod->write_temp_buf = asc_vector_init(1);
 
     mod->sock = asc_socket_open_tcp4(mod);
     asc_socket_set_reuseaddr(mod->sock, 1);
