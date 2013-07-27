@@ -69,6 +69,8 @@ typedef struct
 
     int buffer_skip;
     char buffer[HTTP_BUFFER_SIZE];
+
+    bool is_socket_busy;
 } http_client_t;
 
 struct module_data_t
@@ -469,16 +471,25 @@ static void on_ready_send_ts(void *arg)
         return;
     }
 
-    if(send_size == client->buffer_skip)
+    client->buffer_skip -= send_size;
+    if(client->buffer_skip > 0)
+        memmove(client->buffer, &client->buffer[send_size], client->buffer_skip);
+
+    if(client->buffer_skip < HTTP_BUFFER_SIZE / 2)
     {
-        client->buffer_skip = 0;
-        asc_socket_set_on_ready(client->sock, NULL);
+        if(client->is_socket_busy)
+        {
+            asc_socket_set_on_ready(client->sock, NULL);
+            client->is_socket_busy = false;
+        }
     }
     else
     {
-        asc_socket_set_on_ready(client->sock, on_ready_send_ts);
-        client->buffer_skip -= send_size;
-        memmove(client->buffer, &client->buffer[send_size], client->buffer_skip);
+        if(!client->is_socket_busy)
+        {
+            asc_socket_set_on_ready(client->sock, on_ready_send_ts);
+            client->is_socket_busy = true;
+        }
     }
 }
 
@@ -493,7 +504,8 @@ static void on_ts(void *arg, const uint8_t *ts)
     }
     else if(client->buffer_skip > HTTP_BUFFER_SIZE / 2)
     {
-        asc_socket_set_on_ready(client->sock, on_ready_send_ts);
+        if(!client->is_socket_busy)
+            on_ready_send_ts(arg);
     }
 
     memcpy(&client->buffer[client->buffer_skip], ts, TS_PACKET_SIZE);
