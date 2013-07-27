@@ -235,11 +235,11 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     {
         if(desc_pointer[0] == 0x09)
         {
-            const uint16_t pid = DESC_CA_PID(desc_pointer);
-            if(mod->stream[pid] == MPEGTS_PACKET_UNKNOWN && pid != NULL_TS_PID)
+            const uint16_t ca_pid = DESC_CA_PID(desc_pointer);
+            if(mod->stream[ca_pid] == MPEGTS_PACKET_UNKNOWN && ca_pid != NULL_TS_PID)
             {
-                mod->stream[pid] = MPEGTS_PACKET_CA;
-                module_stream_demux_join_pid(mod, pid);
+                mod->stream[ca_pid] = MPEGTS_PACKET_CA;
+                module_stream_demux_join_pid(mod, ca_pid);
             }
         }
         CAT_DESC_NEXT(psi, desc_pointer);
@@ -304,11 +304,11 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     {
         if(desc_pointer[0] == 0x09)
         {
-            const uint16_t pid = DESC_CA_PID(desc_pointer);
-            if(mod->stream[pid] == MPEGTS_PACKET_UNKNOWN && pid != NULL_TS_PID)
+            const uint16_t ca_pid = DESC_CA_PID(desc_pointer);
+            if(mod->stream[ca_pid] == MPEGTS_PACKET_UNKNOWN && ca_pid != NULL_TS_PID)
             {
-                mod->stream[pid] = MPEGTS_PACKET_CA;
-                module_stream_demux_join_pid(mod, pid);
+                mod->stream[ca_pid] = MPEGTS_PACKET_CA;
+                module_stream_demux_join_pid(mod, ca_pid);
             }
         }
         PMT_DESC_NEXT(psi, desc_pointer);
@@ -328,11 +328,11 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         {
             if(desc_pointer[0] == 0x09)
             {
-                const uint16_t pid = DESC_CA_PID(desc_pointer);
-                if(mod->stream[pid] == MPEGTS_PACKET_UNKNOWN && pid != NULL_TS_PID)
+                const uint16_t ca_pid = DESC_CA_PID(desc_pointer);
+                if(mod->stream[ca_pid] == MPEGTS_PACKET_UNKNOWN && ca_pid != NULL_TS_PID)
                 {
-                    mod->stream[pid] = MPEGTS_PACKET_CA;
-                    module_stream_demux_join_pid(mod, pid);
+                    mod->stream[ca_pid] = MPEGTS_PACKET_CA;
+                    module_stream_demux_join_pid(mod, ca_pid);
                 }
             }
             PMT_ITEM_DESC_NEXT(pointer, desc_pointer);
