@@ -502,14 +502,15 @@ static void on_ts(void *arg, const uint8_t *ts)
         // TODO: overflow
         return;
     }
-    else if(client->buffer_skip > HTTP_BUFFER_SIZE / 2)
+
+    memcpy(&client->buffer[client->buffer_skip], ts, TS_PACKET_SIZE);
+    client->buffer_skip += TS_PACKET_SIZE;
+
+    if(client->buffer_skip > HTTP_BUFFER_SIZE / 2)
     {
         if(!client->is_socket_busy)
             on_ready_send_ts(arg);
     }
-
-    memcpy(&client->buffer[client->buffer_skip], ts, TS_PACKET_SIZE);
-    client->buffer_skip += TS_PACKET_SIZE;
 }
 
 static void buffer_set_text(char **buffer, int capacity
