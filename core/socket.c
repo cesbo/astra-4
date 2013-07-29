@@ -330,8 +330,10 @@ void asc_socket_listen(asc_socket_t *sock, socket_callback_t on_accept, socket_c
         return;
     }
     sock->on_read = on_accept;
+    sock->on_ready = NULL;
     sock->on_close = on_error;
     asc_event_set_on_read(sock->event, __asc_socket_on_accept);
+    asc_event_set_on_write(sock->event, NULL);
     asc_event_set_on_error(sock->event, __asc_socket_on_close);
 }
 
@@ -413,6 +415,7 @@ void asc_socket_connect(asc_socket_t *sock, const char *addr, int port
         return;
     }
 
+    sock->on_read = NULL;
     sock->on_ready = on_connect;
     sock->on_close = on_error;
     asc_event_set_on_read(sock->event, NULL);
@@ -431,20 +434,13 @@ void asc_socket_connect(asc_socket_t *sock, const char *addr, int port
 
 ssize_t asc_socket_recv(asc_socket_t *sock, void *buffer, size_t size)
 {
-    const ssize_t ret = recv(sock->fd, buffer, size, 0);
-    if(ret == -1)
-        asc_log_error(MSG("recv() failed [%s]"), asc_socket_error());
-    return ret;
+    return recv(sock->fd, buffer, size, 0);
 }
 
 ssize_t asc_socket_recvfrom(asc_socket_t *sock, void *buffer, size_t size)
 {
     socklen_t slen = sizeof(struct sockaddr_in);
-    const ssize_t ret = recvfrom(sock->fd, buffer, size, 0
-                                 , (struct sockaddr *)&sock->sockaddr, &slen);
-    if(ret == -1)
-        asc_log_error(MSG("recvfrom() failed [%s]"), asc_socket_error());
-    return ret;
+    return recvfrom(sock->fd, buffer, size, 0, (struct sockaddr *)&sock->sockaddr, &slen);
 }
 
 /*
@@ -458,21 +454,13 @@ ssize_t asc_socket_recvfrom(asc_socket_t *sock, void *buffer, size_t size)
 
 ssize_t asc_socket_send(asc_socket_t *sock, const void *buffer, size_t size)
 {
-    const ssize_t ret = send(sock->fd, buffer, size, 0);
-    if(ret == -1)
-        asc_log_error(MSG("send() failed [%s]"), asc_socket_error());
-    return ret;
+    return send(sock->fd, buffer, size, 0);
 }
 
 ssize_t asc_socket_sendto(asc_socket_t *sock, const void *buffer, size_t size)
 {
     socklen_t slen = sizeof(struct sockaddr_in);
-    const ssize_t ret = sendto(sock->fd, buffer, size, 0
-                               , (struct sockaddr *)&sock->sockaddr, slen);
-    if(ret == -1)
-        asc_log_error(MSG("sendto() failed [%s]"), asc_socket_error());
-
-    return ret;
+    return sendto(sock->fd, buffer, size, 0, (struct sockaddr *)&sock->sockaddr, slen);
 }
 
 /*

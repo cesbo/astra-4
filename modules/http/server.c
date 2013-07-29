@@ -146,7 +146,7 @@ static void on_read(void *arg)
     if(r <= 0)
     {
         if(r == -1)
-            asc_log_error(MSG("failed to read a request [%s]"), strerror(errno));
+            asc_log_error(MSG("failed to read a request [%s]"), asc_socket_error());
         on_read_error(client);
         return;
     }
@@ -434,8 +434,8 @@ static void on_ready_send_file(void *arg)
     const ssize_t send_size = asc_socket_send(client->sock, client->buffer, client->buffer_skip);
     if(send_size <= 0)
     {
-        asc_log_warning(MSG("failed to send file part (%d bytes) to client:%d")
-                        , client->buffer_skip, asc_socket_fd(client->sock));
+        asc_log_warning(MSG("failed to send file part (%d bytes) to client:%d [%s]")
+                        , client->buffer_skip, asc_socket_fd(client->sock), asc_socket_error());
         on_read_error(client);
         return;
     }
@@ -465,8 +465,8 @@ static void on_ready_send_ts(void *arg)
     const ssize_t send_size = asc_socket_send(client->sock, client->buffer, client->buffer_skip);
     if(send_size <= 0)
     {
-        asc_log_warning(MSG("failed to send ts (%d bytes) to client:%d")
-                        , client->buffer_skip, asc_socket_fd(client->sock));
+        asc_log_warning(MSG("failed to send ts (%d bytes) to client:%d [%s]")
+                        , client->buffer_skip, asc_socket_fd(client->sock), asc_socket_error());
         on_read_error(client);
         return;
     }
@@ -600,10 +600,10 @@ static int method_send(module_data_t *mod)
         else
             send_ret = asc_socket_send(client->sock, (void *)str, str_size);
 
-        if(!send_ret)
+        if(send_ret <= 0)
         {
             asc_log_error(MSG("failed to send data to client:%d [%s]")
-                          , asc_socket_fd(client->sock), strerror(errno));
+                          , asc_socket_fd(client->sock), asc_socket_error());
         }
         return 0;
     }
@@ -649,9 +649,10 @@ static int method_send(module_data_t *mod)
     lua_pop(lua, 1);
 
     const int header_size = buffer - client->buffer;
-    if(!asc_socket_send(client->sock, client->buffer, header_size))
+    if(asc_socket_send(client->sock, client->buffer, header_size) <= 0)
     {
-        asc_log_error(MSG("failed to send response to client:%d"), asc_socket_fd(client->sock));
+        asc_log_error(MSG("failed to send response to client:%d [%s]")
+                      , asc_socket_fd(client->sock), asc_socket_error());
         return 0;
     }
 
@@ -661,10 +662,10 @@ static int method_send(module_data_t *mod)
     {
         const int content_size = luaL_len(lua, -1);
         const char *content = lua_tostring(lua, -1);
-        if(!asc_socket_send(client->sock, (void *)content, content_size))
+        if(asc_socket_send(client->sock, (void *)content, content_size) <= 0)
         {
             asc_log_error(MSG("failed to send content to client:%d [%s]")
-                          , asc_socket_fd(client->sock), strerror(errno));
+                          , asc_socket_fd(client->sock), asc_socket_error());
             return 0;
         }
     }

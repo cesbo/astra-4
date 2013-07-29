@@ -557,9 +557,7 @@ static void send_request(module_data_t *mod)
         const char *content = lua_tostring(lua, -1);
         // TODO: send partially
         if(asc_socket_send(mod->sock, (void *)content, content_size) != content_size)
-        {
             asc_log_error(MSG("failed to send content"));
-        }
     }
     lua_pop(lua, 1); // content
 }
@@ -653,9 +651,7 @@ static int method_send(module_data_t *mod)
             const char *content = lua_tostring(lua, 2);
             // TODO: send partially
             if(asc_socket_send(mod->sock, (void *)content, content_size) != content_size)
-            {
                 asc_log_error(MSG("failed to send content"));
-            }
             break;
         }
         case LUA_TTABLE:
