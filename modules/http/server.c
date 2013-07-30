@@ -38,7 +38,8 @@
 
 #define MSG(_msg) "[http_server %s:%d] " _msg, mod->addr, mod->port
 
-#define HTTP_BUFFER_SIZE (128 * 1024)
+#define HTTP_BUFFER_SIZE (1024 * 1024)
+#define HTTP_BUFFER_FILL (128 * 1024)
 
 #define FRAME_HEADER_SIZE 2
 #define FRAME_KEY_SIZE 4
@@ -413,7 +414,7 @@ static void on_ready_send_file(void *arg)
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
-    const int capacity_size = sizeof(client->buffer) - client->buffer_skip;
+    const int capacity_size = HTTP_BUFFER_SIZE - client->buffer_skip;
     if(capacity_size <= 0)
     {
         // TODO: overflow
@@ -462,20 +463,30 @@ static void on_ready_send_ts(void *arg)
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
-    const ssize_t send_size = asc_socket_send(client->sock, client->buffer, client->buffer_skip);
-    if(send_size <= 0)
+    do
     {
-        asc_log_warning(MSG("failed to send ts (%d bytes) to client:%d [%s]")
-                        , client->buffer_skip, asc_socket_fd(client->sock), asc_socket_error());
-        on_read_error(client);
-        return;
-    }
+        const ssize_t send_size = asc_socket_send(client->sock
+                                                  , client->buffer, client->buffer_skip);
 
-    client->buffer_skip -= send_size;
-    if(client->buffer_skip > 0)
-        memmove(client->buffer, &client->buffer[send_size], client->buffer_skip);
 
-    if(client->buffer_skip < HTTP_BUFFER_SIZE / 2)
+        if(send_size <= 0)
+        {
+            if(errno == EAGAIN)
+                break;
+
+            asc_log_warning(MSG("failed to send ts (%d bytes) to client:%d [%s]")
+                            , client->buffer_skip, asc_socket_fd(client->sock)
+                            , asc_socket_error());
+            on_read_error(client);
+            return;
+        }
+
+        client->buffer_skip -= send_size;
+        if(client->buffer_skip > 0)
+            memmove(client->buffer, &client->buffer[send_size], client->buffer_skip);
+    } while(0);
+
+    if(client->buffer_skip < HTTP_BUFFER_FILL)
     {
         if(client->is_socket_busy)
         {
@@ -506,11 +517,8 @@ static void on_ts(void *arg, const uint8_t *ts)
     memcpy(&client->buffer[client->buffer_skip], ts, TS_PACKET_SIZE);
     client->buffer_skip += TS_PACKET_SIZE;
 
-    if(client->buffer_skip > HTTP_BUFFER_SIZE / 2)
-    {
-        if(!client->is_socket_busy)
-            on_ready_send_ts(arg);
-    }
+    if(!client->is_socket_busy && client->buffer_skip >= HTTP_BUFFER_FILL)
+        on_ready_send_ts(arg);
 }
 
 static void buffer_set_text(char **buffer, int capacity
