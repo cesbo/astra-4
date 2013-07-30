@@ -54,7 +54,7 @@ struct module_data_t
     size_t buffer_skip;
 
     /* FFdecsa */
-    int is_keys;
+    bool is_keys;
     void *ffdecsa;
     uint8_t **cluster;
     size_t cluster_size;
@@ -589,9 +589,8 @@ static void on_response(module_data_t *mod, const uint8_t *data, const char *err
             memcpy(mod->new_key, &data[3], 16);
             if(mod->is_keys)
                 asc_log_warning(MSG("Both keys changed"));
-            else
-                mod->is_keys = 1;
         }
+        mod->is_keys = true;
 
 #if CAS_ECM_DUMP
         char key_1[17], key_2[17];
@@ -651,7 +650,7 @@ static void module_init(module_data_t *mod)
         str_to_hex(string_value, first_key, sizeof(first_key));
         first_key[3] = (first_key[0] + first_key[1] + first_key[2]) & 0xFF;
         first_key[7] = (first_key[4] + first_key[5] + first_key[6]) & 0xFF;
-        mod->is_keys = 1;
+        mod->is_keys = true;
         mod->caid = 0x2600;
     }
     set_control_words(mod->ffdecsa, first_key, first_key);

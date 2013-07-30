@@ -90,7 +90,16 @@ void __module_cam_ready(module_cam_t *cam);
 #define module_cam_ready(_mod) __module_cam_ready(&_mod->__cam)
 
 void __module_cam_reset(module_cam_t *cam);
-#define module_cam_reset(_mod) if(_mod->__cam.is_ready) __module_cam_reset(&_mod->__cam)
+#define module_cam_reset(_mod)                                                                  \
+    {                                                                                           \
+        if(_mod->__cam.is_ready)                                                                \
+            __module_cam_reset(&_mod->__cam);                                                   \
+        if(mod->packet)                                                                         \
+        {                                                                                       \
+            free(mod->packet);                                                                  \
+            mod->packet = NULL;                                                                 \
+        }                                                                                       \
+    }
 
 #define module_cam_response(_mod, _errmsg)                                                      \
     {                                                                                           \

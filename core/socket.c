@@ -75,17 +75,6 @@ void asc_socket_core_destroy(void)
 #endif
 }
 
-static bool __asc_socket_is_would_block(void)
-{
-#ifdef _WIN32
-    const int err = WSAGetLastError();
-    return (err == WSAEWOULDBLOCK) || (err == WSAEINPROGRESS);
-#else
-    return (errno == EISCONN) || (errno == EINPROGRESS) || (errno == EAGAIN);
-#endif
-}
-
-
 const char * asc_socket_error(void)
 {
     static char buffer[1024];
@@ -402,7 +391,13 @@ void asc_socket_connect(asc_socket_t *sock, const char *addr, int port
 
     if(connect(sock->fd, (struct sockaddr *)&sock->addr, sizeof(sock->addr)) == -1)
     {
-        if(!__asc_socket_is_would_block())
+#ifdef _WIN32
+        const int err = WSAGetLastError();
+        const bool is_error = (err == WSAEWOULDBLOCK) || (err == WSAEINPROGRESS);
+#else
+        const bool is_error = (errno == EISCONN) || (errno == EINPROGRESS) || (errno == EAGAIN);
+#endif
+        if(!is_error)
         {
             asc_log_error(MSG("connect() to %s:%d failed [%s]"), addr, port, asc_socket_error());
             on_error(sock->arg);

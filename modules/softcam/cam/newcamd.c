@@ -281,7 +281,7 @@ static int newcamd_send_msg(module_data_t *mod)
 
     if(asc_socket_send(mod->sock, mod->buffer, packet_size) != packet_size)
     {
-        asc_log_error(MSG("send: failed [%d]"), errno);
+        asc_log_error(MSG("send: failed [%s]"), asc_socket_error());
         if(mod->packet)
         {
             mod->packet->buffer[2] = 0x00;
@@ -325,7 +325,7 @@ static int newcamd_recv_msg(module_data_t *mod)
 
     if(asc_socket_recv(mod->sock, mod->buffer, 2) != 2)
     {
-        asc_log_error(MSG("recv: failed to read the length of message [%s]"), strerror(errno));
+        asc_log_error(MSG("recv: failed to read the length of message [%s]"), asc_socket_error());
         return 0;
     }
     packet_size = (mod->buffer[0] << 8) | mod->buffer[1];
@@ -338,7 +338,7 @@ static int newcamd_recv_msg(module_data_t *mod)
     const ssize_t read_size = asc_socket_recv(mod->sock, &mod->buffer[2], packet_size);
     if(read_size != packet_size)
     {
-        asc_log_error(MSG("recv: failed to read message [%s]"), strerror(errno));
+        asc_log_error(MSG("recv: failed to read message [%s]"), asc_socket_error());
         return 0;
     }
 
@@ -404,7 +404,7 @@ static int newcamd_login_1(module_data_t *mod)
     const ssize_t len = asc_socket_recv(mod->sock, rnd_data, sizeof(rnd_data));
     if(len != sizeof(rnd_data))
     {
-        asc_log_error(MSG("%s(): len=%d [%s]"), __FUNCTION__, len, strerror(errno));
+        asc_log_error(MSG("%s(): len=%d [%s]"), __FUNCTION__, len, asc_socket_error());
         return 0;
     }
     triple_des_set_key(mod, rnd_data, sizeof(rnd_data));
