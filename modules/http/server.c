@@ -467,8 +467,6 @@ static void on_ready_send_ts(void *arg)
     {
         const ssize_t send_size = asc_socket_send(client->sock
                                                   , client->buffer, client->buffer_skip);
-
-
         if(send_size <= 0)
         {
             if(errno == EAGAIN)
@@ -486,7 +484,7 @@ static void on_ready_send_ts(void *arg)
             memmove(client->buffer, &client->buffer[send_size], client->buffer_skip);
     } while(0);
 
-    if(client->buffer_skip < HTTP_BUFFER_FILL)
+    if(client->buffer_skip == 0)
     {
         if(client->is_socket_busy)
         {
