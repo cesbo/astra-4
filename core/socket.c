@@ -243,7 +243,7 @@ void asc_socket_set_on_read(asc_socket_t *sock, socket_callback_t on_read)
         return;
 
     sock->on_read = on_read;
-    asc_event_set_on_read(sock->event, __asc_socket_on_read);
+    asc_event_set_on_read(sock->event, (on_read) ? __asc_socket_on_read : NULL);
 }
 
 void asc_socket_set_on_ready(asc_socket_t * sock, socket_callback_t on_ready)
@@ -252,7 +252,7 @@ void asc_socket_set_on_ready(asc_socket_t * sock, socket_callback_t on_ready)
         return;
 
     sock->on_ready = on_ready;
-    asc_event_set_on_write(sock->event, __asc_socket_on_ready);
+    asc_event_set_on_write(sock->event, (on_ready) ? __asc_socket_on_ready : NULL);
 }
 
 void asc_socket_set_on_close(asc_socket_t *sock, socket_callback_t on_close)
@@ -261,7 +261,7 @@ void asc_socket_set_on_close(asc_socket_t *sock, socket_callback_t on_close)
         return;
 
     sock->on_close = on_close;
-    asc_event_set_on_error(sock->event, __asc_socket_on_close);
+    asc_event_set_on_error(sock->event, (on_close) ? __asc_socket_on_close : NULL);
 }
 
 /*
