@@ -589,6 +589,13 @@ void asc_event_close(asc_event_t *event)
     if(!event)
         return;
 
+    if(event->fd < event_observer.max_fd)
+    {
+        asc_list_remove_item(event_observer.event_list, event);
+        free(event);
+        return;
+    }
+
     event_observer.max_fd = 0;
     for(asc_list_first(event_observer.event_list)
         ; !asc_list_eol(event_observer.event_list)

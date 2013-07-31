@@ -184,7 +184,7 @@ void asc_socket_close(asc_socket_t *sock)
     if(sock->fd > 0)
     {
 #ifdef _WIN32
-        closesocket(sock->fd);
+        shutdown(sock->fd, SHUT_RDWR);
 #else
         close(sock->fd);
 #endif

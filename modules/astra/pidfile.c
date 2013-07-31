@@ -84,8 +84,6 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    asc_log_info("[pidfile %s] %s()", filename, __FUNCTION__);
-
     __uarg(mod);
 
     if(!access(filename, W_OK))
