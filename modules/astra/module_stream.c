@@ -10,8 +10,8 @@
 
 void __module_stream_detach(module_stream_t *stream, module_stream_t *child)
 {
-    module_stream_t *i;
-    TAILQ_FOREACH(i, &stream->childs, entries)
+    module_stream_t *i, *n;
+    TAILQ_FOREACH_SAFE(i, &stream->childs, entries, n)
     {
         if(i == child)
         {
