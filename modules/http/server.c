@@ -463,26 +463,22 @@ static void on_ready_send_ts(void *arg)
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
-    do
+    const ssize_t send_size = asc_socket_send(client->sock
+                                              , client->buffer, client->buffer_skip);
+    if(send_size > 0)
     {
-        const ssize_t send_size = asc_socket_send(client->sock
-                                                  , client->buffer, client->buffer_skip);
-        if(send_size <= 0)
-        {
-            if(errno == EAGAIN)
-                break;
-
-            asc_log_warning(MSG("failed to send ts (%d bytes) to client:%d [%s]")
-                            , client->buffer_skip, asc_socket_fd(client->sock)
-                            , asc_socket_error());
-            on_read_error(client);
-            return;
-        }
-
         client->buffer_skip -= send_size;
         if(client->buffer_skip > 0)
             memmove(client->buffer, &client->buffer[send_size], client->buffer_skip);
-    } while(0);
+    }
+    else if(send_size == -1)
+    {
+        asc_log_warning(MSG("failed to send ts (%d bytes) to client:%d [%s]")
+                        , client->buffer_skip, asc_socket_fd(client->sock)
+                        , asc_socket_error());
+        on_read_error(client);
+        return;
+    }
 
     if(client->buffer_skip == 0)
     {

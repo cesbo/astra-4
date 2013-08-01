@@ -449,7 +449,19 @@ ssize_t asc_socket_recvfrom(asc_socket_t *sock, void *buffer, size_t size)
 
 ssize_t asc_socket_send(asc_socket_t *sock, const void *buffer, size_t size)
 {
-    return send(sock->fd, buffer, size, 0);
+    const ssize_t ret = send(sock->fd, buffer, size, 0);
+    if(ret == -1)
+    {
+#ifdef _WIN32
+        const int err = WSAGetLastError();
+        if(err == WSAEWOULDBLOCK)
+            return 0;
+#else
+        if(errno == EAGAIN)
+            return 0;
+#endif
+    }
+    return ret;
 }
 
 ssize_t asc_socket_sendto(asc_socket_t *sock, const void *buffer, size_t size)
