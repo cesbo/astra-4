@@ -61,6 +61,7 @@ struct module_data_t
  *
  */
 
+static void dvr_open(module_data_t *mod);
 static void dvr_close(module_data_t *mod);
 
 static void dvr_on_error(void *arg)
@@ -68,6 +69,7 @@ static void dvr_on_error(void *arg)
     module_data_t *mod = arg;
     asc_log_error(MSG("dvr read error, try to reopen [%s]"), strerror(errno));
     dvr_close(mod);
+    dvr_open(mod);
 }
 
 static void dvr_on_read(void *arg)
