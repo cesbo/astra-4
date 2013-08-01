@@ -94,6 +94,8 @@ static void fe_event(dvb_fe_t *fe)
                 asc_log_info(MSG("fe has lock. status:%c%c%c%c%c signal:%d%% snr:%d%%")
                              , ss, sc, sv, sy, sl
                              , fe->signal, fe->snr);
+
+                fe->do_retune = 0;
             }
             else
             {
