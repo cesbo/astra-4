@@ -407,7 +407,7 @@ static void thread_loop(void *arg)
         const uint64_t dpcr_ext = delta_pcr % 300;
         const double block_time = ((double)(dpcr_base / 90.0)     // 90 kHz
                                 + (double)(dpcr_ext / 27000.0));  // 27 MHz
-        if(block_time < 0 || block_time > 200)
+        if(block_time < 0 || block_time > 250)
         {
             asc_log_error(MSG("block time out of range: %.2f"), block_time);
             mod->buffer.ptr = mod->buffer.block_end;

@@ -337,13 +337,20 @@ end
 -- o888o         o888ooo88      888     o888ooo888
 
 local dvb_list
-if dvbls then dvb_list = dvbls() end
 
 local input_list = {}
 local kill_input_list = {}
 
 function dvb_tune(dvb_conf)
-    if dvb_conf.mac and dvb_list then
+    if dvb_conf.mac then
+        if not dvb_list then
+            if dvbls then
+                dvb_list = dvbls()
+            else
+                log.error("module dvbls is required")
+                astra.abort()
+            end
+        end
         dvb_conf.mac = dvb_conf.mac:upper()
         for _, adapter_info in pairs(dvb_list) do
             if dvb_conf.mac and adapter_info.mac == dvb_conf.mac then
