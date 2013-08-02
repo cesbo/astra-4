@@ -45,6 +45,7 @@ struct module_data_t
     uint32_t buffer_skip;
     uint8_t buffer[UDP_BUFFER_SIZE];
 
+#ifndef _WIN32
     struct
     {
         asc_thread_t *thread;
@@ -57,6 +58,7 @@ struct module_data_t
         uint32_t buffer_overflow;
     } sync;
     uint64_t pcr;
+#endif
 };
 
 static void on_ts(module_data_t *mod, const uint8_t *ts)
@@ -91,6 +93,8 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         mod->buffer_skip = 0;
     }
 }
+
+#ifndef _WIN32
 
 static void sync_queue_push(module_data_t *mod, const uint8_t *ts)
 {
@@ -300,6 +304,7 @@ static void thread_loop(void *arg)
         }
     }
 }
+#endif
 
 static void module_init(module_data_t *mod)
 {
@@ -346,6 +351,7 @@ static void module_init(module_data_t *mod)
     asc_socket_multicast_join(mod->sock, mod->addr, NULL);
     asc_socket_set_sockaddr(mod->sock, mod->addr, mod->port);
 
+#ifndef _WIN32
     if(module_option_number("sync", &value) && value > 0)
     {
         module_stream_init(mod, sync_queue_push);
@@ -360,17 +366,22 @@ static void module_init(module_data_t *mod)
     }
     else
         module_stream_init(mod, on_ts);
+#else
+    module_stream_init(mod, on_ts);
+#endif
 }
 
 static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
 
+#ifndef _WIN32
     if(mod->sync.buffer)
     {
         asc_thread_destroy(&mod->sync.thread);
         free(mod->sync.buffer);
     }
+#endif
 
     asc_socket_close(mod->sock);
 }
