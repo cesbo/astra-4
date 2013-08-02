@@ -1122,6 +1122,14 @@ static void ca_tpdu_event(dvb_ca_t *ca)
             ++buffer_skip;
             --message_size;
 
+            if(slot->buffer_size + message_size > MAX_TPDU_SIZE)
+            {
+                asc_log_error(MSG("tpdu buffer limit: buffer_size:%d message_size:%d")
+                              , slot->buffer_size, message_size);
+                slot->buffer_size = 0;
+                break;
+            }
+
             memcpy(&slot->buffer[slot->buffer_size]
                    , &ca->ca_buffer[buffer_skip]
                    , message_size);
