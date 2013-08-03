@@ -178,6 +178,9 @@ void asc_socket_shutdown_both(asc_socket_t *sock)
 
 void asc_socket_close(asc_socket_t *sock)
 {
+    if(!sock)
+        return;
+
     if(sock->event)
         asc_event_close(sock->event);
 
@@ -344,6 +347,7 @@ bool asc_socket_accept(asc_socket_t *sock, asc_socket_t **client_ptr, void * arg
     {
         asc_log_error(MSG("accept() failed [%s]"), asc_socket_error());
         free(client);
+        *client_ptr = NULL;
         return false;
     }
 

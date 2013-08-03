@@ -133,9 +133,11 @@ static void on_read_error(void *arg)
         client->__stream.self = NULL;
     }
 
-    asc_list_remove_item(mod->clients, client);
-    asc_socket_close(client->sock);
-    free(client);
+    if(client->sock)
+    {
+        asc_socket_close(client->sock);
+        client->sock = NULL;
+    }
 }
 
 static void on_read(void *arg)
@@ -280,19 +282,19 @@ static void on_read(void *arg)
 
         if(client->ready_state == 2)
         {
+            luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
+            client->idx_request = 0;
+
             get_lua_callback(mod);
             lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
             lua_pushlightuserdata(lua, client);
             lua_pushvalue(lua, request);
             lua_call(lua, 3, 0);
-
-            luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
-            client->idx_request = 0;
         }
 
         lua_pop(lua, 1); // request
 
-        if(skip >= r)
+        if(skip >= r || client->sock == NULL)
             return;
     }
 
@@ -555,6 +557,8 @@ static int method_send(module_data_t *mod)
         astra_abort();
     }
     http_client_t *client = lua_touserdata(lua, 2);
+    if(!client->sock)
+        return 0;
 
     if(lua_type(lua, 3) == LUA_TSTRING)
     {
@@ -738,7 +742,8 @@ static void server_close(module_data_t *mod)
         ; asc_list_first(mod->clients))
     {
         http_client_t *client = asc_list_data(mod->clients);
-        asc_socket_close(client->sock);
+        if(client->sock)
+            asc_socket_close(client->sock);
         free(client);
         asc_list_remove_current(mod->clients);
     }
@@ -772,7 +777,9 @@ static int method_close(module_data_t *mod)
         astra_abort();
     }
 
-    on_read_error(lua_touserdata(lua, 2));
+    http_client_t *client = lua_touserdata(lua, 2);
+    if(client->sock)
+        on_read_error(client);
 
     return 0;
 }
@@ -786,15 +793,27 @@ static void on_accept(void *arg)
 {
     module_data_t *mod = arg;
 
-    http_client_t *client = calloc(1, sizeof(http_client_t));
+    http_client_t *client = NULL;
+    asc_list_for(mod->clients)
+    {
+        client = asc_list_data(mod->clients);
+        if(!client->sock)
+            break;
+        client = NULL;
+    }
+
+    if(!client)
+    {
+        client = calloc(1, sizeof(http_client_t));
+        client->mod = mod;
+        asc_list_insert_tail(mod->clients, client);
+    }
+
     if(!asc_socket_accept(mod->sock, &client->sock, client))
     {
-        free(client);
         on_accept_error(mod);
         return;
     }
-    client->mod = mod;
-    asc_list_insert_tail(mod->clients, client);
 
     asc_socket_set_on_read(client->sock, on_read);
     asc_socket_set_on_close(client->sock, on_read_error);
