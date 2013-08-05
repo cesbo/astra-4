@@ -49,7 +49,6 @@
 
 typedef struct
 {
-    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
     module_data_t *mod;
@@ -121,23 +120,17 @@ static void on_read_error(void *arg)
     lua_call(lua, 3, 0);
 
     if(client->idx_data)
-    {
         luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_data);
-        client->idx_data = 0;
-    }
     lua_gc(lua, LUA_GCCOLLECT, 0);
 
     if(client->__stream.self)
-    {
         __module_stream_destroy(&client->__stream);
-        client->__stream.self = NULL;
-    }
 
     if(client->sock)
-    {
         asc_socket_close(client->sock);
-        client->sock = NULL;
-    }
+
+    memset(client, 0, sizeof(http_client_t));
+    client->mod = mod;
 }
 
 static void on_read(void *arg)
