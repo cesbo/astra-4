@@ -589,6 +589,8 @@ void asc_event_close(asc_event_t *event)
     if(!event)
         return;
 
+    event_observer.is_changed = true;
+
     if(event->fd < event_observer.max_fd)
     {
         asc_list_remove_item(event_observer.event_list, event);
@@ -614,8 +616,6 @@ void asc_event_close(asc_event_t *event)
             asc_list_next(event_observer.event_list);
         }
     }
-
-    event_observer.is_changed = true;
 }
 
 #endif
