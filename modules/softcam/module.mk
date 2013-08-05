@@ -1,6 +1,6 @@
 SOURCES_CSA="FFdecsa/FFdecsa.c"
 SOURCES_CAM="cam/cam.c cam/newcamd.c"
-SOURCES_CAS="cas/irdeto.c cas/viaccess.c cas/dre.c cas/conax.c cas/nagra.c cas/videoguard.c cas/mediaguard.c cas/cryptoworks.c cas/bulcrypt.c"
+SOURCES_CAS="cas/irdeto.c cas/viaccess.c cas/dre.c cas/conax.c cas/nagra.c cas/videoguard.c cas/mediaguard.c cas/cryptoworks.c cas/bulcrypt.c cas/exset.c"
 SOURCES="$SOURCES_CSA $SOURCES_CAM $SOURCES_CAS decrypt.c"
 
 MODULES="decrypt newcamd"
