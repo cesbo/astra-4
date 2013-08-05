@@ -591,6 +591,11 @@ void asc_event_close(asc_event_t *event)
 
     event_observer.is_changed = true;
 
+    event->on_read = NULL;
+    event->on_write = NULL;
+    event->on_error = NULL;
+    asc_event_subscribe(event);
+
     if(event->fd < event_observer.max_fd)
     {
         asc_list_remove_item(event_observer.event_list, event);
