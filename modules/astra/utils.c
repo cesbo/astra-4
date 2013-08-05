@@ -49,7 +49,7 @@ static int utils_hostname(lua_State *L)
     return 1;
 }
 
-#ifndef _WIN32
+#ifdef WITH_IFADDRS
 static int utils_ifaddrs(lua_State *L)
 {
     struct ifaddrs *ifaddr;
@@ -66,29 +66,29 @@ static int utils_ifaddrs(lua_State *L)
 
     lua_newtable(L);
 
-    for(; ifaddr; ifaddr = ifaddr->ifa_next)
+    for(struct ifaddrs *i = ifaddr; i; i = i->ifa_next)
     {
-        if(!ifaddr->ifa_addr)
+        if(!i->ifa_addr)
             continue;
 
-        lua_getfield(L, -1, ifaddr->ifa_name);
+        lua_getfield(L, -1, i->ifa_name);
         if(lua_isnil(L, -1))
         {
             lua_pop(L, 1);
             lua_newtable(L);
-            lua_pushstring(L, ifaddr->ifa_name);
+            lua_pushstring(L, i->ifa_name);
             lua_pushvalue(L, -2);
             lua_settable(L, -4);
         }
 
-        const int s = getnameinfo(ifaddr->ifa_addr, sizeof(struct sockaddr_in)
+        const int s = getnameinfo(i->ifa_addr, sizeof(struct sockaddr_in)
                                   , host, sizeof(host), NULL, 0
                                   , NI_NUMERICHOST);
         if(s == 0 && *host != '\0')
         {
             const char *ip_family = NULL;
 
-            switch(ifaddr->ifa_addr->sa_family)
+            switch(i->ifa_addr->sa_family)
             {
                 case AF_INET:
                     ip_family = __ipv4;
@@ -278,7 +278,7 @@ LUA_API int luaopen_utils(lua_State *L)
     static const luaL_Reg api[] =
     {
         { "hostname", utils_hostname },
-#ifndef _WIN32
+#ifdef WITH_IFADDRS
         { "ifaddrs", utils_ifaddrs },
 #endif
         { "stat", utils_stat },
