@@ -34,8 +34,6 @@ APP="astra"
 APP_C="gcc"
 APP_STRIP="strip"
 
-DEFAULT_MODULES="astra:dvb:file:http:mpegts:softcam:udp"
-
 ARG_CC=0
 ARG_MODULES="*"
 ARG_MAIN_APP=""
@@ -308,9 +306,9 @@ select_modules()
         if [ -z "$M" ] ; then
             :
         elif [ "$M" = "*" ] ; then
-            echo "$DEFAULT_MODULES" | tr ':' '\n' | while read MM ; do
-                if [ -f "$SRCDIR/modules/$MM/module.mk" ] ; then
-                    echo "$SRCDIR/modules/$MM"
+            ls -d $SRCDIR/modules/* | while read M ; do
+                if [ -f "$M/module.mk" ] ; then
+                    echo "$M"
                 fi
             done
         else
