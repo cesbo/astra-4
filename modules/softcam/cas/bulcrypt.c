@@ -30,6 +30,8 @@ struct module_data_t
 
 static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
 {
+    static const uint8_t z[] = { 0x00, 0x00, 0x00 };
+
     const uint8_t em_type = em->buffer[0];
     switch(em_type)
     {
@@ -44,31 +46,66 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
             }
             break;
         }
+        // EMM
         case 0x82:
+        { // unique
+            if(!memcmp(&em->buffer[3], z, 3))
+            {
+                memcpy(&em->buffer[3], &mod->__cas.decrypt->cam->ua[4], 3);
+                em->buffer[6] = (em->buffer[6] & 0xF0)| (mod->__cas.decrypt->cam->ua[7] & 0xF0);
+                return true;
+            }
+
+            return (!memcmp(&em->buffer[3], &mod->__cas.decrypt->cam->ua[4], 3)
+                    && ((em->buffer[6] & 0xF0) == (mod->__cas.decrypt->cam->ua[7] & 0xF0)));
+        }
         case 0x85:
         { // unique
-            if(!memcmp(&em->buffer[3], &mod->__cas.decrypt->cam->ua[2], 3))
+            if(!memcmp(&em->buffer[3], z, 3))
+            {
+                memcpy(&em->buffer[3], &mod->__cas.decrypt->cam->ua[4], 3);
+                if(em_type == 0x82)
+                {
+                    em->buffer[6] = (em->buffer[6] & 0xF0)
+                                  | (mod->__cas.decrypt->cam->ua[7] & 0xF0);
+                }
                 return true;
-            break;
+            }
+
+            return (!memcmp(&em->buffer[3], &mod->__cas.decrypt->cam->ua[4], 3));
         }
         case 0x84:
         { // shared
-            if(!memcmp(&em->buffer[3], &mod->__cas.decrypt->cam->ua[2], 2))
+            if(!memcmp(&em->buffer[3], z, 2))
+            {
+                memcpy(&em->buffer[3], &mod->__cas.decrypt->cam->ua[4], 2);
                 return true;
-            break;
+            }
+
+            return (!memcmp(&em->buffer[3], &mod->__cas.decrypt->cam->ua[4], 2));
         }
+#if 0
         case 0x8b:
-        { //shared-unknown
-            if(!memcmp(&em->buffer[4], &mod->__cas.decrypt->cam->ua[2], 2))
+        { // shared
+            if(!memcmp(&em->buffer[4], z, 2))
+            {
+                memcpy(&em->buffer[4], &mod->__cas.decrypt->cam->ua[4], 2);
                 return true;
-            break;
+            }
+
+            return (!memcmp(&em->buffer[4], &mod->__cas.decrypt->cam->ua[4], 2));
         }
         case 0x8a:
         { // global
-            if(em->buffer[4] == mod->__cas.decrypt->cam->ua[2])
+            if(!em->buffer[4])
+            {
+                em->buffer[4] = mod->__cas.decrypt->cam->ua[4];
                 return true;
-            break;
+            }
+
+            return (em->buffer[4] == mod->__cas.decrypt->cam->ua[4]);
         }
+#endif
         default:
             break;
     }
