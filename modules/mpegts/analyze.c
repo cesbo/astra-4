@@ -76,7 +76,6 @@ struct module_data_t
 
     // on_air
     uint32_t last_bitrate;
-    bool is_low_bitrate;
 };
 
 #define MSG(_msg) "[analyze %s] " _msg, mod->name
@@ -649,17 +648,9 @@ static void on_check_stat(void *arg)
     lua_setfield(lua, -2, "analyze");
 
     if(bitrate > mod->last_bitrate / 2)
-    {
         mod->last_bitrate = bitrate;
-        mod->is_low_bitrate = false;
-    }
-    else if(bitrate > mod->last_bitrate / 4)
-    {
-        if(mod->is_low_bitrate)
-            on_air = false;
-        else
-            mod->is_low_bitrate = true;
-    }
+    else if(bitrate > mod->last_bitrate / 6)
+        ;
     else
         on_air = false;
 
