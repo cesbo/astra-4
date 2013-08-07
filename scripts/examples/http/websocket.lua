@@ -114,7 +114,7 @@ function on_server_data(self, client, data)
                 local ws_key = get_ws_key(data.headers)
                 if ws_key then
                     local ws_accept_str = ws_key .. "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-                    local ws_accept = utils.base64_encode(utils.sha1(ws_accept_str))
+                    local ws_accept = base64.encode(ws_accept_str:sha1())
                     table.insert(headers, "Sec-WebSocket-Accept: " .. ws_accept)
                 end
 

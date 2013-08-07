@@ -16,12 +16,6 @@
  *                  - get network interfaces list (except Win32)
  *      utils.stat(path)
  *                  - file/folder information
- *      utils.sha1(string)
- *                  - calculate SHA1 hash
- *      utils.base64_encode(string)
- *                  - convert data to base64
- *      utils.base64_decode(base64)
- *                  - convert base64 to data
  *      utils.readdir(path)
  *                  - iterator to scan directory located by path
  */
@@ -178,51 +172,6 @@ static int utils_stat(lua_State *L)
     return 1;
 }
 
-/* sha1 */
-
-static int utils_sha1(lua_State *L)
-{
-    const char *data = luaL_checkstring(L, 1);
-    const int data_size = luaL_len(L, 1);
-
-    sha1_ctx_t ctx;
-    memset(&ctx, 0, sizeof(sha1_ctx_t));
-    sha1_init(&ctx);
-    sha1_update(&ctx, (uint8_t *)data, data_size);
-    uint8_t digest[SHA1_DIGEST_SIZE];
-    sha1_final(&ctx, digest);
-
-    lua_pushlstring(lua, (char *)digest, sizeof(digest));
-    return 1;
-}
-
-/* base64 */
-
-static int utils_base64_encode(lua_State *L)
-{
-    const char *data = luaL_checkstring(L, 1);
-    const int data_size = luaL_len(L, 1);
-
-    size_t data_enc_size = 0;
-    const char *data_enc = base64_encode(data, data_size, &data_enc_size);
-    lua_pushlstring(lua, data_enc, data_enc_size);
-
-    free((void *)data_enc);
-    return 1;
-}
-
-static int utils_base64_decode(lua_State *L)
-{
-    const char *data = luaL_checkstring(L, 1);
-
-    size_t data_dec_size = 0;
-    const char *data_dec = base64_decode(data, &data_dec_size);
-    lua_pushlstring(lua, data_dec, data_dec_size);
-
-    free((void *)data_dec);
-    return 1;
-}
-
 /* readdir */
 
 static const char __utils_readdir[] = "__utils_readdir";
@@ -282,28 +231,8 @@ LUA_API int luaopen_utils(lua_State *L)
         { "ifaddrs", utils_ifaddrs },
 #endif
         { "stat", utils_stat },
-        { "sha1", utils_sha1 },
-        { "base64_encode", utils_base64_encode },
-        { "base64_decode", utils_base64_decode },
         { NULL, NULL }
     };
-
-    lua_getglobal(L, "string");
-
-    lua_pushvalue(L, -1);
-    lua_pushcfunction(L, utils_base64_encode);
-    lua_setfield(L, -2, "base64_encode");
-
-    lua_pushvalue(L, -1);
-    lua_pushcfunction(L, utils_base64_decode);
-    lua_setfield(L, -2, "base64_decode");
-
-    lua_pushvalue(L, -1);
-    lua_pushcfunction(L, utils_sha1);
-    lua_setfield(L, -2, "sha1");
-
-    lua_pop(L, 1); // string
-
 
     luaL_newlib(L, api);
 

@@ -1,9 +1,17 @@
 /*
- * For more information, visit https://cesbo.com
- * Copyright (C) 2012, Andrey Dyldin <and@cesbo.com>
+ * Astra Str2Hex Module
+ * http://cesbo.com/astra
+ *
+ * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Licensed under the MIT license.
  */
 
-#include "base.h"
+/*
+ *      (string):hex()
+ *                  - dump data in hex
+ */
+
+#include <astra.h>
 
 char * hex_to_str(char *str, const uint8_t *data, int size)
 {
@@ -43,4 +51,31 @@ uint8_t * str_to_hex(const char *str, uint8_t *data, int size)
         data[i] = char_to_hex(str);
 
     return data;
+}
+
+static int lua_hex(lua_State *L)
+{
+    const uint8_t *data = (const uint8_t *)luaL_checkstring(L, 1);
+    const int data_size = luaL_len(L, 1);
+
+    luaL_Buffer b;
+    char *p = luaL_buffinitsize(L, &b, data_size * 2 + 1);
+    hex_to_str(p, data, data_size);
+    luaL_addsize(&b, data_size * 2);
+    luaL_pushresult(&b);
+
+    return 1;
+}
+
+LUA_API int luaopen_str2hex(lua_State *L)
+{
+    lua_getglobal(L, "string");
+
+    lua_pushvalue(L, -1);
+    lua_pushcfunction(L, lua_hex);
+    lua_setfield(L, -2, "hex");
+
+    lua_pop(L, 1); // string
+
+    return 0;
 }

@@ -1,7 +1,12 @@
 
-#include "base.h"
-#include <stdlib.h>
-#include <string.h>
+#include <astra.h>
+
+/*
+ *      base64.encode(string)
+ *                  - convert data to base64
+ *      base64.decode(base64)
+ *                  - convert base64 to data
+ */
 
 static const char base64_list[] = \
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -110,53 +115,43 @@ char * base64_decode(const char *in, size_t *out_size)
     return out;
 }
 
-#if 0
-#include <stdio.h>
-static void TEST(int id, const char *s, const char *r)
-{
-    size_t s_size = 0 , r_size = 0;
-    while(s[s_size])
-        ++s_size;
-    while(r[r_size])
-        ++r_size;
 
-    size_t size = 0;
-    char *data = base64_encode(s, s_size, &size);
-    if(size != r_size)
-    {
-        printf("ERROR [%d.1] %ld != %ld\n", id, size, r_size);
-        abort();
-    }
-    if(memcmp(data, r, r_size + 1))
-    {
-        printf("ERROR [%d.2] %s != %s\n", id, data, r);
-        abort();
-    }
-    free(data);
-    data = base64_decode(r, &r_size);
-    if(s_size != r_size)
-    {
-        printf("ERROR [%d.3] %ld != %ld\n", id, s_size, r_size);
-        abort();
-    }
-    if(memcmp(data, s, s_size + 1))
-    {
-        printf("ERROR [%d.2] %s != %s\n", id, data, s);
-        abort();
-    }
-    free(data);
+static int lua_base64_encode(lua_State *L)
+{
+    const char *data = luaL_checkstring(L, 1);
+    const int data_size = luaL_len(L, 1);
+
+    size_t data_enc_size = 0;
+    const char *data_enc = base64_encode(data, data_size, &data_enc_size);
+    lua_pushlstring(lua, data_enc, data_enc_size);
+
+    free((void *)data_enc);
+    return 1;
 }
 
-int main(void)
+static int lua_base64_decode(lua_State *L)
 {
-    char s1[] = "1234567890"; char r1[] = "MTIzNDU2Nzg5MA==";
-    char s2[] = "qwertyuio";  char r2[] = "cXdlcnR5dWlv";
-    char s3[] = "ASDFGHJK";   char r3[] = "QVNERkdISks=";
+    const char *data = luaL_checkstring(L, 1);
 
-    TEST(1, s1, r1);
-    TEST(2, s2, r2);
-    TEST(3, s3, r3);
+    size_t data_dec_size = 0;
+    const char *data_dec = base64_decode(data, &data_dec_size);
+    lua_pushlstring(lua, data_dec, data_dec_size);
 
-    return 0;
+    free((void *)data_dec);
+    return 1;
 }
-#endif
+
+LUA_API int luaopen_base64(lua_State *L)
+{
+    static const luaL_Reg api[] =
+    {
+        { "encode", lua_base64_encode },
+        { "decode", lua_base64_decode },
+        { NULL, NULL }
+    };
+
+    luaL_newlib(L, api);
+    lua_setglobal(L, "base64");
+
+    return 1;
+}

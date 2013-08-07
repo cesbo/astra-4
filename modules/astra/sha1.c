@@ -4,8 +4,12 @@
  * 100% Public Domain
  */
 
-#include "base.h"
-#include <string.h>
+/*
+ *      (string):sha1()
+ *                  - calculate SHA1 hash
+ */
+
+#include <astra.h>
 
 #define rol(value, bits) (((value) << (bits)) | ((value) >> (32 - (bits))))
 
@@ -147,4 +151,33 @@ void sha1_final(sha1_ctx_t *context, uint8_t digest[SHA1_DIGEST_SIZE])
 #ifdef SHA1HANDSOFF  /* make SHA1Transform overwrite its own static vars */
     sha1_transform(context->state, context->buffer);
 #endif
+}
+
+static int lua_sha1(lua_State *L)
+{
+    const char *data = luaL_checkstring(L, 1);
+    const int data_size = luaL_len(L, 1);
+
+    sha1_ctx_t ctx;
+    memset(&ctx, 0, sizeof(sha1_ctx_t));
+    sha1_init(&ctx);
+    sha1_update(&ctx, (uint8_t *)data, data_size);
+    uint8_t digest[SHA1_DIGEST_SIZE];
+    sha1_final(&ctx, digest);
+
+    lua_pushlstring(lua, (char *)digest, sizeof(digest));
+    return 1;
+}
+
+LUA_API int luaopen_sha1(lua_State *L)
+{
+    lua_getglobal(L, "string");
+
+    lua_pushvalue(L, -1);
+    lua_pushcfunction(L, lua_sha1);
+    lua_setfield(L, -2, "sha1");
+
+    lua_pop(L, 1); // string
+
+    return 0;
 }
