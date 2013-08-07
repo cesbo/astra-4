@@ -30,8 +30,6 @@
  *      cas_data    - string, additional paramters for CAS
  */
 
-// TODO: stream reload
-
 #include <astra.h>
 #include "module_cam.h"
 #include "cas/cas_list.h"
@@ -97,7 +95,12 @@ static void module_decrypt_cas_destroy(module_data_t *mod)
 static void stream_reload(module_data_t *mod)
 {
     memset(mod->stream, 0, sizeof(mod->stream));
-    if(mod->__decrypt.cam->is_ready)
+    if(!mod->__decrypt.cam)
+    {
+        mod->stream[0] = MPEGTS_PACKET_PAT;
+        mod->stream[1] = MPEGTS_PACKET_CAT;
+    }
+    else if(mod->__decrypt.cam->is_ready)
         mod->stream[0] = MPEGTS_PACKET_PAT;
 
     mod->pat->crc32 = 0;
@@ -283,12 +286,12 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     {
         if(desc_pointer[0] == 0x09)
         {
-            if(mod->caid != 0x2600 /* Not BISS */
+            if(   mod->__decrypt.cas
                && DESC_CA_CAID(desc_pointer) == mod->caid
                && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
             {
                 const uint16_t pid = DESC_CA_PID(desc_pointer);
-                if(mod->stream[pid] == MPEGTS_PACKET_UNKNOWN)
+                if(pid != NULL_TS_PID && mod->stream[pid] == MPEGTS_PACKET_UNKNOWN)
                 {
                     if(!is_ecm_selected)
                     {
@@ -327,7 +330,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         {
             if(desc_pointer[0] == 0x09)
             {
-                if(mod->caid != 0x2600 /* Not BISS */
+                if(   mod->__decrypt.cas
                    && DESC_CA_CAID(desc_pointer) == mod->caid
                    && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
                 {
@@ -361,17 +364,17 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         PMT_ITEMS_NEXT(psi, pointer);
     }
 
-    if(!is_ecm_selected)
-    {
-        asc_log_error(MSG("ECM is not found"));
-        memcpy(mod->custom_pmt->buffer, psi->buffer, psi->buffer_size);
-        mod->custom_pmt->buffer_size = psi->buffer_size;
-    }
-    else
+    if(!mod->__decrypt.cas || is_ecm_selected)
     {
         mod->custom_pmt->buffer_size = skip + CRC32_SIZE;
         PSI_SET_SIZE(mod->custom_pmt);
         PSI_SET_CRC32(mod->custom_pmt);
+    }
+    else
+    {
+        asc_log_error(MSG("ECM is not found"));
+        memcpy(mod->custom_pmt->buffer, psi->buffer, psi->buffer_size);
+        mod->custom_pmt->buffer_size = psi->buffer_size;
     }
 
     mpegts_psi_demux(mod->custom_pmt
@@ -443,7 +446,8 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             mpegts_psi_mux(mod->pat, ts, on_pat, mod);
             break;
         case MPEGTS_PACKET_CAT:
-            mpegts_psi_mux(mod->cat, ts, on_cat, mod);
+            if(mod->__decrypt.cas)
+                mpegts_psi_mux(mod->cat, ts, on_cat, mod);
             return;
         case MPEGTS_PACKET_PMT:
             mpegts_psi_mux(mod->pmt, ts, on_pmt, mod);
@@ -652,6 +656,7 @@ static void module_init(module_data_t *mod)
         first_key[7] = (first_key[4] + first_key[5] + first_key[6]) & 0xFF;
         mod->is_keys = true;
         mod->caid = 0x2600;
+        stream_reload(mod);
     }
     set_control_words(mod->ffdecsa, first_key, first_key);
 
