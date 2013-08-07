@@ -520,6 +520,9 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     if(!module_stream_demux_check_pid(mod, pid))
         return;
 
+    if(pid == NULL_TS_PID)
+        return;
+
     if(pid == 0x12)
     {
         if(!mod->config.eit)
