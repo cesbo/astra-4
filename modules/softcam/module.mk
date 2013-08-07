@@ -22,7 +22,7 @@ EOF
 
 check_libssl()
 {
-    libssl_test_c | $APP_C -Werror $CFLAGS $IN_CFLAGS $LDFLAGS $IN_LDFLAGS -o /dev/null -x c - >/dev/null 2>&1
+    libssl_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
 }
 
 if ! check_libssl ; then
@@ -42,7 +42,7 @@ EOF
 
 check_sse2()
 {
-    sse2_test_c | $APP_C -Werror $CFLAGS $IN_CFLAGS $LDFLAGS $IN_LDFLAGS -o /dev/null -x c - >/dev/null 2>&1
+    sse2_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
 }
 
 if check_sse2 ; then

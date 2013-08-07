@@ -15,12 +15,12 @@ EOF
 
 check_cflags()
 {
-    ffmpeg_test_c | $IN_CC -Werror $IN_CFLAGS $1 -c -o /dev/null -x c - >/dev/null 2>&1
+    ffmpeg_test_c | $APP_C -Werror $APP_CFLAGS $1 -c -o /dev/null -x c - >/dev/null 2>&1
 }
 
 check_ldflags()
 {
-    ffmpeg_test_c | $IN_CC -Werror $IN_CFLAGS $1 $IN_LDFLAGS $IN_LIBS -o /dev/null -x c - >/dev/null 2>&1
+    ffmpeg_test_c | $APP_C -Werror $APP_CFLAGS $1 $APP_LDFLAGS -o /dev/null -x c - >/dev/null 2>&1
 }
 
 check_pkg_config()

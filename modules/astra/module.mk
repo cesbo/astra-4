@@ -25,7 +25,7 @@ EOF
 
 check_getifaddrs()
 {
-    getifaddrs_test_c | $APP_C -Werror $CFLAGS $IN_CFLAGS $LDFLAGS $IN_LDFLAGS -o /dev/null -x c - >/dev/null 2>&1
+    getifaddrs_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
 }
 
 if check_getifaddrs ; then

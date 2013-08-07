@@ -20,7 +20,6 @@ Usage: $0 [OPTIONS]
 
     CFLAGS="..."                - custom compiler flags
     LDFLAGS="..."               - custom linker flags
-    LIBS="..."                  - static linked libraries
 EOF
     exit 0
 }
