@@ -1,8 +1,8 @@
 
 SOURCES="module_lua.c module_stream.c strhex.c crc32b.c sha1.c base64.c md5.c"
 
-SOURCES="$SOURCES astra.c log.c timer.c utils.c"
-MODULES="astra log timer utils"
+SOURCES="$SOURCES astra.c log.c timer.c utils.c json.c"
+MODULES="astra log timer utils json"
 
 if [ "$OS" != "mingw" ] ; then
     SOURCES="$SOURCES pidfile.c"
