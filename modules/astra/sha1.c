@@ -179,5 +179,5 @@ LUA_API int luaopen_sha1(lua_State *L)
 
     lua_pop(L, 1); // string
 
-    return 0;
+    return 1;
 }

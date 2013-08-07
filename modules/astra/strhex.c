@@ -77,5 +77,5 @@ LUA_API int luaopen_str2hex(lua_State *L)
 
     lua_pop(L, 1); // string
 
-    return 0;
+    return 1;
 }
