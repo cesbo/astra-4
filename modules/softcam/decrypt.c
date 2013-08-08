@@ -155,10 +155,19 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         PAT_ITEMS_NEXT(psi, pointer);
     }
 
-    if(mod->__decrypt.cam)
+    if(mod->__decrypt.cam && mod->__decrypt.cam->is_ready)
     {
         mod->__decrypt.cas = module_decrypt_cas_init(mod);
         asc_assert(mod->__decrypt.cas != NULL, "CAS with CAID:0x%04X not found", mod->caid);
+
+        mod->cat->crc32 = 0;
+        mod->pmt->crc32 = 0;
+
+        for(int i = 0; i < MAX_PID; ++i)
+        {
+            if(mod->stream[i] & MPEGTS_PACKET_CA)
+                mod->stream[i] = MPEGTS_PACKET_UNKNOWN;
+        }
     }
 }
 
@@ -198,6 +207,8 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     psi->crc32 = crc32;
 
     bool is_emm_selected = false;
+    if(mod->__decrypt.cas)
+        is_emm_selected = mod->__decrypt.cam->disable_emm;
 
     const uint8_t *desc_pointer = CAT_DESC_FIRST(psi);
     while(!CAT_DESC_EOL(psi, desc_pointer))
