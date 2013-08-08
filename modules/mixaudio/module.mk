@@ -1,5 +1,6 @@
 SOURCES="mixaudio.c"
 MODULES="mixaudio"
+SCRIPTS="mixaudio.lua"
 
 ffmpeg_test_c()
 {

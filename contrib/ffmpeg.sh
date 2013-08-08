@@ -7,7 +7,7 @@ if [ ! -d "build" ] ; then
 fi
 cd build
 
-FFV="ffmpeg-0.11.1"
+FFV="ffmpeg-1.0.7"
 ARC="$FFV.tar.gz"
 
 err()
@@ -57,5 +57,5 @@ if [ -f "version.h" ] ; then
     make distclean
 fi
 
-./configure --disable-doc --disable-ffmpeg --disable-ffplay --disable-ffprobe --disable-ffserver --disable-avdevice --disable-swresample --disable-swscale --disable-postproc --disable-everything --enable-encoder=mp2,ac3 --enable-decoder=mp1,mp2,mp3,ac3 --disable-yasm \
+./configure --disable-ffmpeg --disable-ffplay --disable-ffprobe --disable-ffserver --disable-doc --disable-avdevice --disable-swresample --disable-swscale --disable-postproc --disable-network --disable-everything --enable-encoder=mp2,ac3 --enable-decoder=mp1,mp2,mp3,ac3 --disable-yasm \
 && make

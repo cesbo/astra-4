@@ -115,25 +115,30 @@ static void pack_es(module_data_t *mod, uint8_t *data, size_t size)
     }
 }
 
-static void transcode(module_data_t *mod, const uint8_t *data)
+static bool transcode(module_data_t *mod, const uint8_t *data)
 {
+    av_init_packet(&mod->davpkt);
+
     mod->davpkt.data = (uint8_t *)data;
     mod->davpkt.size = mod->fsize;
-
-    avcodec_get_frame_defaults(mod->frame);
 
     while(mod->davpkt.size > 0)
     {
         int got_frame = 0;
+
+        if(!mod->frame)
+            mod->frame = avcodec_alloc_frame();
+        else
+            avcodec_get_frame_defaults(mod->frame);
+
         const int len_d = avcodec_decode_audio4(mod->ctx_decode, mod->frame
                                                 , &got_frame, &mod->davpkt);
+
         if(len_d < 0)
         {
-            avcodec_flush_buffers(mod->ctx_decode);
-            av_free_packet(&mod->davpkt);
-            av_init_packet(&mod->davpkt);
             asc_log_error(MSG("error while decoding"));
-            return;
+            mod->davpkt.size = 0;
+            return false;
         }
         if(got_frame)
         {
@@ -143,6 +148,7 @@ static void transcode(module_data_t *mod, const uint8_t *data)
                                              , mod->frame->nb_samples
                                              , mod->ctx_decode->sample_fmt
                                              , 1);
+
             if(mod->direction == MIXAUDIO_DIRECTION_LL)
                 mix_buffer_ll(mod->frame->data[0], data_size);
             else
@@ -150,16 +156,22 @@ static void transcode(module_data_t *mod, const uint8_t *data)
 
             int got_packet = 0;
             av_init_packet(&mod->eavpkt);
-            avcodec_encode_audio2(mod->ctx_encode, &mod->eavpkt
-                                  , mod->frame, &got_packet);
-
-            pack_es(mod, mod->eavpkt.data, mod->eavpkt.size);
-            av_free_packet(&mod->eavpkt);
+            mod->eavpkt.data = NULL;
+            mod->eavpkt.size = 0;
+            if(avcodec_encode_audio2(mod->ctx_encode, &mod->eavpkt, mod->frame, &got_packet) >= 0
+               && got_packet)
+            {
+                // TODO: read http://bbs.rosoo.net/thread-14926-1-1.html
+                pack_es(mod, mod->eavpkt.data, mod->eavpkt.size);
+                av_free_packet(&mod->eavpkt);
+            }
         }
 
         mod->davpkt.size -= len_d;
         mod->davpkt.data += len_d;
     }
+
+    return true;
 }
 
 static const uint16_t mpeg_brate[6][16] =
@@ -206,11 +218,18 @@ static void mux_pes(void *arg, mpegts_pes_t *pes)
     const uint8_t *ptr = &pes->buffer[pes_hdr];
     const uint8_t *const ptr_end = ptr + es_size;
 
+    if(!mod->fbuffer_skip)
+    {
+        while(ptr < ptr_end - 1)
+        {
+            if(ptr[0] == 0xFF && (ptr[1] & 0xF0) == 0xF0)
+                break;
+            ++ptr;
+        }
+    }
+
     if(!mod->fsize)
     {
-        while(*ptr != 0xFF && ptr < ptr_end)
-            ++ptr;
-
         const uint8_t mpeg_v = (ptr[1] & 0x18) >> 3; // version
         const uint8_t mpeg_l = (ptr[1] & 0x06) >> 1; // layer
         // const uint8_t mpeg_c = (ptr[3] & 0xC0) >> 6; // channel mode
@@ -237,15 +256,15 @@ static void mux_pes(void *arg, mpegts_pes_t *pes)
 
         if(!mod->decoder)
         {
-            enum CodecID codec_id = CODEC_ID_NONE;
+            enum AVCodecID codec_id = AV_CODEC_ID_NONE;
             switch(mpeg_v)
             {
                 case 0:
                 case 2:
-                    codec_id = CODEC_ID_MP2;
+                    codec_id = AV_CODEC_ID_MP2;
                     break;
                 case 3:
-                    codec_id = CODEC_ID_MP1;
+                    codec_id = AV_CODEC_ID_MP1;
                     break;
                 default:
                     break;
@@ -284,7 +303,9 @@ static void mux_pes(void *arg, mpegts_pes_t *pes)
     {
         const size_t rlen = mod->fsize - mod->fbuffer_skip;
         memcpy(&mod->fbuffer[mod->fbuffer_skip], ptr, rlen);
-        transcode(mod, mod->fbuffer);
+        mod->fbuffer_skip = 0;
+        if(!transcode(mod, mod->fbuffer))
+            return;
         ptr += rlen;
     }
 
@@ -293,13 +314,13 @@ static void mux_pes(void *arg, mpegts_pes_t *pes)
         const uint8_t *const nptr = ptr + mod->fsize;
         if(nptr < ptr_end)
         {
-            transcode(mod, ptr);
+            if(!transcode(mod, ptr))
+                break;
             ptr = nptr;
         }
         else if(nptr == ptr_end)
         {
             transcode(mod, ptr);
-            mod->fbuffer_skip = 0;
             break;
         }
         else /* nptr > ptr_end */
@@ -328,6 +349,34 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 
 /* required */
 
+static void ffmpeg_log_callback(void *ptr, int level, const char *fmt, va_list vl)
+{
+    __uarg(ptr);
+    void (*log_callback)(const char *, ...);
+
+    switch(level)
+    {
+        case AV_LOG_INFO:
+            log_callback = asc_log_info;
+            break;
+        case AV_LOG_WARNING:
+            log_callback = asc_log_warning;
+            break;
+        case AV_LOG_DEBUG:
+            log_callback = asc_log_debug;
+            break;
+        default:
+            log_callback = asc_log_error;
+            break;
+    }
+
+    char buffer[1024];
+    const size_t len = vsnprintf(buffer, sizeof(buffer), fmt, vl);
+    buffer[len - 1] = '\0';
+
+    log_callback(buffer);
+}
+
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, on_ts);
@@ -346,6 +395,8 @@ static void module_init(module_data_t *mod)
     else if(!strcasecmp(direction, "RR"))
         mod->direction = MIXAUDIO_DIRECTION_RR;
 
+    av_log_set_callback(ffmpeg_log_callback);
+
     avcodec_register_all();
     do
     {
@@ -353,7 +404,7 @@ static void module_init(module_data_t *mod)
         if(!mod->encoder)
         {
             asc_log_error(MSG("mp3 encoder is not found"));
-            break;
+            astra_abort();
         }
         mod->ctx_encode = avcodec_alloc_context3(mod->encoder);
         mod->ctx_encode->bit_rate = 192000;
@@ -364,10 +415,8 @@ static void module_init(module_data_t *mod)
         if(avcodec_open2(mod->ctx_encode, mod->encoder, NULL) < 0)
         {
             asc_log_error(MSG("failed to open mp3 encoder"));
-            break;
+            astra_abort();
         }
-
-        mod->frame = avcodec_alloc_frame();
 
         av_init_packet(&mod->davpkt);
 
@@ -386,7 +435,7 @@ static void module_destroy(module_data_t *mod)
     if(mod->ctx_decode)
         avcodec_close(mod->ctx_decode);
     if(mod->frame)
-        av_free(mod->frame);
+        avcodec_free_frame(&mod->frame);
     av_free_packet(&mod->davpkt);
 
     if(mod->pes_i)
