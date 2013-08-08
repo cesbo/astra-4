@@ -95,13 +95,9 @@ static void module_decrypt_cas_destroy(module_data_t *mod)
 static void stream_reload(module_data_t *mod)
 {
     memset(mod->stream, 0, sizeof(mod->stream));
-    if(!mod->__decrypt.cam)
-    {
-        mod->stream[0] = MPEGTS_PACKET_PAT;
-        mod->stream[1] = MPEGTS_PACKET_CAT;
-    }
-    else if(mod->__decrypt.cam->is_ready)
-        mod->stream[0] = MPEGTS_PACKET_PAT;
+
+    mod->stream[0] = MPEGTS_PACKET_PAT;
+    mod->stream[1] = MPEGTS_PACKET_CAT;
 
     mod->pat->crc32 = 0;
     mod->cat->crc32 = 0;
@@ -163,9 +159,6 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     {
         mod->__decrypt.cas = module_decrypt_cas_init(mod);
         asc_assert(mod->__decrypt.cas != NULL, "CAS with CAID:0x%04X not found", mod->caid);
-
-        if(!mod->__decrypt.cam->disable_emm)
-            mod->stream[1] = MPEGTS_PACKET_CAT;
     }
 }
 
@@ -216,6 +209,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
             if(pid == NULL_TS_PID || mod->stream[pid] != MPEGTS_PACKET_UNKNOWN)
                 ; /* Skip */
             else if(   mod->__decrypt.cas
+                    && !mod->__decrypt.cam->disable_emm
                     && DESC_CA_CAID(desc_pointer) == mod->caid
                     && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
             {
@@ -669,7 +663,6 @@ static void module_init(module_data_t *mod)
         first_key[7] = (first_key[4] + first_key[5] + first_key[6]) & 0xFF;
         mod->is_keys = true;
         mod->caid = 0x2600;
-        stream_reload(mod);
     }
     set_control_words(mod->ffdecsa, first_key, first_key);
 
@@ -699,7 +692,8 @@ static void module_init(module_data_t *mod)
 
         module_cam_attach_decrypt(mod->__decrypt.cam, &mod->__decrypt);
     }
-    // ---
+
+    stream_reload(mod);
 }
 
 static void module_destroy(module_data_t *mod)
