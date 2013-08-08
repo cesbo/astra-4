@@ -497,8 +497,6 @@ install: \$(APP)
 	@mkdir -p \$(V_SCRIPTS)
 	@echo "INSTALL: \$(V_SCRIPTS)/stream.lua"
 	@cp $SRCDIR/scripts/stream.lua \$(V_SCRIPTS)/stream.lua
-	@echo "INSTALL: \$(V_SCRIPTS)/json.lua"
-	@cp $SRCDIR/scripts/json.lua \$(V_SCRIPTS)/json.lua
 	@echo "INSTALL: \$(V_SCRIPTS)/analyze.lua"
 	@sed '1 s/\$\$/-\$(VERSION)/g' $SRCDIR/scripts/analyze.lua >\$(V_SCRIPTS)/analyze.lua
 	@chmod +x \$(V_SCRIPTS)/analyze.lua
