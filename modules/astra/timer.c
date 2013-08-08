@@ -57,7 +57,7 @@ static void module_init(module_data_t *mod)
     int interval = 0;
     if(!module_option_number("interval", &interval) || interval <= 0)
     {
-        asc_log_error("[timer] option 'interval' is required and must be reater than 0");
+        asc_log_error("[timer] option 'interval' is required and must be greater than 0");
         astra_abort();
     }
 
