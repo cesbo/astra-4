@@ -42,7 +42,7 @@ char * base64_encode(const char *in, size_t size, size_t *out_size)
 
     *out_size = ((size + 2) / 3) * 4;
 
-    char *out = malloc(*out_size);
+    char *out = malloc(*out_size + 1);
 
     for(size_t i = 0, j = 0; i < size;)
     {
@@ -89,7 +89,7 @@ char * base64_decode(const char *in, size_t *out_size)
     if(in[size - 2] == '=')
         --(*out_size);
 
-    char *out = malloc(*out_size);
+    char *out = malloc(*out_size + 1);
 
     for(size_t i = 0, j = 0; i < size;)
     {
