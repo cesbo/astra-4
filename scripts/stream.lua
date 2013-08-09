@@ -180,8 +180,7 @@ end
 parse_addr.http = function(addr, result)
     local x = addr:find("@")
     if x then
-        local login_pass = addr:sub(1, x - 1)
-        result.auth = login_pass:base64_encode()
+        result.auth = base64.encode(addr:sub(1, x - 1))
         addr = addr:sub(x + 1)
     end
     local x = addr:find("/")
