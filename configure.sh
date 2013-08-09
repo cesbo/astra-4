@@ -29,6 +29,8 @@ SRCDIR=`dirname $0`
 MAKEFILE=$SRCDIR/Makefile
 CONFFILE=$SRCDIR/config.h
 
+DEFAULT_MODULES="astra dvb file http mpegts softcam udp"
+
 APP="astra"
 APP_C="gcc"
 APP_STRIP="strip"
@@ -306,9 +308,9 @@ select_modules()
         if [ -z "$M" ] ; then
             :
         elif [ "$M" = "*" ] ; then
-            ls -d $SRCDIR/modules/* | while read M ; do
-                if [ -f "$M/module.mk" ] ; then
-                    echo "$M"
+            for M in $DEFAULT_MODULES ; do
+                if [ -f "$SRCDIR/modules/$M/module.mk" ] ; then
+                    echo "$SRCDIR/modules/$M"
                 fi
             done
         else
