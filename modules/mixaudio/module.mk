@@ -6,8 +6,8 @@ ffmpeg_test_c()
 {
     cat <<EOF
 #include <libavcodec/avcodec.h>
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(53,23,0)
-#   error "libavcodec >=53.23.0 required"
+#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(54,59,100)
+#   error "libavcodec >=54.59.100 required (ffmpeg-1.0.7)"
 #else
 int main(void) { avcodec_version(); return 0; }
 #endif
