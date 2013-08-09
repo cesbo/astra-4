@@ -249,6 +249,7 @@ echo "Check modules:" >&2
 
 APP_SOURCES="$SRCDIR/main.c"
 APP_OBJS=""
+APP_SCRIPTS="$SRCDIR/scripts/stream.lua"
 
 __check_main_app()
 {
@@ -332,6 +333,7 @@ __check_module()
     MODULES=""
     CFLAGS=""
     LDFLAGS=""
+    SCRIPTS=""
     ERROR=""
 
     OBJECTS=""
@@ -373,6 +375,10 @@ __check_module()
 	@echo "   CC: \$@"
 	@\$(CC) \$(CFLAGS) \$(${MODULE}_CFLAGS) -o \$@ -c \$<
 EOF
+    done
+
+    for S in $SCRIPTS ; do
+        APP_SCRIPTS="$APP_SCRIPTS $MODULE/$S"
     done
 
     cat <<EOF
@@ -495,8 +501,17 @@ install: \$(APP)
 	@rm -f \$(V_APP)
 	@cp \$(APP) \$(V_APP)
 	@mkdir -p \$(V_SCRIPTS)
-	@echo "INSTALL: \$(V_SCRIPTS)/stream.lua"
-	@cp $SRCDIR/scripts/stream.lua \$(V_SCRIPTS)/stream.lua
+EOF
+
+for S in $APP_SCRIPTS ; do
+    SCRIPT_NAME=`basename $S`
+    cat >&5 <<EOF
+	@echo "INSTALL: \$(V_SCRIPTS)/$SCRIPT_NAME"
+	@cp $S \$(V_SCRIPTS)/$SCRIPT_NAME
+EOF
+done
+
+    cat >&5 <<EOF
 	@echo "INSTALL: \$(V_SCRIPTS)/analyze.lua"
 	@sed '1 s/\$\$/-\$(VERSION)/g' $SRCDIR/scripts/analyze.lua >\$(V_SCRIPTS)/analyze.lua
 	@chmod +x \$(V_SCRIPTS)/analyze.lua
