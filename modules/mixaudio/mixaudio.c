@@ -23,7 +23,7 @@
 
 #include <libavcodec/avcodec.h>
 
-#if defined(LIBAVCODEC_VERSION_INT) && LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(53,23,0)
+#if defined(LIBAVCODEC_VERSION_INT) && LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(54,59,100)
 
 #define MSG(_msg) "[mixaudio] " _msg
 
