@@ -9,13 +9,11 @@
 #include <astra.h>
 
 #include <signal.h>
-#include <sys/stat.h>
 #include <setjmp.h>
 
 #include "config.h"
 
 static jmp_buf main_loop;
-static volatile bool asc_core_loop_alive;
 
 void astra_exit(void)
 {
@@ -52,13 +50,46 @@ static void signal_handler(int signum)
     if(signum == SIGPIPE)
         return;
 #else
-    (void)signum;
+    __uarg(signum);
 #endif
-    asc_core_loop_alive = false;
+
+    astra_exit();
 }
 
-static void astra_init(int argc, const char **argv)
+#ifdef INLINE_SCRIPT
+extern int exec_script(int argc, const char **argv);
+#else
+static int exec_script(int argc, const char **argv)
 {
+    __uarg(argc);
+    if(argv[1][0] == '-' && argv[1][1] == '\0')
+        return luaL_dofile(lua, NULL);
+    else if(!access(argv[1], R_OK))
+        return luaL_dofile(lua, argv[1]);
+    else
+    {
+        printf("Error: initial script isn't found [%s]\n", strerror(errno));
+        return -1;
+    }
+}
+#endif
+
+int main(int argc, const char **argv)
+{
+#ifdef INLINE_SCRIPT
+    int argv_skip = 1;
+#else
+    int argv_skip = 2;
+#endif
+
+    if(argc < argv_skip)
+    {
+        printf("Astra " ASTRA_VERSION_STR "\n"
+               "Usage: %s script [argv]\n"
+               , argv[0]);
+        return 1;
+    }
+
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 #ifndef _WIN32
@@ -67,24 +98,17 @@ static void astra_init(int argc, const char **argv)
     signal(SIGQUIT, signal_handler);
 #endif
 
-    ASC_INIT();
-    asc_core_loop_alive = true;
+    srand((uint32_t)time(NULL));
+    asc_timer_core_init();
+    asc_socket_core_init();
+    asc_event_core_init();
 
     lua = luaL_newstate();
     luaL_openlibs(lua);
 
+    /* load modules */
     for(int i = 0; astra_mods[i]; i++)
         astra_mods[i](lua);
-
-    /* argv table */
-    lua_newtable(lua);
-    for(int i = 0; i < argc; i++)
-    {
-        lua_pushinteger(lua, i + 1);
-        lua_pushstring(lua, argv[i]);
-        lua_settable(lua, -3);
-    }
-    lua_setglobal(lua, "argv");
 
     /* change package.path */
     lua_getglobal(lua, "package");
@@ -94,64 +118,37 @@ static void astra_init(int argc, const char **argv)
     lua_pushstring(lua, "");
     lua_setfield(lua, -2, "cpath");
     lua_pop(lua, 1);
-}
 
-void astra_do_file(int argc, const char **argv, const char *filename)
-{
-    if(filename[0] == '-' && filename[1] == '\0')
-        filename = NULL;
-    else if(!access(filename, R_OK))
-        ;
-    else
+    /* argv table */
+    lua_newtable(lua);
+    for(int i = 1; argv_skip < argc; ++argv_skip, ++i)
     {
-        printf("Error: initial script isn't found [%s]\n", strerror(errno));
-        return;
+        lua_pushinteger(lua, i);
+        lua_pushstring(lua, argv[argv_skip]);
+        lua_settable(lua, -3);
     }
+    lua_setglobal(lua, "argv");
 
-    astra_init(argc, argv);
-
+    /* start */
     if(!setjmp(main_loop))
     {
-        if(luaL_dofile(lua, filename))
+        if(exec_script(argc, argv) != 0)
             luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
 
-        ASC_LOOP(asc_core_loop_alive);
+        while(true)
+        {
+            asc_event_core_loop();
+            asc_timer_core_loop();
+        }
     }
 
+    /* destroy */
     lua_close(lua);
-    ASC_DESTROY();
-}
-
-void astra_do_text(int argc, const char **argv, const char *text, size_t size)
-{
-    astra_init(argc, argv);
-
-    if(!setjmp(main_loop))
-    {
-        if(luaL_loadbuffer(lua, text, size, "=inscript") || lua_pcall(lua, 0, LUA_MULTRET, 0))
-            luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
-
-        ASC_LOOP(asc_core_loop_alive);
-    }
-
-    lua_close(lua);
-    ASC_DESTROY();
-}
-
-#ifndef ASTRA_SHELL
-int main(int argc, const char **argv)
-{
-    if(argc < 2)
-    {
-        printf("Astra " ASTRA_VERSION_STR "\n"
-               "Usage: %s script [argv]\n"
-               , argv[0]);
-        return 1;
-    }
-
-    /* 2 - skip app and script names */
-    astra_do_file(argc - 2, argv + 2, argv[1]);
+    asc_event_core_destroy();
+    asc_socket_core_destroy();
+    asc_timer_core_destroy();
+    asc_log_info("[main] exit");
+    asc_log_core_destroy();
 
     return 0;
 }
-#endif /* ! ASTRA_SHELL */

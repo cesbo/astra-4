@@ -10,7 +10,6 @@ Usage: $0 [OPTIONS]
                                   For example, to append custom module, use:
                                   --with-modules=*:path/to/custom/module
 
-    --with-main-app=FILE        - build with a custom main app
     --cc=GCC                    - custom C compiler (cross-compile)
     --build-static              - build static binary
 
@@ -37,7 +36,7 @@ APP_STRIP="strip"
 
 ARG_CC=0
 ARG_MODULES="*"
-ARG_MAIN_APP=""
+ARG_INLINE_SCRIPT=""
 ARG_BUILD_STATIC=0
 ARG_CFLAGS=""
 ARG_LDFLAGS=""
@@ -62,8 +61,8 @@ while [ $# -ne 0 ] ; do
         "--with-modules="*)
             ARG_MODULES=`echo $OPT | sed -e 's/^[a-z-]*=//'`
             ;;
-        "--with-main-app="*)
-            ARG_MAIN_APP=`echo $OPT | sed -e 's/^[a-z-]*=//'`
+        "--inline-script="*)
+            ARG_INLINE_SCRIPT=`echo $OPT | sed -e 's/^[a-z-]*=//'`
             ;;
         "--cc="*)
             set_cc `echo $OPT | sed 's/^--cc=//'`
@@ -170,8 +169,8 @@ if [ -n "$ARG_CFLAGS" ] ; then
     CFLAGS="$CFLAGS $ARG_CFLAGS"
 fi
 
-if [ -n "$ARG_MAIN_APP" ] ; then
-    CFLAGS="$CFLAGS -DASTRA_SHELL=1"
+if [ -n "$ARG_INLINE_SCRIPT" ] ; then
+    CFLAGS="$CFLAGS -DINLINE_SCRIPT=1"
 fi
 
 if [ $ARG_BUILD_STATIC -eq 1 ] ; then
@@ -255,8 +254,8 @@ APP_SCRIPTS="$SRCDIR/scripts/stream.lua"
 
 __check_main_app()
 {
-    if [ -n "$ARG_MAIN_APP" ] ; then
-        APP_SOURCES="$APP_SOURCES $ARG_MAIN_APP"
+    if [ -n "$ARG_INLINE_SCRIPT" ] ; then
+        APP_SOURCES="$APP_SOURCES $ARG_INLINE_SCRIPT"
     fi
 
     for S in $APP_SOURCES ; do

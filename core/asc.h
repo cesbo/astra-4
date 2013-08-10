@@ -18,25 +18,4 @@
 #include "thread.h"
 #include "timer.h"
 
-#define ASC_INIT()                                                                              \
-    srand((uint32_t)time(NULL));                                                                \
-    asc_core_loop_alive = true;                                                                 \
-    asc_timer_core_init();                                                                      \
-    asc_socket_core_init();                                                                     \
-    asc_event_core_init();
-
-#define ASC_LOOP(_cond)                                                                         \
-    while(_cond)                                                                                \
-    {                                                                                           \
-        asc_event_core_loop();                                                                  \
-        asc_timer_core_loop();                                                                  \
-    }
-
-#define ASC_DESTROY()                                                                           \
-    asc_event_core_destroy();                                                                   \
-    asc_socket_core_destroy();                                                                  \
-    asc_timer_core_destroy();                                                                   \
-    asc_log_info("[main] exit");                                                                \
-    asc_log_core_destroy();
-
 #endif /* _ASC_H_ */

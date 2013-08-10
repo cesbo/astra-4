@@ -47,7 +47,4 @@
 void astra_exit(void);
 void astra_abort(void);
 
-void astra_do_file(int argc, const char **argv, const char *fail);
-void astra_do_text(int argc, const char **argv, const char *text, size_t size);
-
 #endif /* _ASTRA_H_ */
