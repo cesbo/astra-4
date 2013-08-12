@@ -409,23 +409,26 @@ static void on_ready_send_file(void *arg)
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
-    const int capacity_size = HTTP_BUFFER_SIZE - client->buffer_skip;
-    if(capacity_size <= 0)
+    if(client->src_file)
     {
-        // TODO: overflow
-        return;
-    }
+        const int capacity_size = HTTP_BUFFER_SIZE - client->buffer_skip;
+        if(capacity_size <= 0)
+        {
+            // TODO: overflow
+            return;
+        }
 
-    const int block_size = fread(&client->buffer[client->buffer_skip], 1, capacity_size
-                                 , client->src_file);
-    if(block_size <= 0)
-    {
-        asc_log_error(MSG("failed to read source file [%s]"), strerror(errno));
-        on_read_error(client);
-        return;
-    }
+        const int block_size = fread(&client->buffer[client->buffer_skip], 1, capacity_size
+                                     , client->src_file);
+        if(block_size <= 0)
+        {
+            asc_log_error(MSG("failed to read source file [%s]"), strerror(errno));
+            on_read_error(client);
+            return;
+        }
 
-    client->buffer_skip += block_size;
+        client->buffer_skip += block_size;
+    }
 
     const ssize_t send_size = asc_socket_send(client->sock, client->buffer, client->buffer_skip);
     if(send_size <= 0)
@@ -439,6 +442,7 @@ static void on_ready_send_file(void *arg)
     if(send_size == client->buffer_skip)
     {
         client->buffer_skip = 0;
+        asc_socket_set_on_ready(client->sock, NULL);
     }
     else
     {
@@ -446,11 +450,8 @@ static void on_ready_send_file(void *arg)
         memmove(client->buffer, &client->buffer[send_size], client->buffer_skip);
     }
 
-    if(feof(client->src_file))
-    {
+    if(client->src_file && feof(client->src_file))
         client->src_file = NULL;
-        asc_socket_set_on_ready(client->sock, NULL);
-    }
 }
 
 static void on_ready_send_ts(void *arg)
