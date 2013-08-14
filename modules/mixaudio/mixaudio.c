@@ -35,8 +35,6 @@
 
 #include <libavcodec/avcodec.h>
 
-#if defined(LIBAVCODEC_VERSION_INT) && LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(54,59,100)
-
 #define MSG(_msg) "[mixaudio] " _msg
 
 typedef enum
@@ -386,7 +384,7 @@ static void ffmpeg_log_callback(void *ptr, int level, const char *fmt, va_list v
     const size_t len = vsnprintf(buffer, sizeof(buffer), fmt, vl);
     buffer[len - 1] = '\0';
 
-    log_callback(buffer);
+    log_callback(MSG("%s"), buffer);
 }
 
 static void module_init(module_data_t *mod)
@@ -464,7 +462,3 @@ MODULE_LUA_METHODS()
 };
 
 MODULE_LUA_REGISTER(mixaudio)
-
-#else
-#   error "libavcodec >=53.23.0 required"
-#endif
