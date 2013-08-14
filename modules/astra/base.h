@@ -1,5 +1,5 @@
 /*
- * Astra Modules: Base
+ * Astra Module: Base
  * http://cesbo.com/en/astra
  *
  * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
