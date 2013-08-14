@@ -1,5 +1,5 @@
 /*
- * Astra Module: DVB
+ * Astra Module: DigitalDevices standalone CI
  * http://cesbo.com/en/astra
  *
  * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
@@ -23,11 +23,11 @@
 
 #include <fcntl.h>
 #include <poll.h>
+#include <sys/socket.h>
 
-#define MSG(_msg) "[dvb_ca %d:%d] " _msg, mod->adapter, mod->device
-#define SEC_BUFFER_SIZE (1022 * TS_PACKET_SIZE)
+#define MSG(_msg) "[ddci %d:%d] " _msg, mod->adapter, mod->device
 
-#define BUFFER_SIZE (10 * TS_PACKET_SIZE)
+#define BUFFER_SIZE (1022 * TS_PACKET_SIZE)
 
 struct module_data_t
 {
@@ -38,22 +38,32 @@ struct module_data_t
     int device;
 
     /* Base */
+    char dev_name[32];
     asc_thread_t *thread;
     bool thread_ready;
 
     /* */
     dvb_ca_t *ca;
 
-    /* SEC Base */
-    int sec_fd;
-    asc_event_t *sec_event;
+    /* */
+    int enc_sec_fd;
 
     /* */
-    uint32_t enc_buffer_skip;
-    uint8_t enc_buffer[BUFFER_SIZE];
+    int dec_sec_fd;
+    struct
+    {
+        asc_thread_t *thread;
 
-    /* */
-    uint8_t dec_buffer[BUFFER_SIZE];
+        int fd[2];
+        asc_event_t *event;
+
+        uint8_t *buffer;
+        uint32_t buffer_size;
+        uint32_t buffer_count;
+        uint32_t buffer_read;
+        uint32_t buffer_write;
+        uint32_t buffer_overflow;
+    } sync;
 };
 
 /*
@@ -65,54 +75,108 @@ struct module_data_t
  *
  */
 
-static void sec_close(module_data_t *mod);
 
-static void sec_on_error(void *arg)
+static void sync_queue_push(module_data_t *mod, const uint8_t *ts)
 {
-    module_data_t *mod = arg;
-    asc_log_error(MSG("sec read error, try to reopen [%s]"), strerror(errno));
-    sec_close(mod);
-}
-
-static void sec_on_read(void *arg)
-{
-    module_data_t *mod = arg;
-    const ssize_t len = read(mod->sec_fd, mod->dec_buffer, BUFFER_SIZE);
-    if(len <= 0)
+    if(mod->sync.buffer_count >= mod->sync.buffer_size)
     {
-        sec_on_error(mod);
+        ++mod->sync.buffer_overflow;
         return;
     }
-    printf("%s(): len:%ld\n", __FUNCTION__, len);
-    for(int i = 0; i < len; i += TS_PACKET_SIZE)
-        module_stream_send(mod, &mod->dec_buffer[i]);
+
+    if(mod->sync.buffer_overflow)
+    {
+        asc_log_error(MSG("sync buffer overflow. dropped %d packets"), mod->sync.buffer_overflow);
+        mod->sync.buffer_overflow = 0;
+    }
+
+    memcpy(&mod->sync.buffer[mod->sync.buffer_write], ts, TS_PACKET_SIZE);
+    mod->sync.buffer_write += TS_PACKET_SIZE;
+    if(mod->sync.buffer_write >= mod->sync.buffer_size)
+        mod->sync.buffer_write = 0;
+
+    __sync_fetch_and_add(&mod->sync.buffer_count, TS_PACKET_SIZE);
+
+    uint8_t cmd[1] = { 0 };
+    if(send(mod->sync.fd[0], cmd, sizeof(cmd), 0) != sizeof(cmd))
+        asc_log_error(MSG("failed to push signal to queue\n"));
+}
+
+static void sync_queue_pop(module_data_t *mod, uint8_t *ts)
+{
+    uint8_t cmd[1];
+    if(recv(mod->sync.fd[1], cmd, sizeof(cmd), 0) != sizeof(cmd))
+        asc_log_error(MSG("failed to pop signal from queue\n"));
+
+    memcpy(ts, &mod->sync.buffer[mod->sync.buffer_read], TS_PACKET_SIZE);
+    mod->sync.buffer_read += TS_PACKET_SIZE;
+    if(mod->sync.buffer_read >= mod->sync.buffer_size)
+        mod->sync.buffer_read = 0;
+
+    __sync_fetch_and_sub(&mod->sync.buffer_count, TS_PACKET_SIZE);
+}
+
+static void sec_thread_loop(void *arg)
+{
+    module_data_t *mod = arg;
+    uint8_t ts[TS_PACKET_SIZE];
+
+    mod->dec_sec_fd = open(mod->dev_name, O_RDONLY);
+    asc_thread_while(mod->sync.thread)
+    {
+        const ssize_t len = read(mod->dec_sec_fd, ts, sizeof(ts));
+        if(len == sizeof(ts) && ts[0] == 0x47)
+            sync_queue_push(mod, ts);
+    }
+    if(mod->dec_sec_fd > 0)
+        close(mod->dec_sec_fd);
+}
+
+static void on_thread_read(void *arg)
+{
+    module_data_t *mod = arg;
+
+    uint8_t ts[TS_PACKET_SIZE];
+    sync_queue_pop(mod, ts);
+    module_stream_send(mod, ts);
 }
 
 static void sec_open(module_data_t *mod)
 {
-    char dev_name[32];
-    sprintf(dev_name, "/dev/dvb/adapter%d/sec%d", mod->adapter, mod->device);
-    mod->sec_fd = open(dev_name, O_RDWR | O_NONBLOCK);
-    if(mod->sec_fd <= 0)
+    mod->enc_sec_fd = open(mod->dev_name, O_WRONLY | O_NONBLOCK);
+    if(mod->enc_sec_fd <= 0)
     {
         asc_log_error(MSG("failed to open sec [%s]"), strerror(errno));
         astra_abort();
     }
 
-    mod->sec_event = asc_event_init(mod->sec_fd, mod);
-    asc_event_set_on_read(mod->sec_event, sec_on_read);
-    asc_event_set_on_error(mod->sec_event, sec_on_error);
+    socketpair(AF_LOCAL, SOCK_STREAM, 0, mod->sync.fd);
+
+    mod->sync.event = asc_event_init(mod->sync.fd[1], mod);
+    asc_event_set_on_read(mod->sync.event, on_thread_read);
+    mod->sync.buffer = malloc(BUFFER_SIZE);
+    mod->sync.buffer_size = BUFFER_SIZE;
+
+    asc_thread_init(&mod->sync.thread, sec_thread_loop, mod);
 }
 
 static void sec_close(module_data_t *mod)
 {
-    if(mod->sec_fd > 0)
+    if(mod->enc_sec_fd > 0)
     {
-        asc_event_close(mod->sec_event);
-        mod->sec_event = NULL;
-        close(mod->sec_fd);
-        mod->sec_fd = 0;
+        close(mod->enc_sec_fd);
+        mod->enc_sec_fd = 0;
     }
+
+    asc_thread_destroy(&mod->sync.thread);
+    asc_event_close(mod->sync.event);
+    if(mod->sync.fd[0])
+    {
+        close(mod->sync.fd[0]);
+        close(mod->sync.fd[1]);
+    }
+    if(mod->sync.buffer)
+        free(mod->sync.buffer);
 }
 
 /*
@@ -124,7 +188,7 @@ static void sec_close(module_data_t *mod)
  *
  */
 
-static void dvb_thread_loop(void *arg)
+static void ca_thread_loop(void *arg)
 {
     module_data_t *mod = arg;
 
@@ -179,14 +243,8 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     if(mod->ca->ca_ready)
         ca_on_ts(mod->ca, ts);
 
-    memcpy(&mod->enc_buffer[mod->enc_buffer_skip], ts, TS_PACKET_SIZE);
-    mod->enc_buffer_skip += TS_PACKET_SIZE;
-
-    if(mod->enc_buffer_skip >= BUFFER_SIZE)
-    {
-        write(mod->sec_fd, mod->enc_buffer, BUFFER_SIZE);
-        mod->enc_buffer_skip = 0;
-    }
+    if(write(mod->enc_sec_fd, ts, TS_PACKET_SIZE) != TS_PACKET_SIZE)
+        asc_log_error(MSG("sec write failed"));
 }
 
 static void join_pid(module_data_t *mod, uint16_t pid)
@@ -226,8 +284,9 @@ static void module_init(module_data_t *mod)
     module_option_number("device", &mod->device);
     mod->ca->adapter = mod->adapter;
     mod->ca->device = mod->device;
+    sprintf(mod->dev_name, "/dev/dvb/adapter%d/sec%d", mod->adapter, mod->device);
 
-    asc_thread_init(&mod->thread, dvb_thread_loop, mod);
+    asc_thread_init(&mod->thread, ca_thread_loop, mod);
     sec_open(mod);
 
     struct timespec ts = { .tv_sec = 0, .tv_nsec = 500000 };
@@ -251,4 +310,4 @@ MODULE_LUA_METHODS()
     { "ca_set_pnr", method_ca_set_pnr },
     MODULE_STREAM_METHODS_REF()
 };
-MODULE_LUA_REGISTER(dvbcam)
+MODULE_LUA_REGISTER(ddci)
