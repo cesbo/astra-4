@@ -43,8 +43,6 @@
 #   define EV_TYPE_KQUEUE
 #   include <sys/event.h>
 #   define EV_OTYPE struct kevent
-#   define EV_FLAGS (EV_EOF | EV_ERROR)
-#   define EV_FFLAGS (NOTE_DELETE | NOTE_RENAME | NOTE_EXTEND)
 #   define MSG(_msg) "[core/event kqueue] " _msg
 #elif !defined(WITH_CUSTOM) && defined(__linux)
 #   define EV_TYPE_EPOLL
@@ -166,11 +164,8 @@ void asc_event_core_loop(void)
         EV_OTYPE *ed = &event_observer.ed_list[i];
 #if defined(EV_TYPE_KQUEUE)
         asc_event_t *event = ed->udata;
-        const bool is_rdwr = (ed->flags & EV_ADD)
-                             && !(ed->fflags & EV_FFLAGS)
-                             && (ed->data > 0);
-        const bool is_rd = is_rdwr && (ed->filter == EVFILT_READ);
-        const bool is_wr = is_rdwr && (ed->filter == EVFILT_WRITE);
+        const bool is_rd = (ed->data > 0) && (ed->filter == EVFILT_READ);
+        const bool is_wr = (ed->data > 0) && (ed->filter == EVFILT_WRITE);
         const bool is_er = (!is_rd && !is_wr && (ed->flags & ~EV_ADD));
 #else
         asc_event_t *event = ed->data.ptr;
@@ -209,7 +204,7 @@ static void asc_event_subscribe(asc_event_t *event)
     {
         if(event->on_read)
         {
-            EV_SET(&ed, event->fd, EVFILT_READ, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, event);
+            EV_SET(&ed, event->fd, EVFILT_READ, EV_ADD | EV_EOF | EV_ERROR, 0, 0, event);
             ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
             if(ret == -1)
                 break;
@@ -222,7 +217,7 @@ static void asc_event_subscribe(asc_event_t *event)
 
         if(event->on_write)
         {
-            EV_SET(&ed, event->fd, EVFILT_WRITE, EV_ADD | EV_FLAGS, EV_FFLAGS, 0, event);
+            EV_SET(&ed, event->fd, EVFILT_WRITE, EV_ADD | EV_EOF | EV_ERROR, 0, 0, event);
             ret = kevent(event_observer.fd, &ed, 1, NULL, 0, NULL);
             if(ret == -1)
                 break;
