@@ -91,7 +91,7 @@ static const char __chunked[] = "chunked";
 static const char __close[] = "close";
 static const char __keep_alive[] = "keep-alive";
 
-static int method_close(module_data_t *);
+static void on_close(void *);
 
 static void buffer_set_text(char **buffer, int capacity
                             , const char *default_value, int default_len
@@ -146,16 +146,6 @@ static void call_error(module_data_t *mod, const char *msg)
     lua_call(lua, 2, 0);
 }
 
-static void call_nil(module_data_t *mod)
-{
-    get_lua_callback(mod);
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
-
-    lua_pushnil(lua);
-
-    lua_call(lua, 2, 0);
-}
-
 void timeout_callback(void *arg)
 {
     module_data_t *mod = arg;
@@ -179,7 +169,7 @@ void timeout_callback(void *arg)
             break;
     }
 
-    method_close(mod);
+    on_close(mod);
 }
 
 /*
@@ -195,14 +185,40 @@ static void on_close(void *arg)
 {
     module_data_t *mod = arg;
 
+    if(mod->ready_state == -1)
+        return;
+
     if(mod->timeout_timer)
     {
         asc_timer_destroy(mod->timeout_timer);
         mod->timeout_timer = NULL;
     }
 
-    call_nil(mod);
-    method_close(mod);
+    if(mod->sock)
+    {
+        asc_socket_close(mod->sock);
+        mod->sock = NULL;
+    }
+
+    get_lua_callback(mod);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+    lua_pushnil(lua);
+    lua_call(lua, 2, 0);
+
+    if(mod->idx_self > 0)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_self);
+        mod->idx_self = 0;
+    }
+
+    if(mod->idx_data > 0)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_data);
+        mod->idx_data = 0;
+    }
+    lua_gc(lua, LUA_GCCOLLECT, 0);
+
+    mod->ready_state = -1;
 }
 
 static void on_read(void *arg)
@@ -218,8 +234,7 @@ static void on_read(void *arg)
     int r = asc_socket_recv(mod->sock, buffer + skip, HTTP_BUFFER_SIZE - skip);
     if(r <= 0)
     {
-        call_nil(mod);
-        method_close(mod);
+        on_close(mod);
         return;
     }
     r += mod->ts_len_in_buf;// Imagine that we've received more (+ previous part)
@@ -234,7 +249,7 @@ static void on_read(void *arg)
         if(!http_parse_response(buffer, m))
         {
             call_error(mod, "invalid response");
-            method_close(mod);
+            on_close(mod);
             return;
         }
 
@@ -381,7 +396,7 @@ static void on_read(void *arg)
                     if(!http_parse_chunk(&buffer[skip], m))
                     {
                         call_error(mod, "invalid chunk");
-                        method_close(mod);
+                        on_close(mod);
                         return;
                     }
 
@@ -411,8 +426,7 @@ static void on_read(void *arg)
                         else
                         {
                             // close connection
-                            call_nil(mod);
-                            method_close(mod);
+                            on_close(mod);
                         }
                         return;
                     }
@@ -434,7 +448,7 @@ static void on_read(void *arg)
                     else
                     {
                         call_error(mod, "invalid chunk");
-                        method_close(mod);
+                        on_close(mod);
                         return;
                     }
                 }
@@ -479,8 +493,7 @@ static void on_read(void *arg)
                     else
                     {
                         // close connection
-                        call_nil(mod);
-                        method_close(mod);
+                        on_close(mod);
                     }
                     return;
                 }
@@ -579,7 +592,7 @@ static void on_connect_err(void *arg)
     module_data_t *mod = arg;
     mod->is_connected = 1;
     timeout_callback(mod);
-    method_close(mod);
+    on_close(mod);
 }
 
 static void on_connect(void *arg)
@@ -615,32 +628,7 @@ static int method_data(module_data_t *mod)
 
 static int method_close(module_data_t *mod)
 {
-    if(mod->timeout_timer)
-    {
-        asc_timer_destroy(mod->timeout_timer);
-        mod->timeout_timer = NULL;
-    }
-
-    if(mod->sock)
-    {
-        asc_socket_close(mod->sock);
-        mod->sock = NULL;
-    }
-
-    if(mod->idx_self > 0)
-    {
-        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_self);
-        mod->idx_self = 0;
-    }
-
-    if(mod->idx_data > 0)
-    {
-        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_data);
-        mod->idx_data = 0;
-    }
-
-    mod->ready_state = -1;
-
+    on_close(mod);
     return 0;
 }
 
@@ -716,11 +704,6 @@ static void module_init(module_data_t *mod)
 
     mod->sock = asc_socket_open_tcp4(mod);
 
-    if(!mod->sock)
-    {
-        method_close(mod);
-        return;
-    }
     mod->timeout_timer = asc_timer_init(CONNECT_TIMEOUT_INTERVAL, timeout_callback, mod);
     asc_socket_connect(mod->sock, mod->host, mod->port, on_connect, on_connect_err);
 }
@@ -728,7 +711,7 @@ static void module_init(module_data_t *mod)
 static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
-    method_close(mod);
+    on_close(mod);
 }
 
 MODULE_STREAM_METHODS()
