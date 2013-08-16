@@ -1,6 +1,6 @@
 /*
  * Astra Module: SoftCAM
- * http://cesbo.com/en/astra
+ * http://cesbo.com/astra
  *
  * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  *               2012, Georgi Chorbadzhiyski <gf@unixsol.org>

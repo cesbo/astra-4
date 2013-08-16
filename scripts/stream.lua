@@ -1,5 +1,5 @@
 -- Astra Script: IPTV Streaming
--- http://cesbo.com/en/astra
+-- http://cesbo.com/astra
 --
 -- Copyright (C) 2013, Andrey Dyldin <and@cesbo.com>
 --

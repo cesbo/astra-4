@@ -1,6 +1,6 @@
 /*
  * Astra Module: Log
- * http://cesbo.com/en/astra
+ * http://cesbo.com/astra
  *
  * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
  *
