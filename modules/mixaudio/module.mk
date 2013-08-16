@@ -26,15 +26,13 @@ check_ldflags()
 
 check_pkg_config()
 {
-    if ! which pkg-config >/dev/null 2>&1 ; then
-        echo "ERROR: [mixaudio] pkg-config is not found. use CFLAGS, LDFLAGS/LIBS"
-        return 1
+    if which pkg-config >/dev/null 2>&1 ; then
+        if pkg-config libavcodec ; then
+            return 0
+        fi
     fi
-    if ! pkg-config libavcodec ; then
-        echo "ERROR: [mixaudio] libavcodec is not found"
-        return 1
-    fi
-    return 0
+
+    return 1
 }
 
 ffmpeg_configure()
@@ -47,8 +45,7 @@ ffmpeg_configure()
         elif check_pkg_config ; then
             CFLAGS=`pkg-config --cflags libavcodec`
         else
-            IS_ERROR=1
-            return
+            return 1
         fi
     fi
 
@@ -58,10 +55,11 @@ ffmpeg_configure()
         elif check_pkg_config ; then
             LDFLAGS=`pkg-config --libs libavcodec`
         else
-            IS_ERROR=1
-            return
+            return 1
         fi
     fi
 }
 
-ffmpeg_configure
+if ! ffmpeg_configure ; then
+    ERROR="libavcodec is not found. use contrib/ffmpeg.sh"
+fi

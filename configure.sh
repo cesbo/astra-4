@@ -342,7 +342,7 @@ __check_module()
     . $MODULE/module.mk
 
     if [ -n "$ERROR" ] ; then
-        echo "$MODULE/module.mk: error: $ERROR" >$TMP_MODULE_MK
+        echo "$MODULE: error: $ERROR" >$TMP_MODULE_MK
         return 1
     fi
 
@@ -358,7 +358,7 @@ __check_module()
             fi
             return 0
         fi
-        echo "$MODULE/module.mk: SOURCES is not defined" >$TMP_MODULE_MK
+        echo "$MODULE: SOURCES is not defined" >$TMP_MODULE_MK
         return 1
     fi
 
