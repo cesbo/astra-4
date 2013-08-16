@@ -276,7 +276,7 @@ static void fe_tune_s(dvb_fe_t *fe)
     fe_clear(fe);
 
     struct dtv_properties cmdseq;
-    struct dtv_property cmdlist[12];
+    struct dtv_property cmdlist[13];
 
     const fe_delivery_system_t dvb_sys = (fe->type == DVB_TYPE_S) ? SYS_DVBS : SYS_DVBS2;
 
@@ -291,6 +291,7 @@ static void fe_tune_s(dvb_fe_t *fe)
         DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,    fe->modulation);
     }
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_ROLLOFF,       fe->rolloff);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_STREAM_ID,     fe->stream_id);
     if(!fe->diseqc)
     {
         DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_VOLTAGE,       voltage);
@@ -320,10 +321,12 @@ static void fe_tune_t(dvb_fe_t *fe)
     fe_clear(fe);
 
     struct dtv_properties cmdseq;
-    struct dtv_property cmdlist[12];
+    struct dtv_property cmdlist[13];
+
+    const fe_delivery_system_t dvb_sys = (fe->type == DVB_TYPE_T2) ? SYS_DVBT2 : SYS_DVBT;
 
     DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   SYS_DVBT);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   dvb_sys);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_FREQUENCY,         fe->frequency);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,        fe->modulation);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INVERSION,         INVERSION_AUTO);
@@ -349,6 +352,7 @@ static void fe_tune_t(dvb_fe_t *fe)
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_GUARD_INTERVAL,    fe->guardinterval);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TRANSMISSION_MODE, fe->transmitmode);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_HIERARCHY,         fe->hierarchy);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_STREAM_ID,     fe->stream_id);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TUNE,              0);
 
     if(ioctl(fe->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)

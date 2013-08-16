@@ -33,4 +33,11 @@
 #   error "DVB_API_VERSION < 5"
 #endif
 
+#ifndef DTV_STREAM_ID
+	#define DTV_STREAM_ID DTV_ISDBS_TS_ID
+#endif
+#ifndef NO_STREAM_ID_FILTER
+	#define NO_STREAM_ID_FILTER	(~0U)
+#endif
+
 #endif /* _DVB_H_ */
