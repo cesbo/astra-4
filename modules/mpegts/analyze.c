@@ -437,7 +437,7 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
     lua_pushstring(lua, "sdt");
     lua_setfield(lua, -2, __psi);
 
-    lua_pushnumber(lua, psi->crc32);
+    lua_pushnumber(lua, crc32);
     lua_setfield(lua, -2, __crc32);
 
     lua_pushnumber(lua, mod->tsid);
