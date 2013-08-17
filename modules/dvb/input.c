@@ -359,6 +359,7 @@ static void module_options_s(module_data_t *mod)
         mod->fe->rolloff = ROLLOFF_35;
 
     module_option_fec(mod);
+    module_option_number("stream_id", &mod->fe->stream_id);
 }
 
 /*
@@ -429,6 +430,8 @@ static void module_options_t(module_data_t *mod)
     }
     else
         mod->fe->hierarchy = HIERARCHY_AUTO;
+
+    module_option_number("stream_id", &mod->fe->stream_id);
 }
 
 /*
@@ -485,7 +488,7 @@ static void module_options(module_data_t *mod)
     else if(!strcasecmp(string_val, "C")) mod->fe->type = DVB_TYPE_C;
 #if DVB_API >= 500
     else if(!strcasecmp(string_val, "S2")) mod->fe->type = DVB_TYPE_S2;
-#if DVB_API >= 505
+#if DVB_API >= 502
     else if(!strcasecmp(string_val, "T2")) mod->fe->type = DVB_TYPE_T2;
 #endif
 #endif
