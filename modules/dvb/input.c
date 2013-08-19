@@ -488,7 +488,7 @@ static void module_options(module_data_t *mod)
     else if(!strcasecmp(string_val, "C")) mod->fe->type = DVB_TYPE_C;
 #if DVB_API >= 500
     else if(!strcasecmp(string_val, "S2")) mod->fe->type = DVB_TYPE_S2;
-#if DVB_API >= 502
+#if DVB_API >= 503
     else if(!strcasecmp(string_val, "T2")) mod->fe->type = DVB_TYPE_T2;
 #endif
 #endif
