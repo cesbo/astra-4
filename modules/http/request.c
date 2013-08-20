@@ -200,13 +200,13 @@ static void on_close(void *arg)
         mod->sock = NULL;
     }
 
-    get_lua_callback(mod);
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
-    lua_pushnil(lua);
-    lua_call(lua, 2, 0);
-
     if(mod->idx_self > 0)
     {
+        get_lua_callback(mod);
+        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+        lua_pushnil(lua);
+        lua_call(lua, 2, 0);
+
         luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_self);
         mod->idx_self = 0;
     }
