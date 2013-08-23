@@ -259,7 +259,11 @@ static void module_init(module_data_t *mod)
 
 
 #if defined(HAVE_POSIX_MEMALIGN) && defined(O_DIRECT)
-    if(mod->directio && !mod->aio)
+    if(mod->directio
+#ifdef HAVE_AIO
+       && !mod->aio
+#endif
+       )
     {
         if(posix_memalign((void *)&mod->buffer, ALIGN, mod->buffer_size))
         {
