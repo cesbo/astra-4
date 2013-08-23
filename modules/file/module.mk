@@ -32,10 +32,29 @@ check_libaio()
     libaio_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
 }
 
-if [ $OS = "linux" ] ; then
-    LDFLAGS="-lrt"
-    if check_libaio ; then
-        CFLAGS="$CFLAGS -DHAVE_LIBAIO=1"
-        LDFLAGS="$LDFLAGS -laio"
+aio_test_c()
+{
+    cat <<EOF
+#ifdef _WIN32
+#   error Win32
+#endif
+#include <aio.h>
+int main(void) { return 0; }
+EOF
+}
+
+check_aio()
+{
+    aio_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+}
+
+if check_aio ; then
+    CFLAGS="$CFLAGS -DHAVE_AIO=1"
+    if [ $OS = "linux" ] ; then
+        LDFLAGS="-lrt"
+        if check_libaio ; then
+            CFLAGS="$CFLAGS -DHAVE_LIBAIO=1"
+            LDFLAGS="$LDFLAGS -laio"
+        fi
     fi
 fi

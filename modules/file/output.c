@@ -37,12 +37,12 @@
 #include <astra.h>
 
 #include <fcntl.h>
-#ifndef _WIN32
+#ifdef HAVE_AIO
 #include <aio.h>
-#endif
 #ifdef HAVE_LIBAIO
 #include <libaio.h>
-#endif
+#endif /* HAVE_LIBAIO */
+#endif /* HAVE_AIO */
 
 #define FILE_BUFFER_SIZE 32
 
@@ -65,7 +65,7 @@ struct module_data_t
     int fd;
     bool error;
 
-#ifndef _WIN32
+#ifdef HAVE_AIO
     int aio;
 
     struct aiocb aiocb;
@@ -75,7 +75,7 @@ struct module_data_t
     io_context_t ctx;
     struct iocb *io[1];
 #endif /* HAVE_LIBAIO */
-#endif /* !_WIN32 */
+#endif /* HAVE_AIO */
 
     size_t file_size;
 
@@ -94,7 +94,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     if(mod->buffer_skip > mod->buffer_size - mod->packet_size || !ts)
     {
         ssize_t size;
-#ifndef _WIN32
+#ifdef HAVE_AIO
         if(mod->aio)
         {
             size = align(mod->buffer_skip);
@@ -158,7 +158,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             }
         }
         else
-#endif /* !_WIN32 */
+#endif /* HAVE_AIO */
         { /* !mod->aio */
 #ifdef O_DIRECT
             size = mod->directio ? align(mod->buffer_skip) : mod->buffer_skip;
@@ -244,12 +244,12 @@ static void module_init(module_data_t *mod)
     module_option_number("directio", &mod->directio);
 #endif
 
-#ifndef _WIN32
+#ifdef HAVE_AIO
     module_option_number("aio", &mod->aio);
 #ifdef HAVE_LIBAIO
     mod->aio_kernel = mod->aio && mod->directio;
 #endif /* HAVE_LIBAIO */
-#endif /* !_WIN32 */
+#endif /* HAVE_AIO */
 
     int buffer_size = 0;
     if(!module_option_number("buffer_size", &buffer_size))
@@ -276,7 +276,7 @@ static void module_init(module_data_t *mod)
     int flags = O_CREAT | O_APPEND | O_RDWR;
     int mode = S_IRUSR | S_IWUSR;
 
-#ifndef _WIN32
+#ifdef HAVE_AIO
     flags |= O_BINARY | O_NONBLOCK;
     mode |= S_IRGRP | S_IROTH;
 #endif
@@ -299,7 +299,7 @@ static void module_init(module_data_t *mod)
         astra_abort();
     }
 
-#ifndef _WIN32
+#ifdef HAVE_AIO
     if(mod->aio)
     {
 #ifdef HAVE_LIBAIO
@@ -330,7 +330,7 @@ static void module_init(module_data_t *mod)
             mod->aiocb.aio_sigevent.sigev_notify = SIGEV_NONE;
         }
     } /* mod->aio */
-#endif /* !_WIN32 */
+#endif /* HAVE_AIO */
 
     module_stream_init(mod, on_ts);
 }
@@ -339,7 +339,7 @@ static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
 
-#ifndef _WIN32
+#ifdef HAVE_AIO
     if(mod->aio)
     {
 #ifdef HAVE_LIBAIO
@@ -369,8 +369,11 @@ static void module_destroy(module_data_t *mod)
     if(mod->buffer)
         free(mod->buffer);
 
+#ifdef HAVE_AIO
     if(mod->buffer_aio)
-        free(mod->buffer_aio);}
+        free(mod->buffer_aio);
+#endif
+}
 
 MODULE_LUA_METHODS()
 {
