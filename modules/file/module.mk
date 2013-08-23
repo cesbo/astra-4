@@ -32,7 +32,7 @@ check_libaio()
     libaio_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
 }
 
-if [ $OS == "linux" ] ; then
+if [ $OS = "linux" ] ; then
     LDFLAGS="-lrt"
     if check_libaio ; then
         CFLAGS="$CFLAGS -DHAVE_LIBAIO=1"
