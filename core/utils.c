@@ -18,17 +18,21 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _ASC_H_
-#define _ASC_H_ 1
-
-#include "assert.h"
-#include "base.h"
-#include "event.h"
-#include "list.h"
-#include "log.h"
-#include "socket.h"
-#include "thread.h"
-#include "timer.h"
 #include "utils.h"
 
-#endif /* _ASC_H_ */
+int64_t asc_utime(void)
+{
+#ifdef HAVE_CLOCK_GETTIME
+    struct timespec ts;
+
+    if(clock_gettime(CLOCK_MONOTONIC, &ts) == EINVAL)
+        (void)clock_gettime(CLOCK_REALTIME, &ts);
+
+    return ((int64_t)ts.tv_sec * 1000000) + (int64_t)(ts.tv_nsec / 1000);
+#else
+    struct timeval tv;
+
+    gettimeofday(&tv, NULL);
+    return ((int64_t)tv.tv_sec * 1000000) + (int64_t)tv.tv_usec;
+#endif
+}

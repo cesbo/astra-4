@@ -18,17 +18,11 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _ASC_H_
-#define _ASC_H_ 1
+#ifndef _UTILS_H_
+#define _UTILS_H_ 1
 
-#include "assert.h"
 #include "base.h"
-#include "event.h"
-#include "list.h"
-#include "log.h"
-#include "socket.h"
-#include "thread.h"
-#include "timer.h"
-#include "utils.h"
 
-#endif /* _ASC_H_ */
+int64_t asc_utime(void);
+
+#endif /* _UTILS_H_ */
