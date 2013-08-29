@@ -319,7 +319,6 @@ function start_reserve(channel_data)
             channel_data.input[input_id] = { on_air = false, }
         end
     end
-    collectgarbage()
 end
 
 function log_analyze_error(channel_data, input_id, analyze_data)
@@ -705,11 +704,12 @@ function kill_input(channel_data, input_id)
     end
 
     input_data.source = nil
+    input_data.analyze = nil
     input_data.channel = nil
     input_data.decrypt = nil
-    input_data.analyze = nil
     input_data.tail = nil
     channel_data.input[input_id] = nil
+    collectgarbage()
 end
 
 --   ooooooo            ooooo  oooo ooooooooo  oooooooooo

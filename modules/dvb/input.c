@@ -558,6 +558,7 @@ static void dvb_thread_loop(void *arg)
 
     fe_open(mod->fe);
     ca_open(mod->ca);
+    dmx_open(mod);
 
     nfds_t nfds = 0;
 
@@ -577,9 +578,23 @@ static void dvb_thread_loop(void *arg)
 
     mod->thread_ready = true;
 
+    int64_t current_time = asc_utime();
+    int64_t dmx_check_timeout = current_time;
+    int64_t ca_check_timeout = current_time;
+
+#define DMX_TIMEOUT (200 * 1000)
+#define CA_TIMEOUT (1 * 1000 * 1000)
+
     asc_thread_while(mod->thread)
     {
-        const int ret = poll(fds, nfds, 1000);
+        const int ret = poll(fds, nfds, 100);
+
+        if(ret < 0)
+        {
+            asc_log_error(MSG("poll() failed [%s]"), strerror(errno));
+            astra_abort();
+        }
+
         if(ret > 0)
         {
             if(fds[0].revents)
@@ -587,20 +602,35 @@ static void dvb_thread_loop(void *arg)
             if(fds[1].revents)
                 ca_loop(mod->ca, fds[1].revents & (POLLPRI | POLLIN));
         }
-        else if(ret == 0)
+
+        current_time = asc_utime();
+        if(!mod->dmx_budget && (current_time - dmx_check_timeout) >= DMX_TIMEOUT)
         {
+            dmx_check_timeout = current_time;
+
+            for(int i = 0; i < MAX_PID; ++i)
+            {
+                if((mod->__stream.pid_list[i] > 0) && (mod->dmx_fd_list[i] == 0))
+                    dmx_set_pid(mod, i, 1);
+                else if((mod->__stream.pid_list[i] == 0) && (mod->dmx_fd_list[i] > 0))
+                    dmx_set_pid(mod, i, 0);
+            }
+        }
+
+        if((current_time - ca_check_timeout) >= CA_TIMEOUT)
+        {
+            ca_check_timeout = current_time;
             fe_loop(mod->fe, 0);
             ca_loop(mod->ca, 0);
         }
-        else
-        {
-            asc_log_error(MSG("poll() failed [%s]"), strerror(errno));
-            astra_abort();
-        }
     }
+
+#undef DMX_TIMEOUT
+#undef CA_TIMEOUT
 
     fe_close(mod->fe);
     ca_close(mod->ca);
+    dmx_close(mod);
 }
 
 /*
@@ -626,15 +656,11 @@ static int method_ca_set_pnr(module_data_t *mod)
 static void join_pid(module_data_t *mod, uint16_t pid)
 {
     ++mod->__stream.pid_list[pid];
-    if(mod->__stream.pid_list[pid] == 1)
-        dmx_set_pid(mod, pid, 1);
 }
 
 static void leave_pid(module_data_t *mod, uint16_t pid)
 {
     --mod->__stream.pid_list[pid];
-    if(mod->__stream.pid_list[pid] == 0)
-        dmx_set_pid(mod, pid, 0);
 }
 
 static void module_init(module_data_t *mod)
@@ -649,7 +675,6 @@ static void module_init(module_data_t *mod)
 
     asc_thread_init(&mod->thread, dvb_thread_loop, mod);
     dvr_open(mod);
-    dmx_open(mod);
 
     struct timespec ts = { .tv_sec = 0, .tv_nsec = 500000 };
     while(!mod->thread_ready)
@@ -660,7 +685,6 @@ static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
 
-    dmx_close(mod);
     dvr_close(mod);
     asc_thread_destroy(&mod->thread);
 
