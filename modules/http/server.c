@@ -78,6 +78,7 @@ typedef struct
     int content_length;
 
     FILE *src_file;
+    int src_content; // lua reference
 
     int buffer_skip;
     char buffer[HTTP_BUFFER_SIZE];
@@ -416,6 +417,42 @@ static void on_read(void *arg)
  *
  */
 
+static void on_ready_send_content(void *arg)
+{
+    http_client_t *client = arg;
+    module_data_t *mod = client->mod;
+
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, client->src_content);
+    const int content_size = luaL_len(lua, -1);
+    const char *content = lua_tostring(lua, -1);
+
+    const int content_left = content_size - client->buffer_skip;
+    const int content_send = (content_left > HTTP_BUFFER_SIZE)
+                           ? HTTP_BUFFER_SIZE
+                           : content_left;
+
+
+    const ssize_t send_size = asc_socket_send(client->sock
+                                              , (void *)&content[client->buffer_skip]
+                                              , content_send);
+    if(send_size <= 0)
+    {
+        asc_log_error(MSG("failed to send content to client:%d [%s]")
+                      , asc_socket_fd(client->sock), asc_socket_error());
+        on_read_error(client);
+        return;
+    }
+    client->buffer_skip += content_send;
+
+    if(client->buffer_skip == content_size)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, client->src_content);
+        client->src_content = 0;
+        client->buffer_skip = 0;
+        asc_socket_set_on_ready(client->sock, NULL);
+    }
+}
+
 static void on_ready_send_file(void *arg)
 {
     http_client_t *client = arg;
@@ -672,14 +709,9 @@ static int method_send(module_data_t *mod)
     lua_getfield(lua, 3, "content");
     if(!lua_isnil(lua, -1))
     {
-        const int content_size = luaL_len(lua, -1);
-        const char *content = lua_tostring(lua, -1);
-        if(asc_socket_send(client->sock, (void *)content, content_size) <= 0)
-        {
-            asc_log_error(MSG("failed to send content to client:%d [%s]")
-                          , asc_socket_fd(client->sock), asc_socket_error());
-            return 0;
-        }
+        lua_pushvalue(lua, -1);
+        client->src_content = luaL_ref(lua, LUA_REGISTRYINDEX);
+        asc_socket_set_on_ready(client->sock, on_ready_send_content);
     }
     lua_pop(lua, 1);
 
