@@ -670,23 +670,25 @@ function init_input(channel_data, input_id)
         end
     end
 
-    input_data.analyze = analyze({
-        upstream = input_data.tail:stream(),
-        name = channel_data.config.name,
-        callback = function(data)
-                on_analyze(channel_data, input_id, data)
+    if input_conf.no_analyze ~= true then
+        input_data.analyze = analyze({
+            upstream = input_data.tail:stream(),
+            name = channel_data.config.name,
+            callback = function(data)
+                    on_analyze(channel_data, input_id, data)
 
-                if data.analyze then
-                    if data.on_air ~= input_data.on_air then
-                        if data.on_air == false then
-                            log_analyze_error(channel_data, input_id, data)
+                    if data.analyze then
+                        if data.on_air ~= input_data.on_air then
+                            if data.on_air == false then
+                                log_analyze_error(channel_data, input_id, data)
+                            end
+                            input_data.on_air = data.on_air
+                            start_reserve(channel_data)
                         end
-                        input_data.on_air = data.on_air
-                        start_reserve(channel_data)
                     end
                 end
-            end
-    })
+        })
+    end
 
     channel_data.input[input_id] = input_data
 end
