@@ -53,6 +53,7 @@ struct module_data_t
     {
         const char *name;
         int pnr;
+        int set_pnr;
         int sdt;
         int eit;
     } config;
@@ -198,6 +199,41 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     const uint8_t pat_version = PAT_GET_VERSION(mod->custom_pat) + 1;
     PAT_INIT(mod->custom_pat, mod->tsid, pat_version);
     memcpy(PAT_ITEMS_FIRST(mod->custom_pat), pointer, 4);
+
+    mod->custom_pmt->pid = mod->pmt->pid;
+
+    if(mod->config.set_pnr)
+    {
+        uint8_t *custom_pointer = PAT_ITEMS_FIRST(mod->custom_pat);
+        custom_pointer[0] = mod->config.set_pnr >> 8;
+        custom_pointer[1] = mod->config.set_pnr & 0xFF;
+    }
+
+    if(mod->map)
+    {
+        asc_list_for(mod->map)
+        {
+            map_item_t *map_item = asc_list_data(mod->map);
+            if(map_item->is_set)
+                continue;
+
+            if(   (map_item->origin_pid && map_item->origin_pid == mod->pmt->pid)
+               || (!strcmp(map_item->type, "pmt")) )
+            {
+                map_item->is_set = true;
+                mod->pid_map[mod->pmt->pid] = map_item->custom_pid;
+
+                uint8_t *custom_pointer = PAT_ITEMS_FIRST(mod->custom_pat);
+                custom_pointer[2] = (custom_pointer[2] & ~0x1F)
+                                  | ((map_item->custom_pid >> 8) & 0x1F);
+                custom_pointer[3] = map_item->custom_pid & 0xFF;
+
+                mod->custom_pmt->pid = map_item->custom_pid;
+                break;
+            }
+        }
+    }
+
     mod->custom_pat->buffer_size = 8 + 4 + CRC32_SIZE;
     PSI_SET_SIZE(mod->custom_pat);
     PSI_SET_CRC32(mod->custom_pat);
@@ -307,9 +343,13 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     bool join_pcr = true;
 
     // Make custom PMT and set descriptors for CAS
-    mod->custom_pmt->pid = psi->pid;
     memcpy(mod->custom_pmt->buffer, psi->buffer, psi->buffer_size);
     mod->custom_pmt->buffer_size = psi->buffer_size;
+
+    if(mod->config.set_pnr)
+    {
+        PMT_SET_PNR(mod->custom_pmt, mod->config.set_pnr);
+    }
 
     const uint8_t *desc_pointer = PMT_DESC_FIRST(psi);
     while(!PMT_DESC_EOL(psi, desc_pointer))
@@ -639,6 +679,7 @@ static void module_init(module_data_t *mod)
     asc_assert(mod->config.name != NULL, "[channel] option 'name' is required");
 
     module_option_number("pnr", &mod->config.pnr);
+    module_option_number("set_pnr", &mod->config.set_pnr);
 
     mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
     mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);

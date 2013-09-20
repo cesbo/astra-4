@@ -626,7 +626,7 @@ function init_input(channel_data, input_id)
     input_data.source = init_input_type(input_conf)
     input_data.tail = input_data.source.tail
 
-    if input_conf.pnr or channel_data.config.map then
+    if input_conf.pnr or input_conf.set_pnr or channel_data.config.map then
         local channel_conf =
         {
             name = channel_data.config.name,
@@ -638,6 +638,7 @@ function init_input(channel_data, input_id)
 
         if (input_conf.no_sdt or no_sdt) then channel_conf.sdt = nil end
         if (input_conf.no_eit or no_eit) then channel_conf.eit = nil end
+        if input_conf.set_pnr then channel_conf.set_pnr = input_conf.set_pnr end
         if channel_data.config.map then channel_conf.map = channel_data.config.map end
 
         input_data.channel = channel(channel_conf)
