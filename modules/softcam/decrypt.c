@@ -44,6 +44,7 @@ struct module_data_t
     /* Config */
     const char *name;
     int caid;
+    int ecm_pid;
 
     /* Buffer */
     uint8_t *buffer; // r_buffer + s_buffer
@@ -221,8 +222,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
                 ; /* Skip */
             else if(   mod->__decrypt.cas
                     && !mod->__decrypt.cam->disable_emm
-                    && DESC_CA_CAID(desc_pointer) == mod->caid
-                    && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
+                    && DESC_CA_CAID(desc_pointer) == mod->caid)
             {
                 mod->stream[pid] = MPEGTS_PACKET_EMM;
                 asc_log_debug(MSG("Select EMM pid:%d"), pid);
@@ -287,6 +287,13 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     mod->custom_pmt->pid = psi->pid;
 
     bool is_ecm_selected = false;
+
+    if(mod->ecm_pid) // skip descriptors checking
+    {
+        mod->stream[mod->ecm_pid] = MPEGTS_PACKET_ECM;
+        asc_log_debug(MSG("Select ECM pid:%d"), mod->ecm_pid);
+        is_ecm_selected = true;
+    }
 
     uint16_t skip = 12;
     memcpy(mod->custom_pmt->buffer, psi->buffer, 10);
@@ -703,6 +710,8 @@ static void module_init(module_data_t *mod)
 
         module_cam_attach_decrypt(mod->__decrypt.cam, &mod->__decrypt);
     }
+
+    module_option_number("ecm_pid", &mod->ecm_pid);
 
     stream_reload(mod);
 }
