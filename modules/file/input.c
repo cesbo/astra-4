@@ -432,6 +432,7 @@ static void thread_loop(void *arg)
         }
         block_time_total += block_time;
 
+        mod->skip += (mod->buffer.block_end - mod->buffer.ptr);
         const uint32_t block_size = (mod->buffer.block_end - mod->buffer.ptr) / mod->ts_size;
         // calculate the sync time value
         if((block_time + total_sync_diff) > 0)
