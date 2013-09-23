@@ -660,6 +660,7 @@ function init_input(channel_data, input_id)
             cam = input_conf.cam,
         }
         if input_conf.cas_data then decrypt_conf.cas_data = input_conf.cas_data end
+        if input_conf.ecm_pid then decrypt_conf.ecm_pid = input_conf.ecm_pid end
         input_data.decrypt = decrypt(decrypt_conf)
         input_data.tail = input_data.decrypt
 
