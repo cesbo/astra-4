@@ -45,13 +45,15 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
             }
             break;
         }
-        // EMM ( ret = MPEGTS_PACKET_EMM )
+        // EMM
+/*
         case 0x82:
         {
             if(!memcmp(&em->buffer[3], &mod->__cas.decrypt->cam->ua[2], 6))
                 return true;
             break;
         }
+*/
         case 0x84:
         {
             if(!memcmp(&em->buffer[5], &mod->sa[5], 3))
