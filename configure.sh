@@ -519,9 +519,9 @@ done
 	@echo "INSTALL: \$(V_SCRIPTS)/dvbls.lua"
 	@sed '1 s/\$\$/-\$(VERSION)/g' $SRCDIR/scripts/dvbls.lua >\$(V_SCRIPTS)/dvbls.lua
 	@chmod +x \$(V_SCRIPTS)/dvbls.lua
-	@echo "INSTALL: $(V_SCRIPTS)/xproxy.lua"
-	@sed '1 s/$$/-$(VERSION)/g' ./scripts/xproxy.lua >$(V_SCRIPTS)/xproxy.lua
-	@chmod +x $(V_SCRIPTS)/xproxy.lua
+	@echo "INSTALL: \$(V_SCRIPTS)/xproxy.lua"
+	@sed '1 s/\$\$/-\$(VERSION)/g' $SRCDIR/scripts/xproxy.lua >\$(V_SCRIPTS)/xproxy.lua
+	@chmod +x \$(V_SCRIPTS)/xproxy.lua
 
 link:
 	@rm -f /usr/bin/astra
