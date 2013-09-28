@@ -25,8 +25,6 @@ struct module_data_t
     MODULE_CAS_DATA();
 
     uint8_t parity;
-
-    uint8_t *sa;
 };
 
 static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
@@ -46,18 +44,20 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
             break;
         }
         // EMM
-/*
         case 0x82:
         {
             if(!memcmp(&em->buffer[3], &mod->__cas.decrypt->cam->ua[2], 6))
                 return true;
             break;
         }
-*/
         case 0x84:
         {
-            if(!memcmp(&em->buffer[5], &mod->sa[5], 3))
-                return true;
+            asc_list_for(mod->__cas.decrypt->cam->prov_list)
+            {
+                uint8_t *sa = asc_list_data(mod->__cas.decrypt->cam->prov_list);
+                if(!memcmp(&em->buffer[5], &sa[5], 3))
+                    return true;
+            }
             break;
         }
         default:
@@ -94,11 +94,7 @@ static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
     {
         uint8_t *prov = asc_list_data(mod->__cas.decrypt->cam->prov_list);
         if((prov[1] == desc[6]) && (prov[2] == desc[7]))
-        {
-            if(!mod->sa)
-                mod->sa = &prov[3];
             return true;
-        }
     }
 
     return false;
