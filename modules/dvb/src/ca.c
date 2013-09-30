@@ -623,8 +623,7 @@ static uint16_t mmi_get_text(dvb_ca_t *ca
     skip += asc_1_decode(&buffer[3], &length);
     skip += length;
 
-    // TODO: encode string
-    *text = strdup("TODO: encode string");
+    *text = iso8859_text(&buffer[skip]);
 
     return skip;
 }
