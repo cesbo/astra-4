@@ -293,6 +293,70 @@ static void application_information_open(dvb_ca_t *ca, uint8_t slot_id, uint16_t
  * Conditional Access Support
  */
 
+/* en50221: ca_pmt_list_management */
+enum
+{
+    CA_PMT_LM_MORE              = 0x00,
+    CA_PMT_LM_FIRST             = 0x01,
+    CA_PMT_LM_LAST              = 0x02,
+    CA_PMT_LM_ONLY              = 0x03,
+    CA_PMT_LM_ADD               = 0x04,
+    CA_PMT_LM_UPDATE            = 0x05
+};
+
+/* en50221: ca_pmt_cmd_id */
+enum
+{
+    CA_PMT_CMD_OK_DESCRAMBLING  = 0x01,
+    CA_PMT_CMD_OK_MMI           = 0x02,
+    CA_PMT_CMD_QUERY            = 0x03,
+    CA_PMT_CMD_NOT_SELECTED     = 0x04
+};
+
+static void ca_pmt_send(dvb_ca_t *ca, ca_pmt_t *ca_pmt)
+{
+    ca_pmt->buffer[0] = ca_pmt->list_manage;
+
+    uint16_t info_length = ((ca_pmt->buffer[4] & 0xFF) << 8) | (ca_pmt->buffer[5]);
+    if(info_length > 0)
+        ca_pmt->buffer[6] = ca_pmt->cmd;
+
+    uint16_t skip = 6 + info_length;
+
+    while(skip < ca_pmt->buffer_size)
+    {
+        info_length = ((ca_pmt->buffer[skip + 3] & 0xFF) << 8) | (ca_pmt->buffer[skip + 4]);
+        if(info_length > 0)
+            ca_pmt->buffer[skip + 5] = ca_pmt->cmd;
+        skip += 5 + info_length;
+    }
+
+    // send ca_pmt
+    for(int slot_id = 0; slot_id < ca->slots_num; ++slot_id)
+    {
+        if(ca_pmt->list_manage == CA_PMT_LM_ADD)
+        {
+            if(ca->slots[slot_id].is_first_ca_pmt)
+            {
+                ca_pmt->buffer[0] = CA_PMT_LM_ONLY;
+                ca->slots[slot_id].is_first_ca_pmt = false;
+            }
+        }
+
+        for(int session_id = 0; session_id < MAX_SESSIONS; ++session_id)
+        {
+            ca_session_t *session = &ca->slots[slot_id].sessions[session_id];
+            if(session->resource_id == RI_CONDITIONAL_ACCESS_SUPPORT)
+            {
+                ca_apdu_send(ca, slot_id, session_id, AOT_CA_PMT
+                             , ca_pmt->buffer, ca_pmt->buffer_size);
+            }
+        }
+
+        ca_pmt->buffer[0] = ca_pmt->list_manage;
+    }
+}
+
 typedef struct
 {
     uint8_t caid_list_size;
@@ -993,7 +1057,6 @@ static void ca_spdu_event(dvb_ca_t *ca, uint8_t slot_id)
 static void ca_tpdu_write(dvb_ca_t *ca, uint8_t slot_id)
 {
     ca_slot_t *slot = &ca->slots[slot_id];
-
     if(slot->is_busy)
     {
         asc_log_warning(MSG("CA: Slot %d is busy"), slot_id);
@@ -1079,10 +1142,8 @@ static void ca_tpdu_send(dvb_ca_t *ca, uint8_t slot_id
     m->buffer_size = buffer_size;
     asc_list_insert_tail(slot->queue, m);
 
-    if(slot->is_busy)
-        return;
-
-    ca_tpdu_write(ca, slot_id);
+    if(!slot->is_busy)
+        ca_tpdu_write(ca, slot_id);
 }
 
 static void ca_tpdu_event(dvb_ca_t *ca)
@@ -1160,13 +1221,10 @@ static void ca_tpdu_event(dvb_ca_t *ca)
             break;
     }
 
-    if(slot->is_busy)
-        return;
-
-    if(asc_list_size(slot->queue) > 0)
+    if(!slot->is_busy && asc_list_size(slot->queue) > 0)
         ca_tpdu_write(ca, slot_id);
 
-    if(slot->pending_session_id)
+    if(!slot->is_busy && slot->pending_session_id)
     {
         const uint16_t session_id = slot->pending_session_id;
         slot->pending_session_id = 0;
@@ -1198,7 +1256,7 @@ static void ca_tpdu_event(dvb_ca_t *ca)
         }
     }
 
-    if(has_data)
+    if(!slot->is_busy && has_data)
         ca_tpdu_send(ca, slot_id, TT_RCV, NULL, 0);
 }
 
@@ -1308,26 +1366,6 @@ static void ca_slot_loop(dvb_ca_t *ca)
  *
  */
 
-/* en50221: ca_pmt_list_management */
-enum
-{
-    CA_PMT_LM_MORE              = 0x00,
-    CA_PMT_LM_FIRST             = 0x01,
-    CA_PMT_LM_LAST              = 0x02,
-    CA_PMT_LM_ONLY              = 0x03,
-    CA_PMT_LM_ADD               = 0x04,
-    CA_PMT_LM_UPDATE            = 0x05
-};
-
-/* en50221: ca_pmt_cmd_id */
-enum
-{
-    CA_PMT_CMD_OK_DESCRAMBLING  = 0x01,
-    CA_PMT_CMD_OK_MMI           = 0x02,
-    CA_PMT_CMD_QUERY            = 0x03,
-    CA_PMT_CMD_NOT_SELECTED     = 0x04
-};
-
 static uint16_t ca_pmt_copy_desc(const uint8_t *src, uint16_t size, uint8_t *dst)
 {
     uint16_t ca_pmt_skip = 3; // info_length + ca_pmt_cmd_id
@@ -1394,50 +1432,6 @@ static void ca_pmt_build(dvb_ca_t *ca, ca_pmt_t *ca_pmt, mpegts_psi_t *pmt)
         PMT_ITEMS_NEXT(pmt, pointer);
     }
     ca_pmt->buffer_size = ca_size;
-}
-
-static void ca_pmt_send(dvb_ca_t *ca, ca_pmt_t *ca_pmt, uint8_t list_manage, uint8_t cmd)
-{
-    ca_pmt->buffer[0] = list_manage;
-
-    uint16_t info_length = ((ca_pmt->buffer[4] & 0xFF) << 8) | (ca_pmt->buffer[5]);
-    if(info_length > 0)
-        ca_pmt->buffer[6] = cmd;
-
-    uint16_t skip = 6 + info_length;
-
-    while(skip < ca_pmt->buffer_size)
-    {
-        info_length = ((ca_pmt->buffer[skip + 3] & 0xFF) << 8) | (ca_pmt->buffer[skip + 4]);
-        if(info_length > 0)
-            ca_pmt->buffer[skip + 5] = cmd;
-        skip += 5 + info_length;
-    }
-
-    // send ca_pmt
-    for(int slot_id = 0; slot_id < ca->slots_num; ++slot_id)
-    {
-        if(list_manage == CA_PMT_LM_ADD)
-        {
-            if(ca->slots[slot_id].is_first_ca_pmt)
-            {
-                ca_pmt->buffer[0] = CA_PMT_LM_ONLY;
-                ca->slots[slot_id].is_first_ca_pmt = false;
-            }
-        }
-
-        for(int session_id = 0; session_id < MAX_SESSIONS; ++session_id)
-        {
-            ca_session_t *session = &ca->slots[slot_id].sessions[session_id];
-            if(session->resource_id == RI_CONDITIONAL_ACCESS_SUPPORT)
-            {
-                ca_apdu_send(ca, slot_id, session_id, AOT_CA_PMT
-                             , ca_pmt->buffer, ca_pmt->buffer_size);
-            }
-        }
-
-        ca_pmt->buffer[0] = list_manage;
-    }
 }
 
 static void on_pat(void *arg, mpegts_psi_t *psi)
@@ -1517,9 +1511,8 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
             ca_pmt->crc = crc32;
             ca_pmt_build(ca, ca_pmt, psi);
-            ca_pmt_send(ca, ca_pmt
-                        , (is_update == false) ? CA_PMT_LM_ADD : CA_PMT_LM_UPDATE
-                        , CA_PMT_CMD_OK_DESCRAMBLING);
+            ca_pmt->list_manage = (is_update == false) ? CA_PMT_LM_ADD : CA_PMT_LM_UPDATE;
+            ca_pmt->cmd = CA_PMT_CMD_OK_DESCRAMBLING;
             return;
         }
     }
@@ -1563,6 +1556,7 @@ void ca_append_pnr(dvb_ca_t *ca, uint16_t pnr)
     ca_pmt->pnr = pnr;
     ca_pmt->crc = 0;
     ca_pmt->buffer_size = 0;
+    ca_pmt->cmd = 0x00;
     asc_list_insert_tail(ca->ca_pmt_list, ca_pmt);
 }
 
@@ -1574,11 +1568,9 @@ void ca_remove_pnr(dvb_ca_t *ca, uint16_t pnr)
         ca_pmt = asc_list_data(ca->ca_pmt_list);
         if(ca_pmt->pnr == pnr)
         {
-            if(ca_pmt->buffer_size > 0)
-                ca_pmt_send(ca, ca_pmt, CA_PMT_LM_UPDATE, CA_PMT_CMD_NOT_SELECTED);
+            ca_pmt->list_manage = CA_PMT_LM_UPDATE;
+            ca_pmt->cmd = CA_PMT_CMD_NOT_SELECTED;
 
-            free(ca_pmt);
-            asc_list_remove_current(ca->ca_pmt_list);
             return;
         }
     }
@@ -1661,6 +1653,25 @@ void ca_open(dvb_ca_t *ca)
 
 void ca_close(dvb_ca_t *ca)
 {
+    if(ca->ca_pmt_list)
+    {
+        for(asc_list_first(ca->ca_pmt_list)
+            ; !asc_list_eol(ca->ca_pmt_list)
+            ; asc_list_first(ca->ca_pmt_list))
+        {
+            ca_pmt_t *ca_pmt = asc_list_data(ca->ca_pmt_list);
+            if(ca_pmt->buffer_size > 0)
+            {
+                ca_pmt->list_manage = CA_PMT_LM_UPDATE;
+                ca_pmt->cmd = CA_PMT_CMD_NOT_SELECTED;
+                ca_pmt_send(ca, ca_pmt);
+            }
+            free(asc_list_data(ca->ca_pmt_list));
+            asc_list_remove_current(ca->ca_pmt_list);
+        }
+        asc_list_destroy(ca->ca_pmt_list);
+    }
+
     if(ca->ca_fd)
     {
         close(ca->ca_fd);
@@ -1690,18 +1701,6 @@ void ca_close(dvb_ca_t *ca)
         mpegts_psi_destroy(ca->pat);
     if(ca->pmt)
         mpegts_psi_destroy(ca->pmt);
-
-    if(ca->ca_pmt_list)
-    {
-        for(asc_list_first(ca->ca_pmt_list)
-            ; !asc_list_eol(ca->ca_pmt_list)
-            ; asc_list_first(ca->ca_pmt_list))
-        {
-            free(asc_list_data(ca->ca_pmt_list));
-            asc_list_remove_current(ca->ca_pmt_list);
-        }
-        asc_list_destroy(ca->ca_pmt_list);
-    }
 }
 
 void ca_loop(dvb_ca_t *ca, int is_data)
@@ -1713,4 +1712,17 @@ void ca_loop(dvb_ca_t *ca, int is_data)
     }
 
     ca_slot_loop(ca);
+
+    if(ca->ca_ready)
+    {
+        asc_list_for(ca->ca_pmt_list)
+        {
+            ca_pmt_t *ca_pmt = asc_list_data(ca->ca_pmt_list);
+            if(ca_pmt->cmd != 0x00)
+            {
+                ca_pmt_send(ca, ca_pmt);
+                ca_pmt->cmd = 0x00;
+            }
+        }
+    }
 }

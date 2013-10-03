@@ -71,6 +71,9 @@ typedef struct
 
     uint8_t buffer[PSI_MAX_SIZE];
     uint16_t buffer_size;
+
+    uint8_t list_manage;
+    uint8_t cmd;
 } ca_pmt_t;
 
 struct dvb_ca_t
