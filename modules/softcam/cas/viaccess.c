@@ -93,6 +93,9 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
         case 0x8C:
         case 0x8D:
         {
+            if(!mod->ident)
+                break;
+
             // 3 - shared EMM header size
             const uint8_t *nano = &em->buffer[3];
             if(!(nano[0] == 0x90 && nano[1] == 0x03
