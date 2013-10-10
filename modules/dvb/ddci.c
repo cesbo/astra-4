@@ -240,7 +240,7 @@ static void ca_thread_loop(void *arg)
 
 static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
-    if(mod->ca->ca_ready)
+    if(mod->ca->ca_fd > 0)
         ca_on_ts(mod->ca, ts);
 
     if(write(mod->enc_sec_fd, ts, TS_PACKET_SIZE) != TS_PACKET_SIZE)

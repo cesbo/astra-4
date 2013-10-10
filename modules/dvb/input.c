@@ -98,7 +98,7 @@ static void dvr_on_read(void *arg)
 
     for(int i = 0; i < len; i += TS_PACKET_SIZE)
     {
-        if(mod->ca->ca_ready)
+        if(mod->ca->ca_fd > 0)
             ca_on_ts(mod->ca, &mod->dvr_buffer[i]);
 
         module_stream_send(mod, &mod->dvr_buffer[i]);

@@ -64,7 +64,7 @@ struct dvb_fe_t
 
     fe_code_rate_t fec;
 #if DVB_API_VERSION >= 5
-    fe_rolloff_t rolloff;\
+    fe_rolloff_t rolloff;
     int stream_id;
 #endif
 

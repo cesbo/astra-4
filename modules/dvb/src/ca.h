@@ -21,6 +21,7 @@
 #ifndef _CA_H_
 #define _CA_H_ 1
 
+#include <pthread.h>
 #include "../dvb.h"
 
 typedef struct dvb_ca_t dvb_ca_t;
@@ -68,12 +69,14 @@ typedef struct
 {
     uint16_t pnr;
     uint32_t crc;
+} pmt_checksum_t;
+
+typedef struct
+{
+    uint16_t pnr;
 
     uint8_t buffer[PSI_MAX_SIZE];
     uint16_t buffer_size;
-
-    uint8_t list_manage;
-    uint8_t cmd;
 } ca_pmt_t;
 
 struct dvb_ca_t
@@ -89,13 +92,17 @@ struct dvb_ca_t
     uint8_t ca_buffer[MAX_TPDU_SIZE];
 
     /* CA PMT */
-    bool ca_ready;
 
     mpegts_packet_type_t stream[MAX_PID];
     mpegts_psi_t *pat;
     mpegts_psi_t *pmt;
 
+    int pmt_count;
+    pmt_checksum_t *pmt_checksum_list;
+
     asc_list_t *ca_pmt_list;
+    asc_list_t *ca_pmt_list_new;
+    pthread_mutex_t ca_mutex;
 };
 
 void ca_on_ts(dvb_ca_t *ca, const uint8_t *ts);
