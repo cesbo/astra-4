@@ -599,7 +599,7 @@ static void dvb_thread_loop(void *arg)
         {
             if(fds[0].revents)
                 fe_loop(mod->fe, fds[0].revents & (POLLPRI | POLLIN));
-            if(fds[1].revents)
+            if(mod->ca->ca_fd && fds[1].revents)
                 ca_loop(mod->ca, fds[1].revents & (POLLPRI | POLLIN));
         }
 
@@ -621,7 +621,8 @@ static void dvb_thread_loop(void *arg)
         {
             ca_check_timeout = current_time;
             fe_loop(mod->fe, 0);
-            ca_loop(mod->ca, 0);
+            if(mod->ca->ca_fd)
+                ca_loop(mod->ca, 0);
         }
     }
 
