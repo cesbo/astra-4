@@ -323,9 +323,20 @@ static void ca_pmt_send(dvb_ca_t *ca, ca_pmt_t *ca_pmt
                         , uint8_t slot_id, uint8_t session_id
                         , uint8_t list_manage, uint8_t cmd)
 {
-    ca_session_t *session = &ca->slots[slot_id].sessions[session_id];
+    ca_slot_t *slot = &ca->slots[slot_id];
+    ca_session_t *session = &slot->sessions[session_id];
     if(session->resource_id != RI_CONDITIONAL_ACCESS_SUPPORT)
         return;
+
+    ca_pmt->buffer[0] = list_manage;
+    if(list_manage == CA_PMT_LM_ADD)
+    {
+        if(slot->is_first_ca_pmt)
+        {
+            ca_pmt->buffer[0] = CA_PMT_LM_ONLY;
+            slot->is_first_ca_pmt = false;
+        }
+    }
 
     uint16_t info_length = ((ca_pmt->buffer[4] & 0xFF) << 8) | (ca_pmt->buffer[5]);
     if(info_length > 0)
@@ -339,16 +350,6 @@ static void ca_pmt_send(dvb_ca_t *ca, ca_pmt_t *ca_pmt
         if(info_length > 0)
             ca_pmt->buffer[skip + 5] = cmd;
         skip += 5 + info_length;
-    }
-
-    ca_pmt->buffer[0] = list_manage;
-    if(list_manage == CA_PMT_LM_ADD)
-    {
-        if(ca->slots[slot_id].is_first_ca_pmt)
-        {
-            ca_pmt->buffer[0] = CA_PMT_LM_ONLY;
-            ca->slots[slot_id].is_first_ca_pmt = false;
-        }
     }
 
     ca_apdu_send(ca, slot_id, session_id, AOT_CA_PMT, ca_pmt->buffer, ca_pmt->buffer_size);

@@ -549,7 +549,12 @@ static void on_ts(void *arg, const uint8_t *ts)
 
     if(client->buffer_skip > HTTP_BUFFER_SIZE - TS_PACKET_SIZE)
     {
-        // TODO: overflow
+        client->buffer_skip = 0;
+        if(client->is_socket_busy)
+        {
+            asc_socket_set_on_ready(client->sock, NULL);
+            client->is_socket_busy = false;
+        }
         return;
     }
 

@@ -108,7 +108,8 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
             uint8_t *a = (emm_base & 0x10)
                        ? mod->ua    // check card
                        : mod->sa;   // check provider
-            if(emm_base == a[4]
+            if(a
+               && emm_base == a[4]
                && (!emm_len || !memcmp(&em->buffer[4], &a[5], emm_len)))
             {
                 return true;
