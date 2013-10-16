@@ -27,7 +27,7 @@ static uint8_t * iso8859_1_text(const uint8_t *data, size_t size)
 
     while(i < size)
     {
-        uint8_t c = data[i];
+        uint8_t c = data[i++];
         if(c < 0x80)
         {
             if(!c) break;
@@ -38,7 +38,6 @@ static uint8_t * iso8859_1_text(const uint8_t *data, size_t size)
             text[j++] = 0xC0 | ((c & 0xC0) >> 6);
             text[j++] = 0x80 | (c & 0x3F);
         }
-        ++i;
     }
 
     text[j] = '\0';
@@ -53,7 +52,7 @@ static uint8_t * iso8859_5_text(const uint8_t *data, uint8_t size)
 
     while(i < size)
     {
-        c = data[i];
+        c = data[i++];
 
         if(c < 0x80)
         {
@@ -71,7 +70,6 @@ static uint8_t * iso8859_5_text(const uint8_t *data, uint8_t size)
             text[j++] = u1;
             text[j++] = u2;
         }
-        ++i;
     }
 
     text[j] = '\0';
@@ -86,7 +84,7 @@ static uint8_t * iso8859_7_text(const uint8_t *data, uint8_t size)
 
     while(i < size)
     {
-        c = data[i];
+        c = data[i++];
 
         if(c < 0x80)
         {
