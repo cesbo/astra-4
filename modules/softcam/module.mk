@@ -15,7 +15,7 @@ check_libssl()
 
 SOURCES_CSA="FFdecsa/FFdecsa.c"
 SOURCES_CAM="cam/cam.c"
-SOURCES_CAS="cas/irdeto.c cas/viaccess.c cas/dre.c cas/conax.c cas/nagra.c cas/videoguard.c cas/mediaguard.c cas/cryptoworks.c cas/bulcrypt.c cas/exset.c"
+SOURCES_CAS="cas/irdeto.c cas/viaccess.c cas/dre.c cas/conax.c cas/nagra.c cas/videoguard.c cas/mediaguard.c cas/cryptoworks.c cas/bulcrypt.c cas/exset.c cas/griffin.c"
 
 MODULES="decrypt"
 

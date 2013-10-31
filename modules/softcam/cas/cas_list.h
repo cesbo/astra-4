@@ -34,6 +34,7 @@ module_cas_t * mediaguard_cas_init(module_decrypt_t *decrypt);
 module_cas_t * cryptoworks_cas_init(module_decrypt_t *decrypt);
 module_cas_t * bulcrypt_cas_init(module_decrypt_t *decrypt);
 module_cas_t * exset_cas_init(module_decrypt_t *decrypt);
+module_cas_t * griffin_cas_init(module_decrypt_t *decrypt);
 
 cas_init_t cas_init_list[] =
 {
@@ -47,5 +48,6 @@ cas_init_t cas_init_list[] =
     cryptoworks_cas_init,
     bulcrypt_cas_init,
     exset_cas_init,
+    griffin_cas_init,
     NULL
 };

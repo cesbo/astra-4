@@ -3,7 +3,6 @@
  * http://cesbo.com/astra
  *
  * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
- *               2011, Santa77 <santa77@fibercom.sk>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,29 +36,24 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
         case 0x80:
         case 0x81:
         {
-            if(em_type != mod->parity)
-            {
-                mod->parity = em_type;
-                return true;
-            }
-            break;
+            if(em_type == mod->parity)
+                return false;
+            return true;
         }
         // EMM
-        default:
+        case 0x82:
+        case 0x83:
         {
-            const uint8_t *emm_id = &em->buffer[6];
-
             asc_list_for(mod->__cas.decrypt->cam->prov_list)
             {
-                uint8_t *prov = asc_list_data(mod->__cas.decrypt->cam->prov_list);
-                // 3 - skip ident
-                // 4 - skip 0
-                prov += 3 + 4;
-                if(!memcmp(emm_id, prov, 4)) // shared
+                const uint8_t *p = asc_list_data(mod->__cas.decrypt->cam->prov_list);
+                if(memcmp(&p[3 + 4], &em->buffer[3], 4) == 0)
                     return true;
             }
-            if(!memcmp(emm_id, &mod->__cas.decrypt->cam->ua[4], 4)) // unique
-                return true;
+            return false;
+        }
+        default:
+        {
             break;
         }
     }
@@ -93,7 +87,7 @@ static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
 
 static bool cas_check_caid(uint16_t caid)
 {
-    return ((caid & 0xFF00) == 0x0B00);
+    return (caid >= 0x5501) && (caid <= 0x5511);
 }
 
-MODULE_CAS(conax)
+MODULE_CAS(griffin)
