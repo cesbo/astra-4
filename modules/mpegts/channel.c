@@ -342,10 +342,6 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     const uint16_t pcr_pid = PMT_GET_PCR(psi);
     bool join_pcr = true;
 
-    // Make custom PMT and set descriptors for CAS
-    memcpy(mod->custom_pmt->buffer, psi->buffer, psi->buffer_size);
-    mod->custom_pmt->buffer_size = psi->buffer_size;
-
     if(mod->config.set_pnr)
     {
         PMT_SET_PNR(mod->custom_pmt, mod->config.set_pnr);
@@ -367,9 +363,26 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     }
 
     const uint8_t *pointer = PMT_ITEMS_FIRST(psi);
+
+    mod->custom_pmt->buffer_size = pointer - psi->buffer;
+    memcpy(mod->custom_pmt->buffer, psi->buffer, mod->custom_pmt->buffer_size);
+
     while(!PMT_ITEMS_EOL(psi, pointer))
     {
         const uint16_t pid = PMT_ITEM_GET_PID(psi, pointer);
+
+        if(mod->pid_map[pid] == pid)
+        { // skip filtered pid
+            printf("skip:%d\n", pid);
+            PMT_ITEMS_NEXT(psi, pointer);
+            continue;
+        }
+
+        const uint16_t item_size = 5 + __PMT_ITEM_DESC_SIZE(pointer);
+        uint8_t *custom_pointer = &mod->custom_pmt->buffer[mod->custom_pmt->buffer_size];
+        memcpy(custom_pointer, pointer, item_size);
+        mod->custom_pmt->buffer_size += item_size;
+
         module_stream_demux_join_pid(mod, pid);
 
         if(pid == pcr_pid)
@@ -433,7 +446,6 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                     map_item->is_set = true;
                     mod->pid_map[pid] = map_item->custom_pid;
 
-                    uint8_t *custom_pointer = mod->custom_pmt->buffer + (pointer - psi->buffer);
                     custom_pointer[1] = (custom_pointer[1] & ~0x1F)
                                       | ((map_item->custom_pid >> 8) & 0x1F);
                     custom_pointer[2] = map_item->custom_pid & 0xFF;
@@ -444,6 +456,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
         PMT_ITEMS_NEXT(psi, pointer);
     }
+    mod->custom_pmt->buffer_size += CRC32_SIZE;
 
     if(join_pcr)
         module_stream_demux_join_pid(mod, pcr_pid);
@@ -627,6 +640,9 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             break;
     }
 
+    if(pid == mod->pid_map[pid])
+        return;
+
     if(mod->map)
     {
         const uint16_t custom_pid = mod->pid_map[pid];
@@ -716,6 +732,20 @@ static void module_init(module_data_t *mod)
         }
     }
     lua_pop(lua, 1); // map
+
+    lua_getfield(lua, 2, "filter");
+    if(!lua_isnil(lua, -1))
+    {
+        asc_assert(lua_type(lua, -1) == LUA_TTABLE, "option 'filter' required table");
+
+        const int filter = lua_gettop(lua);
+        for(lua_pushnil(lua); lua_next(lua, filter); lua_pop(lua, 1))
+        {
+            const int pid = lua_tonumber(lua, -1);
+            mod->pid_map[pid] = pid;
+        }
+    }
+    lua_pop(lua, 1); // filter
 }
 
 static void module_destroy(module_data_t *mod)

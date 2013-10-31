@@ -40,6 +40,17 @@ function dump_table(t, p, i)
     end
 end
 
+function split(s, d)
+    local p = 1
+    local t = {}
+    while true do
+        b = s:find(d, p)
+        if not b then table.insert(t, s:sub(p)) return t end
+        table.insert(t, s:sub(p, b - 1))
+        p = b + 1
+    end
+end
+
 --      o      oooo   oooo     o      ooooo    ooooo  oooo ooooooooooo ooooooooooo
 --     888      8888o  88     888      888       888  88   88    888    888    88
 --    8  88     88 888o88    8  88     888         888         888      888ooo8
@@ -149,6 +160,10 @@ parse_option.cam = function(val, result)
         log.error("[stream.lua] CAM \"" .. val .. "\" not found")
         astra.abort()
     end
+end
+
+parse_option.filter = function(val, result)
+    result.filter = split(val, ',')
 end
 
 --
@@ -626,7 +641,11 @@ function init_input(channel_data, input_id)
     input_data.source = init_input_type(input_conf)
     input_data.tail = input_data.source.tail
 
-    if input_conf.pnr or input_conf.set_pnr or channel_data.config.map then
+    if input_conf.pnr or
+       input_conf.set_pnr or
+       channel_data.config.map or
+       input_conf.filter
+    then
         local channel_conf =
         {
             name = channel_data.config.name,
@@ -640,6 +659,7 @@ function init_input(channel_data, input_id)
         if (input_conf.no_eit or no_eit) then channel_conf.eit = nil end
         if input_conf.set_pnr then channel_conf.set_pnr = input_conf.set_pnr end
         if channel_data.config.map then channel_conf.map = channel_data.config.map end
+        if input_conf.filter then channel_conf.filter = input_conf.filter end
 
         input_data.channel = channel(channel_conf)
         input_data.tail = input_data.channel
