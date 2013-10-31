@@ -371,7 +371,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     {
         const uint16_t pid = PMT_ITEM_GET_PID(psi, pointer);
 
-        if(mod->pid_map[pid] == pid)
+        if(mod->pid_map[pid] == MAX_PID)
         { // skip filtered pid
             PMT_ITEMS_NEXT(psi, pointer);
             continue;
@@ -639,7 +639,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             break;
     }
 
-    if(pid == mod->pid_map[pid])
+    if(mod->pid_map[pid] == MAX_PID)
         return;
 
     if(mod->map)
@@ -741,7 +741,7 @@ static void module_init(module_data_t *mod)
         for(lua_pushnil(lua); lua_next(lua, filter); lua_pop(lua, 1))
         {
             const int pid = lua_tonumber(lua, -1);
-            mod->pid_map[pid] = pid;
+            mod->pid_map[pid] = MAX_PID;
         }
     }
     lua_pop(lua, 1); // filter
