@@ -373,7 +373,6 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
         if(mod->pid_map[pid] == pid)
         { // skip filtered pid
-            printf("skip:%d\n", pid);
             PMT_ITEMS_NEXT(psi, pointer);
             continue;
         }
