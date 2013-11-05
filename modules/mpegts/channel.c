@@ -342,11 +342,6 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     const uint16_t pcr_pid = PMT_GET_PCR(psi);
     bool join_pcr = true;
 
-    if(mod->config.set_pnr)
-    {
-        PMT_SET_PNR(mod->custom_pmt, mod->config.set_pnr);
-    }
-
     const uint8_t *desc_pointer = PMT_DESC_FIRST(psi);
     while(!PMT_DESC_EOL(psi, desc_pointer))
     {
@@ -366,6 +361,11 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
     mod->custom_pmt->buffer_size = pointer - psi->buffer;
     memcpy(mod->custom_pmt->buffer, psi->buffer, mod->custom_pmt->buffer_size);
+
+    if(mod->config.set_pnr)
+    {
+        PMT_SET_PNR(mod->custom_pmt, mod->config.set_pnr);
+    }
 
     while(!PMT_ITEMS_EOL(psi, pointer))
     {
