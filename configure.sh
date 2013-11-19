@@ -141,6 +141,9 @@ case "$CCSYSTEM" in
 *"linux"*)
     OS="linux"
     CFLAGS="$CFLAGS -fPIC -pthread"
+    if $APP_C $CFLAGS -dM -E -xc /dev/null | grep -q "__i386__" ; then
+        CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
+    fi
     LDFLAGS="-ldl -lm -lpthread"
     ;;
 *"freebsd"*)
