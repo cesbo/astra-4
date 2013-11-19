@@ -34,7 +34,53 @@ function send_404(server, client)
     })
 end
 
+client_list = {}
 localaddr = nil -- for -l option
+
+function render_stat_html()
+    local table_content = ""
+    local i = 1
+    for _, client_stat in pairs(client_list) do
+        table_content = table_content .. "<tr>" ..
+                        "<td>" .. i .. "</td>" ..
+                        "<td>" .. client_stat.addr .. "</td>" ..
+                        "<td>" .. client_stat.port .. "</td>" ..
+                        "<td>" .. client_stat.url .. "</td>" ..
+                        "</tr>"
+        i = i + 1
+    end
+
+    return [[<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>XProxy: stat</title>
+    <style type="text/css">
+table {
+    width: 600px;
+    margin: auto;
+}
+    </style>
+</head>
+<body>
+    <table border="1">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>IP</th>
+                <th>Port</th>
+                <th>Addr</th>
+            </tr>
+        </thead>
+        <tbody>
+]] .. table_content .. [[
+        </tbody>
+    </table>
+</body>
+</html>
+]]
+end
 
 function on_http_read(self, client, data)
     local client_data = self:data(client)
@@ -48,15 +94,39 @@ function on_http_read(self, client, data)
         end
 
         local u = split(data.uri, "/") --> { "", "udp", "239.255.1.1:1234" }
+
+        if u[2] == 'stat' then
+            content = render_stat_html()
+            self:send(client, {
+                code = 200,
+                message = "OK",
+                headers = {
+                    server_header,
+                    "Content-Type: text/html; charset=utf-8",
+                    "Content-Length: " .. #content,
+                    "Connection: close"
+                },
+                content = content
+            })
+            return
+        end
+
         if #u < 3 or u[2] ~= 'udp' then
             send_404(self, client)
             return
         end
 
-        local a = split(u[3], ":") --> { "239.255.1.1", "1234" }
+        local o = split(u[3], "?")
+        local a = split(o[1], ":") --> { "239.255.1.1", "1234" }
         local udp_input_conf = { addr = a[1], port = 1234, socket_size = 0x80000 }
         if #a == 2 then udp_input_conf.port = tonumber(a[2]) end
         if localaddr then udp_input_conf.localaddr = localaddr end
+
+        client_list[client_data] = {
+            addr = data['addr'],
+            port = data['port'],
+            url = data.uri:sub(6), -- skip /udp/
+        }
 
         client_data.input = udp_input(udp_input_conf)
         self:send(client, {
@@ -64,12 +134,14 @@ function on_http_read(self, client, data)
             message = "OK",
             headers = {
                 server_header,
-                "Content-Type:application/octet-stream",
+                "Content-Type: application/octet-stream",
             },
             upstream = client_data.input:stream()
         })
     elseif type(data) == 'nil' then
         -- close connection
+        client_list[client_data] = nil
+
         client_data.input = nil
         collectgarbage()
     end
