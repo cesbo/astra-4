@@ -98,9 +98,14 @@ static void stream_reload(module_data_t *mod)
     }
 
     mod->stream[0] = MPEGTS_PACKET_PAT;
+    mod->stream[1] = MPEGTS_PACKET_CAT;
+
     mod->pat->crc32 = 0;
+    mod->cat->crc32 = 0;
     mod->pmt->crc32 = 0;
+
     module_stream_demux_join_pid(mod, 0x00);
+    module_stream_demux_join_pid(mod, 0x01);
 
     if(mod->config.sdt)
     {
