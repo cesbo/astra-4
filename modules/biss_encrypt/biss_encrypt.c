@@ -29,6 +29,7 @@ struct module_data_t
     mpegts_packet_type_t stream[MAX_PID];
 
     mpegts_psi_t *pat;
+    mpegts_psi_t *pmt;
 
     struct dvbcsa_bs_key_s *key;
 
@@ -90,8 +91,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 
     memset(mod->stream, 0, sizeof(mod->stream));
     mod->stream[0] = MPEGTS_PACKET_PAT;
-    mod->stream[0x11] = MPEGTS_PACKET_SDT;
-    mod->stream[0x12] = MPEGTS_PACKET_EIT;
+    mod->pmt->crc32 = 0;
 
     const uint8_t *pointer = PAT_ITEMS_FIRST(psi);
     while(!PAT_ITEMS_EOL(psi, pointer))
@@ -103,16 +103,45 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     }
 }
 
+static void on_pmt(void *arg, mpegts_psi_t *psi)
+{
+    module_data_t *mod = arg;
+
+    // check changes
+    const uint32_t crc32 = PSI_GET_CRC32(psi);
+    if(crc32 == psi->crc32)
+        return;
+
+    // check crc
+    if(crc32 != PSI_CALC_CRC32(psi))
+        return; // PAT checksum error
+
+    psi->crc32 = crc32;
+
+    const uint8_t *pointer = PMT_ITEMS_FIRST(psi);
+    while(!PMT_ITEMS_EOL(psi, pointer))
+    {
+        const uint16_t pid = PMT_ITEM_GET_PID(psi, pointer);
+        mod->stream[pid] = MPEGTS_PACKET_PES;
+        PMT_ITEMS_NEXT(psi, pointer);
+    }
+}
+
 static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
     const uint16_t pid = TS_PID(ts);
     switch(mod->stream[pid])
     {
-        case MPEGTS_PACKET_UNKNOWN:
+        case MPEGTS_PACKET_PES:
             break;
         case MPEGTS_PACKET_PAT:
             mpegts_psi_mux(mod->pat, ts, on_pat, mod);
+            process_ts(mod, ts, 0);
+            return;
         case MPEGTS_PACKET_PMT:
+            mpegts_psi_mux(mod->pmt, ts, on_pmt, mod);
+            process_ts(mod, ts, 0);
+            return;
         default:
             process_ts(mod, ts, 0);
             return;
@@ -162,6 +191,7 @@ static void module_init(module_data_t *mod)
 
     mod->stream[0x00] = MPEGTS_PACKET_PAT;
     mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
+    mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, 0);
 }
 
 static void module_destroy(module_data_t *mod)
@@ -169,6 +199,9 @@ static void module_destroy(module_data_t *mod)
     module_stream_destroy(mod);
 
     dvbcsa_bs_key_free(mod->key);
+
+    mpegts_psi_destroy(mod->pat);
+    mpegts_psi_destroy(mod->pmt);
 }
 
 MODULE_STREAM_METHODS()
