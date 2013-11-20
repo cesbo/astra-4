@@ -442,7 +442,7 @@ static void on_ready_send_content(void *arg)
         on_read_error(client);
         return;
     }
-    client->buffer_skip += content_send;
+    client->buffer_skip += send_size;
 
     if(client->buffer_skip == content_size)
     {
