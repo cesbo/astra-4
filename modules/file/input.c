@@ -39,7 +39,7 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 
-#define MSG(_msg) "[file_intput %s] " _msg, mod->filename
+#define MSG(_msg) "[file_input %s] " _msg, mod->filename
 
 #if 0
 
