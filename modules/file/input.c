@@ -302,7 +302,15 @@ static int open_file(module_data_t *mod)
     mod->buffer.end = mod->buffer.begin + sb.st_size;
 
     if(mod->skip)
-        mod->buffer.ptr += mod->skip;
+    {
+        if(mod->skip >= (size_t)sb.st_size)
+        {
+            asc_log_warning(MSG("skip value is greater than the file size"));
+            mod->skip = 0;
+        }
+        else
+            mod->buffer.ptr += mod->skip;
+    }
 
     return reset_buffer(mod);
 }
