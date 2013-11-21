@@ -438,7 +438,7 @@ static void on_em(void *arg, mpegts_psi_t *psi)
     }
 
     const uint8_t em_type = psi->buffer[0];
-    if((em_type & ~0x0F) != 0x80)
+    if((em_type & ~0x1F) != 0x80)
     {
         asc_log_error(MSG("wrong packet type 0x%02X"), em_type);
         return;

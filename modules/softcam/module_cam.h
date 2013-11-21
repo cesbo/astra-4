@@ -23,7 +23,7 @@
 
 #include <astra.h>
 
-#define EM_MAX_SIZE 512
+#define EM_MAX_SIZE 1024
 
 typedef struct module_decrypt_t module_decrypt_t;
 typedef struct module_cam_t module_cam_t;
