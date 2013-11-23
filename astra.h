@@ -57,5 +57,6 @@
 
 void astra_exit(void);
 void astra_abort(void);
+void astra_reload(void);
 
 #endif /* _ASTRA_H_ */

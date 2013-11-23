@@ -26,6 +26,7 @@
 #include "config.h"
 
 static jmp_buf main_loop;
+static bool is_astra_reload = false;
 
 void astra_exit(void)
 {
@@ -49,6 +50,12 @@ void astra_abort(void)
     }
 
     abort();
+}
+
+void astra_reload(void)
+{
+    is_astra_reload = true;
+    longjmp(main_loop, 1);
 }
 
 static void signal_handler(int signum)
@@ -88,10 +95,14 @@ static int exec_script(int argc, const char **argv)
 
 int main(int argc, const char **argv)
 {
+    int argv_skip;
+
+astra_reload_entry:
+
 #ifdef INLINE_SCRIPT
-    int argv_skip = 1;
+    argv_skip = 1;
 #else
-    int argv_skip = 2;
+    argv_skip = 2;
 #endif
 
     if(argc < argv_skip)
@@ -161,6 +172,12 @@ int main(int argc, const char **argv)
     asc_timer_core_destroy();
     asc_log_info("[main] exit");
     asc_log_core_destroy();
+
+    if(is_astra_reload)
+    {
+        is_astra_reload = false;
+        goto astra_reload_entry;
+    }
 
     return 0;
 }

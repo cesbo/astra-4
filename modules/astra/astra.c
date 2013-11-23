@@ -37,15 +37,22 @@
 
 static int _astra_exit(lua_State *L)
 {
-    (void)L;
+    __uarg(L);
     astra_exit();
     return 0;
 }
 
 static int _astra_abort(lua_State *L)
 {
-    (void)L;
+    __uarg(L);
     astra_abort();
+    return 0;
+}
+
+static int _astra_reload(lua_State *L)
+{
+    __uarg(L);
+    astra_reload();
     return 0;
 }
 
@@ -55,6 +62,7 @@ LUA_API int luaopen_astra(lua_State *L)
     {
         { "exit", _astra_exit },
         { "abort", _astra_abort },
+        { "reload", _astra_reload },
         { NULL, NULL }
     };
 
