@@ -292,6 +292,9 @@ static int scan_string(lua_State *L, const char *str, int pos)
             ++pos;
             switch(str[pos])
             {
+                case '/':
+                    luaL_addchar(&b, '/');
+                    break;
                 case '\\':
                     luaL_addchar(&b, '\\');
                     break;
