@@ -159,8 +159,6 @@ static void on_read(void *arg)
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
-    printf("%p %p %p\n", client, client->sock, client->buffer);
-
     int r = asc_socket_recv(client->sock, client->buffer, mod->buffer_size);
     if(r <= 0)
     {
