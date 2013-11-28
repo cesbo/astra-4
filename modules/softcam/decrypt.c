@@ -571,6 +571,9 @@ static void on_response(module_data_t *mod, const uint8_t *data, const char *err
     if((data[0] & ~0x01) != 0x80)
         return; /* Skip EMM */
 
+    if(!mod->__decrypt.cas)
+        return; /* after stream_reload */
+
     bool is_keys_ok = false;
     do
     {

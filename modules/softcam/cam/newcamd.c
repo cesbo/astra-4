@@ -173,6 +173,20 @@ static void timeout_timer_callback(void *arg)
         {
             if(mod->packet)
             {
+                asc_list_for(mod->__cam.decrypt_list)
+                {
+                    if(asc_list_data(mod->__cam.decrypt_list) == mod->packet->decrypt)
+                        break;
+                }
+                if(asc_list_eol(mod->__cam.decrypt_list))
+                {
+                    /* the decrypt module was detached */
+                    mod->packet = module_cam_queue_pop(mod);
+                    if(mod->packet)
+                        newcamd_send_msg(mod);
+                    return;
+                }
+
                 static const char *errmsg = "Timeout";
                 mod->packet->buffer[1] = 0x00;
                 mod->packet->buffer[2] = 0x00;
@@ -501,6 +515,20 @@ static int newcamd_response(module_data_t *mod)
     const int len = newcamd_recv_msg(mod);
     if(!mod->packet)
         return len;
+
+    asc_list_for(mod->__cam.decrypt_list)
+    {
+        if(asc_list_data(mod->__cam.decrypt_list) == mod->packet->decrypt)
+            break;
+    }
+    if(asc_list_eol(mod->__cam.decrypt_list))
+    {
+        /* the decrypt module was detached */
+        mod->packet = module_cam_queue_pop(mod);
+        if(mod->packet)
+            newcamd_send_msg(mod);
+        return len;
+    }
 
     const char *errmsg = NULL;
 
