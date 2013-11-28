@@ -829,6 +829,9 @@ output_list.http = function(output_conf)
     http_instance.tail = http_server({
         addr = output_conf.host,
         port = output_conf.port,
+        buffer_size = output_conf.buffer_size,
+        buffer_fill = output_conf.buffer_fill,
+        buffer_prefill = output_conf.buffer_prefill,
         callback = function(self, client, data)
                 if type(data) == 'table' then
                     local http_upstream = http_instance.uri_list[data.uri]

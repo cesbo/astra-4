@@ -50,8 +50,8 @@
 
 #define MSG(_msg) "[http_server %s:%d] " _msg, mod->addr, mod->port
 
-#define HTTP_BUFFER_SIZE (1024 * 1024)
-#define HTTP_BUFFER_FILL (128 * 1024)
+#define HTTP_BUFFER_SIZE 1024
+#define HTTP_BUFFER_FILL 128
 
 #define FRAME_HEADER_SIZE 2
 #define FRAME_KEY_SIZE 4
@@ -80,8 +80,9 @@ typedef struct
     FILE *src_file;
     int src_content; // lua reference
 
+    int buffer_fill;
     int buffer_skip;
-    char buffer[HTTP_BUFFER_SIZE];
+    char *buffer;
 
     bool is_socket_busy;
 } http_client_t;
@@ -94,6 +95,10 @@ struct module_data_t
 
     const char *addr;
     int port;
+
+    int buffer_size;
+    int buffer_fill;
+    int buffer_prefill;
 
     asc_socket_t *sock;
     asc_list_t *clients;
@@ -151,7 +156,7 @@ static void on_read(void *arg)
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
-    int r = asc_socket_recv(client->sock, client->buffer, HTTP_BUFFER_SIZE);
+    int r = asc_socket_recv(client->sock, client->buffer, mod->buffer_size);
     if(r <= 0)
     {
         if(r == -1)
@@ -362,7 +367,7 @@ static void on_read(void *arg)
                 {
                     data_size = (data[2] << 8) | data[3];
 
-                    asc_assert(data_size < (HTTP_BUFFER_SIZE
+                    asc_assert(data_size < ((uint64_t)mod->buffer_size
                                             - FRAME_HEADER_SIZE
                                             - FRAME_SIZE16_SIZE
                                             - FRAME_KEY_SIZE)
@@ -381,7 +386,7 @@ static void on_read(void *arg)
                                  | ((uint64_t)data[8] << 8 )
                                  | ((uint64_t)data[9]      ));
 
-                    asc_assert(data_size < (HTTP_BUFFER_SIZE
+                    asc_assert(data_size < ((uint64_t)mod->buffer_size
                                             - FRAME_HEADER_SIZE
                                             - FRAME_SIZE64_SIZE
                                             - FRAME_KEY_SIZE)
@@ -427,8 +432,8 @@ static void on_ready_send_content(void *arg)
     const char *content = lua_tostring(lua, -1);
 
     const int content_left = content_size - client->buffer_skip;
-    const int content_send = (content_left > HTTP_BUFFER_SIZE)
-                           ? HTTP_BUFFER_SIZE
+    const int content_send = (content_left > mod->buffer_size)
+                           ? mod->buffer_size
                            : content_left;
 
 
@@ -460,7 +465,7 @@ static void on_ready_send_file(void *arg)
 
     if(client->src_file)
     {
-        const int capacity_size = HTTP_BUFFER_SIZE - client->buffer_skip;
+        const int capacity_size = mod->buffer_size - client->buffer_skip;
         if(capacity_size <= 0)
         {
             // TODO: overflow
@@ -546,8 +551,9 @@ static void on_ready_send_ts(void *arg)
 static void on_ts(void *arg, const uint8_t *ts)
 {
     http_client_t *client = arg;
+    module_data_t *mod = client->mod;
 
-    if(client->buffer_skip > HTTP_BUFFER_SIZE - TS_PACKET_SIZE)
+    if(client->buffer_skip > mod->buffer_size - TS_PACKET_SIZE)
     {
         client->buffer_skip = 0;
         if(client->is_socket_busy)
@@ -561,8 +567,12 @@ static void on_ts(void *arg, const uint8_t *ts)
     memcpy(&client->buffer[client->buffer_skip], ts, TS_PACKET_SIZE);
     client->buffer_skip += TS_PACKET_SIZE;
 
-    if(!client->is_socket_busy && client->buffer_skip >= HTTP_BUFFER_FILL)
+    if(!client->is_socket_busy && client->buffer_skip >= client->buffer_fill)
+    {
+        if(mod->buffer_fill != client->buffer_fill)
+            client->buffer_fill = mod->buffer_fill;
         on_ready_send_ts(arg);
+    }
 }
 
 static void buffer_set_text(char **buffer, int capacity
@@ -668,7 +678,7 @@ static int method_send(module_data_t *mod)
     }
 
     char *buffer = client->buffer;
-    char * const buffer_tail = buffer + HTTP_BUFFER_SIZE;
+    char * const buffer_tail = buffer + mod->buffer_size;
 
     // version
     lua_getfield(lua, 3, "version");
@@ -849,6 +859,8 @@ static void on_accept(void *arg)
     {
         client = calloc(1, sizeof(http_client_t));
         client->mod = mod;
+        client->buffer = malloc(mod->buffer_size);
+        client->buffer_fill = mod->buffer_prefill;
         asc_list_insert_tail(mod->clients, client);
     }
 
@@ -890,6 +902,32 @@ static void module_init(module_data_t *mod)
         mod->addr = "0.0.0.0";
     if(!module_option_number("port", &mod->port))
         mod->port = 80;
+
+    if(!module_option_number("buffer_size", &mod->buffer_size))
+        mod->buffer_size = HTTP_BUFFER_SIZE;
+    mod->buffer_size *= 1024;
+
+    if(!module_option_number("buffer_fill", &mod->buffer_fill))
+        mod->buffer_fill = HTTP_BUFFER_FILL;
+    mod->buffer_fill *= 1024;
+
+    if(mod->buffer_fill >= mod->buffer_size)
+    {
+        asc_log_error(MSG("option 'buffer_fill' must be less then 'buffer_size'"));
+        astra_abort();
+    }
+
+    if(!module_option_number("buffer_prefill", &mod->buffer_prefill))
+        mod->buffer_prefill = mod->buffer_fill;
+    else
+    {
+        mod->buffer_prefill *= 1024;
+        if(mod->buffer_prefill >= mod->buffer_size)
+        {
+            asc_log_error(MSG("option 'buffer_prefill' must be less then 'buffer_size'"));
+            astra_abort();
+        }
+    }
 
     // store callback in registry
     lua_getfield(lua, 2, "callback");
