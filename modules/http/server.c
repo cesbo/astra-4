@@ -147,14 +147,19 @@ static void on_read_error(void *arg)
     if(client->sock)
         asc_socket_close(client->sock);
 
+    char *buffer = client->buffer;
     memset(client, 0, sizeof(http_client_t));
     client->mod = mod;
+    client->buffer = buffer;
+    client->buffer_fill = mod->buffer_prefill;
 }
 
 static void on_read(void *arg)
 {
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
+
+    printf("%p %p %p\n", client, client->sock, client->buffer);
 
     int r = asc_socket_recv(client->sock, client->buffer, mod->buffer_size);
     if(r <= 0)
@@ -797,6 +802,7 @@ static void server_close(module_data_t *mod)
         http_client_t *client = asc_list_data(mod->clients);
         if(client->sock)
             asc_socket_close(client->sock);
+        free(client->buffer);
         free(client);
         asc_list_remove_current(mod->clients);
     }
