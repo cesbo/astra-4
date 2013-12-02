@@ -147,6 +147,7 @@ static bool transcode(module_data_t *mod, const uint8_t *data)
         if(len_d < 0)
         {
             asc_log_error(MSG("error while decoding"));
+            mod->fsize = 0;
             mod->davpkt.size = 0;
             return false;
         }
@@ -249,20 +250,14 @@ static void mux_pes(void *arg, mpegts_pes_t *pes)
         const uint8_t brate_id = mpeg_brate_id[mpeg_v][mpeg_l];
         const uint16_t br = mpeg_brate[brate_id][mpeg_br];
         const uint16_t sr = mpeg_srate[mpeg_v][mpeg_sr];
-        const size_t fsize = (144 * br * 1000) / (sr + mpeg_p);
-        if((ptr + fsize) < ptr_end
-           && ptr[fsize] == 0xFF
-           && (ptr[fsize + 1] & 0xF0) == 0xF0)
-        {
-            asc_log_debug(MSG("set frame size = %lu"), fsize);
-            mod->fsize = fsize;
-            if(!(es_size % fsize))
-                mod->max_count = es_size / fsize;
-            else
-                mod->max_count = 8;
-        }
+        mod->fsize = (144 * br * 1000) / (sr + mpeg_p);
+
+        asc_log_debug(MSG("set frame size = %lu"), mod->fsize);
+
+        if(!(es_size % mod->fsize))
+            mod->max_count = es_size / mod->fsize;
         else
-            return;
+            mod->max_count = 8;
 
         if(!mod->decoder)
         {
