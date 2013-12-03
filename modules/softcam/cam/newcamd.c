@@ -483,6 +483,8 @@ static int newcamd_login_3(module_data_t *mod)
     const int prov_count = (buffer[14] <= MAX_PROV_COUNT) ? buffer[14] : MAX_PROV_COUNT;
 
     static const int info_size = 3 + 8; /* ident + sa */
+    if(mod->prov_buffer)
+        free(mod->prov_buffer);
     mod->prov_buffer = malloc(prov_count * info_size);
 
     for(int i = 0; i < prov_count; i++)
@@ -685,18 +687,20 @@ static void newcamd_send_em(module_data_t *mod, module_decrypt_t *decrypt
     packet->buffer_size = size;
     packet->decrypt = decrypt;
 
-    asc_list_first(mod->__cam.packet_queue);
-    while(!asc_list_eol(mod->__cam.packet_queue))
+    if((packet->buffer[0] & ~0x01) == 0x80)
     {
-        em_packet_t *packet = asc_list_data(mod->__cam.packet_queue);
-        if(packet->decrypt == decrypt && ((packet->buffer[0] & ~0x01) == 0x80))
+        asc_list_for(mod->__cam.packet_queue)
         {
-            asc_log_warning(MSG("drop old packet (pnr:%d drop:0x%02X set:0x%02X)")
-                            , decrypt->pnr, packet->buffer[0], buffer[0]);
-            asc_list_remove_current(mod->__cam.packet_queue);
-            break;
+            em_packet_t *queue_item = asc_list_data(mod->__cam.packet_queue);
+            if(queue_item->decrypt == decrypt && ((queue_item->buffer[0] & ~0x01) == 0x80))
+            {
+                asc_log_warning(MSG("drop old packet (pnr:%d drop:0x%02X set:0x%02X)")
+                                , decrypt->pnr, queue_item->buffer[0], packet->buffer[0]);
+                asc_list_remove_current(mod->__cam.packet_queue);
+                free(queue_item);
+                break;
+            }
         }
-        asc_list_next(mod->__cam.packet_queue);
     }
 
     asc_list_insert_tail(mod->__cam.packet_queue, packet);
