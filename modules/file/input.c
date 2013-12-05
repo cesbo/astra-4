@@ -35,74 +35,12 @@
 #   error not avail for win32
 #endif
 
-#include <sys/mman.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 
 #define MSG(_msg) "[file_input %s] " _msg, mod->filename
 
-#if 0
-
-struct module_data_t
-{
-    MODULE_LUA_DATA();
-    MODULE_STREAM_DATA();
-
-    int fd;
-    asc_event_t *event;
-    uint8_t buffer[TS_PACKET_SIZE * 7];
-};
-
-static void on_read(void *arg)
-{
-    module_data_t *mod = arg;
-
-    size_t size = read(mod->fd, mod->buffer, sizeof(mod->buffer));
-    if(size != sizeof(mod->buffer))
-    {
-        asc_event_close(mod->event);
-        mod->event = NULL;
-        close(mod->fd);
-        mod->fd = 0;
-        return;
-    }
-
-    for(size_t i = 0; i < size; i += TS_PACKET_SIZE)
-        module_stream_send(mod, &mod->buffer[i]);
-}
-
-static void module_init(module_data_t *mod)
-{
-    const char *filename =  NULL;
-    module_option_string("filename", &filename);
-
-    module_stream_init(mod, NULL);
-
-    mod->fd = open(filename, O_RDONLY);
-    if(mod->fd <= 0)
-        return;
-
-    mod->event = asc_event_init(mod->fd, mod);
-    asc_event_set_on_read(mod->event, on_read);
-}
-
-static void module_destroy(module_data_t *mod)
-{
-    asc_event_close(mod->event);
-    if(mod->fd > 0)
-        close(mod->fd);
-
-    module_stream_destroy(mod);
-}
-
-MODULE_STREAM_METHODS()
-MODULE_LUA_METHODS()
-{
-    MODULE_STREAM_METHODS_REF()
-};
-
-#else
-
+#define INPUT_BUFFER_SIZE 2
 #define SYNC_BUFFER_SIZE (TS_PACKET_SIZE * 2048)
 
 struct module_data_t
@@ -115,15 +53,15 @@ struct module_data_t
     int loop;
 
     int fd;
-    size_t skip;
     int idx_callback;
+    size_t file_size;
 
     int ts_size; // 188 - TS, 192 - M2TS
     uint32_t start_time;
     uint32_t length;
 
     int pause;
-    int reposition;
+    bool reposition;
 
     void *timer_skip;
 
@@ -144,15 +82,14 @@ struct module_data_t
     } sync;
     uint64_t pcr;
 
-    // input buffer
     struct
     {
-        uint8_t *begin;
-        uint8_t *ts_begin;
+        uint8_t *buffer;
         uint8_t *ptr;
         uint8_t *end;
-        uint8_t *block_end;
-    } buffer;
+        size_t size;
+        size_t skip; // for pread
+    } input;
 };
 
 /* module code */
@@ -213,81 +150,10 @@ static inline uint32_t m2ts_time(const uint8_t *ts)
     return (ts[0] << 24) | (ts[1] << 16) | (ts[2] << 8) | (ts[3]);
 }
 
-static void close_file(module_data_t *mod)
-{
-    if(!mod->fd)
-        return;
-
-    munmap(mod->buffer.begin, mod->buffer.end - mod->buffer.begin);
-    close(mod->fd);
-    mod->fd = 0;
-}
-
-static int reset_buffer(module_data_t *mod)
-{
-    // sync file position
-    int i = 0;
-    for(; i < 200; ++i)
-    {
-        if(mod->buffer.ptr[i] == 0x47)
-        {
-            if(mod->buffer.ptr[i + TS_PACKET_SIZE] == 0x47)
-            {
-                mod->buffer.ptr += i;
-                mod->ts_size = TS_PACKET_SIZE;
-                mod->buffer.ptr = seek_pcr_188(mod->buffer.ptr, mod->buffer.end);
-                break;
-            }
-            else if(mod->buffer.ptr[i + M2TS_PACKET_SIZE] == 0x47)
-            {
-                mod->ts_size = M2TS_PACKET_SIZE;
-                if(i >= 4) // go back to timestamp
-                    mod->buffer.ptr += i - 4;
-                else // go to next packet with timestamp
-                    mod->buffer.ptr += TS_PACKET_SIZE;
-                mod->buffer.ts_begin = mod->buffer.ptr;
-                mod->buffer.ptr = seek_pcr_192(mod->buffer.ptr, mod->buffer.end);
-
-                mod->start_time = m2ts_time(mod->buffer.ptr) / 1000;
-                const size_t size = (((mod->buffer.end - mod->buffer.ptr)
-                                     / M2TS_PACKET_SIZE) - 1) * M2TS_PACKET_SIZE;
-                const uint32_t stop_time = m2ts_time(&mod->buffer.ptr[size]) / 1000;
-                mod->length = stop_time - mod->start_time;
-
-                break;
-            }
-        }
-    }
-    if(i == 200)
-    {
-        asc_log_error(MSG("failed to sync file"));
-        close_file(mod);
-        return 0;
-    }
-
-    if(!mod->buffer.ptr)
-    {
-        asc_log_error(MSG("first PCR is not found"));
-        close_file(mod);
-        return 0;
-    }
-
-    if(mod->ts_size == TS_PACKET_SIZE)
-        mod->pcr = calc_pcr(mod->buffer.ptr);
-    else
-        mod->pcr = calc_pcr(&mod->buffer.ptr[4]);
-
-    mod->buffer.block_end = NULL;
-    return 1;
-}
-
 static int open_file(module_data_t *mod)
 {
     if(mod->fd)
-    {
-        mod->skip = 0; // reopen file
         close(mod->fd);
-    }
 
     mod->fd = open(mod->filename, O_RDONLY);
     if(mod->fd <= 0)
@@ -298,22 +164,68 @@ static int open_file(module_data_t *mod)
 
     struct stat sb;
     fstat(mod->fd, &sb);
-    mod->buffer.begin = mmap(NULL, sb.st_size, PROT_READ, MAP_PRIVATE, mod->fd, 0);
-    mod->buffer.ptr = mod->buffer.begin;
-    mod->buffer.end = mod->buffer.begin + sb.st_size;
+    mod->file_size = sb.st_size;
 
-    if(mod->skip)
+    if(mod->input.skip)
     {
-        if(mod->skip >= (size_t)sb.st_size)
+        if(mod->input.skip >= mod->file_size)
         {
             asc_log_warning(MSG("skip value is greater than the file size"));
-            mod->skip = 0;
+            mod->input.skip = 0;
         }
-        else
-            mod->buffer.ptr += mod->skip;
     }
 
-    return reset_buffer(mod);
+    const ssize_t len = pread(mod->fd, mod->input.buffer, mod->input.size, mod->input.skip);
+    if((ssize_t)mod->input.size != len)
+    {
+        asc_log_warning(MSG("file is too small"));
+    }
+    else if(mod->input.buffer[0] == 0x47 && mod->input.buffer[TS_PACKET_SIZE] == 0x47)
+    {
+        mod->ts_size = TS_PACKET_SIZE;
+        mod->input.ptr = seek_pcr_188(mod->input.buffer, mod->input.end);
+    }
+    else if(mod->input.buffer[4] == 0x47 && mod->input.buffer[4 + M2TS_PACKET_SIZE] == 0x47)
+    {
+        mod->ts_size = M2TS_PACKET_SIZE;
+
+        mod->input.ptr = seek_pcr_192(mod->input.buffer, mod->input.end);
+        mod->start_time = m2ts_time(mod->input.ptr) / 1000;
+
+        uint8_t tail[M2TS_PACKET_SIZE];
+        pread(mod->fd, tail, M2TS_PACKET_SIZE, mod->file_size - M2TS_PACKET_SIZE);
+        if(tail[4] != 0x47)
+        {
+            asc_log_warning(MSG("failed to get M2TS file length"));
+        }
+        else
+        {
+            const uint32_t stop_time = m2ts_time(tail) / 1000;
+            mod->length = stop_time - mod->start_time;
+        }
+    }
+    else
+    {
+        asc_log_error(MSG("wrong file format"));
+        close(mod->fd);
+        mod->fd = 0;
+        return 0;
+    }
+
+    if(!mod->input.ptr)
+    {
+        asc_log_error(MSG("first PCR is not found"));
+        close(mod->fd);
+        mod->fd = 0;
+        return 0;
+    }
+
+    if(mod->ts_size == TS_PACKET_SIZE)
+        mod->pcr = calc_pcr(mod->input.ptr);
+    else
+        mod->pcr = calc_pcr(&mod->input.ptr[4]);
+
+    return 1;
 }
 
 static void sync_queue_push(module_data_t *mod, const uint8_t *ts)
@@ -360,9 +272,6 @@ static void thread_loop(void *arg)
 {
     module_data_t *mod = arg;
 
-    if(!open_file(mod))
-        return;
-
     // pause
     const struct timespec ts_pause = { .tv_sec = 0, .tv_nsec = 500000 };
     struct timeval pause_start;
@@ -370,6 +279,7 @@ static void thread_loop(void *arg)
     double pause_total = 0.0;
 
     // block sync
+    uint8_t *block_end;
     struct timeval time_sync[4];
     struct timeval *time_sync_b = &time_sync[0]; // begin
     struct timeval *time_sync_e = &time_sync[1]; // end
@@ -381,6 +291,15 @@ static void thread_loop(void *arg)
     double total_sync_diff = 0.0;
 
     struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
+
+    if(!open_file(mod))
+    {
+        asc_thread_while(mod->sync.thread)
+        {
+            nanosleep(&ts_pause, NULL);
+        }
+        return;
+    }
 
     asc_thread_while(mod->sync.thread)
     {
@@ -395,32 +314,53 @@ static void thread_loop(void *arg)
             pause_total = 0.0;
         }
 
-        if(mod->ts_size == TS_PACKET_SIZE)
-            mod->buffer.block_end = seek_pcr_188(mod->buffer.ptr, mod->buffer.end);
-        else
-            mod->buffer.block_end = seek_pcr_192(mod->buffer.ptr, mod->buffer.end);
-
-        if(!mod->buffer.block_end)
+        if(mod->reposition)
         {
-            if(!mod->loop)
-            {
-                if(mod->idx_callback)
-                {
-                    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
-                    lua_call(lua, 0, 0);
-                }
-                break;
-            }
+            open_file(mod); // reopen file
 
-            mod->buffer.ptr = mod->buffer.begin;
-            reset_buffer(mod);
+            mod->reposition = false;
+            gettimeofday(time_sync_b, NULL);
+            block_time_total = 0.0;
+            total_sync_diff = 0.0;
+            pause_total = 0.0;
+        }
+
+        if(mod->ts_size == TS_PACKET_SIZE)
+            block_end = seek_pcr_188(mod->input.ptr, mod->input.end);
+        else
+            block_end = seek_pcr_192(mod->input.ptr, mod->input.end);
+
+        if(!block_end)
+        {
+            // try to load data
+            const size_t done = mod->input.ptr - mod->input.buffer;
+            mod->input.skip += done;
+            const ssize_t len = pread(mod->fd, mod->input.buffer, mod->input.size
+                                      , mod->input.skip);
+            mod->input.ptr = mod->input.buffer;
+
+            if(len != (ssize_t)mod->input.size)
+            {
+                if(!mod->loop)
+                {
+                    if(mod->idx_callback)
+                    {
+                        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+                        lua_call(lua, 0, 0);
+                    }
+                    break;
+                }
+
+                mod->input.skip = 0;
+                mod->reposition = true;
+            }
             continue;
         }
 
 #define GET_TS_PTR(_ptr) ((mod->ts_size == TS_PACKET_SIZE) ? _ptr : &_ptr[4])
 
         // get PCR
-        const uint64_t pcr = calc_pcr(GET_TS_PTR(mod->buffer.block_end));
+        const uint64_t pcr = calc_pcr(GET_TS_PTR(block_end));
         const uint64_t delta_pcr = pcr - mod->pcr;
         mod->pcr = pcr;
         // get block time
@@ -431,7 +371,7 @@ static void thread_loop(void *arg)
         if(block_time < 0 || block_time > 250)
         {
             asc_log_error(MSG("block time out of range: %.2f"), block_time);
-            mod->buffer.ptr = mod->buffer.block_end;
+            mod->input.ptr = block_end;
 
             gettimeofday(time_sync_b, NULL);
             block_time_total = 0.0;
@@ -441,8 +381,8 @@ static void thread_loop(void *arg)
         }
         block_time_total += block_time;
 
-        mod->skip += (mod->buffer.block_end - mod->buffer.ptr);
-        const uint32_t block_size = (mod->buffer.block_end - mod->buffer.ptr) / mod->ts_size;
+        // mod->skip += (mod->buffer.block_end - mod->buffer.ptr);
+        const uint32_t block_size = (block_end - mod->input.ptr) / mod->ts_size;
         // calculate the sync time value
         if((block_time + total_sync_diff) > 0)
             ts_sync.tv_nsec = ((block_time + total_sync_diff) * 1000000) / block_size;
@@ -450,16 +390,13 @@ static void thread_loop(void *arg)
             ts_sync.tv_nsec = 0;
         // store the sync time value for later usage
         const long ts_sync_nsec = ts_sync.tv_nsec;
-#if 0
-        if(ts_sync_nsec > 1000000)
-            printf("ts_sync_nsec: %ld\n", ts_sync_nsec);
-#endif
+
         long calc_block_time_ns = 0;
         gettimeofday(time_sync_bb, NULL);
 
         double pause_block = 0.0;
 
-        while(mod->buffer.ptr < mod->buffer.block_end)
+        while(mod->input.ptr < block_end)
         {
             if(mod->pause)
             {
@@ -469,14 +406,12 @@ static void thread_loop(void *arg)
                 gettimeofday(&pause_stop, NULL);
                 pause_block += timeval_diff(&pause_start, &pause_stop);
             }
-            if(mod->reposition)
-            {
-                mod->reposition = 0;
-                break;
-            }
 
-            sync_queue_push(mod, GET_TS_PTR(mod->buffer.ptr));
-            mod->buffer.ptr += mod->ts_size;
+            if(mod->reposition)
+                break;
+
+            sync_queue_push(mod, GET_TS_PTR(mod->input.ptr));
+            mod->input.ptr += mod->ts_size;
             if(ts_sync.tv_nsec > 0)
                 nanosleep(&ts_sync, NULL);
 
@@ -495,13 +430,14 @@ static void thread_loop(void *arg)
 
 #undef GET_TS_PTR
 
+        if(mod->reposition)
+            continue;
+
         // stream syncing
         gettimeofday(time_sync_e, NULL);
         const double real_sync_diff = timeval_diff(time_sync_b, time_sync_e) - pause_total;
         total_sync_diff = block_time_total - real_sync_diff;
-#if 0
-        printf("syncing value: %.2f\n", total_sync_diff);
-#endif
+
         // reset buffer on changing the system time
         if(total_sync_diff < -100.0 || total_sync_diff > 100.0)
         {
@@ -513,7 +449,12 @@ static void thread_loop(void *arg)
         }
     }
 
-    close_file(mod);
+    if(mod->fd > 0)
+    {
+        close(mod->fd);
+        mod->input.skip = 0;
+        mod->fd = 0;
+    }
 }
 
 static void on_thread_read(void *arg)
@@ -533,7 +474,7 @@ static void timer_skip_set(void *arg)
                   , S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if(fd > 0)
     {
-        const int l = sprintf(skip_str, "%lu", mod->skip);
+        const int l = sprintf(skip_str, "%lu", mod->input.skip);
         if(write(fd, skip_str, l) <= 0)
             {};
         close(fd);
@@ -569,17 +510,12 @@ static int method_position(module_data_t *mod)
         return 1;
     }
 
-    const uint32_t ts_count = (mod->buffer.end - mod->buffer.begin) / M2TS_PACKET_SIZE;
+    mod->reposition = true;
+    const uint32_t ts_count = mod->file_size / M2TS_PACKET_SIZE;
     const uint32_t ts_skip = (pos * ts_count) / mod->length;
+    mod->input.skip = ts_skip * M2TS_PACKET_SIZE;
 
-    mod->buffer.ptr = mod->buffer.ts_begin + ts_skip * M2TS_PACKET_SIZE;
-
-    mod->buffer.ptr = seek_pcr_192(mod->buffer.ptr, mod->buffer.end);
-    mod->pcr = calc_pcr(&mod->buffer.ptr[4]);
-
-    mod->reposition = 1;
-
-    const uint32_t curr_time = m2ts_time(mod->buffer.ptr) / 1000;
+    const uint32_t curr_time = m2ts_time(mod->input.ptr) / 1000;
     lua_pushnumber(lua, curr_time - mod->start_time);
 
     return 1;
@@ -595,7 +531,8 @@ static void module_init(module_data_t *mod)
     if(module_option_number("check_length", &value) && value)
     {
         open_file(mod);
-        close_file(mod);
+        if(mod->fd > 0)
+            close(mod->fd);
         return;
     }
 
@@ -620,7 +557,7 @@ static void module_init(module_data_t *mod)
             char skip_str[64];
             const int l = read(fd, skip_str, sizeof(skip_str));
             if(l > 0)
-                mod->skip = strtoul(skip_str, NULL, 10);
+                mod->input.skip = strtoul(skip_str, NULL, 10);
             close(fd);
         }
         mod->timer_skip = asc_timer_init(2000, timer_skip_set, mod);
@@ -632,6 +569,15 @@ static void module_init(module_data_t *mod)
     asc_event_set_on_read(mod->sync.event, on_thread_read);
     mod->sync.buffer = malloc(SYNC_BUFFER_SIZE);
     mod->sync.buffer_size = SYNC_BUFFER_SIZE;
+
+    int buffer_size = 0;
+    if(!module_option_number("buffer_size", &buffer_size) || buffer_size <= 0)
+        buffer_size = INPUT_BUFFER_SIZE;
+    mod->input.size = buffer_size * 1024 * 1024;
+
+    mod->input.buffer = malloc(mod->input.size);
+    mod->input.end = mod->input.buffer + mod->input.size;
+    mod->input.ptr = mod->input.buffer;
 
     asc_thread_init(&mod->sync.thread, thread_loop, mod);
 }
@@ -651,6 +597,9 @@ static void module_destroy(module_data_t *mod)
     if(mod->sync.buffer)
         free(mod->sync.buffer);
 
+    if(mod->input.buffer)
+        free(mod->input.buffer);
+
     if(mod->idx_callback)
     {
         luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_callback);
@@ -668,7 +617,5 @@ MODULE_LUA_METHODS()
     { "pause", method_pause },
     { "position", method_position }
 };
-
-#endif
 
 MODULE_LUA_REGISTER(file_input)
