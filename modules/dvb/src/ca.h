@@ -75,6 +75,8 @@ typedef struct
 {
     uint16_t pnr;
 
+    mpegts_psi_t *psi;
+
     uint8_t buffer[PSI_MAX_SIZE];
     uint16_t buffer_size;
 } ca_pmt_t;

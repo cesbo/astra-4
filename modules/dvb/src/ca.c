@@ -319,6 +319,115 @@ enum
     CA_PMT_CMD_NOT_SELECTED     = 0x04
 };
 
+typedef struct
+{
+    uint8_t caid_list_size;
+    uint16_t *caid_list;
+} conditional_access_data_t;
+
+// ADD: CA_PMT_LM_ADD, CA_PMT_CMD_OK_DESCRAMBLING
+// UPD: CA_PMT_LM_UPDATE, CA_PMT_CMD_OK_DESCRAMBLING
+// DEL: CA_PMT_LM_UPDATE, CA_PMT_CMD_NOT_SELECTED
+
+static bool ca_pmt_check_caid(conditional_access_data_t *ca_data, uint16_t caid)
+{
+    for(int i = 0; i < ca_data->caid_list_size; ++i)
+    {
+        if(ca_data->caid_list[i] == caid)
+            return true;
+    }
+    return false;
+}
+
+static uint16_t ca_pmt_copy_desc(const uint8_t *src, uint16_t size, uint8_t *dst
+                                 , conditional_access_data_t *ca_data)
+{
+    uint16_t ca_pmt_skip = 3; // info_length + ca_pmt_cmd_id
+    uint16_t src_skip = 0;
+
+    while(src_skip < size)
+    {
+        const uint8_t *desc = &src[src_skip];
+        const uint8_t desc_size = desc[1] + 2;
+
+        if(desc[0] == 0x09 && ca_pmt_check_caid(ca_data, DESC_CA_CAID(desc)))
+        {
+            memcpy(&dst[ca_pmt_skip], desc, desc_size);
+            ca_pmt_skip += desc_size;
+        }
+
+        src_skip += desc_size;
+    }
+
+    if(ca_pmt_skip > 3)
+    {
+        const uint16_t info_length = ca_pmt_skip - 2; // except info_length
+        dst[0] = 0xF0 | ((info_length >> 8) & 0x0F);
+        dst[1] = (info_length & 0xFF);
+        dst[2] = 0x00;
+        return ca_pmt_skip;
+    }
+    else
+    {
+        dst[0] = 0xF0;
+        dst[1] = 0x00;
+        return 2;
+    }
+}
+
+static bool ca_pmt_build(dvb_ca_t *ca, ca_pmt_t *ca_pmt
+                         , uint8_t slot_id, uint8_t session_id
+                         , uint8_t list_manage, uint8_t cmd)
+{
+    bool is_caid = false;
+
+    conditional_access_data_t *ca_data = ca->slots[slot_id].sessions[session_id].data;
+
+    ca_pmt->buffer[0] = list_manage;
+    ca_pmt->buffer[1] = (ca_pmt->pnr >> 8);
+    ca_pmt->buffer[2] = (ca_pmt->pnr & 0xFF);
+    ca_pmt->buffer[3] = 0xC1 | (PMT_GET_VERSION(ca_pmt->psi) << 1);
+
+    uint16_t ca_size = 4; // skip header
+
+    const uint8_t *pmt_info = PMT_DESC_FIRST(ca_pmt->psi);
+    const uint16_t pmt_info_length = __PMT_DESC_SIZE(ca_pmt->psi);
+    const uint16_t desc_size = ca_pmt_copy_desc(pmt_info, pmt_info_length
+                                                , &ca_pmt->buffer[ca_size], ca_data);
+    if(desc_size > 2)
+    {
+        ca_pmt->buffer[ca_size + 2] = cmd;
+        is_caid = true;
+    }
+    ca_size += desc_size;
+
+    const uint8_t *pointer = PMT_ITEMS_FIRST(ca_pmt->psi);
+    while(!PMT_ITEMS_EOL(ca_pmt->psi, pointer))
+    {
+        ca_pmt->buffer[ca_size + 0] = PMT_ITEM_GET_TYPE(ca_pmt->psi, pointer);
+        const uint16_t pid = PMT_ITEM_GET_PID(ca_pmt->psi, pointer);
+        ca_pmt->buffer[ca_size + 1] = 0xE0 | ((pid >> 8) & 0x1F);
+        ca_pmt->buffer[ca_size + 2] = pid & 0xFF;
+        ca_size += 3; // skip type and pid
+
+        const uint8_t *es_info = PMT_ITEM_DESC_FIRST(pointer);
+        const uint16_t es_info_length = __PMT_ITEM_DESC_SIZE(pointer);
+        const uint16_t es_desc_size = ca_pmt_copy_desc(es_info, es_info_length
+                                                       , &ca_pmt->buffer[ca_size], ca_data);
+        if(desc_size > 2)
+        {
+            ca_pmt->buffer[ca_size + 2] = cmd;
+            is_caid = true;
+        }
+        ca_size += es_desc_size;
+
+        PMT_ITEMS_NEXT(ca_pmt->psi, pointer);
+    }
+    ca_pmt->buffer_size = ca_size;
+
+    return is_caid;
+}
+
 static void ca_pmt_send(dvb_ca_t *ca, ca_pmt_t *ca_pmt
                         , uint8_t slot_id, uint8_t session_id
                         , uint8_t list_manage, uint8_t cmd)
@@ -328,29 +437,8 @@ static void ca_pmt_send(dvb_ca_t *ca, ca_pmt_t *ca_pmt
     if(session->resource_id != RI_CONDITIONAL_ACCESS_SUPPORT)
         return;
 
-    ca_pmt->buffer[0] = list_manage;
-    if(list_manage == CA_PMT_LM_ADD)
-    {
-        if(slot->is_first_ca_pmt)
-        {
-            ca_pmt->buffer[0] = CA_PMT_LM_ONLY;
-            slot->is_first_ca_pmt = false;
-        }
-    }
-
-    uint16_t info_length = ((ca_pmt->buffer[4] & 0xFF) << 8) | (ca_pmt->buffer[5]);
-    if(info_length > 0)
-        ca_pmt->buffer[6] = cmd;
-
-    uint16_t skip = 6 + info_length;
-
-    while(skip < ca_pmt->buffer_size)
-    {
-        info_length = ((ca_pmt->buffer[skip + 3] & 0xFF) << 8) | (ca_pmt->buffer[skip + 4]);
-        if(info_length > 0)
-            ca_pmt->buffer[skip + 5] = cmd;
-        skip += 5 + info_length;
-    }
+    if(!ca_pmt_build(ca, ca_pmt, slot_id, session_id, list_manage, cmd))
+        return;
 
     ca_apdu_send(ca, slot_id, session_id, AOT_CA_PMT, ca_pmt->buffer, ca_pmt->buffer_size);
 }
@@ -375,16 +463,6 @@ static void ca_pmt_send_all(dvb_ca_t *ca, uint8_t list_manage, uint8_t cmd)
         }
     }
 }
-
-// ADD: CA_PMT_LM_ADD, CA_PMT_CMD_OK_DESCRAMBLING
-// UPD: CA_PMT_LM_UPDATE, CA_PMT_CMD_OK_DESCRAMBLING
-// DEL: CA_PMT_LM_UPDATE, CA_PMT_CMD_NOT_SELECTED
-
-typedef struct
-{
-    uint8_t caid_list_size;
-    uint16_t *caid_list;
-} conditional_access_data_t;
 
 static void conditional_access_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
@@ -1400,74 +1478,6 @@ static void ca_slot_loop(dvb_ca_t *ca)
  *
  */
 
-static uint16_t ca_pmt_copy_desc(const uint8_t *src, uint16_t size, uint8_t *dst)
-{
-    uint16_t ca_pmt_skip = 3; // info_length + ca_pmt_cmd_id
-    uint16_t src_skip = 0;
-
-    while(src_skip < size)
-    {
-        const uint8_t *desc = &src[src_skip];
-        const uint8_t desc_size = desc[1] + 2;
-
-        if(desc[0] == 0x09)
-        {
-            memcpy(&dst[ca_pmt_skip], desc, desc_size);
-            ca_pmt_skip += desc_size;
-        }
-
-        src_skip += desc_size;
-    }
-
-    if(ca_pmt_skip > 3)
-    {
-        const uint16_t info_length = ca_pmt_skip - 2; // except info_length
-        dst[0] = 0xF0 | ((info_length >> 8) & 0x0F);
-        dst[1] = (info_length & 0xFF);
-        dst[2] = 0x00;
-        return ca_pmt_skip;
-    }
-    else
-    {
-        dst[0] = 0xF0;
-        dst[1] = 0x00;
-        return 2;
-    }
-}
-
-static void ca_pmt_build(dvb_ca_t *ca, ca_pmt_t *ca_pmt, mpegts_psi_t *pmt)
-{
-    __uarg(ca);
-
-    ca_pmt->buffer[0] = 0x00;
-    ca_pmt->buffer[1] = (ca_pmt->pnr >> 8);
-    ca_pmt->buffer[2] = (ca_pmt->pnr & 0xFF);
-    ca_pmt->buffer[3] = 0xC1 | (PMT_GET_VERSION(pmt) << 1);
-
-    uint16_t ca_size = 4; // skip header
-
-    const uint8_t *pmt_info = PMT_DESC_FIRST(pmt);
-    const uint16_t pmt_info_length = __PMT_DESC_SIZE(pmt);
-    ca_size += ca_pmt_copy_desc(pmt_info, pmt_info_length, &ca_pmt->buffer[ca_size]);
-
-    const uint8_t *pointer = PMT_ITEMS_FIRST(pmt);
-    while(!PMT_ITEMS_EOL(pmt, pointer))
-    {
-        ca_pmt->buffer[ca_size + 0] = PMT_ITEM_GET_TYPE(pmt, pointer);
-        const uint16_t pid = PMT_ITEM_GET_PID(pmt, pointer);
-        ca_pmt->buffer[ca_size + 1] = 0xE0 | ((pid >> 8) & 0x1F);
-        ca_pmt->buffer[ca_size + 2] = pid & 0xFF;
-        ca_size += 3; // skip type and pid
-
-        const uint8_t *es_info = PMT_ITEM_DESC_FIRST(pointer);
-        const uint16_t es_info_length = __PMT_ITEM_DESC_SIZE(pointer);
-        ca_size += ca_pmt_copy_desc(es_info, es_info_length, &ca_pmt->buffer[ca_size]);
-
-        PMT_ITEMS_NEXT(pmt, pointer);
-    }
-    ca_pmt->buffer_size = ca_size;
-}
-
 static void on_pat(void *arg, mpegts_psi_t *psi)
 {
     dvb_ca_t *ca = arg;
@@ -1545,8 +1555,8 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         ca_pmt_t *ca_pmt = malloc(sizeof(ca_pmt_t));
         ca_pmt->pnr = pnr;
         ca_pmt->buffer_size = 0;
-
-        ca_pmt_build(ca, ca_pmt, psi);
+        ca_pmt->psi = mpegts_psi_init(MPEGTS_PACKET_PMT, psi->pid);
+        memcpy(ca_pmt->psi, psi, sizeof(mpegts_psi_t));
 
         asc_list_insert_tail(ca->ca_pmt_list_new, ca_pmt);
         break;
@@ -1821,7 +1831,7 @@ void ca_loop(dvb_ca_t *ca, int is_data)
                         continue;
 
                     ca_pmt_send(ca, ca_pmt, slot_id, session_id
-                                , (is_update == true) ? CA_PMT_LM_ADD : CA_PMT_LM_UPDATE
+                                , (is_update == true) ? CA_PMT_LM_UPDATE : CA_PMT_LM_ADD
                                 , CA_PMT_CMD_OK_DESCRAMBLING);
                 }
             }
