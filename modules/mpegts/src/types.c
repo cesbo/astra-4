@@ -107,7 +107,7 @@ static void push_description_text(const uint8_t *data)
     luaL_Buffer b;
     luaL_buffinit(lua, &b);
 
-    char *text = iso8859_text(data);
+    char *text = iso8859_text(&data[1], data[0]);
     luaL_addstring(&b, text);
     free(text);
 
