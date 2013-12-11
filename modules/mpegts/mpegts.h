@@ -159,7 +159,7 @@ void mpegts_psi_demux(mpegts_psi_t *psi
 #define PSI_SET_SIZE(_psi)                                                                      \
     {                                                                                           \
         const uint16_t __size = _psi->buffer_size - 3;                                          \
-        _psi->buffer[1] = (_psi->buffer[1] & 0xF0) | (__size >> 8);                             \
+        _psi->buffer[1] = (_psi->buffer[1] & 0xF0) | ((__size >> 8) & 0x0F);                    \
         _psi->buffer[2] = (__size & 0xFF);                                                      \
     }
 

@@ -597,14 +597,18 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         if(!mod->config.eit)
             return;
 
-        if(TS_PUSI(ts))
+        bool is_pusi = (TS_PUSI(ts) != 0);
+        uint8_t header_size = 0;
+
+        if(is_pusi)
         {
+            mod->send_eit = false;
+
             const uint8_t *payload = TS_PTR(ts);
             if(!payload)
                 return;
             payload = payload + payload[0] + 1;
-
-            mod->send_eit = 0;
+            header_size = payload - ts;
 
             const uint8_t table_id = payload[0];
 
@@ -617,6 +621,11 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             memcpy(mod->custom_ts, ts, TS_PACKET_SIZE);
             mod->custom_ts[3] = (ts[3] & 0xF0) | mod->eit_cc;
             mod->eit_cc = (mod->eit_cc + 1) & 0x0F;
+            if(mod->config.set_pnr && is_pusi)
+            {
+                mod->custom_ts[header_size + 3] = (mod->config.set_pnr >> 8) & 0xFF;
+                mod->custom_ts[header_size + 4] = (mod->config.set_pnr     ) & 0xFF;
+            }
             module_stream_send(mod, mod->custom_ts);
         }
 
