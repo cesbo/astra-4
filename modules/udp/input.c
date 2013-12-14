@@ -35,15 +35,20 @@
 
 #define UDP_BUFFER_SIZE 1460
 #define TS_PACKET_SIZE 188
+#define RTP_HEADER_SIZE 12
 
-#define MSG(_msg) "[udp_input] " _msg
+#define MSG(_msg) "[udp_input %s:%d] " _msg, mod->addr, mod->port
 
 struct module_data_t
 {
     MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
-    int is_rtp;
+    const char *addr;
+    int port;
+    const char *localaddr;
+
+    int rtp_skip;
 
     asc_socket_t *sock;
     asc_timer_t *timer_renew;
@@ -73,19 +78,52 @@ void on_read(void *arg)
 {
     module_data_t *mod = (module_data_t *)arg;
 
-    ssize_t len = asc_socket_recv(mod->sock, mod->buffer, UDP_BUFFER_SIZE);
+    int len = asc_socket_recv(mod->sock, mod->buffer, UDP_BUFFER_SIZE);
     if(len <= 0)
     {
-        on_close(arg);
+        on_close(mod);
         return;
     }
 
-    // 12 - RTP header size
-    ssize_t i = (mod->is_rtp) ? 12 : 0;
+    int i = mod->rtp_skip;
     for(; i < len; i += TS_PACKET_SIZE)
         module_stream_send(mod, &mod->buffer[i]);
-    if (i != len)
-        asc_log_warning(MSG("Lost bytes: %d, because UDP packet size is wrong"), len - i);
+
+    if(i != len)
+        asc_log_warning(MSG("wrong UDP packet size. drop %d bytes"), len - i);
+}
+
+void on_read_check(void *arg)
+{
+    module_data_t *mod = (module_data_t *)arg;
+
+    ssize_t len = asc_socket_recv(mod->sock, mod->buffer, UDP_BUFFER_SIZE);
+    if(len <= 0)
+    {
+        on_close(mod);
+        return;
+    }
+
+    bool is_ok = false;
+
+    if(mod->buffer[0] == 0x47 && mod->buffer[TS_PACKET_SIZE] == 0x47)
+    {
+        is_ok = true;
+    }
+    else if(   mod->buffer[RTP_HEADER_SIZE] == 0x47
+            && mod->buffer[RTP_HEADER_SIZE + TS_PACKET_SIZE] == 0x47)
+    {
+        mod->rtp_skip = RTP_HEADER_SIZE;
+        is_ok = true;
+    }
+
+    if(!is_ok)
+    {
+        asc_log_error(MSG("wrong format"));
+        on_close(mod);
+    }
+
+    asc_socket_set_on_read(mod->sock, on_read);
 }
 
 void timer_renew_callback(void *arg)
@@ -98,23 +136,23 @@ static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, NULL);
 
-    const char *addr = NULL;
-    module_option_string("addr", &addr);
-    if(!addr)
+    module_option_string("addr", &mod->addr);
+    if(!mod->addr)
     {
         asc_log_error("[udp_input] option 'addr' is required");
         astra_abort();
     }
 
-    int port = 1234;
-    module_option_number("port", &port);
+    module_option_number("port", &mod->port);
+    if(!mod->port)
+        mod->port = 1234;
 
     mod->sock = asc_socket_open_udp4(mod);
     asc_socket_set_reuseaddr(mod->sock, 1);
 #ifdef _WIN32
-    if(!asc_socket_bind(mod->sock, NULL, port))
+    if(!asc_socket_bind(mod->sock, NULL, mod->port))
 #else
-    if(!asc_socket_bind(mod->sock, addr, port))
+    if(!asc_socket_bind(mod->sock, mod->addr, mod->port))
 #endif
         return;
 
@@ -122,12 +160,11 @@ static void module_init(module_data_t *mod)
     if(module_option_number("socket_size", &value))
         asc_socket_set_buffer(mod->sock, value, 0);
 
-    asc_socket_set_on_read(mod->sock, on_read);
+    asc_socket_set_on_read(mod->sock, on_read_check);
     asc_socket_set_on_close(mod->sock, on_close);
 
-    const char *localaddr = NULL;
-    module_option_string("localaddr", &localaddr);
-    asc_socket_multicast_join(mod->sock, addr, localaddr);
+    module_option_string("localaddr", &mod->localaddr);
+    asc_socket_multicast_join(mod->sock, mod->addr, mod->localaddr);
 
     if(module_option_number("renew", &value))
         mod->timer_renew = asc_timer_init(value * 1000, timer_renew_callback, mod);
