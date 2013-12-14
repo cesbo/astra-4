@@ -20,7 +20,7 @@
 
 #include "utils.h"
 
-int64_t asc_utime(void)
+uint64_t asc_utime(void)
 {
 #ifdef HAVE_CLOCK_GETTIME
     struct timespec ts;
@@ -28,11 +28,11 @@ int64_t asc_utime(void)
     if(clock_gettime(CLOCK_MONOTONIC, &ts) == EINVAL)
         (void)clock_gettime(CLOCK_REALTIME, &ts);
 
-    return ((int64_t)ts.tv_sec * 1000000) + (int64_t)(ts.tv_nsec / 1000);
+    return ((uint64_t)ts.tv_sec * 1000000) + (uint64_t)(ts.tv_nsec / 1000);
 #else
     struct timeval tv;
 
     gettimeofday(&tv, NULL);
-    return ((int64_t)tv.tv_sec * 1000000) + (int64_t)tv.tv_usec;
+    return ((uint64_t)tv.tv_sec * 1000000) + (uint64_t)tv.tv_usec;
 #endif
 }

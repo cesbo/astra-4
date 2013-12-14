@@ -541,16 +541,9 @@ static void conditional_access_open(dvb_ca_t *ca, uint8_t slot_id, uint16_t sess
 
 typedef struct
 {
-    uint8_t interval;
-    int64_t last_utime;
+    uint64_t interval;
+    uint64_t last_utime;
 } date_time_data_t;
-
-static int64_t utime(void)
-{
-    struct timeval ctv;
-    gettimeofday(&ctv, NULL);
-    return (int64_t)((ctv.tv_sec * 1000000) + ctv.tv_usec);
-}
 
 static void date_time_send(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
@@ -589,7 +582,7 @@ static void date_time_send(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
     ca_apdu_send(ca, slot_id, session_id, AOT_DATE_TIME, buffer, 7);
 
     date_time_data_t *dt = ca->slots[slot_id].sessions[session_id].data;
-    dt->last_utime = utime();
+    dt->last_utime = asc_utime();
 }
 
 static void date_time_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
@@ -604,7 +597,7 @@ static void date_time_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 
             date_time_data_t *data = ca->slots[slot_id].sessions[session_id].data;
 
-            data->interval = (size > 0) ? buffer[0] : 0;
+            data->interval = (size > 0) ? (buffer[0] * 1000000) : 0;
 
             date_time_send(ca, slot_id, session_id);
             break;
@@ -619,7 +612,16 @@ static void date_time_manage(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
     date_time_data_t *data = ca->slots[slot_id].sessions[session_id].data;
 
-    if((data->interval > 0) && (utime() > (data->last_utime + data->interval * 1000000)))
+    const uint64_t cur = asc_utime();
+    if(cur < data->last_utime)
+    {
+        // timetravel
+        data->last_utime = cur;
+        return;
+    }
+
+    const uint64_t next = data->last_utime + data->interval;
+    if((data->interval > 0) && (cur > next))
         date_time_send(ca, slot_id, session_id);
 }
 
@@ -799,7 +801,7 @@ static uint16_t mmi_get_text(dvb_ca_t *ca
     skip += asc_1_decode(&buffer[3], &length);
     skip += length;
 
-    *text = iso8859_text(&buffer[skip + 1], &buffer[skip]);
+    *text = iso8859_text(&buffer[skip + 1], buffer[skip]);
 
     return skip;
 }

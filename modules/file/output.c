@@ -201,9 +201,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     }
     else
     {
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        uint32_t t = (tv.tv_usec / 1000) + (tv.tv_sec * 1000);
+        const uint64_t t = asc_utime() / 1000;
         mod->buffer[0 + mod->buffer_skip] = (t >> 24) & 0xFF;
         mod->buffer[1 + mod->buffer_skip] = (t >> 16) & 0xFF;
         mod->buffer[2 + mod->buffer_skip] = (t >>  8) & 0xFF;

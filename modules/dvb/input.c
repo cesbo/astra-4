@@ -578,9 +578,9 @@ static void dvb_thread_loop(void *arg)
 
     mod->thread_ready = true;
 
-    int64_t current_time = asc_utime();
-    int64_t dmx_check_timeout = current_time;
-    int64_t ca_check_timeout = current_time;
+    uint64_t current_time = asc_utime();
+    uint64_t dmx_check_timeout = current_time;
+    uint64_t ca_check_timeout = current_time;
 
 #define DMX_TIMEOUT (200 * 1000)
 #define CA_TIMEOUT (1 * 1000 * 1000)

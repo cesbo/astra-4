@@ -23,6 +23,6 @@
 
 #include "base.h"
 
-int64_t asc_utime(void);
+uint64_t asc_utime(void);
 
 #endif /* _UTILS_H_ */

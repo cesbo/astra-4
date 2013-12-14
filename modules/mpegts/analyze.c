@@ -81,7 +81,7 @@ struct module_data_t
     uint32_t *sdt_checksum_list;
 
     // rate_stat
-    struct timeval last_ts;
+    uint64_t last_ts;
     uint32_t ts_count;
     int rate_count;
     int rate[10];
@@ -512,17 +512,15 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     {
         ++mod->ts_count;
 
-        int diff_interval = 0;
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        tv.tv_usec /= 10000;
-        const int64_t s = mod->last_ts.tv_sec * 100 + mod->last_ts.tv_usec;
-        const int64_t e = tv.tv_sec * 100 + tv.tv_usec;
-        if(e != s)
+        uint64_t diff_interval = 0;
+        const uint64_t cur = asc_utime() / 10000;
+
+        if(cur != mod->last_ts)
         {
-            memcpy(&mod->last_ts, &tv, sizeof(struct timeval));
-            if(s > 0)
-                diff_interval = e - s;
+            if(mod->last_ts != 0 && cur > mod->last_ts)
+                diff_interval = cur - mod->last_ts;
+
+            mod->last_ts = cur;
         }
 
         if(diff_interval > 0)

@@ -20,29 +20,18 @@
 
 #include "timer.h"
 #include "list.h"
+#include "utils.h"
 
 struct asc_timer_t
 {
     void (*callback)(void *arg);
     void *arg;
 
-    struct timeval interval;
-    struct timeval next_shot;
+    uint64_t interval;
+    uint64_t next_shot;
 };
 
 static asc_list_t *timer_list = NULL;
-
-#ifndef timeradd
-#define timeradd(tvp, uvp, vvp)                                         \
-    do {                                                                \
-            (vvp)->tv_sec = (tvp)->tv_sec + (uvp)->tv_sec;              \
-            (vvp)->tv_usec = (tvp)->tv_usec + (uvp)->tv_usec;           \
-            if ((vvp)->tv_usec >= 1000000) {                            \
-                    (vvp)->tv_sec++;                                    \
-                    (vvp)->tv_usec -= 1000000;                          \
-            }                                                           \
-    } while (0)
-#endif
 
 void asc_timer_core_init(void)
 {
@@ -64,7 +53,7 @@ void asc_timer_core_destroy(void)
 void asc_timer_core_loop(void)
 {
     int is_detached = 0;
-    struct timeval cur;
+    uint64_t cur;
 
     asc_list_for(timer_list)
     {
@@ -75,10 +64,10 @@ void asc_timer_core_loop(void)
             continue;
         }
 
-        gettimeofday(&cur, NULL);
-        if(timercmp(&cur, &timer->next_shot, >=))
+        cur = asc_utime();
+        if(cur >= timer->next_shot)
         {
-            if(timer->interval.tv_sec == 0 && timer->interval.tv_usec == 0)
+            if(timer->interval == 0)
             {
                 // one shot timer
                 timer->callback(timer->arg);
@@ -87,7 +76,7 @@ void asc_timer_core_loop(void)
             }
             else
             {
-                timeradd(&cur, &timer->interval, &timer->next_shot);
+                timer->next_shot += timer->interval;
                 timer->callback(timer->arg);
             }
         }
@@ -113,14 +102,11 @@ void asc_timer_core_loop(void)
 asc_timer_t * asc_timer_init(unsigned int ms, void (*callback)(void *), void *arg)
 {
     asc_timer_t *timer = calloc(1, sizeof(asc_timer_t));
-    timer->interval.tv_sec = ms / 1000;
-    timer->interval.tv_usec = (ms % 1000) * 1000;
+    timer->interval = ms * 1000;
     timer->callback = callback;
     timer->arg = arg;
 
-    struct timeval cur;
-    gettimeofday(&cur, NULL);
-    timeradd(&cur, &timer->interval, &timer->next_shot);
+    timer->next_shot = asc_utime() + timer->interval;
 
     asc_list_insert_tail(timer_list, timer);
 
@@ -130,8 +116,9 @@ asc_timer_t * asc_timer_init(unsigned int ms, void (*callback)(void *), void *ar
 void timer_one_shot(unsigned int ms, void (*callback)(void *), void *arg)
 {
     asc_timer_t *timer = asc_timer_init(ms, callback, arg);
-    timer->interval.tv_sec = 0;
-    timer->interval.tv_usec = 0;
+    timer->interval = 0;
+    timer->callback = callback;
+    timer->arg = arg;
 }
 
 void asc_timer_destroy(asc_timer_t *timer)

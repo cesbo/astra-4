@@ -138,13 +138,6 @@ static uint8_t * seek_pcr_192(uint8_t *buffer, uint8_t *buffer_end)
     return NULL;
 }
 
-static double timeval_diff(struct timeval *start, struct timeval *end)
-{
-    const int64_t s_us = start->tv_sec * 1000000 + start->tv_usec;
-    const int64_t e_us = end->tv_sec * 1000000 + end->tv_usec;
-    return (double)(e_us - s_us) / 1000.0; // ms
-}
-
 static inline uint32_t m2ts_time(const uint8_t *ts)
 {
     return (ts[0] << 24) | (ts[1] << 16) | (ts[2] << 8) | (ts[3]);
@@ -274,19 +267,15 @@ static void thread_loop(void *arg)
 
     // pause
     const struct timespec ts_pause = { .tv_sec = 0, .tv_nsec = 500000 };
-    struct timeval pause_start;
-    struct timeval pause_stop;
+    uint64_t pause_start, pause_stop;
     double pause_total = 0.0;
 
     // block sync
     uint8_t *block_end;
-    struct timeval time_sync[4];
-    struct timeval *time_sync_b = &time_sync[0]; // begin
-    struct timeval *time_sync_e = &time_sync[1]; // end
-    struct timeval *time_sync_bb = &time_sync[2];
-    struct timeval *time_sync_be = &time_sync[3];
 
-    gettimeofday(time_sync_b, NULL);
+    uint64_t time_sync_b, time_sync_e, time_sync_bb, time_sync_be;
+
+    time_sync_b = asc_utime();
     double block_time_total = 0.0;
     double total_sync_diff = 0.0;
 
@@ -308,7 +297,7 @@ static void thread_loop(void *arg)
             while(mod->pause)
                 nanosleep(&ts_pause, NULL);
 
-            gettimeofday(time_sync_b, NULL);
+            time_sync_b = asc_utime();
             block_time_total = 0.0;
             total_sync_diff = 0.0;
             pause_total = 0.0;
@@ -319,7 +308,7 @@ static void thread_loop(void *arg)
             open_file(mod); // reopen file
 
             mod->reposition = false;
-            gettimeofday(time_sync_b, NULL);
+            time_sync_b = asc_utime();
             block_time_total = 0.0;
             total_sync_diff = 0.0;
             pause_total = 0.0;
@@ -373,7 +362,7 @@ static void thread_loop(void *arg)
             asc_log_error(MSG("block time out of range: %.2f"), block_time);
             mod->input.ptr = block_end;
 
-            gettimeofday(time_sync_b, NULL);
+            time_sync_b = asc_utime();
             block_time_total = 0.0;
             total_sync_diff = 0.0;
             pause_total = 0.0;
@@ -389,10 +378,10 @@ static void thread_loop(void *arg)
         else
             ts_sync.tv_nsec = 0;
         // store the sync time value for later usage
-        const long ts_sync_nsec = ts_sync.tv_nsec;
+        const uint64_t ts_sync_nsec = ts_sync.tv_nsec;
 
-        long calc_block_time_ns = 0;
-        gettimeofday(time_sync_bb, NULL);
+        uint64_t calc_block_time_ns = 0;
+        time_sync_bb = asc_utime();
 
         double pause_block = 0.0;
 
@@ -400,11 +389,14 @@ static void thread_loop(void *arg)
         {
             if(mod->pause)
             {
-                gettimeofday(&pause_start, NULL);
+                pause_start = asc_utime();
                 while(mod->pause)
                     nanosleep(&ts_pause, NULL);
-                gettimeofday(&pause_stop, NULL);
-                pause_block += timeval_diff(&pause_start, &pause_stop);
+                pause_stop = asc_utime();
+                if(pause_stop < pause_start)
+                    mod->reposition = true; // timetravel
+                else
+                    pause_block += (pause_stop - pause_start) / 1000;
             }
 
             if(mod->reposition)
@@ -417,13 +409,10 @@ static void thread_loop(void *arg)
 
             // block syncing
             calc_block_time_ns += ts_sync_nsec;
-            gettimeofday(time_sync_be, NULL);
-            const long real_block_time_ns
-                = ((time_sync_be->tv_sec * 1000000 + time_sync_be->tv_usec)
-                   - (time_sync_bb->tv_sec * 1000000 + time_sync_bb->tv_usec))
-                * 1000
-                - pause_block;
-
+            time_sync_be = asc_utime();
+            if(time_sync_be < time_sync_bb)
+                break; // timetravel
+            const uint64_t real_block_time_ns = (time_sync_be - time_sync_bb) * 1000 - pause_block;
             ts_sync.tv_nsec = (real_block_time_ns > calc_block_time_ns) ? 0 : ts_sync_nsec;
         }
         pause_total += pause_block;
@@ -434,15 +423,25 @@ static void thread_loop(void *arg)
             continue;
 
         // stream syncing
-        gettimeofday(time_sync_e, NULL);
-        const double real_sync_diff = timeval_diff(time_sync_b, time_sync_e) - pause_total;
-        total_sync_diff = block_time_total - real_sync_diff;
+        time_sync_e = asc_utime();
+
+        if(time_sync_e < time_sync_b)
+        {
+            // timetravel
+            asc_log_warning(MSG("timetravel detected"));
+            total_sync_diff = -1000000.0;
+        }
+        else
+        {
+            const double time_sync_diff = (time_sync_e - time_sync_b) / 1000.0;
+            total_sync_diff = block_time_total - time_sync_diff - pause_total;
+        }
 
         // reset buffer on changing the system time
         if(total_sync_diff < -100.0 || total_sync_diff > 100.0)
         {
             asc_log_warning(MSG("wrong syncing time: %.2fms. reset time values"), total_sync_diff);
-            gettimeofday(time_sync_b, NULL);
+            time_sync_b = asc_utime();
             block_time_total = 0.0;
             total_sync_diff = 0.0;
             pause_total = 0.0;
