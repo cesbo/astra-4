@@ -27,7 +27,6 @@
  *      port        - number, source UDP port
  *      localaddr   - string, IP address of the local interface
  *      socket_size - number, socket buffer size
- *      rtp         - boolean, use RTP instad RAW UDP
  *      renew       - number, renewing multicast subscription interval in seconds
  */
 
