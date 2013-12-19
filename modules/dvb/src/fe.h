@@ -57,10 +57,10 @@ struct dvb_fe_t
     int lnb_lof1;
     int lnb_lof2;
     int lnb_slof;
-    int lnb_sharing;
+    bool lnb_sharing;
 
     int diseqc;
-    int force_tone;
+    bool force_tone;
 
     fe_code_rate_t fec;
 #if DVB_API_VERSION >= 5

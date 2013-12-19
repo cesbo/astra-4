@@ -392,7 +392,7 @@ static void module_init(module_data_t *mod)
         astra_abort();
     }
     const char *direction = NULL;
-    if(!module_option_string("direction", &direction))
+    if(!module_option_string("direction", &direction, NULL))
         direction = "LL";
 
     if(!strcasecmp(direction, "LL"))

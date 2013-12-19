@@ -22,57 +22,84 @@
 
 lua_State *lua = NULL;
 
-int module_option_number(const char *name, int *number)
+bool module_option_number(const char *name, int *number)
 {
-    do
-    {
-        if(lua_type(lua, MODULE_OPTIONS_IDX) != LUA_TTABLE)
-            break;
-        lua_getfield(lua, MODULE_OPTIONS_IDX, name);
-        const int type = lua_type(lua, -1);
-        if(type == LUA_TNUMBER)
-        {
-            *number = lua_tonumber(lua, -1);
-            lua_pop(lua, 1);
-            return true;
-        }
-        else if(type == LUA_TSTRING)
-        {
-            const char *str = lua_tostring(lua, -1);
-            *number = atoi(str);
-            lua_pop(lua, 1);
-            return true;
-        }
-        else if(type == LUA_TBOOLEAN)
-        {
-            *number = lua_toboolean(lua, -1);
-            lua_pop(lua, 1);
-            return true;
-        }
-        else
-            lua_pop(lua, 1);
-    } while(0);
+    if(lua_type(lua, MODULE_OPTIONS_IDX) != LUA_TTABLE)
+        return false;
 
-    return false;
+    lua_getfield(lua, MODULE_OPTIONS_IDX, name);
+    const int type = lua_type(lua, -1);
+    bool result = false;
+
+    if(type == LUA_TNUMBER)
+    {
+        *number = lua_tonumber(lua, -1);
+        result = true;
+    }
+    else if(type == LUA_TSTRING)
+    {
+        const char *str = lua_tostring(lua, -1);
+        *number = atoi(str);
+        result = true;
+    }
+    else if(type == LUA_TBOOLEAN)
+    {
+        *number = lua_toboolean(lua, -1);
+        result = true;
+    }
+
+    lua_pop(lua, 1);
+    return result;
 }
 
-int module_option_string(const char *name, const char **string)
+bool module_option_string(const char *name, const char **string, int *length)
 {
-    do
-    {
-        if(lua_type(lua, MODULE_OPTIONS_IDX) != LUA_TTABLE)
-            break;
-        lua_getfield(lua, MODULE_OPTIONS_IDX, name);
-        if(lua_type(lua, -1) == LUA_TSTRING)
-        {
-            const int length = luaL_len(lua, -1);
-            *string = lua_tostring(lua, -1);
-            lua_pop(lua, 1);
-            return length;
-        }
-        else
-            lua_pop(lua, 1);
-    } while(0);
+    if(lua_type(lua, MODULE_OPTIONS_IDX) != LUA_TTABLE)
+        return false;
 
-    return 0;
+    lua_getfield(lua, MODULE_OPTIONS_IDX, name);
+    const int type = lua_type(lua, -1);
+    bool result = false;
+
+    if(type == LUA_TSTRING)
+    {
+        if(length)
+            *length = luaL_len(lua, -1);
+        *string = lua_tostring(lua, -1);
+        result = true;
+    }
+
+
+    lua_pop(lua, 1);
+    return result;
+}
+
+bool module_option_boolean(const char *name, bool *boolean)
+{
+    if(lua_type(lua, MODULE_OPTIONS_IDX) != LUA_TTABLE)
+        return false;
+
+    lua_getfield(lua, MODULE_OPTIONS_IDX, name);
+    const int type = lua_type(lua, -1);
+    bool result = false;
+
+    if(type == LUA_TNUMBER)
+    {
+        *boolean = (lua_tonumber(lua, -1) != 0) ? true : false;
+        result = true;
+    }
+    else if(type == LUA_TSTRING)
+    {
+        const char *str = lua_tostring(lua, -1);
+        *boolean = (strncmp(str, "true", 4) == 0);
+        result = true;
+    }
+    else if(type == LUA_TBOOLEAN)
+    {
+        *boolean = lua_toboolean(lua, -1);
+        result = true;
+    }
+
+    lua_pop(lua, 1);
+    return result;
 }

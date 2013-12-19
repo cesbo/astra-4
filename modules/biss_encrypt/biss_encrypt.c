@@ -170,11 +170,11 @@ static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, on_ts);
 
-
+    int biss_length = 0;
     const char *key_value = NULL;
-    module_option_string("key", &key_value);
+    module_option_string("key", &key_value, &biss_length);
     asc_assert(key_value != NULL, "[biss_encrypt] option 'key' is required");
-    asc_assert(strlen(key_value) == 16, "[biss_encrypt] key must be 16 char length");
+    asc_assert(biss_length == 16, "[biss_encrypt] key must be 16 char length");
 
     uint8_t key[8];
     str_to_hex(key_value, key, 16);

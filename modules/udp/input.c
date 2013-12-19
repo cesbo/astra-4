@@ -135,7 +135,7 @@ static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, NULL);
 
-    module_option_string("addr", &mod->addr);
+    module_option_string("addr", &mod->addr, NULL);
     if(!mod->addr)
     {
         asc_log_error("[udp_input] option 'addr' is required");
@@ -162,7 +162,7 @@ static void module_init(module_data_t *mod)
     asc_socket_set_on_read(mod->sock, on_read_check);
     asc_socket_set_on_close(mod->sock, on_close);
 
-    module_option_string("localaddr", &mod->localaddr);
+    module_option_string("localaddr", &mod->localaddr, NULL);
     asc_socket_multicast_join(mod->sock, mod->addr, mod->localaddr);
 
     if(module_option_number("renew", &value))

@@ -277,7 +277,7 @@ static void module_option_fec(module_data_t *mod)
 {
     const char *string_val;
     static const char __fec[] = "fec";
-    if(module_option_string(__fec, &string_val))
+    if(module_option_string(__fec, &string_val, NULL))
     {
         if(!strcasecmp(string_val, "NONE")) mod->fe->fec = FEC_NONE;
         else if(!strcasecmp(string_val, "1/2")) mod->fe->fec = FEC_1_2;
@@ -316,7 +316,7 @@ static void module_options_s(module_data_t *mod)
     mod->fe->frequency *= 1000;
 
     static const char __polarization[] = "polarization";
-    if(!module_option_string(__polarization, &string_val))
+    if(!module_option_string(__polarization, &string_val, NULL))
         option_required(mod, __polarization);
 
     const char pol = (string_val[0] > 'Z') ? (string_val[0] - ('z' - 'Z')) : string_val[0];
@@ -341,12 +341,12 @@ static void module_options_s(module_data_t *mod)
     mod->fe->lnb_lof2 *= 1000;
     mod->fe->lnb_slof *= 1000;
 
-    module_option_number("lnb_sharing", &mod->fe->lnb_sharing);
+    module_option_boolean("lnb_sharing", &mod->fe->lnb_sharing);
     module_option_number("diseqc", &mod->fe->diseqc);
-    module_option_number("tone", &mod->fe->force_tone);
+    module_option_boolean("tone", &mod->fe->force_tone);
 
     static const char __rolloff[] = "rolloff";
-    if(module_option_string(__rolloff, &string_val))
+    if(module_option_string(__rolloff, &string_val, NULL))
     {
         if(!strcasecmp(string_val, "AUTO")) mod->fe->rolloff = ROLLOFF_AUTO;
         else if(!strcasecmp(string_val, "35")) mod->fe->rolloff = ROLLOFF_35;
@@ -378,7 +378,7 @@ static void module_options_t(module_data_t *mod)
     mod->fe->frequency *= 1000000;
 
     static const char __bandwidth[] = "bandwidth";
-    if(module_option_string(__bandwidth, &string_val))
+    if(module_option_string(__bandwidth, &string_val, NULL))
     {
         if(!strcasecmp(string_val, "AUTO")) mod->fe->bandwidth = BANDWIDTH_AUTO;
         else if(!strcasecmp(string_val, "8MHZ")) mod->fe->bandwidth = BANDWIDTH_8_MHZ;
@@ -391,7 +391,7 @@ static void module_options_t(module_data_t *mod)
         mod->fe->bandwidth = BANDWIDTH_AUTO;
 
     static const char __guardinterval[] = "guardinterval";
-    if(module_option_string(__guardinterval, &string_val))
+    if(module_option_string(__guardinterval, &string_val, NULL))
     {
         if(!strcasecmp(string_val, "AUTO")) mod->fe->guardinterval = GUARD_INTERVAL_AUTO;
         else if(!strcasecmp(string_val, "1/32")) mod->fe->guardinterval = GUARD_INTERVAL_1_32;
@@ -405,7 +405,7 @@ static void module_options_t(module_data_t *mod)
         mod->fe->guardinterval = GUARD_INTERVAL_AUTO;
 
     static const char __transmitmode[] = "transmitmode";
-    if(module_option_string(__transmitmode, &string_val))
+    if(module_option_string(__transmitmode, &string_val, NULL))
     {
         if(!strcasecmp(string_val, "AUTO")) mod->fe->transmitmode = TRANSMISSION_MODE_AUTO;
         else if(!strcasecmp(string_val, "2K")) mod->fe->transmitmode = TRANSMISSION_MODE_2K;
@@ -418,7 +418,7 @@ static void module_options_t(module_data_t *mod)
         mod->fe->transmitmode = TRANSMISSION_MODE_AUTO;
 
     static const char __hierarchy[] = "hierarchy";
-    if(module_option_string(__hierarchy, &string_val))
+    if(module_option_string(__hierarchy, &string_val, NULL))
     {
         if(!strcasecmp(string_val, "AUTO")) mod->fe->hierarchy = HIERARCHY_AUTO;
         else if(!strcasecmp(string_val, "NONE")) mod->fe->hierarchy = HIERARCHY_NONE;
@@ -480,7 +480,7 @@ static void module_options(module_data_t *mod)
     const char *string_val = NULL;
 
     static const char __type[] = "type";
-    if(!module_option_string(__type, &string_val))
+    if(!module_option_string(__type, &string_val, NULL))
         option_required(mod, __type);
 
     if(!strcasecmp(string_val, "S")) mod->fe->type = DVB_TYPE_S;
@@ -499,11 +499,11 @@ static void module_options(module_data_t *mod)
     if(!module_option_number(__frequency, &mod->fe->frequency))
         option_required(mod, __frequency);
 
-    module_option_number("budget", &mod->dmx_budget);
+    module_option_boolean("budget", &mod->dmx_budget);
     module_option_number("buffer_size", &mod->dvr_buffer_size);
 
     static const char __modulation[] = "modulation";
-    if(module_option_string(__modulation, &string_val))
+    if(module_option_string(__modulation, &string_val, NULL))
     {
         if(!strcasecmp(string_val, "NONE")) mod->fe->modulation = FE_MODULATION_NONE;
         else if(!strcasecmp(string_val, "QPSK")) mod->fe->modulation = QPSK;

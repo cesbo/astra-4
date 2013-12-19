@@ -661,7 +661,7 @@ static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, on_ts);
 
-    module_option_string("name", &mod->name);
+    module_option_string("name", &mod->name, NULL);
     asc_assert(mod->name != NULL, "[decrypt] option 'name' is required");
 
     mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
@@ -680,7 +680,8 @@ static void module_init(module_data_t *mod)
 
     uint8_t first_key[8] = { 0 };
     const char *string_value = NULL;
-    const int biss_length = module_option_string("biss", &string_value);
+    int biss_length = 0;
+    module_option_string("biss", &string_value, &biss_length);
     if(string_value)
     {
         if(biss_length != 16)
@@ -716,7 +717,7 @@ static void module_init(module_data_t *mod)
     if(mod->__decrypt.cam)
     {
         const char *value = NULL;
-        module_option_string("cas_data", &value);
+        module_option_string("cas_data", &value, NULL);
         if(value)
             str_to_hex(value, mod->__decrypt.cas_data, sizeof(mod->__decrypt.cas_data));
 

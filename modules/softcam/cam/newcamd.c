@@ -712,21 +712,21 @@ static void newcamd_send_em(module_data_t *mod, module_decrypt_t *decrypt
 
 static void module_init(module_data_t *mod)
 {
-    module_option_string("name", &mod->name);
+    module_option_string("name", &mod->name, NULL);
     asc_assert(mod->name != NULL, "[newcamd] option 'name' is required");
 
-    module_option_string("host", &mod->host);
+    module_option_string("host", &mod->host, NULL);
     asc_assert(mod->host != NULL, MSG("option 'host' is required"));
     module_option_number("port", &mod->port);
     asc_assert(mod->port > 0 && mod->port < 65535, MSG("option 'port' is required"));
 
-    module_option_string("user", &mod->user);
+    module_option_string("user", &mod->user, NULL);
     asc_assert(mod->user != NULL, MSG("option 'user' is required"));
-    module_option_string("pass", &mod->pass);
+    module_option_string("pass", &mod->pass, NULL);
     asc_assert(mod->pass != NULL, MSG("option 'pass' is required"));
 
     const char *key = NULL;
-    module_option_string("key", &key);
+    module_option_string("key", &key, NULL);
     asc_assert(key != NULL, MSG("option 'key' is required"));
     str_to_hex(key, mod->key, sizeof(mod->key));
 

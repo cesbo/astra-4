@@ -676,7 +676,7 @@ static void on_check_stat(void *arg)
 
 static void module_init(module_data_t *mod)
 {
-    module_option_string("name", &mod->name);
+    module_option_string("name", &mod->name, NULL);
     asc_assert(mod->name != NULL, "[analyze] option 'name' is required");
 
     lua_getfield(lua, 2, __callback);

@@ -679,7 +679,7 @@ static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, NULL);
 
-    if(!module_option_string("host", &mod->host) || !mod->host)
+    if(!module_option_string("host", &mod->host, NULL) || !mod->host)
     {
         asc_log_error(MSG("option 'host' is required"));
         astra_abort();

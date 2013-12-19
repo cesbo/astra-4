@@ -50,7 +50,7 @@ struct module_data_t
 
     const char *filename;
     const char *lock;
-    int loop;
+    bool loop;
 
     int fd;
     int idx_callback;
@@ -524,10 +524,10 @@ static int method_position(module_data_t *mod)
 
 static void module_init(module_data_t *mod)
 {
-    module_option_string("filename", &mod->filename);
+    module_option_string("filename", &mod->filename, NULL);
 
-    int value;
-    if(module_option_number("check_length", &value) && value)
+    bool check_length;
+    if(module_option_boolean("check_length", &check_length) && check_length)
     {
         open_file(mod);
         if(mod->fd > 0)
@@ -535,9 +535,11 @@ static void module_init(module_data_t *mod)
         return;
     }
 
-    module_option_string("lock", &mod->lock);
-    module_option_number("loop", &mod->loop);
+    module_option_string("lock", &mod->lock, NULL);
+    module_option_boolean("loop", &mod->loop);
     module_option_number("pause", &mod->pause);
+
+    printf("loop:%s\n", mod->loop ? "YES" : "NO");
 
     // store callback in registry
     lua_getfield(lua, 2, "callback");

@@ -35,7 +35,7 @@ struct module_data_t
     MODULE_STREAM_DATA();
 
     int adapter;
-    int budget;
+    bool budget;
 
     int fd;
     asc_event_t *event;
@@ -113,7 +113,7 @@ static void module_init(module_data_t *mod)
         asc_log_error("[asi_input] option 'adapter' is required");
         astra_abort();
     }
-    module_option_number("budget", &mod->budget);
+    module_option_boolean("budget", &mod->budget);
 
     char dev_name[16];
     sprintf(dev_name, "/dev/asirx%d", mod->adapter);

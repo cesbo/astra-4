@@ -227,15 +227,15 @@ static int method_status(module_data_t *mod)
 
 static void module_init(module_data_t *mod)
 {
-    module_option_string("filename", &mod->filename);
+    module_option_string("filename", &mod->filename, NULL);
     if(!mod->filename)
     {
         asc_log_error("[file_output] option 'filename' is required");
         astra_abort();
     }
 
-    int m2ts = 0;
-    module_option_number("m2ts", &m2ts);
+    bool m2ts = 0;
+    module_option_boolean("m2ts", &m2ts);
     mod->packet_size = (m2ts) ? M2TS_PACKET_SIZE : TS_PACKET_SIZE;
 
 #ifdef O_DIRECT

@@ -704,7 +704,7 @@ static void module_init(module_data_t *mod)
     module_stream_init(mod, on_ts);
     module_stream_demux_set(mod, NULL, NULL);
 
-    module_option_string("name", &mod->config.name);
+    module_option_string("name", &mod->config.name, NULL);
     asc_assert(mod->config.name != NULL, "[channel] option 'name' is required");
 
     module_option_number("pnr", &mod->config.pnr);

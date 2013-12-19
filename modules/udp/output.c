@@ -49,7 +49,7 @@ struct module_data_t
     const char *addr;
     int port;
 
-    int is_rtp;
+    bool is_rtp;
     uint16_t rtpseq;
 
     asc_socket_t *sock;
@@ -321,13 +321,13 @@ static void thread_loop(void *arg)
 
 static void module_init(module_data_t *mod)
 {
-    module_option_string("addr", &mod->addr);
+    module_option_string("addr", &mod->addr, NULL);
     asc_assert(mod->addr != NULL, "[udp_output] option 'addr' is required");
 
     mod->port = 1234;
     module_option_number("port", &mod->port);
 
-    module_option_number("rtp", &mod->is_rtp);
+    module_option_boolean("rtp", &mod->is_rtp);
     if(mod->is_rtp)
     {
         const uint32_t rtpssrc = (uint32_t)rand();
@@ -353,7 +353,7 @@ static void module_init(module_data_t *mod)
         asc_socket_set_buffer(mod->sock, 0, value);
 
     const char *localaddr = NULL;
-    module_option_string("localaddr", &localaddr);
+    module_option_string("localaddr", &localaddr, NULL);
     if(localaddr)
         asc_socket_set_multicast_if(mod->sock, localaddr);
 
