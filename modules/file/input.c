@@ -348,6 +348,7 @@ static void thread_loop(void *arg)
 
 #define GET_TS_PTR(_ptr) ((mod->ts_size == TS_PACKET_SIZE) ? _ptr : &_ptr[4])
 
+        const uint32_t block_size = (block_end - mod->input.ptr) / mod->ts_size;
         // get PCR
         const uint64_t pcr = calc_pcr(GET_TS_PTR(block_end));
         const uint64_t delta_pcr = pcr - mod->pcr;
@@ -359,7 +360,8 @@ static void thread_loop(void *arg)
                                 + (double)(dpcr_ext / 27000.0));  // 27 MHz
         if(block_time < 0 || block_time > 250)
         {
-            asc_log_error(MSG("block time out of range: %.2f"), block_time);
+            asc_log_error(MSG("block time out of range: %.2f block_size:%u")
+                          , block_time, block_size);
             mod->input.ptr = block_end;
 
             time_sync_b = asc_utime();
@@ -370,8 +372,6 @@ static void thread_loop(void *arg)
         }
         block_time_total += block_time;
 
-        // mod->skip += (mod->buffer.block_end - mod->buffer.ptr);
-        const uint32_t block_size = (block_end - mod->input.ptr) / mod->ts_size;
         // calculate the sync time value
         if((block_time + total_sync_diff) > 0)
             ts_sync.tv_nsec = ((block_time + total_sync_diff) * 1000000) / block_size;
@@ -538,8 +538,6 @@ static void module_init(module_data_t *mod)
     module_option_string("lock", &mod->lock, NULL);
     module_option_boolean("loop", &mod->loop);
     module_option_number("pause", &mod->pause);
-
-    printf("loop:%s\n", mod->loop ? "YES" : "NO");
 
     // store callback in registry
     lua_getfield(lua, 2, "callback");
