@@ -902,7 +902,8 @@ static int method_port(module_data_t *mod)
 
 static void module_init(module_data_t *mod)
 {
-    if(!module_option_string("addr", &mod->addr, NULL))
+    int value_length = 0;
+    if(!module_option_string("addr", &mod->addr, &value_length) || !value_length)
         mod->addr = "0.0.0.0";
     if(!module_option_number("port", &mod->port))
         mod->port = 80;
