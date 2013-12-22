@@ -234,8 +234,8 @@ end
 
 function parse_options(options, result)
     function parse_key_val(option)
-        local x = option:find("=")
-        local key, val
+        local x, key, val
+        x = option:find("=")
         if x then
             key = option:sub(1, x - 1)
             val = option:sub(x + 1)
@@ -244,10 +244,26 @@ function parse_options(options, result)
             val = true
         end
 
+        x = key:find("%.")
+        if x then
+            local _key = key:sub(x + 1)
+            key = key:sub(1, x - 1)
+
+            local _val = {}
+            _val[_key] = val
+            val = _val
+        end
+
         if parse_option[key] then
             parse_option[key](val, result)
         else
-            result[key] = val
+            if type(result[key]) == 'table' and type(val) == 'table' then
+                for _key,_val in pairs(val) do
+                    result[key][_key] = _val
+                end
+            else
+                result[key] = val
+            end
         end
     end
 
@@ -658,7 +674,13 @@ function init_input(channel_data, input_id)
         if (input_conf.no_sdt or no_sdt) then channel_conf.sdt = nil end
         if (input_conf.no_eit or no_eit) then channel_conf.eit = nil end
         if input_conf.set_pnr then channel_conf.set_pnr = input_conf.set_pnr end
-        if channel_data.config.map then channel_conf.map = channel_data.config.map end
+        if input_conf.map then
+            channel_conf.map = input_conf.map
+        else
+            if channel_data.config.map then
+                channel_conf.map = channel_data.config.map
+            end
+        end
         if input_conf.filter then channel_conf.filter = input_conf.filter end
 
         input_data.channel = channel(channel_conf)

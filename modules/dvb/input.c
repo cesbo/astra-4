@@ -54,7 +54,7 @@ struct module_data_t
     uint32_t dvr_read;
 
     /* DMX config */
-    int dmx_budget;
+    bool dmx_budget;
 
     /* DMX Base */
     char dmx_dev_name[32];
