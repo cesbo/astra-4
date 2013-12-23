@@ -370,7 +370,7 @@ static void block_decypher_group(
 #define FASTTRASP1
 #ifndef FASTTRASP1
   for(g=0;g<count;g++){
-    // Init registers 
+    // Init registers
     int j;
     for(j=0;j<8;j++){
       r[roff+GROUP_PARALLELISM*j+g]=ib[8*g+j];
@@ -626,6 +626,13 @@ int decrypt_packets(void *keys, unsigned char **cluster){
           if(pkt[3]&0x20){ // incomplete packet
             offset=4+pkt[4]+1;
             len=188-offset;
+            if(len<=0){
+                // skip broken packet
+                DBG(fprintf(stderr,"skip broken pkt %p (can_advance is %i)\n",pkt,can_advance));
+                advanced+=can_advance;
+                stat_no_scramble++;
+                break;
+            }
             n=len>>3;
             residue=len-(n<<3);
             if(n==0){ // decrypted==encrypted!
@@ -672,7 +679,7 @@ int decrypt_packets(void *keys, unsigned char **cluster){
   for(clst=cluster;*clst!=NULL;clst+=2){
     // if not empty
     if(*clst<*(clst+1)){
-      // it will remain 
+      // it will remain
       *clst2=*clst;
       *(clst2+1)=*(clst+1);
       clst2+=2;
@@ -722,14 +729,14 @@ int decrypt_packets(void *keys, unsigned char **cluster){
       if(g_n[t23]!=23) break;
     }
 DBG(fprintf(stderr,"t23 after for =%i\n",t23));
-    
+
     for(;tsmall>=0;tsmall--){
       if(g_n[tsmall]==23) break;
     }
 DBG(fprintf(stderr,"tsmall after for =%i\n",tsmall));
-    
+
     if(tsmall-t23<1) break;
-    
+
 DBG(fprintf(stderr,"swap t23=%i,tsmall=%i\n",t23,tsmall));
 
     g_swap(t23,tsmall);
