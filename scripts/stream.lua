@@ -166,6 +166,13 @@ parse_option.filter = function(val, result)
     result.filter = split(val, ',')
 end
 
+parse_option.map = function(val, result)
+    if not result.map then result.map = {} end
+    for key, val in pairs(val) do
+        table.insert(result.map, ("%s=%s"):format(key, val))
+    end
+end
+
 --
 
 local ifaddrs
