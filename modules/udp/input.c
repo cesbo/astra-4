@@ -121,8 +121,10 @@ void on_read_check(void *arg)
         asc_log_error(MSG("wrong format"));
         on_close(mod);
     }
-
-    asc_socket_set_on_read(mod->sock, on_read);
+    else
+    {
+        asc_socket_set_on_read(mod->sock, on_read);
+    }
 }
 
 void timer_renew_callback(void *arg)
