@@ -2,7 +2,7 @@
  * This file is part of Astra. For more information, visit
  * https://cesbo.com
  *
- * Copyright (C) 2011, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2011-2014, Andrey Dyldin <and@cesbo.com>
  */
 
 #if defined(__i386__) || defined(__x86_64__)
@@ -21,8 +21,12 @@ typedef struct
 
 static cpu_arch_t intel_list[] =
 { /* from the begin to the end */
+    // Haswell
+    { "corei7-avx2", {6,60}, {6,42} }
+    // Ivy Bridge
+    , { "corei7-avx-i", {6,58}, {6,42} }
     // Sandy Bridge
-    { "corei7-avx", {6,42}, {6,15} }
+    , { "corei7-avx", {6,42}, {6,15} }
     // Core i7,i5,i3, Xeon 55xx
         , { NULL, {6,44}, {6,26} }, { NULL, {6,37}, {6,26} }, { NULL, {6,46}, {6,26} }
         , { NULL, {6,47}, {6,26} }, { NULL, {6,29}, {6,26} }, { NULL, {6,30}, {6,26} }
@@ -105,9 +109,6 @@ int main()
 //    unsigned int logical = (ir.ebx >> 24) & 0xff;
 //    printf("test:%d\n", logical);
 
-#if GCC_VERSION >= 40203
-    printf(" -march=native");
-#else
     int cpu_family = (ir.eax & 0x00000F00) >> 8;
     int cpu_model = (ir.eax & 0x000000F0) >> 4;
     if(vr.ebx == 0x756e6547
@@ -135,7 +136,6 @@ int main()
         if(march)
             printf(" -march=%s", march);
     }
-#endif
 
     if(ir.ecx & (0x00080000 /* 4.1 */ | 0x00100000 /* 4.2 */ ))
         printf(" -msse4");
