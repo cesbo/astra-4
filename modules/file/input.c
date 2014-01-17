@@ -223,6 +223,14 @@ static int open_file(module_data_t *mod)
 
 static void sync_queue_push(module_data_t *mod, const uint8_t *ts)
 {
+    if(!ts)
+    {
+        const uint8_t exit_cmd[] = { 0xFF };
+        if(send(mod->sync.fd[0], exit_cmd, sizeof(exit_cmd), 0) != sizeof(exit_cmd))
+            asc_log_error(MSG("failed to push exit signal to queue"));
+        return;
+    }
+
     if(mod->sync.buffer_count >= mod->sync.buffer_size)
     {
         ++mod->sync.buffer_overflow;
@@ -242,7 +250,7 @@ static void sync_queue_push(module_data_t *mod, const uint8_t *ts)
 
     __sync_fetch_and_add(&mod->sync.buffer_count, TS_PACKET_SIZE);
 
-    uint8_t cmd[1] = { 0 };
+    const uint8_t cmd[] = { 0 };
     if(send(mod->sync.fd[0], cmd, sizeof(cmd), 0) != sizeof(cmd))
         asc_log_error(MSG("failed to push signal to queue\n"));
 }
@@ -252,6 +260,16 @@ static void sync_queue_pop(module_data_t *mod, uint8_t *ts)
     uint8_t cmd[1];
     if(recv(mod->sync.fd[1], cmd, sizeof(cmd), 0) != sizeof(cmd))
         asc_log_error(MSG("failed to pop signal from queue\n"));
+
+    if(cmd[0] == 0xFF)
+    {
+        if(mod->idx_callback)
+        {
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+            lua_call(lua, 0, 0);
+        }
+        return;
+    }
 
     memcpy(ts, &mod->sync.buffer[mod->sync.buffer_read], TS_PACKET_SIZE);
     mod->sync.buffer_read += TS_PACKET_SIZE;
@@ -275,20 +293,20 @@ static void thread_loop(void *arg)
 
     uint64_t time_sync_b, time_sync_e, time_sync_bb, time_sync_be;
 
-    time_sync_b = asc_utime();
-    double block_time_total = 0.0;
-    double total_sync_diff = 0.0;
-
     struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
 
     if(!open_file(mod))
     {
-        asc_thread_while(mod->sync.thread)
-        {
-            nanosleep(&ts_pause, NULL);
-        }
+        // asc_thread_while(mod->sync.thread)
+        // {
+        //     nanosleep(&ts_pause, NULL);
+        // }
         return;
     }
+
+    time_sync_b = asc_utime();
+    double block_time_total = 0.0;
+    double total_sync_diff = 0.0;
 
     asc_thread_while(mod->sync.thread)
     {
@@ -332,11 +350,7 @@ static void thread_loop(void *arg)
             {
                 if(!mod->loop)
                 {
-                    if(mod->idx_callback)
-                    {
-                        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
-                        lua_call(lua, 0, 0);
-                    }
+                    sync_queue_push(mod, NULL);
                     break;
                 }
 
