@@ -297,10 +297,7 @@ static void thread_loop(void *arg)
 
     if(!open_file(mod))
     {
-        // asc_thread_while(mod->sync.thread)
-        // {
-        //     nanosleep(&ts_pause, NULL);
-        // }
+        sync_queue_push(mod, NULL);
         return;
     }
 
