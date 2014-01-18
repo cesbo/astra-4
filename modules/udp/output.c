@@ -180,23 +180,12 @@ static int seek_pcr(module_data_t *mod, uint32_t *block_size)
     return 0;
 }
 
-static double timeval_diff(struct timeval *start, struct timeval *end)
-{
-    const int64_t s_us = start->tv_sec * 1000000 + start->tv_usec;
-    const int64_t e_us = end->tv_sec * 1000000 + end->tv_usec;
-    return (double)(e_us - s_us) / 1000.0; // ms
-}
-
 static void thread_loop(void *arg)
 {
     module_data_t *mod = arg;
 
     // block sync
-    struct timeval time_sync[4];
-    struct timeval *time_sync_b = &time_sync[0]; // begin
-    struct timeval *time_sync_e = &time_sync[1]; // end
-    struct timeval *time_sync_bb = &time_sync[2];
-    struct timeval *time_sync_be = &time_sync[3];
+    uint64_t time_sync_b, time_sync_e, time_sync_bb, time_sync_be;
 
     double block_time_total, total_sync_diff;
     uint32_t pos;
@@ -229,8 +218,8 @@ static void thread_loop(void *arg)
         mod->pcr = calc_pcr(&mod->sync.buffer[pos]);
         mod->sync.buffer_read = pos;
 
-        gettimeofday(time_sync_b, NULL);
-        block_time_total = 0;
+        time_sync_b = asc_utime();
+        block_time_total = 0.0;
         total_sync_diff = 0.0;
 
         while(1)
@@ -253,12 +242,13 @@ static void thread_loop(void *arg)
             const uint64_t dpcr_ext = delta_pcr % 300;
             const double block_time = ((double)(dpcr_base / 90.0)     // 90 kHz
                                     + (double)(dpcr_ext / 27000.0));  // 27 MHz
-            if(block_time < 0 || block_time > 200)
+            if(block_time < 0 || block_time > 250)
             {
-                asc_log_error(MSG("block time out of range: %.2f"), block_time);
+                asc_log_error(MSG("block time out of range: %.2f block_size:%u")
+                              , block_time, block_size / TS_PACKET_SIZE);
                 mod->sync.buffer_read = pos;
 
-                gettimeofday(time_sync_b, NULL);
+                time_sync_b = asc_utime();
                 block_time_total = 0.0;
                 total_sync_diff = 0.0;
                 continue;
@@ -272,13 +262,10 @@ static void thread_loop(void *arg)
             else
                 ts_sync.tv_nsec = 0;
             // store the sync time value for later usage
-            const long ts_sync_nsec = ts_sync.tv_nsec;
-#if 0
-            if(ts_sync_nsec > 1000000)
-                printf("ts_sync_nsec: %ld\n", ts_sync_nsec);
-#endif
-            long calc_block_time_ns = 0;
-            gettimeofday(time_sync_bb, NULL);
+            const uint64_t ts_sync_nsec = ts_sync.tv_nsec;
+
+            uint64_t calc_block_time_ns = 0;
+            time_sync_bb = asc_utime();
 
             while(block_size > 0)
             {
@@ -289,28 +276,33 @@ static void thread_loop(void *arg)
 
                 // block syncing
                 calc_block_time_ns += ts_sync_nsec;
-                gettimeofday(time_sync_be, NULL);
-                const long real_block_time_ns
-                    = ((time_sync_be->tv_sec * 1000000 + time_sync_be->tv_usec)
-                       - (time_sync_bb->tv_sec * 1000000 + time_sync_bb->tv_usec))
-                    * 1000;
+                time_sync_be = asc_utime();
 
+                const uint64_t real_block_time_ns = (time_sync_be - time_sync_bb) * 1000;
                 ts_sync.tv_nsec = (real_block_time_ns > calc_block_time_ns) ? 0 : ts_sync_nsec;
             }
 
             // stream syncing
-            gettimeofday(time_sync_e, NULL);
-            total_sync_diff = block_time_total - timeval_diff(time_sync_b, time_sync_e);
-#if 0
-            printf("syncing value: %.2f\n", total_sync_diff);
-#endif
+            time_sync_e = asc_utime();
+            if(time_sync_e < time_sync_b)
+            {
+                // timetravel
+                asc_log_warning(MSG("timetravel detected"));
+                total_sync_diff = -1000000.0;
+            }
+            else
+            {
+                const double time_sync_diff = (time_sync_e - time_sync_b) / 1000.0;
+                total_sync_diff = block_time_total - time_sync_diff;
+            }
+
             // reset buffer on changing the system time
             if(total_sync_diff < -100.0 || total_sync_diff > 100.0)
             {
                 asc_log_warning(MSG("wrong syncing time: %.2fms. reset time values")
                                 , total_sync_diff);
 
-                gettimeofday(time_sync_b, NULL);
+                time_sync_b = asc_utime();
                 block_time_total = 0.0;
                 total_sync_diff = 0.0;
             }
@@ -370,7 +362,8 @@ static void module_init(module_data_t *mod)
         module_stream_init(mod, sync_queue_push);
 
         // is a 1/5 of the storage for the one second of the stream
-        value = ((value * 200000 / 8) / TS_PACKET_SIZE) * TS_PACKET_SIZE;
+        value = (value * 1000 * 1000) / 8;
+        value = (value / TS_PACKET_SIZE) * TS_PACKET_SIZE;
 
         mod->sync.buffer = malloc(value);
         mod->sync.buffer_size = value;
