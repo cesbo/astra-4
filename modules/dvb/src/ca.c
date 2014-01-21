@@ -1526,6 +1526,9 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 {
     dvb_ca_t *ca = arg;
 
+    if(psi->buffer[0] != 0x02)
+        return;
+
     const uint32_t crc32 = PSI_GET_CRC32(psi);
 
     // check crc

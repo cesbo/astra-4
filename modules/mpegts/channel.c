@@ -312,6 +312,9 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 {
     module_data_t *mod = arg;
 
+    if(psi->buffer[0] != 0x02)
+        return;
+
     // check pnr
     const uint16_t pnr = PMT_GET_PNR(psi);
     if(pnr != mod->config.pnr)
