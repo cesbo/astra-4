@@ -68,6 +68,8 @@ struct module_data_t
         uint32_t buffer_read;
         uint32_t buffer_write;
         uint32_t buffer_overflow;
+
+        bool reload;
     } sync;
     uint64_t pcr;
 #endif
@@ -110,16 +112,26 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 
 static void sync_queue_push(module_data_t *mod, const uint8_t *ts)
 {
-    if(mod->sync.buffer_count >= mod->sync.buffer_size)
+    if(mod->sync.reload)
     {
-        ++mod->sync.buffer_overflow;
-        return;
+        mod->sync.buffer_count = 0;
+        mod->sync.buffer_write = 0;
+        mod->sync.reload = false;
     }
 
-    if(mod->sync.buffer_overflow)
+    if(mod->sync.buffer_overflow || mod->sync.buffer_count >= mod->sync.buffer_size)
     {
-        asc_log_error(MSG("sync buffer overflow. dropped %d packets"), mod->sync.buffer_overflow);
-        mod->sync.buffer_overflow = 0;
+        if(mod->sync.buffer_count > (mod->sync.buffer_size / 2))
+        {
+            ++mod->sync.buffer_overflow;
+            return;
+        }
+        else
+        {
+            asc_log_error(MSG("sync buffer overflow. dropped %d packets")
+                          , mod->sync.buffer_overflow);
+            mod->sync.buffer_overflow = 0;
+        }
     }
 
     memcpy(&mod->sync.buffer[mod->sync.buffer_write], ts, TS_PACKET_SIZE);
@@ -199,7 +211,9 @@ static void thread_loop(void *arg)
         asc_log_info(MSG("buffering..."));
 
         // flush
+        mod->sync.reload = true;
         mod->sync.buffer_count = 0;
+        mod->sync.buffer_read = 0;
 
         while(mod->sync.buffer_count < (mod->sync.buffer_size / 2))
         {
