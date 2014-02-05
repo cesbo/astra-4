@@ -204,6 +204,7 @@ struct module_cas_t
 struct module_decrypt_t
 {
     uint16_t pnr;
+    bool is_cas_data;
     uint8_t cas_data[32];
 
     module_cam_t *cam;

@@ -722,7 +722,10 @@ static void module_init(module_data_t *mod)
         const char *value = NULL;
         module_option_string("cas_data", &value, NULL);
         if(value)
+        {
+            mod->__decrypt.is_cas_data = true;
             str_to_hex(value, mod->__decrypt.cas_data, sizeof(mod->__decrypt.cas_data));
+        }
 
         module_cam_attach_decrypt(mod->__decrypt.cam, &mod->__decrypt);
     }

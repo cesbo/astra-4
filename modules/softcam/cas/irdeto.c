@@ -40,6 +40,7 @@ struct module_data_t
         } ecm_id[ECM_MAX_ID];
     } test;
 
+    bool is_chid;
     uint16_t chid; // selected channel id
 
     uint8_t *ua;
@@ -60,7 +61,7 @@ static int irdeto_check_ecm(module_data_t *mod, const uint8_t *payload)
         return 0;
 
     const uint16_t chid = irdeto_ecm_chid(payload);
-    if(mod->chid != 0xFFFF)
+    if(mod->is_chid)
     {
         if(mod->chid != chid)
             return 0;
@@ -125,13 +126,14 @@ static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
 {
     if(!keys[2])
     {
-        if(mod->chid == 0xFFFF)
+        if(!mod->is_chid)
             mod->test.is_checking = 0;
         return false;
     }
 
-    if(mod->chid == 0xFFFF)
+    if(!mod->is_chid)
     {
+        mod->is_chid = true;
         /* cas->test_count always greater than 0,
            because increased in irdeto_check_ecm */
         mod->chid = mod->test.ecm_id[mod->test.current_id].chid;
@@ -158,14 +160,16 @@ static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
 
     if(!mod->sa)
     {
-        mod->chid = 0xFFFF;
         asc_list_first(mod->__cas.decrypt->cam->prov_list);
         mod->sa = asc_list_data(mod->__cas.decrypt->cam->prov_list);
         mod->sa = &mod->sa[3];
         mod->ua = mod->__cas.decrypt->cam->ua;
 
-        if(mod->__cas.decrypt->cas_data[1])
+        if(mod->__cas.decrypt->is_cas_data)
+        {
+            mod->is_chid = true;
             mod->chid = (mod->__cas.decrypt->cas_data[0] << 8) | mod->__cas.decrypt->cas_data[1];
+        }
     }
 
     return true;
