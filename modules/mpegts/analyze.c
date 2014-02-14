@@ -63,6 +63,8 @@ struct module_data_t
 
     const char *name;
     int rate_stat;
+    int cc_limit;
+    bool cc_check; // to skip initial cc errors
 
     uint16_t tsid;
 
@@ -611,6 +613,7 @@ static void on_check_stat(void *arg)
 
     bool on_air = true;
 
+    int cc_total = 0;
     uint32_t bitrate = 0;
 
     lua_newtable(lua);
@@ -620,6 +623,9 @@ static void on_check_stat(void *arg)
 
         if(item->type == MPEGTS_PACKET_UNKNOWN && item->packets == 0)
             continue;
+
+        if(!mod->cc_check)
+            item->cc_error = 0;
 
         lua_pushnumber(lua, items_count++);
         lua_newtable(lua);
@@ -640,6 +646,9 @@ static void on_check_stat(void *arg)
         lua_pushnumber(lua, item->pes_error);
         lua_setfield(lua, -2, "pes_error");
 
+        if(item->cc_error > 0)
+            cc_total += item->cc_error;
+
         if(item->type == MPEGTS_PACKET_VIDEO || item->type == MPEGTS_PACKET_AUDIO)
         {
             if(item->sc_error)
@@ -659,6 +668,10 @@ static void on_check_stat(void *arg)
 
     if(bitrate < 32)
         on_air = false;
+    if(mod->cc_limit > 0 && cc_total >= mod->cc_limit)
+        on_air = false;
+    if(!mod->cc_check)
+        mod->cc_check = true;
 
     lua_pushboolean(lua, on_air);
     lua_setfield(lua, -2, "on_air");
@@ -687,6 +700,7 @@ static void module_init(module_data_t *mod)
     lua_pop(lua, 1);
 
     module_option_number("rate_stat", &mod->rate_stat);
+    module_option_number("cc_limit", &mod->cc_limit);
 
     module_stream_init(mod, on_ts);
 

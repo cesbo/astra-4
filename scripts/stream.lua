@@ -361,23 +361,29 @@ end
 
 function log_analyze_error(channel_data, input_id, analyze_data)
     local bitrate = 0
-    local sc_errors = 0
+    local cc_errors = 0
     local pes_errors = 0
+    local scrambled = false
 
     for _,item in pairs(analyze_data.analyze) do
         bitrate = bitrate + item.bitrate
-        sc_errors = sc_errors + item.sc_error
+        cc_errors = cc_errors + item.cc_error
         pes_errors = pes_errors + item.pes_error
+        if item.sc_error > 0 then scrambled = true end
     end
 
     local analyze_message = "[" .. channel_data.config.name .. " #" .. input_id .. "] " .. "Bitrate:" .. bitrate .. "Kbit/s"
 
-    if sc_errors > 0 then
-        analyze_message = analyze_message .. " Scrambled"
+    if cc_errors > 0 then
+        analyze_message = analyze_message .. " CC-Error:" .. cc_errors
     end
 
     if pes_errors > 0 then
         analyze_message = analyze_message .. " PES-Error"
+    end
+
+    if scrambled then
+        analyze_message = analyze_message .. " Scrambled"
     end
 
     log.error(analyze_message)
@@ -722,9 +728,18 @@ function init_input(channel_data, input_id)
     end
 
     if input_conf.no_analyze ~= true then
+        local cc_limit = nil
+        if input_conf.cc_limit then
+            cc_limit = input_conf.cc_limit
+        else
+            if channel_data.config.cc_limit then
+                cc_limit = channel_data.config.cc_limit
+            end
+        end
         input_data.analyze = analyze({
             upstream = input_data.tail:stream(),
             name = channel_data.config.name,
+            cc_limit = cc_limit,
             callback = function(data)
                     on_analyze(channel_data, input_id, data)
 
