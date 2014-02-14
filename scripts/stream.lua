@@ -667,6 +667,9 @@ function init_input(channel_data, input_id)
     end
 
     local input_data = { }
+    channel_data.input[input_id] = input_data
+
+    input_data.config = input_conf
     input_data.source = init_input_type(input_conf)
     input_data.tail = input_data.source.tail
 
@@ -755,8 +758,6 @@ function init_input(channel_data, input_id)
                 end
         })
     end
-
-    channel_data.input[input_id] = input_data
 end
 
 function kill_input(channel_data, input_id)
@@ -823,21 +824,31 @@ end
 local http_instance_list = {}
 local http_server_header = "Server: Astra"
 
-function http_server_send_404(server, client)
+function send_error(server, client, code)
+    local error_message_list =
+    {
+        [404] = "Not Found",
+        [405] = "Method Not Allowed",
+        [500] = "Internal Server Error",
+    }
+
+    if not error_message_list[code] then code = 500 end
+    local error_message = error_message_list[code]
+
     local content = "<html>" ..
-                    "<center><h1>Not Found</h1></center>" ..
+                    "<center><h1>" .. code .. " " .. error_message .. "</h1></center>" ..
                     "<hr />" ..
                     "<small>Astra</small>" ..
                     "</html>"
 
     server:send(client, {
-        code = 404,
-        message = "Not Found",
+        code = code,
+        message = error_message,
         headers = {
             http_server_header,
             "Content-Type: text/html; charset=utf-8",
             "Content-Length: " .. #content,
-            "Connection: close",
+            "Connection: close"
         },
         content = content
     })
@@ -882,7 +893,7 @@ output_list.http = function(output_conf)
                     if http_upstream then
                         http_server_send_200(self, client, http_upstream)
                     else
-                        http_server_send_404(self, client)
+                        send_error(self, client, 404)
                     end
                 end
             end
