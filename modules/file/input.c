@@ -537,6 +537,11 @@ static void module_init(module_data_t *mod)
 {
     module_option_string("filename", &mod->filename, NULL);
 
+    int buffer_size = 0;
+    if(!module_option_number("buffer_size", &buffer_size) || buffer_size <= 0)
+        buffer_size = INPUT_BUFFER_SIZE;
+    mod->input.size = buffer_size * 1024 * 1024;
+
     bool check_length;
     if(module_option_boolean("check_length", &check_length) && check_length)
     {
@@ -579,11 +584,6 @@ static void module_init(module_data_t *mod)
     asc_event_set_on_read(mod->sync.event, on_thread_read);
     mod->sync.buffer = malloc(SYNC_BUFFER_SIZE);
     mod->sync.buffer_size = SYNC_BUFFER_SIZE;
-
-    int buffer_size = 0;
-    if(!module_option_number("buffer_size", &buffer_size) || buffer_size <= 0)
-        buffer_size = INPUT_BUFFER_SIZE;
-    mod->input.size = buffer_size * 1024 * 1024;
 
     mod->input.buffer = malloc(mod->input.size);
     mod->input.end = mod->input.buffer + mod->input.size;
