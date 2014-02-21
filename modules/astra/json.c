@@ -19,6 +19,7 @@
  */
 
 #include <astra.h>
+#include <fcntl.h>
 
 /*
  * ooooooooooo oooo   oooo  oooooooo8   ooooooo  ooooooooo  ooooooooooo
@@ -555,12 +556,89 @@ static int json_decode(lua_State *L)
     return 1;
 }
 
+static int json_load(lua_State *L)
+{
+    luaL_checktype(L, -1, LUA_TSTRING);
+    const char *filename = lua_tostring(L, -1);
+    int fd = open(filename, O_RDONLY);
+    if(fd <= 0)
+    {
+        asc_log_error("[json] json.load(%s) failed to open [%s]", filename, strerror(errno));
+        lua_pushnil(L);
+        return 1;
+    }
+    struct stat sb;
+    fstat(fd, &sb);
+    char *json = malloc(sb.st_size);
+    const int r = read(fd, json, sb.st_size);
+    if(r != sb.st_size)
+    {
+        asc_log_error("[json] json.load(%s) failed to read [%s]", filename, strerror(errno));
+        lua_pushnil(L);
+    }
+    else
+    {
+        const int top = lua_gettop(L);
+        scan_json(L, json, 0);
+        if(top == lua_gettop(L))
+            lua_pushnil(L);
+    }
+
+    close(fd);
+    free(json);
+
+    return 1;
+}
+
+static int json_save(lua_State *L)
+{
+    luaL_checktype(L, -2, LUA_TSTRING);
+    luaL_checktype(L, -1, LUA_TTABLE);
+
+    const char *filename = lua_tostring(L, -2);
+    int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC
+#ifndef _WIN32
+                  , S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+#else
+                  , S_IRUSR | S_IWUSR);
+#endif
+    if(fd <= 0)
+    {
+        asc_log_error("[json] json.save(%s) failed to open [%s]", filename, strerror(errno));
+        return 0;
+    }
+
+    string_buffer_t *buffer = malloc(sizeof(string_buffer_t));
+    buffer->size = 0;
+    buffer->last = buffer;
+    buffer->next = NULL;
+
+    walk_table(L, buffer);
+
+    string_buffer_t *next_next;
+    for(string_buffer_t *next = buffer
+        ; next && (next_next = next->next, 1)
+        ; next = next_next)
+    {
+        const int w = write(fd, next->buffer, next->size);
+        if(w != next->size)
+            asc_log_error("[json] json.save(%s) failed to write [%s]", filename, strerror(errno));
+        free(next);
+    }
+
+    close(fd);
+
+    return 0;
+}
+
 LUA_API int luaopen_json(lua_State *L)
 {
     static const luaL_Reg api[] =
     {
         { "encode", json_encode },
         { "decode", json_decode },
+        { "load", json_load },
+        { "save", json_save },
         { NULL, NULL }
     };
 
