@@ -6,7 +6,7 @@ usage()
 Usage: $0 [OPTIONS]
     --help
     --with-modules=PATH[:PATH]  - list of modules (by default: *)
-                                  * - include all defaults modules
+                                  * - include all modules from ./modules dir.
                                   For example, to append custom module, use:
                                   --with-modules=*:path/to/custom/module
 
@@ -28,8 +28,6 @@ SRCDIR=`dirname $0`
 
 MAKEFILE=$SRCDIR/Makefile
 CONFFILE=$SRCDIR/config.h
-
-DEFAULT_MODULES="astra dvb file http mpegts softcam udp"
 
 APP="astra"
 APP_C="gcc"
@@ -154,7 +152,7 @@ EOF
 cpucheck()
 {
     CPUCHECK="$SRCDIR/$RANDOM.cpucheck"
-    cpucheck_c | $APP_C -Werror $APP_CFLAGS -o $CPUCHECK -x c - >/dev/null 2>&1
+    cpucheck_c | $APP_C -Werror $CFLAGS -o $CPUCHECK -x c - >/dev/null 2>&1
     if [ $? -eq 0 ] ; then
         $CPUCHECK
         rm $CPUCHECK
@@ -352,9 +350,9 @@ select_modules()
         if [ -z "$M" ] ; then
             :
         elif [ "$M" = "*" ] ; then
-            for M in $DEFAULT_MODULES ; do
-                if [ -f "$SRCDIR/modules/$M/module.mk" ] ; then
-                    echo "$SRCDIR/modules/$M"
+            ls -d $SRCDIR/modules/* | while read M ; do
+                if [ -f "$M/module.mk" ] ; then
+                    echo "$M"
                 fi
             done
         else
