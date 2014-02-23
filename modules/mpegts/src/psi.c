@@ -72,6 +72,16 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts
                     return;
                 }
                 memcpy(&psi->buffer[psi->buffer_skip], payload, ptr_field);
+                if(psi->buffer_size == 0)
+                { // incomplete PSI header
+                    const size_t psi_buffer_size = PSI_SIZE(psi->buffer);
+                    if(psi_buffer_size <= 3 || psi_buffer_size > PSI_MAX_SIZE)
+                    {
+                        psi->buffer_skip = 0;
+                        return;
+                    }
+                    psi->buffer_size = psi_buffer_size;
+                }
                 if(psi->buffer_size != psi->buffer_skip + ptr_field)
                 { // checking PSI length
                     psi->buffer_skip = 0;
@@ -81,9 +91,17 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts
             }
             payload += ptr_field;
         }
-        while(payload[0] != 0xff)
+        while((TS_PACKET_SIZE > (payload - ts)) && (payload[0] != 0xff))
         {
             psi->buffer_size = 0;
+
+            const uint8_t remain = (ts + TS_PACKET_SIZE) - payload;
+            if(remain < 3)
+            {
+                memcpy(psi->buffer, payload, remain);
+                psi->buffer_skip = remain;
+                break;
+            }
 
             const size_t psi_buffer_size = PSI_SIZE(payload);
             if(psi_buffer_size <= 3 || psi_buffer_size > PSI_MAX_SIZE)
@@ -116,6 +134,17 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts
         { // discontinuity error
             psi->buffer_skip = 0;
             return;
+        }
+        if(psi->buffer_size == 0)
+        { // incomplete PSI header
+            memcpy(&psi->buffer[psi->buffer_skip], payload, 3 - psi->buffer_skip);
+            const size_t psi_buffer_size = PSI_SIZE(psi->buffer);
+            if(psi_buffer_size <= 3 || psi_buffer_size > PSI_MAX_SIZE)
+            {
+                psi->buffer_skip = 0;
+                return;
+            }
+            psi->buffer_size = psi_buffer_size;
         }
         const size_t remain = psi->buffer_size - psi->buffer_skip;
         if(remain <= TS_BODY_SIZE)

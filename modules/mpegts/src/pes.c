@@ -22,6 +22,8 @@
 #include <string.h>
 #include "../mpegts.h"
 
+#include <core/log.h>
+
 mpegts_pes_t * mpegts_pes_init(mpegts_packet_type_t type, uint16_t pid)
 {
     mpegts_pes_t *pes = malloc(sizeof(mpegts_pes_t));
@@ -57,6 +59,14 @@ void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts
 
         // TODO: PES length is 0
         const size_t pes_buffer_size = PES_SIZE(payload);
+
+        const uint8_t remain = (ts + TS_PACKET_SIZE) - payload;
+        if(remain < 6)
+        {
+            asc_log_error("BUG? %s:%d\n", __FILE__, __LINE__);
+            abort();
+        }
+
         if(pes_buffer_size <= 6 || pes_buffer_size > PES_MAX_SIZE)
             return;
 
