@@ -12,6 +12,7 @@ Usage: $0 [OPTIONS]
 
     --cc=GCC                    - custom C compiler (cross-compile)
     --build-static              - build static binary
+    --arch=ARCH                 - CPU architecture type. (by default: native)
 
     --module-pack=PATH          - build module package
 
@@ -38,6 +39,7 @@ ARG_CC=0
 ARG_MODULES="*"
 ARG_INLINE_SCRIPT=""
 ARG_BUILD_STATIC=0
+ARG_ARCH="native"
 ARG_CFLAGS=""
 ARG_LDFLAGS=""
 ARG_MODULE_PACK=""
@@ -69,6 +71,9 @@ while [ $# -ne 0 ] ; do
             ;;
         "--build-static")
             ARG_BUILD_STATIC=1
+            ;;
+        "--arch="*)
+            ARG_ARCH=`echo $OPT | sed -e 's/^[a-z-]*=//'`
             ;;
         "CFLAGS="*)
             ARG_CFLAGS=`echo $OPT | sed -e 's/^[A-Z]*=//'`
@@ -120,20 +125,57 @@ fi
 CFLAGS="$CFLAGS_DEBUG -I. -Wall -Wextra -pedantic \
 -fno-builtin -funit-at-a-time -ffast-math"
 
-if [ $ARG_CC -eq 0 -a -z "$ARG_MODULE_PACK" ]; then
-   CHECKCPU_APP="$SRCDIR/cpucheck"
-   $APP_C -o $CHECKCPU_APP $SRCDIR/cpucheck.c
-   if [ $? -eq 0 ] ; then
-       CPUFLAGS=`$CHECKCPU_APP`
-       rm $CHECKCPU_APP
+cpucheck_c()
+{
+    cat <<EOF
+#include <stdio.h>
+int main()
+{
+#if defined(__i386__) || defined(__x86_64__)
+    unsigned int eax, ebx, ecx, edx;
+    __asm__ __volatile__ (  "cpuid"
+                          : "=a" (eax)
+                          , "=b" (ebx)
+                          , "=c" (ecx)
+                          , "=d" (edx)
+                          : "a"  (1));
 
-       $APP_C $CPUFLAGS -E -x c /dev/null >/dev/null 2>&1
-       if [ $? -eq 0 ] ; then
-           CFLAGS="$CFLAGS $CPUFLAGS"
-       fi
-   else
-       echo "Warning: failed to check CPU flags"
-   fi
+    if(ecx & (0x00080000 /* 4.1 */ | 0x00100000 /* 4.2 */ )) printf("-msse4");
+    else if(ecx & 0x00000001) printf("-msse3");
+    else if(edx & 0x04000000) printf("-msse2");
+    else if(edx & 0x02000000) printf("-msse");
+    else if(edx & 0x00800000) printf("-mmmx");
+#endif
+    return 0;
+}
+EOF
+}
+
+cpucheck()
+{
+    CPUCHECK="$SRCDIR/$RANDOM.cpucheck"
+    cpucheck_c | $APP_C -Werror $APP_CFLAGS -o $CPUCHECK -x c - >/dev/null 2>&1
+    if [ $? -eq 0 ] ; then
+        $CPUCHECK
+        rm $CPUCHECK
+    fi
+}
+
+if [ $ARG_CC -eq 0 -a -z "$ARG_MODULE_PACK" ]; then
+    CPUFLAGS=`cpucheck`
+    if [ -n "$CPUFLAGS" ] ; then
+        $APP_C $CFLAGS $CPUFLAGS -E -x c /dev/null >/dev/null 2>&1
+        if [ $? -eq 0 ] ; then
+            CFLAGS="$CFLAGS $CPUFLAGS"
+        fi
+    fi
+fi
+
+$APP_C $CFLAGS -march=$ARG_ARCH -E -x c /dev/null >/dev/null 2>&1
+if [ $? -eq 0 ] ; then
+    CFLAGS="$CFLAGS -march=$ARG_ARCH"
+else
+    echo "Error: gcc does not support -march=$ARG_ARCH" >&2
 fi
 
 CCSYSTEM=`$APP_C -dumpmachine`
