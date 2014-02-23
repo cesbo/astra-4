@@ -171,7 +171,10 @@ static int open_file(module_data_t *mod)
     const ssize_t len = pread(mod->fd, mod->input.buffer, mod->input.size, mod->input.skip);
     if((ssize_t)mod->input.size != len)
     {
-        asc_log_warning(MSG("file is too small"));
+        asc_log_warning(MSG("file size must be greater than buffer_size"));
+        close(mod->fd);
+        mod->fd = 0;
+        return 0;
     }
     else if(mod->input.buffer[0] == 0x47 && mod->input.buffer[TS_PACKET_SIZE] == 0x47)
     {
