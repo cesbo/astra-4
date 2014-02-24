@@ -75,42 +75,12 @@ static void signal_handler(int signum)
     astra_exit();
 }
 
-#ifdef INLINE_SCRIPT
-extern int exec_script(int argc, const char **argv);
-#else
-static int exec_script(int argc, const char **argv)
-{
-    __uarg(argc);
-    if(argv[1][0] == '-' && argv[1][1] == '\0')
-        return luaL_dofile(lua, NULL);
-    else if(!access(argv[1], R_OK))
-        return luaL_dofile(lua, argv[1]);
-    else
-    {
-        printf("Error: initial script isn't found [%s]\n", strerror(errno));
-        return -1;
-    }
-}
-#endif
-
 int main(int argc, const char **argv)
 {
-    int argv_skip;
-
-astra_reload_entry:
-
-#ifdef INLINE_SCRIPT
-    argv_skip = 1;
-#else
-    argv_skip = 2;
-#endif
-
-    if(argc < argv_skip)
+    if(argc == 2 && !strcmp(argv[1], "-v"))
     {
-        printf("Astra " ASTRA_VERSION_STR "\n"
-               "Usage: %s script [argv]\n"
-               , argv[0]);
-        return 1;
+        printf("Astra " ASTRA_VERSION_STR "\n");
+        return 0;
     }
 
     signal(SIGINT, signal_handler);
@@ -120,6 +90,8 @@ astra_reload_entry:
     signal(SIGHUP, signal_handler);
     signal(SIGQUIT, signal_handler);
 #endif
+
+astra_reload_entry:
 
     srand((uint32_t)time(NULL));
     asc_timer_core_init();
@@ -135,8 +107,13 @@ astra_reload_entry:
 
     /* change package.path */
     lua_getglobal(lua, "package");
-    lua_pushfstring(lua, "./?.lua;/etc/astra/scripts-%d.%d/?.lua"
+#ifndef _WIN32
+    lua_pushfstring(lua, "./?.lua;/etc/astra/scripts-%d.%d/?.lua;/usr/lib/astra/%d.%d/?.lua"
+                    , ASTRA_VERSION_MAJOR, ASTRA_VERSION_MINOR
                     , ASTRA_VERSION_MAJOR, ASTRA_VERSION_MINOR);
+#else
+    lua_pushstring(lua, ".\\?.lua");
+#endif
     lua_setfield(lua, -2, "path");
     lua_pushstring(lua, "");
     lua_setfield(lua, -2, "cpath");
@@ -144,10 +121,10 @@ astra_reload_entry:
 
     /* argv table */
     lua_newtable(lua);
-    for(int i = 1; argv_skip < argc; ++argv_skip, ++i)
+    for(int i = 1; i < argc; ++i)
     {
         lua_pushinteger(lua, i);
-        lua_pushstring(lua, argv[argv_skip]);
+        lua_pushstring(lua, argv[i]);
         lua_settable(lua, -3);
     }
     lua_setglobal(lua, "argv");
@@ -155,8 +132,28 @@ astra_reload_entry:
     /* start */
     if(!setjmp(main_loop))
     {
-        if(exec_script(argc, argv) != 0)
-            luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
+        lua_getglobal(lua, "inscript");
+        if(lua_isfunction(lua, -1))
+        {
+            lua_call(lua, 0, 0);
+            lua_pop(lua, 1);
+        }
+        else
+        {
+            lua_pop(lua, 1);
+
+            int ret = -1;
+
+            if(argv[1][0] == '-' && argv[1][1] == '\0')
+                ret = luaL_dofile(lua, NULL);
+            else if(!access(argv[1], R_OK))
+                ret = luaL_dofile(lua, argv[1]);
+            else
+                printf("Error: initial script isn't found [%s]\n", strerror(errno));
+
+            if(ret != 0)
+                luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
+        }
 
         while(true)
         {

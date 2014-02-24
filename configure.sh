@@ -35,7 +35,6 @@ APP_STRIP="strip"
 
 ARG_CC=0
 ARG_MODULES="*"
-ARG_INLINE_SCRIPT=""
 ARG_BUILD_STATIC=0
 ARG_ARCH="native"
 ARG_CFLAGS=""
@@ -60,9 +59,6 @@ while [ $# -ne 0 ] ; do
             ;;
         "--with-modules="*)
             ARG_MODULES=`echo $OPT | sed -e 's/^[a-z-]*=//'`
-            ;;
-        "--inline-script="*)
-            ARG_INLINE_SCRIPT=`echo $OPT | sed -e 's/^[a-z-]*=//'`
             ;;
         "--cc="*)
             set_cc `echo $OPT | sed 's/^--cc=//'`
@@ -212,10 +208,6 @@ if [ -n "$ARG_CFLAGS" ] ; then
     CFLAGS="$CFLAGS $ARG_CFLAGS"
 fi
 
-if [ -n "$ARG_INLINE_SCRIPT" ] ; then
-    CFLAGS="$CFLAGS -DINLINE_SCRIPT=1"
-fi
-
 if [ $ARG_BUILD_STATIC -eq 1 ] ; then
     LDFLAGS="$LDFLAGS -static"
 fi
@@ -297,10 +289,6 @@ APP_SCRIPTS="$SRCDIR/scripts/stream.lua"
 
 __check_main_app()
 {
-    if [ -n "$ARG_INLINE_SCRIPT" ] ; then
-        APP_SOURCES="$APP_SOURCES $ARG_INLINE_SCRIPT"
-    fi
-
     for S in $APP_SOURCES ; do
         O=`echo $S | sed -e 's/.c$/.o/' -e 's/.cpp$/.o/'`
         APP_OBJS="$APP_OBJS $O"
