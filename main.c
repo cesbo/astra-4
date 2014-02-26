@@ -77,9 +77,10 @@ static void signal_handler(int signum)
 
 int main(int argc, const char **argv)
 {
+    static const char version_string[] = "Astra " ASTRA_VERSION_STR "\n";
     if(argc == 2 && !strcmp(argv[1], "-v"))
     {
-        printf("Astra " ASTRA_VERSION_STR "\n");
+        printf(version_string);
         return 0;
     }
 
@@ -136,20 +137,29 @@ astra_reload_entry:
         if(lua_isfunction(lua, -1))
         {
             lua_call(lua, 0, 0);
-            lua_pop(lua, 1);
         }
         else
         {
             lua_pop(lua, 1);
 
+            if(argc < 2)
+            {
+                printf(version_string);
+                printf("Usage: %s script.lua [OPTIONS]\n", argv[0]);
+                astra_exit();
+            }
+
             int ret = -1;
 
-            if(argv[1][0] == '-' && argv[1][1] == '\0')
+            if(argv[1][0] == '-' && argv[1][1] == 0)
                 ret = luaL_dofile(lua, NULL);
             else if(!access(argv[1], R_OK))
                 ret = luaL_dofile(lua, argv[1]);
             else
-                printf("Error: initial script isn't found [%s]\n", strerror(errno));
+            {
+                printf("Error: initial script isn't found\n");
+                astra_exit();
+            }
 
             if(ret != 0)
                 luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
