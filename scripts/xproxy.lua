@@ -170,7 +170,7 @@ options = {
     ["--debug"] = function (i) log.set({ debug = true }) return i + 1 end,
 }
 
-i = 1
+i = 2
 while i <= #argv do
     if not options[argv[i]] then
         print("unknown option: " .. argv[i])

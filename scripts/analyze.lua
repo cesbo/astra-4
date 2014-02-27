@@ -256,9 +256,9 @@ HTTP:
     astra.exit()
 end
 
-if #argv == 0 or argv[1] == "-h" or argv[1] == "--help" then usage() end
+if #argv < 2 or argv[2] == "-h" or argv[2] == "--help" then usage() end
 
-local input_conf = parse_url(argv[1])
+local input_conf = parse_url(argv[2])
 if not input_conf then
     print("ERROR: wrong address format\n")
     usage()
