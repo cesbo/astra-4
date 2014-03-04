@@ -116,7 +116,7 @@ else
     fi
 fi
 
-CFLAGS="$CFLAGS_DEBUG -I. -Wall -Wextra -pedantic \
+CFLAGS="$CFLAGS_DEBUG -I$SRCDIR -Wall -Wextra -pedantic \
 -fno-builtin -funit-at-a-time -ffast-math"
 
 cpucheck_c()
