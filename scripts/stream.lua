@@ -413,6 +413,9 @@ function dvb_tune(dvb_conf)
         dvb_conf.mac = dvb_conf.mac:upper()
         for _, adapter_info in pairs(dvb_list) do
             if dvb_conf.mac and adapter_info.mac == dvb_conf.mac then
+                log.info("[dvb_input " .. adapter_info.adapter ..
+                         ":" .. adapter_info.device .. "] " ..
+                         "selected by mac:" .. adapter_info.mac)
                 dvb_conf.adapter = adapter_info.adapter
                 if adapter_info.device > 0 then
                     dvb_conf.device = adapter_info.device
