@@ -1,6 +1,5 @@
 SOURCES="mixaudio.c"
 MODULES="mixaudio"
-SCRIPTS="mixaudio.lua"
 
 check_cflags()
 {
