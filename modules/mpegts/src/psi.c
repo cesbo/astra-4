@@ -87,11 +87,12 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts
                     psi->buffer_skip = 0;
                     return;
                 }
+                psi->buffer_skip = 0;
                 callback(arg, psi);
             }
             payload += ptr_field;
         }
-        while((TS_PACKET_SIZE > (payload - ts)) && (payload[0] != 0xff))
+        while(((payload - ts) < TS_PACKET_SIZE) && (payload[0] != 0xff))
         {
             psi->buffer_size = 0;
 
@@ -121,6 +122,7 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts
             else
             {
                 memcpy(psi->buffer, payload, psi_buffer_size);
+                psi->buffer_skip = 0;
                 callback(arg, psi);
                 payload += psi_buffer_size;
             }
@@ -150,6 +152,7 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts
         if(remain <= TS_BODY_SIZE)
         {
             memcpy(&psi->buffer[psi->buffer_skip], payload, remain);
+            psi->buffer_skip = 0;
             callback(arg, psi);
         }
         else

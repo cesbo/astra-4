@@ -83,6 +83,7 @@ void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts
         else
         {
             memcpy(pes->buffer, payload, pes_buffer_size);
+            pes->buffer_skip = 0;
             callback(arg, pes);
         }
     }
@@ -99,6 +100,7 @@ void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts
         if(remain <= TS_BODY_SIZE)
         {
             memcpy(&pes->buffer[pes->buffer_skip], payload, remain);
+            pes->buffer_skip = 0;
             callback(arg, pes);
         }
         else
