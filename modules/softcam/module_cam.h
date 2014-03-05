@@ -59,11 +59,11 @@ struct em_packet_t
 
 struct module_cam_t
 {
-    int is_ready;
+    bool is_ready;
 
     uint16_t caid;
     uint8_t ua[8];
-    int disable_emm;
+    bool disable_emm;
 
     asc_list_t *prov_list;
     asc_list_t *decrypt_list;

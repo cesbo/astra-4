@@ -478,7 +478,7 @@ static int newcamd_login_3(module_data_t *mod)
                  , hex_to_str(hex_str, mod->__cam.ua, 8));
 
     if(buffer[3] != 1) // disable emm if not admin
-        mod->__cam.disable_emm = 1;
+        mod->__cam.disable_emm = true;
 
     const int prov_count = (buffer[14] <= MAX_PROV_COUNT) ? buffer[14] : MAX_PROV_COUNT;
 
@@ -730,7 +730,7 @@ static void module_init(module_data_t *mod)
     asc_assert(key != NULL, MSG("option 'key' is required"));
     str_to_hex(key, mod->key, sizeof(mod->key));
 
-    module_option_number("disable_emm", &mod->__cam.disable_emm);
+    module_option_boolean("disable_emm", &mod->__cam.disable_emm);
 
     module_option_number("timeout", &mod->timeout);
     if(!mod->timeout)

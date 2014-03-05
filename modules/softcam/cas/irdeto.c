@@ -31,7 +31,7 @@ struct module_data_t
     // autoselect chid
     struct
     {
-        int is_checking;
+        bool is_checking;
         uint8_t current_id;
         struct
         {
@@ -80,7 +80,7 @@ static int irdeto_check_ecm(module_data_t *mod, const uint8_t *payload)
     if(mod->test.ecm_id[ecm_id].parity == parity)
         return 0;
 
-    mod->test.is_checking = 1;
+    mod->test.is_checking = true;
     mod->test.current_id = ecm_id;
     mod->test.ecm_id[ecm_id].parity = parity;
     mod->test.ecm_id[ecm_id].chid = chid;
@@ -127,7 +127,7 @@ static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
     if(!keys[2])
     {
         if(!mod->is_chid)
-            mod->test.is_checking = 0;
+            mod->test.is_checking = false;
         return false;
     }
 

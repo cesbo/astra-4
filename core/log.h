@@ -23,8 +23,8 @@
 
 #include "base.h"
 
-void asc_log_set_stdout(int);
-void asc_log_set_debug(int);
+void asc_log_set_stdout(bool);
+void asc_log_set_debug(bool);
 void asc_log_set_file(const char *);
 #ifndef _WIN32
 void asc_log_set_syslog(const char *);
@@ -38,6 +38,6 @@ void asc_log_error(const char *, ...);
 void asc_log_warning(const char *, ...);
 void asc_log_debug(const char *, ...);
 
-int asc_log_is_debug(void);
+bool asc_log_is_debug(void);
 
 #endif /* _LOG_H_ */

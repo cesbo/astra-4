@@ -40,7 +40,7 @@
             else                                                            \
             {                                                               \
                 match[0].eo = i;                                            \
-                return 0;                                                   \
+                return false;                                               \
             }                                                               \
         }                                                                   \
         ++i;                                                                \
@@ -55,7 +55,7 @@
     else                                                                    \
     {                                                                       \
         match[0].eo = i;                                                    \
-        return 0;                                                           \
+        return false;                                                       \
     }                                                                       \
 }
 
@@ -68,11 +68,11 @@
     else                                                                    \
     {                                                                       \
         match[0].eo = i;                                                    \
-        return 0;                                                           \
+        return false;                                                       \
     }                                                                       \
 }
 
-int http_parse_response(const char *str, parse_match_t *match)
+bool http_parse_response(const char *str, parse_match_t *match)
 {
     size_t i = 0;
     match[0].so = 0;
@@ -96,10 +96,10 @@ int http_parse_response(const char *str, parse_match_t *match)
     CHECK_CRLF()
 
     match[0].eo = i;
-    return 1;
+    return true;
 }
 
-int http_parse_request(const char *str, parse_match_t *match)
+bool http_parse_request(const char *str, parse_match_t *match)
 {
     size_t i = 0;
     match[0].so = 0;
@@ -120,10 +120,10 @@ int http_parse_request(const char *str, parse_match_t *match)
     CHECK_CRLF()
 
     match[0].eo = i;
-    return 1;
+    return true;
 }
 
-int http_parse_header(const char *str, parse_match_t *match)
+bool http_parse_header(const char *str, parse_match_t *match)
 {
     size_t i = 0;
     match[0].so = 0;
@@ -132,10 +132,10 @@ int http_parse_header(const char *str, parse_match_t *match)
     CHECK_CRLF()
 
     match[0].eo = i;
-    return 1;
+    return true;
 }
 
-int http_parse_chunk(const char *str, parse_match_t *match)
+bool http_parse_chunk(const char *str, parse_match_t *match)
 {
     size_t i = 0;
     match[0].so = 0;
@@ -152,5 +152,5 @@ int http_parse_chunk(const char *str, parse_match_t *match)
     CHECK_CRLF()
 
     match[0].eo = i;
-    return 1;
+    return true;
 }

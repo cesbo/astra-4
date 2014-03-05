@@ -30,22 +30,22 @@
 typedef struct
 {
     int fd;
-    int debug;
-    int sout;
+    bool debug;
+    bool sout;
     char *filename;
 #ifndef _WIN32
-    int syslog;
+    bool syslog;
 #endif
 } log_t;
 
 static log_t __log =
 {
     0,
-    0,
-    1,
+    false,
+    true,
     NULL
 #ifndef _WIN32
-    , 0
+    , false
 #endif
 };
 
@@ -147,7 +147,7 @@ void asc_log_debug(const char *msg, ...)
     va_end(ap);
 }
 
-int asc_log_is_debug(void)
+bool asc_log_is_debug(void)
 {
     return __log.debug;
 }
@@ -185,13 +185,13 @@ void asc_log_core_destroy(void)
     __log.fd = 0;
 
 #ifndef _WIN32
-    if(__log.syslog > 0)
+    if(__log.syslog)
         closelog();
-    __log.syslog = 0;
+    __log.syslog = false;
 #endif
 
-    __log.debug = 0;
-    __log.sout = 1;
+    __log.debug = false;
+    __log.sout = true;
     if(__log.filename)
     {
         free(__log.filename);
@@ -199,12 +199,12 @@ void asc_log_core_destroy(void)
     }
 }
 
-void asc_log_set_stdout(int val)
+void asc_log_set_stdout(bool val)
 {
     __log.sout = val;
 }
 
-void asc_log_set_debug(int val)
+void asc_log_set_debug(bool val)
 {
     __log.debug = val;
 }
@@ -229,13 +229,13 @@ void asc_log_set_syslog(const char *val)
     if(__log.syslog)
     {
         closelog();
-        __log.syslog = 0;
+        __log.syslog = false;
     }
 
     if(!val)
         return;
 
     openlog(val, LOG_PID | LOG_CONS, LOG_USER);
-    __log.syslog = 1;
+    __log.syslog = true;
 }
 #endif

@@ -24,7 +24,7 @@ struct module_data_t
 {
     MODULE_CAS_DATA();
 
-    int is_cas_data_error;
+    bool is_cas_data_error;
 
     uint8_t card;
     uint8_t parity;
@@ -164,7 +164,7 @@ static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
         if(!is_prov_ident && !mod->is_cas_data_error)
         {
             asc_log_error("[cas DRE] cas_data is not set");
-            mod->is_cas_data_error = 1;
+            mod->is_cas_data_error = true;
         }
     }
 

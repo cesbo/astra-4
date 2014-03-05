@@ -41,6 +41,8 @@
 
 #include <astra.h>
 
+static bool is_debug = false;
+
 static int lua_log_set(lua_State *L)
 {
     luaL_checktype(L, 1, LUA_TTABLE);
@@ -58,7 +60,8 @@ static int lua_log_set(lua_State *L)
         if(!strcmp(var, "debug"))
         {
             luaL_checktype(L, -1, LUA_TBOOLEAN);
-            asc_log_set_debug(lua_toboolean(L, -1));
+            is_debug = lua_toboolean(L, -1);
+            asc_log_set_debug(is_debug);
         }
         else if(!strcmp(var, "filename"))
         {
@@ -102,12 +105,15 @@ static int lua_log_info(lua_State *L)
 
 static int lua_log_debug(lua_State *L)
 {
-    asc_log_debug("%s", luaL_checkstring(L, 1));
+    if(is_debug)
+        asc_log_debug("%s", luaL_checkstring(L, 1));
     return 0;
 }
 
 LUA_API int luaopen_log(lua_State *L)
 {
+    is_debug = asc_log_is_debug();
+
     static const luaL_Reg api[] =
     {
         { "set", lua_log_set },

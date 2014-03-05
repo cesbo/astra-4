@@ -61,7 +61,7 @@ inline void asc_list_next(asc_list_t *list)
         list->current = TAILQ_NEXT(list->current, entries);
 }
 
-inline int asc_list_eol(asc_list_t *list)
+inline bool asc_list_eol(asc_list_t *list)
 {
     return (list->current == NULL);
 }

@@ -34,7 +34,7 @@ static jmp_buf global_jmp;
 struct asc_thread_t
 {
     jmp_buf jmp;
-    int is_set_jmp;
+    bool is_set_jmp;
 
     void (*loop)(void *);
     void *arg;
@@ -72,7 +72,7 @@ jmp_buf * __thread_getjmp(void)
 void __thread_setjmp(asc_thread_t *thread)
 {
     memcpy(&thread->jmp, &global_jmp, sizeof(jmp_buf));
-    thread->is_set_jmp = 1;
+    thread->is_set_jmp = true;
 
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));

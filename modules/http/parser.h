@@ -22,6 +22,7 @@
 #define _PARSE_H_
 
 #include <stddef.h>
+#include <stdbool.h>
 
 typedef struct
 {
@@ -29,9 +30,9 @@ typedef struct
     size_t eo;
 } parse_match_t;
 
-int http_parse_request(const char *, parse_match_t *);
-int http_parse_response(const char *, parse_match_t *);
-int http_parse_header(const char *, parse_match_t *);
-int http_parse_chunk(const char *, parse_match_t *);
+bool http_parse_request(const char *, parse_match_t *);
+bool http_parse_response(const char *, parse_match_t *);
+bool http_parse_header(const char *, parse_match_t *);
+bool http_parse_chunk(const char *, parse_match_t *);
 
 #endif /* _PARSE_H_ */
