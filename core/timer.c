@@ -113,7 +113,7 @@ asc_timer_t * asc_timer_init(unsigned int ms, void (*callback)(void *), void *ar
     return timer;
 }
 
-void timer_one_shot(unsigned int ms, void (*callback)(void *), void *arg)
+void asc_timer_one_shot(unsigned int ms, void (*callback)(void *), void *arg)
 {
     asc_timer_t *timer = asc_timer_init(ms, callback, arg);
     timer->interval = 0;

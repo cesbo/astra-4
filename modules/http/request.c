@@ -37,7 +37,6 @@
 
 #define MSG(_msg) "[http_request] " _msg
 #define HTTP_BUFFER_SIZE 8192
-#define CONNECT_TIMEOUT_INTERVAL (5*1000)
 #define REQUEST_TIMEOUT_INTERVAL (60*1000)
 
 struct module_data_t
@@ -47,6 +46,7 @@ struct module_data_t
 
     const char *host;
     int port;
+    int timeout;
 
     asc_socket_t *sock;
 
@@ -688,6 +688,10 @@ static void module_init(module_data_t *mod)
     if(!module_option_number("port", &mod->port))
         mod->port = 80;
 
+    if(!module_option_number("timeout", &mod->timeout))
+        mod->timeout = 8;
+    mod->timeout *= 1000;
+
     module_option_number("ts", &mod->is_ts);
 
     lua_getfield(lua, 2, __callback);
@@ -704,7 +708,7 @@ static void module_init(module_data_t *mod)
 
     mod->sock = asc_socket_open_tcp4(mod);
 
-    mod->timeout_timer = asc_timer_init(CONNECT_TIMEOUT_INTERVAL, timeout_callback, mod);
+    mod->timeout_timer = asc_timer_init(mod->timeout, timeout_callback, mod);
     asc_socket_connect(mod->sock, mod->host, mod->port, on_connect, on_connect_err);
 }
 
