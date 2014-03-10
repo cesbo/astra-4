@@ -30,82 +30,6 @@
  *
  */
 
-#define MAX_BUFFER_SIZE 4096
-
-typedef struct string_buffer_t string_buffer_t;
-
-struct string_buffer_t
-{
-    char buffer[MAX_BUFFER_SIZE];
-    int size;
-
-    string_buffer_t *last;
-    string_buffer_t *next;
-};
-
-static void string_buffer_addchar(string_buffer_t *buffer, char c)
-{
-    string_buffer_t *last = buffer->last;
-    if(last->size + 1 > MAX_BUFFER_SIZE)
-    {
-        last->next = malloc(sizeof(string_buffer_t));
-        last = last->next;
-        last->size = 0;
-        last->last = NULL;
-        last->next = NULL;
-        buffer->last = last;
-    }
-
-    last->buffer[last->size] = c;
-    ++last->size;
-}
-
-static void string_buffer_addlstring(string_buffer_t *buffer, const char *str, int size)
-{
-    string_buffer_t *last = buffer->last;
-
-    if(last->size + size > MAX_BUFFER_SIZE)
-    {
-        const int cap = MAX_BUFFER_SIZE - last->size;
-        if(cap > 0)
-        {
-            memcpy(&last->buffer[last->size], str, cap);
-            last->size += cap;
-        }
-
-        last->next = malloc(sizeof(string_buffer_t));
-        last = last->next;
-        last->size = 0;
-        last->last = NULL;
-        last->next = NULL;
-        buffer->last = last;
-        string_buffer_addlstring(buffer, &str[cap], size - cap);
-        return;
-    }
-    else
-    {
-        memcpy(&last->buffer[last->size], str, size);
-        last->size += size;
-    }
-}
-
-static void string_buffer_push(lua_State *L, string_buffer_t *buffer)
-{
-    luaL_Buffer b;
-    luaL_buffinit(L, &b);
-
-    string_buffer_t *next_next;
-    for(string_buffer_t *next = buffer
-        ; next && (next_next = next->next, 1)
-        ; next = next_next)
-    {
-        luaL_addlstring(&b, next->buffer, next->size);
-        free(next);
-    }
-
-    luaL_pushresult(&b);
-}
-
 static void walk_table(lua_State *L, string_buffer_t *buffer);
 
 static void set_string(string_buffer_t *buffer, const char *str)
@@ -226,10 +150,7 @@ static int json_encode(lua_State *L)
 {
     luaL_checktype(L, -1, LUA_TTABLE);
 
-    string_buffer_t *buffer = malloc(sizeof(string_buffer_t));
-    buffer->size = 0;
-    buffer->last = buffer;
-    buffer->next = NULL;
+    string_buffer_t *buffer = string_buffer_alloc();
 
     walk_table(L, buffer);
 

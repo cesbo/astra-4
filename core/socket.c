@@ -111,24 +111,6 @@ const char * asc_socket_error(void)
     return buffer;
 }
 
-static void asc_socket_set_nonblock(asc_socket_t *sock)
-{
-#ifdef _WIN32
-    unsigned long nonblock = 1;
-    if(ioctlsocket(sock->fd, FIONBIO, &nonblock) != NO_ERROR)
-#else
-    int flags = fcntl(sock->fd, F_GETFL);
-    if(flags & O_NONBLOCK)
-        return;
-
-    if(fcntl(sock->fd, F_SETFL, flags | O_NONBLOCK) == -1)
-#endif
-    {
-        asc_log_error(MSG("failed to set NONBLOCK [%s]"), asc_socket_error());
-        astra_abort();
-    }
-}
-
 /*
  *   ooooooo  oooooooooo ooooooooooo oooo   oooo
  * o888   888o 888    888 888    88   8888o  88
@@ -148,9 +130,8 @@ static asc_socket_t * __socket_open(int family, int type, void * arg)
     sock->family = family;
     sock->type = type;
     sock->arg = arg;
-    sock->event = asc_event_init(fd, sock);
 
-    asc_socket_set_nonblock(sock);
+    asc_socket_set_nonblock(sock, true);
     return sock;
 }
 
@@ -363,9 +344,8 @@ bool asc_socket_accept(asc_socket_t *sock, asc_socket_t **client_ptr, void * arg
         return false;
     }
 
-    client->event = asc_event_init(client->fd, client);
     client->arg = arg;
-    asc_socket_set_nonblock(client);
+    asc_socket_set_nonblock(client, true);
 
     *client_ptr = client;
     return true;
@@ -518,6 +498,43 @@ int asc_socket_port(asc_socket_t *sock)
  * o88oooo888 o888ooo8888    o888o             o88  88o
  *
  */
+
+void asc_socket_set_nonblock(asc_socket_t *sock, bool is_nonblock)
+{
+    if(is_nonblock)
+    {
+        if(sock->event)
+            return;
+        else
+        {
+            sock->event = asc_event_init(sock->fd, sock);
+        }
+    }
+    else
+    {
+        if(!sock->event)
+            return;
+        else
+        {
+            asc_event_close(sock->event);
+            sock->event = NULL;
+        }
+    }
+
+#ifdef _WIN32
+    unsigned long nonblock = (is_nonblock == true) ? 1 : 0;
+    if(ioctlsocket(sock->fd, FIONBIO, &nonblock) != NO_ERROR)
+#else
+    int flags = (is_nonblock == true)
+              ? (fcntl(sock->fd, F_GETFL) | O_NONBLOCK)
+              : (fcntl(sock->fd, F_GETFL) & ~O_NONBLOCK);
+    if(fcntl(sock->fd, F_SETFL, flags) == -1)
+#endif
+    {
+        asc_log_error(MSG("failed to set NONBLOCK [%s]"), asc_socket_error());
+        astra_abort();
+    }
+}
 
 void asc_socket_set_sockaddr(asc_socket_t *sock, const char *addr, int port)
 {
