@@ -311,7 +311,10 @@ static void on_read(void *arg)
                || (mod->status_code == 204)
                || (mod->status_code == 304))
             {
-                // callback
+                get_lua_callback(mod);
+                lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+                lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->response_idx);
+                lua_call(lua, 2, 0);
 
                 if(mod->is_connection_close)
                     on_close(mod);
