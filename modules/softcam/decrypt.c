@@ -28,6 +28,7 @@
  *      biss        - string, BISS key, 16 chars length. example: biss = "1122330044556600"
  *      cam         - object, cam instance returned by cam_module_instance:cam()
  *      cas_data    - string, additional paramters for CAS
+ *      cas_pnr     - number, original PNR
  */
 
 #include <astra.h>
@@ -148,6 +149,8 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         if(pnr)
         {
             mod->__decrypt.pnr = pnr;
+            if(mod->__decrypt.cas_pnr == 0)
+                mod->__decrypt.cas_pnr = pnr;
             const uint16_t pmt_pid = PAT_ITEMS_GET_PID(psi, pointer);
             mod->stream[pmt_pid] = MPEGTS_PACKET_PMT;
             mod->pmt->pid = pmt_pid;
@@ -715,6 +718,11 @@ static void module_init(module_data_t *mod)
             mod->__decrypt.cam = lua_touserdata(lua, -1);
         }
         lua_pop(lua, 1);
+
+        int value = 0;
+        module_option_number("cas_pnr", &value);
+        if(value > 0 && value <= 0xFFFF)
+            mod->__decrypt.cas_pnr = (uint16_t)value;
     }
 
     if(mod->__decrypt.cam)

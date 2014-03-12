@@ -247,7 +247,7 @@ static int newcamd_send_msg(module_data_t *mod)
         memcpy(&mod->buffer[NEWCAMD_HEADER_SIZE], mod->packet->buffer, mod->packet->buffer_size);
         mod->buffer_size = mod->packet->buffer_size;
 
-        const uint16_t pnr = mod->packet->decrypt->pnr;
+        const uint16_t pnr = mod->packet->decrypt->cas_pnr;
         mod->buffer[4] = pnr >> 8;
         mod->buffer[5] = pnr & 0xff;
 
