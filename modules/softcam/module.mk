@@ -31,7 +31,7 @@ SOURCES="$SOURCES_CSA $SOURCES_CAM $SOURCES_CAS decrypt.c"
 
 CFLAGS="-funroll-loops --param max-unrolled-insns=500"
 if [ "$OS" = "darwin" ] ; then
-    CFLAGS="$CFLAGS -Wno-deprecated-declarations"
+    CFLAGS="-funroll-loops -Wno-deprecated-declarations"
 fi
 
 # SSE2

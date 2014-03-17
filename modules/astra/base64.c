@@ -33,8 +33,6 @@ static const uint8_t base64_index[256] =
     XX,XX,XX,XX, XX,XX,XX,XX, XX,XX,XX,XX, XX,XX,XX,XX,
 };
 
-static const int mod_table[] = {0, 2, 1};
-
 char * base64_encode(const char *in, size_t size, size_t *out_size)
 {
     if(!in)

@@ -91,7 +91,6 @@ struct module_data_t
 
 #define MSG(_msg) "[analyze %s] " _msg, mod->name
 
-static const char __type[] = "type";
 static const char __pid[] = "pid";
 static const char __crc32[] = "crc32";
 static const char __pnr[] = "pnr";
