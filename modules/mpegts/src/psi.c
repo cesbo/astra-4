@@ -139,6 +139,11 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts
         }
         if(psi->buffer_size == 0)
         { // incomplete PSI header
+            if(psi->buffer_skip >= 3)
+            {
+                psi->buffer_skip = 0;
+                return;
+            }
             memcpy(&psi->buffer[psi->buffer_skip], payload, 3 - psi->buffer_skip);
             const size_t psi_buffer_size = PSI_SIZE(psi->buffer);
             if(psi_buffer_size <= 3 || psi_buffer_size > PSI_MAX_SIZE)
