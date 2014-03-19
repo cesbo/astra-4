@@ -182,7 +182,9 @@ char * iso8859_text(const uint8_t *data, size_t size)
     {
         switch((data[1] << 8) | (data[2]))
         {
-            case 0x02: return (char *)iso8859_2_text(&data[3], size); // Central European
+            case 0x02: return (char *)iso8859_2_text(&data[3], size - 3); // Central European
+            case 0x05: return (char *)iso8859_5_text(&data[3], size - 3); // Cyrillic
+            case 0x07: return (char *)iso8859_7_text(&data[3], size - 3); // Greek
             default: break;
         }
     }
