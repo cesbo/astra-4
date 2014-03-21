@@ -2,7 +2,7 @@
  * Astra Module: DVB (Frontend)
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -49,6 +49,53 @@ static void fe_clear(dvb_fe_t *fe)
 }
 
 /*
+ *  oooooooo8 ooooooooooo   o   ooooooooooo ooooo  oooo oooooooo8
+ * 888        88  888  88  888  88  888  88  888    88 888
+ *  888oooooo     888     8  88     888      888    88  888oooooo
+ *         888    888    8oooo88    888      888    88         888
+ * o88oooo888    o888o o88o  o888o o888o      888oo88  o88oooo888
+ *
+ */
+
+static void fe_read_status(dvb_fe_t *fe)
+{
+    if(ioctl(fe->fe_fd, FE_READ_SIGNAL_STRENGTH, &fe->signal) != 0)
+        fe->signal = -2;
+    else
+        fe->signal = (fe->signal * 100) / 0xFFFF;
+
+    if(ioctl(fe->fe_fd, FE_READ_SNR, &fe->snr) != 0)
+        fe->snr = -2;
+    else
+        fe->snr = (fe->snr * 100) / 0xFFFF;
+
+    if(ioctl(fe->fe_fd, FE_READ_BER, &fe->ber) != 0)
+        fe->ber = -2;
+
+    if(ioctl(fe->fe_fd, FE_READ_UNCORRECTED_BLOCKS, &fe->unc) != 0)
+        fe->unc = -2;
+}
+
+static void fe_check_status(dvb_fe_t *fe)
+{
+    fe_status_t fe_status;
+    if(ioctl(fe->fe_fd, FE_READ_STATUS, &fe_status) != 0)
+    {
+        asc_log_error(MSG("FE_READ_STATUS failed [%s]"), strerror(errno));
+        astra_abort();
+    }
+
+    fe->lock = fe_status & FE_HAS_LOCK;
+    if(!fe->lock)
+    {
+        fe->do_retune = 1;
+        return;
+    }
+
+    fe_read_status(fe);
+}
+
+/*
  * ooooooooooo ooooo  oooo ooooooooooo oooo   oooo ooooooooooo
  *  888    88   888    88   888    88   8888o  88  88  888  88
  *  888ooo8      888  88    888ooo8     88 888o88      888
@@ -76,6 +123,17 @@ static void fe_event(dvb_fe_t *fe)
         fe_status_diff = fe_status ^ fe->fe_status;
         fe->fe_status = fe_status;
 
+        if(fe_status_diff & FE_REINIT)
+        {
+            if(fe_status & FE_REINIT)
+            {
+                asc_log_warning(MSG("fe was reinitialized"));
+                fe_clear(fe);
+                fe->do_retune = 1;
+                return;
+            }
+        }
+
         const char ss = (fe_status & FE_HAS_SIGNAL) ? 'S' : '_';
         const char sc = (fe_status & FE_HAS_CARRIER) ? 'C' : '_';
         const char sv = (fe_status & FE_HAS_VITERBI) ? 'V' : '_';
@@ -87,21 +145,7 @@ static void fe_event(dvb_fe_t *fe)
             fe->lock = fe_status & FE_HAS_LOCK;
             if(fe->lock)
             {
-                if(ioctl(fe->fe_fd, FE_READ_SIGNAL_STRENGTH, &fe->signal) != 0)
-                    fe->signal = -2;
-                else
-                    fe->signal = (fe->signal * 100) / 0xFFFF;
-
-                if(ioctl(fe->fe_fd, FE_READ_SNR, &fe->snr) != 0)
-                    fe->snr = -2;
-                else
-                    fe->snr = (fe->snr * 100) / 0xFFFF;
-
-                if(ioctl(fe->fe_fd, FE_READ_BER, &fe->ber) != 0)
-                    fe->ber = -2;
-
-                if(ioctl(fe->fe_fd, FE_READ_UNCORRECTED_BLOCKS, &fe->unc) != 0)
-                    fe->unc = -2;
+                fe_read_status(fe);
 
                 asc_log_info(MSG("fe has lock. status:%c%c%c%c%c signal:%d%% snr:%d%%")
                              , ss, sc, sv, sy, sl
@@ -115,61 +159,10 @@ static void fe_event(dvb_fe_t *fe)
                                 , ss, sc, sv, sy, sl);
                 fe_clear(fe);
                 fe->do_retune = 1;
-            }
-        }
-
-        if(fe_status_diff & FE_REINIT)
-        {
-            if(fe_status & FE_REINIT)
-            {
-                asc_log_warning(MSG("fe was reinitialized"));
-                fe_clear(fe);
-                fe->do_retune = 1;
+                return;
             }
         }
     }
-}
-
-/*
- *  oooooooo8 ooooooooooo   o   ooooooooooo ooooo  oooo oooooooo8
- * 888        88  888  88  888  88  888  88  888    88 888
- *  888oooooo     888     8  88     888      888    88  888oooooo
- *         888    888    8oooo88    888      888    88         888
- * o88oooo888    o888o o88o  o888o o888o      888oo88  o88oooo888
- *
- */
-
-static void fe_status(dvb_fe_t *fe)
-{
-    fe_status_t fe_status;
-    if(ioctl(fe->fe_fd, FE_READ_STATUS, &fe_status) != 0)
-    {
-        asc_log_error(MSG("FE_READ_STATUS failed [%s]"), strerror(errno));
-        astra_abort();
-    }
-
-    fe->lock = fe_status & FE_HAS_LOCK;
-    if(!fe->lock)
-    {
-        fe->do_retune = 1;
-        return;
-    }
-
-    if(ioctl(fe->fe_fd, FE_READ_SIGNAL_STRENGTH, &fe->signal) != 0)
-        fe->signal = -2;
-    else
-        fe->signal = (fe->signal * 100) / 0xFFFF;
-
-    if(ioctl(fe->fe_fd, FE_READ_SNR, &fe->snr) != 0)
-        fe->snr = -2;
-    else
-        fe->snr = (fe->snr * 100) / 0xFFFF;
-
-    if(ioctl(fe->fe_fd, FE_READ_BER, &fe->ber) != 0)
-        fe->ber = -2;
-
-    if(ioctl(fe->fe_fd, FE_READ_UNCORRECTED_BLOCKS, &fe->unc) != 0)
-        fe->unc = -2;
 }
 
 /*
@@ -273,8 +266,6 @@ static void fe_tune_s(dvb_fe_t *fe)
             diseqc_setup(fe, voltage, tone);
     }
 
-    fe_clear(fe);
-
     struct dtv_properties cmdseq;
     struct dtv_property cmdlist[13];
 
@@ -318,16 +309,10 @@ static void fe_tune_s(dvb_fe_t *fe)
 
 static void fe_tune_t(dvb_fe_t *fe)
 {
-    fe_clear(fe);
-
     struct dtv_properties cmdseq;
     struct dtv_property cmdlist[13];
 
-#if DVB_API >= 503
     const fe_delivery_system_t dvb_sys = (fe->type == DVB_TYPE_T2) ? SYS_DVBT2 : SYS_DVBT;
-#else
-    const fe_delivery_system_t dvb_sys = SYS_DVBT;
-#endif
 
     DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   dvb_sys);
@@ -404,6 +389,9 @@ static void fe_tune_c(dvb_fe_t *fe)
 
 static void fe_tune(dvb_fe_t *fe)
 {
+    fe_clear(fe);
+    fe->do_retune = 6;
+
     switch(fe->type)
     {
         case DVB_TYPE_S:
@@ -448,16 +436,14 @@ void fe_loop(dvb_fe_t *fe, int is_data)
     if(is_data)
     {
         fe_event(fe);
-        return;
     }
-
-    if(!fe->do_retune)
-        fe_status(fe);
-
-    if(fe->do_retune)
+    else
     {
-        fe->do_retune = 0;
-        fe_tune(fe);
-        sleep(2);
+        if(fe->do_retune == 0)
+            fe_check_status(fe);
+        else if(fe->do_retune == 1)
+            fe_tune(fe);
+        else
+            --fe->do_retune;
     }
 }

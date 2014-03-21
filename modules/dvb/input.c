@@ -2,7 +2,7 @@
  * Astra Module: DVB
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -288,10 +288,8 @@ static void module_option_fec(module_data_t *mod)
         else if(!strcasecmp(string_val, "6/7")) mod->fe->fec = FEC_6_7;
         else if(!strcasecmp(string_val, "7/8")) mod->fe->fec = FEC_7_8;
         else if(!strcasecmp(string_val, "8/9")) mod->fe->fec = FEC_8_9;
-#if DVB_API_VERSION >= 5
         else if(!strcasecmp(string_val, "3/5")) mod->fe->fec = FEC_3_5;
         else if(!strcasecmp(string_val, "9/10")) mod->fe->fec = FEC_9_10;
-#endif
         else
             option_unknown_type(mod, __fec, string_val);
     }
@@ -486,11 +484,11 @@ static void module_options(module_data_t *mod)
     if(!strcasecmp(string_val, "S")) mod->fe->type = DVB_TYPE_S;
     else if(!strcasecmp(string_val, "T")) mod->fe->type = DVB_TYPE_T;
     else if(!strcasecmp(string_val, "C")) mod->fe->type = DVB_TYPE_C;
-#if DVB_API >= 500
     else if(!strcasecmp(string_val, "S2")) mod->fe->type = DVB_TYPE_S2;
 #if DVB_API >= 503
     else if(!strcasecmp(string_val, "T2")) mod->fe->type = DVB_TYPE_T2;
-#endif
+#else
+#   warning "DVB-T2 Disabled. DVB-API < 5.3"
 #endif
     else
         option_unknown_type(mod, __adapter, string_val);
@@ -579,11 +577,15 @@ static void dvb_thread_loop(void *arg)
     mod->thread_ready = true;
 
     uint64_t current_time = asc_utime();
+    uint64_t fe_check_timeout = current_time;
     uint64_t dmx_check_timeout = current_time;
     uint64_t ca_check_timeout = current_time;
+    uint64_t dvr_check_timeout = current_time;
 
+#define FE_TIMEOUT (1 * 1000 * 1000)
 #define DMX_TIMEOUT (200 * 1000)
 #define CA_TIMEOUT (1 * 1000 * 1000)
+#define DVR_TIMEOUT (2 * 1000 * 1000)
 
     asc_thread_while(mod->thread)
     {
@@ -604,6 +606,13 @@ static void dvb_thread_loop(void *arg)
         }
 
         current_time = asc_utime();
+
+        if((current_time - fe_check_timeout) >= FE_TIMEOUT)
+        {
+            fe_check_timeout = current_time;
+            fe_loop(mod->fe, 0);
+        }
+
         if(!mod->dmx_budget && (current_time - dmx_check_timeout) >= DMX_TIMEOUT)
         {
             dmx_check_timeout = current_time;
@@ -617,17 +626,29 @@ static void dvb_thread_loop(void *arg)
             }
         }
 
-        if((current_time - ca_check_timeout) >= CA_TIMEOUT)
+        if(mod->ca->ca_fd > 0 && (current_time - ca_check_timeout) >= CA_TIMEOUT)
         {
             ca_check_timeout = current_time;
-            fe_loop(mod->fe, 0);
-            if(mod->ca->ca_fd)
-                ca_loop(mod->ca, 0);
+            ca_loop(mod->ca, 0);
+        }
+
+        if((current_time - dvr_check_timeout) >= DVR_TIMEOUT)
+        {
+            dvr_check_timeout = current_time;
+            if(mod->fe->fe_status & FE_HAS_LOCK)
+            {
+                if(mod->dvr_read == 0)
+                    dmx_bounce(mod);
+                else
+                    mod->dvr_read = 0;
+            }
         }
     }
 
+#undef FE_TIMEOUT
 #undef DMX_TIMEOUT
 #undef CA_TIMEOUT
+#undef DVR_TIMEOUT
 
     fe_close(mod->fe);
     ca_close(mod->ca);

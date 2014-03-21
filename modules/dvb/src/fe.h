@@ -2,7 +2,7 @@
  * Astra Module: DVB (Frontend)
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -63,10 +63,8 @@ struct dvb_fe_t
     bool force_tone;
 
     fe_code_rate_t fec;
-#if DVB_API_VERSION >= 5
     fe_rolloff_t rolloff;
     int stream_id;
-#endif
 
     fe_bandwidth_t bandwidth;
     fe_guard_interval_t guardinterval;
