@@ -80,6 +80,9 @@ void on_read(void *arg)
     int len = asc_socket_recv(mod->sock, mod->buffer, UDP_BUFFER_SIZE);
     if(len <= 0)
     {
+        if(len == 0 || errno == EAGAIN)
+            return;
+
         on_close(mod);
         return;
     }
@@ -99,6 +102,9 @@ void on_read_check(void *arg)
     ssize_t len = asc_socket_recv(mod->sock, mod->buffer, UDP_BUFFER_SIZE);
     if(len <= 0)
     {
+        if(len == 0 || errno == EAGAIN)
+            return;
+
         on_close(mod);
         return;
     }
