@@ -331,23 +331,23 @@ input_modules.http = function(input_conf)
     end
 
     http_conf.callback = function(self, data)
-        if data.code == 200 then
-            instance.i = self
-            start_analyze()
-        elseif data.code == 301 or data.code == 302 then
-            local host, port, path = http_parse_location(data.headers)
-            if host then
-                http_conf.host = host
-                http_conf.port = port
-                http_conf.path = path
-                http_conf.headers[2] = "Host: " .. host .. ":" .. port
-                http_request(http_conf)
+            if data.code == 200 then
+                instance.i = self
+                start_analyze()
+            elseif data.code == 301 or data.code == 302 then
+                local host, port, path = http_parse_location(data.headers)
+                if host then
+                    http_conf.host = host
+                    http_conf.port = port
+                    http_conf.path = path
+                    http_conf.headers[2] = "Host: " .. host .. ":" .. port
+                    http_request(http_conf)
+                end
+            else
+                log.error("ERROR: " .. data.code .. ":" .. data.message)
+                astra.exit()
             end
-        else
-            log.error("ERROR: " .. data.code .. ":" .. data.message)
-            astra.exit()
         end
-    end
 
     http_request(http_conf)
 end
