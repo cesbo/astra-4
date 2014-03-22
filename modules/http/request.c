@@ -69,8 +69,23 @@ struct module_data_t
 
     size_t chunk_left; // is_chunked || is_content_length
 
-    asc_thread_t *thread;
     string_buffer_t *content;
+
+    struct
+    {
+        asc_thread_t *thread;
+
+        int fd[2];
+        asc_event_t *event;
+
+        uint8_t *buffer;
+        uint32_t buffer_size;
+        uint32_t buffer_count;
+        uint32_t buffer_read;
+        uint32_t buffer_write;
+        uint32_t buffer_pointer;
+    } sync;
+    uint64_t pcr;
 };
 
 static const char __method[] = "method";
@@ -142,6 +157,23 @@ static void on_close(void *arg)
         mod->timeout = NULL;
     }
 
+    if(mod->sync.thread)
+    {
+        asc_thread_destroy(&mod->sync.thread);
+        asc_event_close(mod->sync.event);
+        if(mod->sync.fd[0])
+        {
+            close(mod->sync.fd[0]);
+            close(mod->sync.fd[1]);
+        }
+    }
+
+    if(mod->sync.buffer)
+    {
+        free(mod->sync.buffer);
+        mod->sync.buffer = NULL;
+    }
+
     if(mod->sock)
     {
         asc_socket_close(mod->sock);
@@ -182,13 +214,289 @@ static void on_close(void *arg)
  *
  */
 
+static inline int check_pcr(const uint8_t *ts)
+{
+    return (   (ts[3] & 0x20)   /* adaptation field without payload */
+            && (ts[4] > 0)      /* adaptation field length */
+            && (ts[5] & 0x10)   /* PCR_flag */
+            && !(ts[5] & 0x40)  /* random_access_indicator */
+            );
+}
+
+static inline uint64_t calc_pcr(const uint8_t *ts)
+{
+    const uint64_t pcr_base = (ts[6] << 25)
+                            | (ts[7] << 17)
+                            | (ts[8] << 9 )
+                            | (ts[9] << 1 )
+                            | (ts[10] >> 7);
+    const uint64_t pcr_ext = ((ts[10] & 1) << 8) | (ts[11]);
+    return (pcr_base * 300 + pcr_ext);
+}
+
+static int seek_pcr(module_data_t *mod, uint32_t *block_size)
+{
+    uint32_t count;
+    for(count = TS_PACKET_SIZE; count < mod->sync.buffer_count; count += TS_PACKET_SIZE)
+    {
+        uint32_t pos = mod->sync.buffer_pointer + count;
+        if(pos > mod->sync.buffer_size)
+            pos -= mod->sync.buffer_size;
+
+        if(check_pcr(&mod->sync.buffer[pos]))
+        {
+            *block_size = count;
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static void sync_queue_push(module_data_t *mod, bool reload)
+{
+    bool cmd[1];
+    cmd[0] = reload;
+    if(send(mod->sync.fd[0], cmd, sizeof(cmd), 0) != sizeof(cmd))
+        asc_log_error(MSG("failed to push signal to queue\n"));
+}
+
+static void on_thread_read(void *arg)
+{
+    module_data_t *mod = arg;
+
+    uint8_t ts[TS_PACKET_SIZE];
+
+    bool cmd[1];
+    if(recv(mod->sync.fd[1], cmd, sizeof(cmd), 0) != sizeof(cmd))
+        asc_log_error(MSG("failed to pop signal from queue\n"));
+
+    if(cmd[0] == true)
+    {
+        mod->sync.buffer_read = 0;
+
+        asc_event_close(mod->sync.event);
+        if(mod->sync.fd[0])
+        {
+            close(mod->sync.fd[0]);
+            close(mod->sync.fd[1]);
+        }
+
+        socketpair(AF_LOCAL, SOCK_STREAM, 0, mod->sync.fd);
+        mod->sync.event = asc_event_init(mod->sync.fd[1], mod);
+        asc_event_set_on_read(mod->sync.event, on_thread_read);
+
+        return;
+    }
+
+    memcpy(ts, &mod->sync.buffer[mod->sync.buffer_read], TS_PACKET_SIZE);
+    mod->sync.buffer_read += TS_PACKET_SIZE;
+    if(mod->sync.buffer_read >= mod->sync.buffer_size)
+        mod->sync.buffer_read = 0;
+
+    __sync_fetch_and_sub(&mod->sync.buffer_count, TS_PACKET_SIZE);
+
+    module_stream_send(mod, ts);
+}
+
 static void read_stream_thread(void *arg)
 {
     module_data_t *mod = arg;
 
-    asc_thread_while(mod->thread)
+    asc_thread_while(mod->sync.thread)
     {
-        //
+        uint64_t time_sync_b, time_sync_e, time_sync_bb, time_sync_be;
+
+        double block_time_total, total_sync_diff;
+        uint32_t pos, block_size = 0;
+
+        struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
+        static const struct timespec data_wait = { .tv_sec = 0, .tv_nsec = 100000 };
+
+        asc_log_info(MSG("buffering..."));
+
+        // flush
+        sync_queue_push(mod, true);
+
+        mod->sync.buffer_count = 0;
+        mod->sync.buffer_write = 0;
+        mod->sync.buffer_pointer = 0;
+
+        while(mod->sync.buffer_count < mod->sync.buffer_size)
+        {
+            ssize_t len;
+            if(mod->sync.buffer_count == 0)
+            {
+                len = asc_socket_recv(mod->sock
+                                      , &mod->buffer[block_size]
+                                      , 2 * TS_PACKET_SIZE - block_size);
+                if(len > 0)
+                {
+                    block_size += len;
+                    if(block_size < 2 * TS_PACKET_SIZE)
+                        continue;
+                    for(uint32_t i = 0; i < block_size; ++i)
+                    {
+                        if(   mod->buffer[i] == 0x47
+                           && mod->buffer[i + TS_PACKET_SIZE] == 0x47)
+                        {
+                            mod->sync.buffer_count = block_size - i;
+                            memcpy(mod->sync.buffer, &mod->buffer[i], mod->sync.buffer_count);
+                            break;
+                        }
+                    }
+                    if(mod->sync.buffer_count == 0)
+                    {
+                        mod->sync.buffer[0] = 0x00;
+                        asc_log_error(MSG("wrong stream format"));
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                len = asc_socket_recv(mod->sock
+                                              , &mod->sync.buffer[mod->sync.buffer_count]
+                                              , mod->sync.buffer_size - mod->sync.buffer_count);
+                if(len > 0)
+                {
+                    mod->sync.buffer_count += len;
+                }
+            }
+            if(len < 0)
+                nanosleep(&data_wait, NULL);
+        }
+        if(mod->sync.buffer_count == 0)
+        {
+            if(mod->sync.buffer[0] != 0x47)
+                break;
+
+            continue;
+        }
+
+        if(!seek_pcr(mod, &block_size))
+        {
+            asc_log_error(MSG("first PCR is not found"));
+            continue;
+        }
+        pos = mod->sync.buffer_pointer + block_size;
+        if(pos > mod->sync.buffer_size)
+            pos -= mod->sync.buffer_size;
+        mod->pcr = calc_pcr(&mod->sync.buffer[pos]);
+        mod->sync.buffer_pointer = pos;
+
+        time_sync_b = asc_utime();
+        block_time_total = 0.0;
+        total_sync_diff = 0.0;
+
+        while(1)
+        {
+            const uint32_t capacity = mod->sync.buffer_size - mod->sync.buffer_count;
+            if(capacity > 0)
+            {
+                const uint32_t tail = (mod->sync.buffer_read < mod->sync.buffer_write)
+                                    ? (mod->sync.buffer_size - mod->sync.buffer_write)
+                                    : (mod->sync.buffer_read - mod->sync.buffer_write);
+
+                const ssize_t l = asc_socket_recv(  mod->sock
+                                                  , &mod->sync.buffer[mod->sync.buffer_write]
+                                                  , tail);
+                if(l > 0)
+                {
+                    mod->sync.buffer_write += l;
+                    if(mod->sync.buffer_write >= mod->sync.buffer_size)
+                        mod->sync.buffer_write = 0;
+                    __sync_fetch_and_add(&mod->sync.buffer_count, l);
+                }
+            }
+
+            if(!seek_pcr(mod, &block_size))
+            {
+                asc_log_error(MSG("sync failed. Next PCR is not found. reload buffer"));
+                break;
+            }
+
+            pos = mod->sync.buffer_pointer + block_size;
+            if(pos > mod->sync.buffer_size)
+                pos -= mod->sync.buffer_size;
+
+            // get PCR
+            const uint64_t pcr = calc_pcr(&mod->sync.buffer[pos]);
+            const uint64_t delta_pcr = pcr - mod->pcr;
+            mod->pcr = pcr;
+            // get block time
+            const uint64_t dpcr_base = delta_pcr / 300;
+            const uint64_t dpcr_ext = delta_pcr % 300;
+            const double block_time = ((double)(dpcr_base / 90.0)     // 90 kHz
+                                    + (double)(dpcr_ext / 27000.0));  // 27 MHz
+            if(block_time < 0 || block_time > 250)
+            {
+                asc_log_error(MSG("block time out of range: %.2f block_size:%u")
+                              , block_time, block_size / TS_PACKET_SIZE);
+                mod->sync.buffer_pointer = pos;
+
+                time_sync_b = asc_utime();
+                block_time_total = 0.0;
+                total_sync_diff = 0.0;
+                continue;
+            }
+            block_time_total += block_time;
+
+            // calculate the sync time value
+            if((block_time + total_sync_diff) > 0)
+                ts_sync.tv_nsec = ((block_time + total_sync_diff) * 1000000)
+                                / (block_size / TS_PACKET_SIZE);
+            else
+                ts_sync.tv_nsec = 0;
+            // store the sync time value for later usage
+            const uint64_t ts_sync_nsec = ts_sync.tv_nsec;
+
+            uint64_t calc_block_time_ns = 0;
+            time_sync_bb = asc_utime();
+
+            while(block_size > 0)
+            {
+                sync_queue_push(mod, false);
+
+                // send
+                block_size -= TS_PACKET_SIZE;
+                if(ts_sync.tv_nsec > 0)
+                    nanosleep(&ts_sync, NULL);
+
+                // block syncing
+                calc_block_time_ns += ts_sync_nsec;
+                time_sync_be = asc_utime();
+
+                const uint64_t real_block_time_ns = (time_sync_be - time_sync_bb) * 1000;
+                ts_sync.tv_nsec = (real_block_time_ns > calc_block_time_ns) ? 0 : ts_sync_nsec;
+            }
+            mod->sync.buffer_pointer = pos;
+
+            // stream syncing
+            time_sync_e = asc_utime();
+            if(time_sync_e < time_sync_b)
+            {
+                // timetravel
+                asc_log_warning(MSG("timetravel detected"));
+                total_sync_diff = -1000000.0;
+            }
+            else
+            {
+                const double time_sync_diff = (time_sync_e - time_sync_b) / 1000.0;
+                total_sync_diff = block_time_total - time_sync_diff;
+            }
+
+            // reset buffer on changing the system time
+            if(total_sync_diff < -100.0 || total_sync_diff > 100.0)
+            {
+                asc_log_warning(MSG("wrong syncing time: %.2fms. reset time values")
+                                , total_sync_diff);
+
+                time_sync_b = asc_utime();
+                block_time_total = 0.0;
+                total_sync_diff = 0.0;
+            }
+        }
     }
 }
 
@@ -330,7 +638,9 @@ static void on_read(void *arg)
     // content
     if(mod->is_stream && mod->status_code == 200)
     {
-        asc_socket_set_nonblock(mod->sock, false);
+        asc_socket_set_on_read(mod->sock, NULL);
+        asc_socket_set_on_ready(mod->sock, NULL);
+        asc_socket_set_on_close(mod->sock, NULL);
 
         get_lua_callback(mod);
         lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
@@ -339,7 +649,18 @@ static void on_read(void *arg)
         lua_setfield(lua, -2, __stream);
         lua_call(lua, 2, 0);
 
-        asc_thread_init(&mod->thread, read_stream_thread, mod);
+        int value = 2;
+        value = (value * 1000 * 1000) / 8;
+        value = (value / TS_PACKET_SIZE) * TS_PACKET_SIZE;
+
+        mod->sync.buffer = malloc(value);
+        mod->sync.buffer_size = value;
+
+        socketpair(AF_LOCAL, SOCK_STREAM, 0, mod->sync.fd);
+        mod->sync.event = asc_event_init(mod->sync.fd[1], mod);
+        asc_event_set_on_read(mod->sync.event, on_thread_read);
+
+        asc_thread_init(&mod->sync.thread, read_stream_thread, mod);
         return;
     }
 
@@ -601,11 +922,13 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
+    if(mod->idx_self == 0)
+        return;
+
     if(mod->is_stream)
         module_stream_destroy(mod);
 
-    if(mod->idx_self)
-        on_close(mod);
+    on_close(mod);
 }
 
 MODULE_STREAM_METHODS()

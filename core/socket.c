@@ -25,8 +25,8 @@
 
 #ifdef _WIN32
 #   define _WIN32_WINNT 0x0501
-#   include <windows.h>
 #   include <winsock2.h>
+#   include <windows.h>
 #   include <ws2tcpip.h>
 #   define SHUT_RD SD_RECEIVE
 #   define SHUT_WR SD_SEND
@@ -233,13 +233,42 @@ static void __asc_socket_on_ready(void *arg)
         sock->on_ready(sock->arg);
 }
 
+static bool __asc_socket_check_event(asc_socket_t *sock)
+{
+    const bool is_callback = (   sock->on_read != NULL
+                              || sock->on_ready != NULL
+                              || sock->on_close != NULL);
+
+    if(sock->event == NULL)
+    {
+        if(is_callback == true)
+            sock->event = asc_event_init(sock->fd, sock);
+    }
+    else
+    {
+        if(is_callback == false)
+        {
+            asc_event_close(sock->event);
+            sock->event = NULL;
+        }
+    }
+
+    return (sock->event != NULL);
+}
+
 void asc_socket_set_on_read(asc_socket_t *sock, socket_callback_t on_read)
 {
     if(sock->on_read == on_read)
         return;
 
     sock->on_read = on_read;
-    asc_event_set_on_read(sock->event, (on_read) ? __asc_socket_on_read : NULL);
+
+    if(__asc_socket_check_event(sock))
+    {
+        if(on_read != NULL)
+            on_read = __asc_socket_on_read;
+        asc_event_set_on_read(sock->event, on_read);
+    }
 }
 
 void asc_socket_set_on_ready(asc_socket_t * sock, socket_callback_t on_ready)
@@ -248,7 +277,13 @@ void asc_socket_set_on_ready(asc_socket_t * sock, socket_callback_t on_ready)
         return;
 
     sock->on_ready = on_ready;
-    asc_event_set_on_write(sock->event, (on_ready) ? __asc_socket_on_ready : NULL);
+
+    if(__asc_socket_check_event(sock))
+    {
+        if(on_ready != NULL)
+            on_ready = __asc_socket_on_ready;
+        asc_event_set_on_write(sock->event, on_ready);
+    }
 }
 
 void asc_socket_set_on_close(asc_socket_t *sock, socket_callback_t on_close)
@@ -257,7 +292,13 @@ void asc_socket_set_on_close(asc_socket_t *sock, socket_callback_t on_close)
         return;
 
     sock->on_close = on_close;
-    asc_event_set_on_error(sock->event, (on_close) ? __asc_socket_on_close : NULL);
+
+    if(__asc_socket_check_event(sock))
+    {
+        if(on_close != NULL)
+            on_close = __asc_socket_on_close;
+        asc_event_set_on_error(sock->event, on_close);
+    }
 }
 
 /*
@@ -314,9 +355,12 @@ void asc_socket_listen(asc_socket_t *sock, socket_callback_t on_accept, socket_c
         on_error(sock->arg);
         return;
     }
+
     sock->on_read = on_accept;
     sock->on_ready = NULL;
     sock->on_close = on_error;
+    if(sock->event == NULL)
+        sock->event = asc_event_init(sock->fd, sock);
     asc_event_set_on_read(sock->event, __asc_socket_on_accept);
     asc_event_set_on_write(sock->event, NULL);
     asc_event_set_on_error(sock->event, __asc_socket_on_close);
@@ -409,6 +453,8 @@ void asc_socket_connect(asc_socket_t *sock, const char *addr, int port
     sock->on_read = NULL;
     sock->on_ready = on_connect;
     sock->on_close = on_error;
+    if(sock->event == NULL)
+        sock->event = asc_event_init(sock->fd, sock);
     asc_event_set_on_read(sock->event, NULL);
     asc_event_set_on_write(sock->event, __asc_socket_on_connect);
     asc_event_set_on_error(sock->event, __asc_socket_on_close);
@@ -501,24 +547,14 @@ int asc_socket_port(asc_socket_t *sock)
 
 void asc_socket_set_nonblock(asc_socket_t *sock, bool is_nonblock)
 {
-    if(is_nonblock)
+    if(is_nonblock == false && sock->event)
     {
-        if(sock->event)
-            return;
-        else
-        {
-            sock->event = asc_event_init(sock->fd, sock);
-        }
-    }
-    else
-    {
-        if(!sock->event)
-            return;
-        else
-        {
-            asc_event_close(sock->event);
-            sock->event = NULL;
-        }
+        sock->on_read = NULL;
+        sock->on_ready = NULL;
+        sock->on_close = NULL;
+
+        asc_event_close(sock->event);
+        sock->event = NULL;
     }
 
 #ifdef _WIN32
