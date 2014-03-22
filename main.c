@@ -26,7 +26,8 @@
 #include "config.h"
 
 static jmp_buf main_loop;
-static bool is_astra_reload = false;
+
+bool is_main_loop_idle = true;
 
 void astra_exit(void)
 {
@@ -54,8 +55,7 @@ void astra_abort(void)
 
 void astra_reload(void)
 {
-    is_astra_reload = true;
-    longjmp(main_loop, 1);
+    longjmp(main_loop, 2);
 }
 
 static void signal_handler(int signum)
@@ -77,6 +77,8 @@ static void signal_handler(int signum)
 
 int main(int argc, const char **argv)
 {
+    static const struct timespec main_loop_delay = { .tv_sec = 0, .tv_nsec = 100000 };
+
     static const char version_string[] = "Astra " ASTRA_VERSION_STR "\n";
     if(argc == 2 && !strcmp(argv[1], "-v"))
     {
@@ -95,6 +97,7 @@ int main(int argc, const char **argv)
 astra_reload_entry:
 
     srand((uint32_t)time(NULL));
+    asc_thread_core_init();
     asc_timer_core_init();
     asc_socket_core_init();
     asc_event_core_init();
@@ -131,7 +134,8 @@ astra_reload_entry:
     lua_setglobal(lua, "argv");
 
     /* start */
-    if(!setjmp(main_loop))
+    const int main_loop_status = setjmp(main_loop);
+    if(main_loop_status == 0)
     {
         lua_getglobal(lua, "inscript");
         if(lua_isfunction(lua, -1))
@@ -167,24 +171,28 @@ astra_reload_entry:
 
         while(true)
         {
+            is_main_loop_idle = true;
             asc_event_core_loop();
             asc_timer_core_loop();
+            asc_thread_core_loop();
+            if(is_main_loop_idle)
+                nanosleep(&main_loop_delay, NULL);
         }
     }
 
     /* destroy */
     lua_close(lua);
+
     asc_event_core_destroy();
     asc_socket_core_destroy();
     asc_timer_core_destroy();
+    asc_thread_core_destroy();
+
     asc_log_info("[main] exit");
     asc_log_core_destroy();
 
-    if(is_astra_reload)
-    {
-        is_astra_reload = false;
+    if(main_loop_status == 2)
         goto astra_reload_entry;
-    }
 
     return 0;
 }

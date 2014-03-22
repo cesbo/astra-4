@@ -22,6 +22,8 @@
 #include "list.h"
 #include "utils.h"
 
+extern bool is_main_loop_idle;
+
 struct asc_timer_t
 {
     void (*callback)(void *arg);
@@ -70,12 +72,14 @@ void asc_timer_core_loop(void)
             if(timer->interval == 0)
             {
                 // one shot timer
+                is_main_loop_idle = false;
                 timer->callback(timer->arg);
                 timer->callback = NULL;
                 ++is_detached;
             }
             else
             {
+                is_main_loop_idle = false;
                 timer->next_shot += timer->interval;
                 timer->callback(timer->arg);
             }

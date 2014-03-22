@@ -25,6 +25,10 @@
 
 typedef struct asc_thread_t asc_thread_t;
 
+void asc_thread_core_init(void);
+void asc_thread_core_destroy(void);
+void asc_thread_core_loop(void);
+
 #ifndef _WIN32
 jmp_buf * __thread_getjmp(void);
 void __thread_setjmp(asc_thread_t *thread);

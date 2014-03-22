@@ -145,3 +145,18 @@ void asc_thread_destroy(asc_thread_t **thread_ptr)
     free(thread);
     *thread_ptr = NULL;
 }
+
+void asc_thread_core_init(void)
+{
+    //
+}
+
+void asc_thread_core_destroy(void)
+{
+    //
+}
+
+void asc_thread_core_loop(void)
+{
+    //
+}
