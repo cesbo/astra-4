@@ -83,7 +83,6 @@ struct module_data_t
         uint32_t buffer_count;
         uint32_t buffer_read;
         uint32_t buffer_write;
-        uint32_t buffer_pointer;
     } sync;
     uint64_t pcr;
 };
@@ -239,7 +238,7 @@ static int seek_pcr(module_data_t *mod, uint32_t *block_size)
     uint32_t count;
     for(count = TS_PACKET_SIZE; count < mod->sync.buffer_count; count += TS_PACKET_SIZE)
     {
-        uint32_t pos = mod->sync.buffer_pointer + count;
+        uint32_t pos = mod->sync.buffer_read + count;
         if(pos > mod->sync.buffer_size)
             pos -= mod->sync.buffer_size;
 
@@ -253,11 +252,9 @@ static int seek_pcr(module_data_t *mod, uint32_t *block_size)
     return 0;
 }
 
-static void sync_queue_push(module_data_t *mod, bool reload)
+static void sync_queue_push(module_data_t *mod, uint32_t pos)
 {
-    bool cmd[1];
-    cmd[0] = reload;
-    if(send(mod->sync.fd[0], cmd, sizeof(cmd), 0) != sizeof(cmd))
+    if(send(mod->sync.fd[0], &pos, sizeof(pos), 0) != sizeof(pos))
         asc_log_error(MSG("failed to push signal to queue\n"));
 }
 
@@ -265,16 +262,12 @@ static void on_thread_read(void *arg)
 {
     module_data_t *mod = arg;
 
-    uint8_t ts[TS_PACKET_SIZE];
-
-    bool cmd[1];
-    if(recv(mod->sync.fd[1], cmd, sizeof(cmd), 0) != sizeof(cmd))
+    uint32_t pos;
+    if(recv(mod->sync.fd[1], &pos, sizeof(pos), 0) != sizeof(pos))
         asc_log_error(MSG("failed to pop signal from queue\n"));
 
-    if(cmd[0] == true)
+    if(pos > mod->sync.buffer_size)
     {
-        mod->sync.buffer_read = 0;
-
         asc_event_close(mod->sync.event);
         if(mod->sync.fd[0])
         {
@@ -289,14 +282,7 @@ static void on_thread_read(void *arg)
         return;
     }
 
-    memcpy(ts, &mod->sync.buffer[mod->sync.buffer_read], TS_PACKET_SIZE);
-    mod->sync.buffer_read += TS_PACKET_SIZE;
-    if(mod->sync.buffer_read >= mod->sync.buffer_size)
-        mod->sync.buffer_read = 0;
-
-    __sync_fetch_and_sub(&mod->sync.buffer_count, TS_PACKET_SIZE);
-
-    module_stream_send(mod, ts);
+    module_stream_send(mod, &mod->sync.buffer[pos]);
 }
 
 static void read_stream_thread(void *arg)
@@ -316,11 +302,11 @@ static void read_stream_thread(void *arg)
         asc_log_info(MSG("buffering..."));
 
         // flush
-        sync_queue_push(mod, true);
+        sync_queue_push(mod, mod->sync.buffer_size + 1);
 
         mod->sync.buffer_count = 0;
         mod->sync.buffer_write = 0;
-        mod->sync.buffer_pointer = 0;
+        mod->sync.buffer_read = 0;
 
         while(mod->sync.buffer_count < mod->sync.buffer_size)
         {
@@ -379,11 +365,11 @@ static void read_stream_thread(void *arg)
             asc_log_error(MSG("first PCR is not found"));
             continue;
         }
-        pos = mod->sync.buffer_pointer + block_size;
+        pos = mod->sync.buffer_read + block_size;
         if(pos > mod->sync.buffer_size)
             pos -= mod->sync.buffer_size;
         mod->pcr = calc_pcr(&mod->sync.buffer[pos]);
-        mod->sync.buffer_pointer = pos;
+        mod->sync.buffer_read = pos;
 
         time_sync_b = asc_utime();
         block_time_total = 0.0;
@@ -406,7 +392,7 @@ static void read_stream_thread(void *arg)
                     mod->sync.buffer_write += l;
                     if(mod->sync.buffer_write >= mod->sync.buffer_size)
                         mod->sync.buffer_write = 0;
-                    __sync_fetch_and_add(&mod->sync.buffer_count, l);
+                    mod->sync.buffer_count += l;
                 }
             }
 
@@ -416,7 +402,7 @@ static void read_stream_thread(void *arg)
                 break;
             }
 
-            pos = mod->sync.buffer_pointer + block_size;
+            pos = mod->sync.buffer_read + block_size;
             if(pos > mod->sync.buffer_size)
                 pos -= mod->sync.buffer_size;
 
@@ -433,7 +419,8 @@ static void read_stream_thread(void *arg)
             {
                 asc_log_error(MSG("block time out of range: %.2f block_size:%u")
                               , block_time, block_size / TS_PACKET_SIZE);
-                mod->sync.buffer_pointer = pos;
+                mod->sync.buffer_read = pos;
+                mod->sync.buffer_count -= block_size;
 
                 time_sync_b = asc_utime();
                 block_time_total = 0.0;
@@ -456,7 +443,11 @@ static void read_stream_thread(void *arg)
 
             while(block_size > 0)
             {
-                sync_queue_push(mod, false);
+                sync_queue_push(mod, mod->sync.buffer_read);
+                mod->sync.buffer_read += TS_PACKET_SIZE;
+                if(mod->sync.buffer_read >= mod->sync.buffer_size)
+                    mod->sync.buffer_read = 0;
+                mod->sync.buffer_count -= TS_PACKET_SIZE;
 
                 // send
                 block_size -= TS_PACKET_SIZE;
@@ -470,7 +461,6 @@ static void read_stream_thread(void *arg)
                 const uint64_t real_block_time_ns = (time_sync_be - time_sync_bb) * 1000;
                 ts_sync.tv_nsec = (real_block_time_ns > calc_block_time_ns) ? 0 : ts_sync_nsec;
             }
-            mod->sync.buffer_pointer = pos;
 
             // stream syncing
             time_sync_e = asc_utime();
