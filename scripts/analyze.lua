@@ -1,5 +1,10 @@
 #!/usr/bin/env astra
 
+-- Astra MPEG-TS Analyzer
+-- http://cesbo.com/astra
+--
+-- Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+
 function dump_table(t, p, i)
     if not p then p = print end
     if not i then
@@ -60,10 +65,10 @@ parse_source.http = function(addr, source)
     end
     local x = addr:find("/")
     if x then
-        source.uri = addr:sub(x)
+        source.path = addr:sub(x)
         addr = addr:sub(1, x - 1)
     else
-        source.uri = "/"
+        source.path = "/"
     end
     local x = addr:find(":")
     if x then
@@ -76,17 +81,17 @@ parse_source.http = function(addr, source)
 end
 
 function parse_options(options, source)
-    local x = options:find("?")
-    if x ~= 1 then
-        return
-    end
-    options = options:sub(2)
-
     function parse_option(option)
         local x = option:find("=")
-        if not x then return nil end
-        local key = option:sub(1, x - 1)
-        source[key] = option:sub(x + 1)
+        local key, value
+        if x then
+            key = option:sub(1, x - 1)
+            value = option:sub(x + 1)
+        else
+            key = option
+            value = true
+        end
+        source[key] = value
     end
 
     local pos = 1
@@ -103,15 +108,25 @@ function parse_options(options, source)
 end
 
 function parse_url(url)
-    local x,_,source_type,source_addr,source_options = url:find("^(%a+)://([%a%d%.:@_/%-]+)(.*)$" )
-    if not source_type then
-        return nil
-    end
-    if type(parse_source[source_type]) ~= 'function' then return nil end
+    local x = url:find("://")
+    if not x then return nil end
 
-    local source = { type = source_type }
-    parse_source[source_type](source_addr, source)
-    if source_options then parse_options(source_options, source) end
+    local source = {}
+
+    source.type = url:sub(1, x - 1)
+    if type(parse_source[source.type]) ~= 'function' then return nil end
+
+    url = url:sub(x + 3)
+
+    local options = nil
+    local x = url:find("#")
+    if x then
+        options = url:sub(x + 1)
+        url = url:sub(1, x - 1)
+    end
+
+    parse_source[source.type](url, source)
+    if options then parse_options(options, source) end
 
     return source
 end
@@ -289,22 +304,9 @@ function http_parse_location(headers)
     for _, header in pairs(headers) do
         local _,_,location = header:find("^Location: http://(.*)")
         if location then
-            local port, uri
-            local p,_ = location:find("/")
-            if p then
-                uri = location:sub(p)
-                location = location:sub(1, p - 1)
-            else
-                uri = "/"
-            end
-            local p,_ = location:find(":")
-            if p then
-                port = tonumber(location:sub(p + 1))
-                location = location:sub(1, p - 1)
-            else
-                port = 80
-            end
-            return location, port, uri
+            local x = {}
+            parse_source.http(location, x)
+            return x.host, x.port, x.path
         end
     end
     return nil
@@ -315,38 +317,39 @@ input_modules.http = function(input_conf)
 
     http_conf.host = input_conf.host
     http_conf.port = input_conf.port
-    http_conf.uri = input_conf.uri
+    http_conf.path = input_conf.path
     http_conf.headers =
     {
-        "User-Agent: Astra",
-        "Host: " .. input_conf.host .. ":" .. input_conf.port
+        "User-Agent: Astra " .. astra.version,
+        "Host: " .. input_conf.host .. ":" .. input_conf.port,
+        "Connection: close",
     }
-    http_conf.ts = true
-    http_conf.callback = function(self, data)
-        if type(data) == 'table' then
-            if data.code == 200 then
-                start_analyze()
-
-            elseif data.code == 301 or data.code == 302 then
-                local host, port, uri = http_parse_location(data.headers)
-                if host then
-                    http_conf.host = host
-                    http_conf.port = port
-                    http_conf.uri = uri
-                    http_conf.headers[2] = "Host: " .. host .. ":" .. port
-
-                    instance.i = http_request(http_conf)
-                end
-                self:close()
-            end
-        end
-    end
+    http_conf.stream = true
 
     if input_conf.auth then
         table.insert(http_conf.headers, "Authorization: Basic " .. input_conf.auth)
     end
 
-    instance.i = http_request(http_conf)
+    http_conf.callback = function(self, data)
+        if data.code == 200 then
+            instance.i = self
+            start_analyze()
+        elseif data.code == 301 or data.code == 302 then
+            local host, port, path = http_parse_location(data.headers)
+            if host then
+                http_conf.host = host
+                http_conf.port = port
+                http_conf.path = path
+                http_conf.headers[2] = "Host: " .. host .. ":" .. port
+                http_request(http_conf)
+            end
+        else
+            log.error("ERROR: " .. data.code .. ":" .. data.message)
+            astra.exit()
+        end
+    end
+
+    http_request(http_conf)
 end
 
 if not input_modules[input_conf.type] then
