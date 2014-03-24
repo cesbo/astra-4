@@ -141,12 +141,8 @@ void asc_event_core_destroy(void)
 
 void asc_event_core_loop(void)
 {
-    static const struct timespec tv = { 0, 10000000 };
     if(!asc_list_size(event_observer.event_list))
-    {
-        nanosleep(&tv, NULL);
         return;
-    }
 
 #if defined(EV_TYPE_KQUEUE)
     static const struct timespec timeout = { 0, 0 };
@@ -351,10 +347,7 @@ void asc_event_core_loop(void)
 {
     static struct timespec tv = { 0, 10000000 };
     if(!event_observer.fd_count)
-    {
-        nanosleep(&tv, NULL);
         return;
-    }
 
     int ret = poll(event_observer.fd_list, event_observer.fd_count, 10);
     if(ret == -1)
@@ -511,15 +504,7 @@ void asc_event_core_destroy(void)
 void asc_event_core_loop(void)
 {
     if(!asc_list_size(event_observer.event_list))
-    {
-#ifdef _WIN32
-        Sleep(10);
-#else
-        static struct timespec tv = { .tv_sec = 0, .tv_nsec = 10000000 };
-        nanosleep(&tv, NULL);
-#endif
         return;
-    }
 
     fd_set rset;
     fd_set wset;
