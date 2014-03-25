@@ -1,7 +1,7 @@
 -- Astra Script: IPTV Streaming
 -- http://cesbo.com/astra
 --
--- Copyright (C) 2013, Andrey Dyldin <and@cesbo.com>
+-- Copyright (C) 2013-2014, Andrey Dyldin <and@cesbo.com>
 --
 -- This program is free software: you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License as published by
@@ -224,10 +224,10 @@ parse_addr.http = function(addr, result)
     end
     local x = addr:find("/")
     if x then
-        result.uri = addr:sub(x)
+        result.path = addr:sub(x)
         addr = addr:sub(1, x - 1)
     else
-        result.uri = "/"
+        result.path = "/"
     end
     local x = addr:find(":")
     if x then
@@ -298,11 +298,6 @@ function parse_url(url)
         url_options = url:sub(b + 1)
     else
         url_addr = url:sub(e + 1)
-    end
-
-    if module_name ~= "http" and module_name ~= "rtsp" and url_addr:find("?") then
-        log.error("[stream.lua] please, replace '?' with '#' for options")
-        astra.abort()
     end
 
     if type(parse_addr[module_name]) ~= 'function' then return nil end
@@ -461,7 +456,9 @@ function dvb_tune(dvb_conf)
     end
 end
 
-input_list.dvb = function(input_conf)
+input_list.dvb = function(channel_data, input_id)
+    local input_conf = channel_data.config.input[input_id]
+
     if input_conf.dvbcam and input_conf.pnr then
         input_conf._instance:ca_set_pnr(input_conf.pnr, true)
     end
@@ -483,7 +480,9 @@ end
 
 local udp_instance_list = {}
 
-input_list.udp = function(input_conf)
+input_list.udp = function(channel_data, input_id)
+    local input_conf = channel_data.config.input[input_id]
+
     if not input_conf.port then input_conf.port = 1234 end
 
     local addr = input_conf.addr .. ":" .. input_conf.port
@@ -522,7 +521,9 @@ end
 --  888           888         888   888      o  888    oo
 -- o888o         o888o       o888o o888ooooo88 o888ooo8888
 
-input_list.file = function(input_conf)
+input_list.file = function(channel_data, input_id)
+    local input_conf = channel_data.config.input[input_id]
+
     return { tail = file_input(input_conf) }
 end
 
@@ -561,21 +562,28 @@ function http_parse_location(headers)
     return nil
 end
 
-input_list.http = function(input_conf)
+input_list.http = function(channel_data, input_id)
+    local input_conf = channel_data.config.input[input_id]
+
     local instance = {}
     local http_conf = {}
 
     http_conf.host = input_conf.host
     http_conf.port = input_conf.port
-    http_conf.uri = input_conf.uri
+    http_conf.path = input_conf.path
     http_conf.headers =
     {
         "User-Agent: Astra",
-        "Host: " .. input_conf.host .. ":" .. input_conf.port
+        "Host: " .. input_conf.host .. ":" .. input_conf.port,
+        "Connection: close",
     }
-    http_conf.ts = true
+    http_conf.stream = true
+
+    if input_conf.auth then
+        table.insert(http_conf.headers, "Authorization: Basic " .. input_conf.auth)
+    end
+
     http_conf.callback = function(self, data)
-        if type(data) == 'table' then
             if data.code == 200 then
                 if instance.timeout then
                     instance.timeout:close()
@@ -590,48 +598,37 @@ input_list.http = function(input_conf)
                     instance.timeout = nil
                 end
 
-                local host, port, uri = http_parse_location(data.headers)
+                local host, port, path = http_parse_location(data.headers)
                 if host then
                     http_conf.host = host
                     http_conf.port = port
-                    http_conf.uri = uri
+                    http_conf.path = path
                     http_conf.headers[2] = "Host: " .. host .. ":" .. port
-
                     instance.request = http_request(http_conf)
+
                     instance.timeout = timer({
                         interval = 5,
                         callback = function(self)
-                            instance.request:close()
-                            instance.request = http_request(http_conf)
-                        end
+                                instance.request:close()
+                                instance.request = http_request(http_conf)
+                            end
                     })
                 end
-                self:close()
-            end
-        elseif type(data) == 'nil' then
-            if instance.timeout then instance.timeout:close() end
-            instance.timeout = timer({
-                interval = 5,
-                callback = function(self)
-                    instance.request:close()
-                    instance.request = http_request(http_conf)
-                end
-            })
-        end
-    end
 
-    if input_conf.auth then
-        table.insert(http_conf.headers, "Authorization: Basic " .. input_conf.auth)
-    end
+            else
+                log.error("[" .. channel_data.config.name .. " #" .. input_id .. "] " ..
+                          "HTTP Error " .. data.code .. ":" .. data.message)
+            end
+        end
 
     instance.tail = transmit({})
     instance.request = http_request(http_conf)
     instance.timeout = timer({
         interval = 5,
         callback = function(self)
-            instance.request:close()
-            instance.request = http_request(http_conf)
-        end
+                instance.request:close()
+                instance.request = http_request(http_conf)
+            end
     })
 
     return instance
@@ -673,7 +670,7 @@ function init_input(channel_data, input_id)
     channel_data.input[input_id] = input_data
 
     input_data.config = input_conf
-    input_data.source = init_input_type(input_conf)
+    input_data.source = init_input_type(channel_data, input_id)
     input_data.tail = input_data.source.tail
 
     if input_conf.pnr or
@@ -794,7 +791,9 @@ end
 local output_list = {}
 local kill_output_list = {}
 
-output_list.udp = function(output_conf)
+output_list.udp = function(channel_data, output_id)
+    local output_conf = channel_data.config.output[output_id]
+
     if not output_conf.port then output_conf.port = 1234 end
     if not output_conf.ttl then output_conf.ttl = 32 end
 
@@ -811,7 +810,9 @@ end
 -- 888o   o888           888         888   888      o  888    oo
 --   88ooo88            o888o       o888o o888ooooo88 o888ooo8888
 
-output_list.file = function(output_conf)
+output_list.file = function(channel_data, output_id)
+    local output_conf = channel_data.config.output[output_id]
+
     return { tail = file_output(output_conf) }
 end
 
@@ -872,7 +873,9 @@ function http_server_send_200(server, client, upstream)
     })
 end
 
-output_list.http = function(output_conf)
+output_list.http = function(channel_data, output_id)
+    local output_conf = channel_data.config.output[output_id]
+
     local addr = output_conf.host .. ":" .. output_conf.port
 
     local http_instance
@@ -979,7 +982,7 @@ function init_output(channel_data, output_id)
     end
 
     output_conf.upstream = output_data.tail:stream()
-    output_data.instance = init_output_type(output_conf)
+    output_data.instance = init_output_type(channel_data, output_id)
 
     channel_data.output[output_id] = output_data
 end
