@@ -326,9 +326,8 @@ static void thread_loop(void *arg)
                     }
                     if(mod->sync.buffer_count == 0)
                     {
-                        mod->sync.buffer[0] = 0x00;
                         asc_log_error(MSG("wrong stream format"));
-                        break;
+                        return;
                     }
                 }
             }
@@ -346,18 +345,14 @@ static void thread_loop(void *arg)
                 nanosleep(&data_wait, NULL);
         }
         if(mod->sync.buffer_count == 0)
-        {
-            if(mod->sync.buffer[0] != 0x47)
-                break;
-
             continue;
-        }
 
         if(!seek_pcr(mod, &block_size))
         {
             asc_log_error(MSG("first PCR is not found"));
             continue;
         }
+        mod->sync.buffer_count -= block_size;
         pos = mod->sync.buffer_read + block_size;
         if(pos >= mod->sync.buffer_size)
             pos -= mod->sync.buffer_size;
@@ -394,7 +389,7 @@ static void thread_loop(void *arg)
                 asc_log_error(MSG("sync failed. Next PCR is not found. reload buffer"));
                 break;
             }
-
+            mod->sync.buffer_count -= block_size;
             pos = mod->sync.buffer_read + block_size;
             if(pos >= mod->sync.buffer_size)
                 pos -= mod->sync.buffer_size;
@@ -413,7 +408,6 @@ static void thread_loop(void *arg)
                 asc_log_error(MSG("block time out of range: %.2f block_size:%u")
                               , block_time, block_size / TS_PACKET_SIZE);
                 mod->sync.buffer_read = pos;
-                mod->sync.buffer_count -= block_size;
 
                 time_sync_b = asc_utime();
                 block_time_total = 0.0;
@@ -448,7 +442,6 @@ static void thread_loop(void *arg)
                 mod->sync.buffer_read += TS_PACKET_SIZE;
                 if(mod->sync.buffer_read >= mod->sync.buffer_size)
                     mod->sync.buffer_read = 0;
-                mod->sync.buffer_count -= TS_PACKET_SIZE;
 
                 // send
                 block_size -= TS_PACKET_SIZE;
