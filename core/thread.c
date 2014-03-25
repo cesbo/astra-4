@@ -242,7 +242,7 @@ ssize_t asc_thread_buffer_read(asc_thread_buffer_t *buffer, void *data, size_t s
     return size;
 }
 
-ssize_t asc_thread_buffer_write(asc_thread_buffer_t *buffer, void *data, size_t size)
+ssize_t asc_thread_buffer_write(asc_thread_buffer_t *buffer, const void *data, size_t size)
 {
     if(!size)
         return 0;

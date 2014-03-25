@@ -43,6 +43,6 @@ asc_thread_buffer_t * asc_thread_buffer_init(size_t buffer_size) __wur;
 void asc_thread_buffer_destroy(asc_thread_buffer_t *buffer);
 
 ssize_t asc_thread_buffer_read(asc_thread_buffer_t *buffer, void *data, size_t size) __wur;
-ssize_t asc_thread_buffer_write(asc_thread_buffer_t *buffer, void *data, size_t size) __wur;
+ssize_t asc_thread_buffer_write(asc_thread_buffer_t *buffer, const void *data, size_t size) __wur;
 
 #endif /* _THREAD_H_ */
