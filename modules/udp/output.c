@@ -192,7 +192,7 @@ static int seek_pcr(module_data_t *mod, uint32_t *block_size)
     for(count = TS_PACKET_SIZE; count < mod->sync.buffer_count; count += TS_PACKET_SIZE)
     {
         uint32_t pos = mod->sync.buffer_read + count;
-        if(pos > mod->sync.buffer_size)
+        if(pos >= mod->sync.buffer_size)
             pos -= mod->sync.buffer_size;
 
         if(check_pcr(&mod->sync.buffer[pos]))
@@ -253,7 +253,7 @@ static void thread_loop(void *arg)
             continue;
         }
         pos = mod->sync.buffer_read + block_size;
-        if(pos > mod->sync.buffer_size)
+        if(pos >= mod->sync.buffer_size)
             pos -= mod->sync.buffer_size;
         mod->pcr = calc_pcr(&mod->sync.buffer[pos]);
         mod->sync.buffer_read = pos;
@@ -270,7 +270,7 @@ static void thread_loop(void *arg)
                 break;
             }
             pos = mod->sync.buffer_read + block_size;
-            if(pos > mod->sync.buffer_size)
+            if(pos >= mod->sync.buffer_size)
                 pos -= mod->sync.buffer_size;
 
             // get PCR
