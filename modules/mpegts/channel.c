@@ -308,6 +308,26 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
  *
  */
 
+static uint16_t map_custom_pid(module_data_t *mod, uint16_t pid, const char *type)
+{
+    asc_list_for(mod->map)
+    {
+        map_item_t *map_item = asc_list_data(mod->map);
+        if(map_item->is_set)
+            continue;
+
+        if(   (map_item->origin_pid && map_item->origin_pid == pid)
+           || (!strcmp(map_item->type, type)) )
+        {
+            map_item->is_set = true;
+            mod->pid_map[pid] = map_item->custom_pid;
+
+            return map_item->custom_pid;
+        }
+    }
+    return 0;
+}
+
 static void on_pmt(void *arg, mpegts_psi_t *psi)
 {
     module_data_t *mod = arg;
@@ -412,12 +432,13 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
         if(mod->map)
         {
-            char type[6] = { 0 };
+            uint16_t custom_pid = 0;
+
             switch(mpegts_pes_type(PMT_ITEM_GET_TYPE(psi, pointer)))
             {
                 case MPEGTS_PACKET_VIDEO:
                 {
-                    strcpy(type, "video");
+                    custom_pid = map_custom_pid(mod, pid, "video");
                     break;
                 }
                 case MPEGTS_PACKET_AUDIO:
@@ -427,37 +448,28 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                     {
                         if(desc_pointer[0] == 0x0A)
                         {
-                            memcpy(type, &desc_pointer[2], 3);
-                            type[3] = '\0';
+                            char type[4];
+                            type[0] = desc_pointer[2];
+                            type[1] = desc_pointer[3];
+                            type[2] = desc_pointer[4];
+                            type[3] = 0;
+                            custom_pid = map_custom_pid(mod, pid, type);
                             break;
                         }
                         PMT_ITEM_DESC_NEXT(pointer, desc_pointer);
                     }
-                    if(!type[0])
-                        strcpy(type, "audio");
+                    if(!custom_pid)
+                        custom_pid = map_custom_pid(mod, pid, "audio");
                     break;
                 }
                 default:
                     break;
             }
 
-            asc_list_for(mod->map)
+            if(custom_pid)
             {
-                map_item_t *map_item = asc_list_data(mod->map);
-                if(map_item->is_set)
-                    continue;
-
-                if(   (map_item->origin_pid && map_item->origin_pid == pid)
-                   || (!strcmp(map_item->type, type)) )
-                {
-                    map_item->is_set = true;
-                    mod->pid_map[pid] = map_item->custom_pid;
-
-                    custom_pointer[1] = (custom_pointer[1] & ~0x1F)
-                                      | ((map_item->custom_pid >> 8) & 0x1F);
-                    custom_pointer[2] = map_item->custom_pid & 0xFF;
-                    break;
-                }
+                custom_pointer[1] = (custom_pointer[1] & ~0x1F) | ((custom_pid >> 8) & 0x1F);
+                custom_pointer[2] = custom_pid & 0xFF;
             }
         }
 
