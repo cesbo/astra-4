@@ -211,6 +211,15 @@ void asc_thread_buffer_destroy(asc_thread_buffer_t *buffer)
     free(buffer);
 }
 
+void asc_thread_buffer_flush(asc_thread_buffer_t *buffer)
+{
+    pthread_mutex_lock(&buffer->mutex);
+    buffer->count = 0;
+    buffer->read = 0;
+    buffer->write = 0;
+    pthread_mutex_unlock(&buffer->mutex);
+}
+
 ssize_t asc_thread_buffer_read(asc_thread_buffer_t *buffer, void *data, size_t size)
 {
     if(!size)
