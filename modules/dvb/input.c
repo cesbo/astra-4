@@ -41,7 +41,7 @@ struct module_data_t
 
     /* Base */
     asc_thread_t *thread;
-    bool thread_ready;
+    bool is_thread_started;
 
     /* DVR Config */
     int dvr_buffer_size;
@@ -550,7 +550,20 @@ static void module_options(module_data_t *mod)
  *
  */
 
-static void dvb_thread_loop(void *arg)
+static void on_thread_close(void *arg)
+{
+    module_data_t *mod = arg;
+
+    mod->is_thread_started = false;
+
+    if(mod->thread)
+    {
+        asc_thread_close(mod->thread);
+        mod->thread = NULL;
+    }
+}
+
+static void thread_loop(void *arg)
 {
     module_data_t *mod = arg;
 
@@ -574,7 +587,7 @@ static void dvb_thread_loop(void *arg)
         ++nfds;
     }
 
-    mod->thread_ready = true;
+    mod->is_thread_started = true;
 
     uint64_t current_time = asc_utime();
     uint64_t fe_check_timeout = current_time;
@@ -587,7 +600,7 @@ static void dvb_thread_loop(void *arg)
 #define CA_TIMEOUT (1 * 1000 * 1000)
 #define DVR_TIMEOUT (2 * 1000 * 1000)
 
-    asc_thread_while(mod->thread)
+    while(mod->is_thread_started)
     {
         const int ret = poll(fds, nfds, 100);
 
@@ -695,11 +708,14 @@ static void module_init(module_data_t *mod)
 
     module_options(mod);
 
-    asc_thread_init(&mod->thread, dvb_thread_loop, mod);
+    mod->thread = asc_thread_init(mod);
+    asc_thread_set_on_close(mod->thread, on_thread_close);
+    asc_thread_start(mod->thread, thread_loop);
+
     dvr_open(mod);
 
     struct timespec ts = { .tv_sec = 0, .tv_nsec = 500000 };
-    while(!mod->thread_ready)
+    while(!mod->is_thread_started)
         nanosleep(&ts, NULL);
 }
 
@@ -708,7 +724,9 @@ static void module_destroy(module_data_t *mod)
     module_stream_destroy(mod);
 
     dvr_close(mod);
-    asc_thread_destroy(&mod->thread);
+
+    if(mod->thread)
+        on_thread_close(mod);
 
     free(mod->fe);
     free(mod->ca);
