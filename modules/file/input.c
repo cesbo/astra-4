@@ -2,7 +2,7 @@
  * Astra Module: File Input
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -338,7 +338,7 @@ static void thread_loop(void *arg)
             const uint8_t *ptr = &mod->buffer[mod->m2ts_header + mod->buffer_skip];
             if(ptr[0] == 0x47)
             {
-                ssize_t r = asc_thread_buffer_write(mod->thread_output, ptr, TS_PACKET_SIZE);
+                const ssize_t r = asc_thread_buffer_write(mod->thread_output, ptr, TS_PACKET_SIZE);
                 if(r != TS_PACKET_SIZE)
                 {
                     ++mod->overflow;
@@ -429,7 +429,7 @@ static void on_thread_read(void *arg)
     module_data_t *mod = arg;
 
     uint8_t ts[TS_PACKET_SIZE];
-    ssize_t r = asc_thread_buffer_read(mod->thread_output, ts, TS_PACKET_SIZE);
+    const ssize_t r = asc_thread_buffer_read(mod->thread_output, ts, TS_PACKET_SIZE);
     if(r != TS_PACKET_SIZE)
         return;
 

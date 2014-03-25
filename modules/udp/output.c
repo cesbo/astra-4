@@ -36,6 +36,10 @@
 
 #include <astra.h>
 
+#ifndef _WIN32
+#   include <pthread.h>
+#endif
+
 #define MSG(_msg) "[udp_output %s:%d] " _msg, mod->addr, mod->port
 
 #define UDP_BUFFER_SIZE 1460
@@ -58,10 +62,12 @@ struct module_data_t
     uint8_t buffer[UDP_BUFFER_SIZE];
 
 #ifndef _WIN32
+    bool is_thread_started;
+    asc_thread_t *thread;
+    pthread_mutex_t mutex;
+
     struct
     {
-        asc_thread_t *thread;
-
         uint8_t *buffer;
         uint32_t buffer_size;
         uint32_t buffer_count;
@@ -71,6 +77,7 @@ struct module_data_t
 
         bool reload;
     } sync;
+
     uint64_t pcr;
 #endif
 };
@@ -119,11 +126,14 @@ static void sync_queue_push(module_data_t *mod, const uint8_t *ts)
         mod->sync.reload = false;
     }
 
+    pthread_mutex_lock(&mod->mutex);
+
     if(mod->sync.buffer_overflow || mod->sync.buffer_count >= mod->sync.buffer_size)
     {
         if(mod->sync.buffer_count > (mod->sync.buffer_size / 2))
         {
             ++mod->sync.buffer_overflow;
+            pthread_mutex_unlock(&mod->mutex);
             return;
         }
         else
@@ -139,7 +149,8 @@ static void sync_queue_push(module_data_t *mod, const uint8_t *ts)
     if(mod->sync.buffer_write >= mod->sync.buffer_size)
         mod->sync.buffer_write = 0;
 
-    __sync_fetch_and_add(&mod->sync.buffer_count, TS_PACKET_SIZE);
+    mod->sync.buffer_count += TS_PACKET_SIZE;
+    pthread_mutex_unlock(&mod->mutex);
 }
 
 static void sync_queue_pop(module_data_t *mod)
@@ -150,7 +161,9 @@ static void sync_queue_pop(module_data_t *mod)
     if(mod->sync.buffer_read >= mod->sync.buffer_size)
         mod->sync.buffer_read = 0;
 
-    __sync_fetch_and_sub(&mod->sync.buffer_count, TS_PACKET_SIZE);
+    pthread_mutex_lock(&mod->mutex);
+    mod->sync.buffer_count -= TS_PACKET_SIZE;
+    pthread_mutex_unlock(&mod->mutex);
 }
 
 static inline int check_pcr(const uint8_t *ts)
@@ -192,6 +205,19 @@ static int seek_pcr(module_data_t *mod, uint32_t *block_size)
     return 0;
 }
 
+static void on_thread_close(void *arg)
+{
+    module_data_t *mod = arg;
+
+    mod->is_thread_started = false;
+
+    if(mod->thread)
+    {
+        asc_thread_close(mod->thread);
+        mod->thread = NULL;
+    }
+}
+
 static void thread_loop(void *arg)
 {
     module_data_t *mod = arg;
@@ -206,7 +232,7 @@ static void thread_loop(void *arg)
     struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
     static const struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000 };
 
-    asc_thread_while(mod->sync.thread)
+    while(mod->is_thread_started)
     {
         asc_log_info(MSG("buffering..."));
 
@@ -236,7 +262,7 @@ static void thread_loop(void *arg)
         block_time_total = 0.0;
         total_sync_diff = 0.0;
 
-        while(1)
+        while(mod->is_thread_started)
         {
             if(!seek_pcr(mod, &block_size))
             {
@@ -283,6 +309,9 @@ static void thread_loop(void *arg)
 
             while(block_size > 0)
             {
+                if(!mod->is_thread_started)
+                    return;
+
                 sync_queue_pop(mod);
                 block_size -= TS_PACKET_SIZE;
                 if(ts_sync.tv_nsec > 0)
@@ -382,13 +411,16 @@ static void module_init(module_data_t *mod)
         mod->sync.buffer = malloc(value);
         mod->sync.buffer_size = value;
 
-        asc_thread_init(&mod->sync.thread, thread_loop, mod);
+        pthread_mutex_init(&mod->mutex, NULL);
+        mod->thread = asc_thread_init(mod);
+        asc_thread_set_on_close(mod->thread, on_thread_close);
+        asc_thread_start(mod->thread, thread_loop);
     }
     else
-        module_stream_init(mod, on_ts);
-#else
-    module_stream_init(mod, on_ts);
 #endif
+    {
+        module_stream_init(mod, on_ts);
+    }
 }
 
 static void module_destroy(module_data_t *mod)
@@ -396,14 +428,24 @@ static void module_destroy(module_data_t *mod)
     module_stream_destroy(mod);
 
 #ifndef _WIN32
+    if(mod->thread)
+    {
+        on_thread_close(mod);
+        pthread_mutex_destroy(&mod->mutex);
+    }
+
     if(mod->sync.buffer)
     {
-        asc_thread_destroy(&mod->sync.thread);
         free(mod->sync.buffer);
+        mod->sync.buffer = NULL;
     }
 #endif
 
-    asc_socket_close(mod->sock);
+    if(mod->sock)
+    {
+        asc_socket_close(mod->sock);
+        mod->sock = NULL;
+    }
 }
 
 MODULE_STREAM_METHODS()
