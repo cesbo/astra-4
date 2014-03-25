@@ -198,6 +198,7 @@ asc_thread_buffer_t * asc_thread_buffer_init(size_t size)
     asc_thread_buffer_t * buffer = calloc(1, sizeof(asc_thread_buffer_t));
     buffer->size = size;
     buffer->buffer = malloc(size);
+    pthread_mutex_init(&buffer->mutex, NULL);
     return buffer;
 }
 
@@ -206,6 +207,7 @@ void asc_thread_buffer_destroy(asc_thread_buffer_t *buffer)
     if(!buffer)
         return;
     free(buffer->buffer);
+    pthread_mutex_destroy(&buffer->mutex);
     free(buffer);
 }
 
