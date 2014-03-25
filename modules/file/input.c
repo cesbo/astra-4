@@ -208,11 +208,11 @@ static void thread_loop(void *arg)
     // pause
     const struct timespec ts_pause = { .tv_sec = 0, .tv_nsec = 500000 };
     uint64_t pause_start, pause_stop;
-    double pause_total;
+    double pause_total = 0.0;
 
     // block sync
-    uint64_t time_sync_b, time_sync_e, time_sync_bb, time_sync_be;
-    double block_time_total, total_sync_diff;
+    uint64_t time_sync_b = asc_utime(), time_sync_e, time_sync_bb, time_sync_be;
+    double block_time_total = 0.0, total_sync_diff = 0.0;
     uint32_t block_size = 0;
 
     if(!open_file(mod))
