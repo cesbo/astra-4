@@ -71,19 +71,19 @@ struct module_data_t
 
     string_buffer_t *content;
 
+    bool is_thread_started;
+    asc_thread_t *thread;
+    asc_thread_buffer_t *thread_output;
+
     struct
     {
-        asc_thread_t *thread;
-
-        int fd[2];
-        asc_event_t *event;
-
         uint8_t *buffer;
         uint32_t buffer_size;
         uint32_t buffer_count;
         uint32_t buffer_read;
         uint32_t buffer_write;
     } sync;
+
     uint64_t pcr;
 };
 
@@ -146,6 +146,8 @@ void timeout_callback(void *arg)
     on_close(mod);
 }
 
+static void on_thread_close(void *arg);
+
 static void on_close(void *arg)
 {
     module_data_t *mod = arg;
@@ -156,16 +158,8 @@ static void on_close(void *arg)
         mod->timeout = NULL;
     }
 
-    if(mod->sync.thread)
-    {
-        asc_thread_destroy(&mod->sync.thread);
-        asc_event_close(mod->sync.event);
-        if(mod->sync.fd[0])
-        {
-            close(mod->sync.fd[0]);
-            close(mod->sync.fd[1]);
-        }
-    }
+    if(mod->thread)
+        on_thread_close(mod);
 
     if(mod->sync.buffer)
     {
@@ -252,44 +246,42 @@ static int seek_pcr(module_data_t *mod, uint32_t *block_size)
     return 0;
 }
 
-static void sync_queue_push(module_data_t *mod, uint32_t pos)
+static void on_thread_close(void *arg)
 {
-    if(send(mod->sync.fd[0], &pos, sizeof(pos), 0) != sizeof(pos))
-        asc_log_error(MSG("failed to push signal to queue\n"));
+    module_data_t *mod = arg;
+
+    mod->is_thread_started = false;
+
+    if(mod->thread)
+    {
+        asc_thread_close(mod->thread);
+        mod->thread = NULL;
+    }
+
+    if(mod->thread_output)
+    {
+        asc_thread_buffer_destroy(mod->thread_output);
+        mod->thread_output = NULL;
+    }
 }
 
 static void on_thread_read(void *arg)
 {
     module_data_t *mod = arg;
 
-    uint32_t pos;
-    if(recv(mod->sync.fd[1], &pos, sizeof(pos), 0) != sizeof(pos))
-        asc_log_error(MSG("failed to pop signal from queue\n"));
-
-    if(pos > mod->sync.buffer_size)
-    {
-        asc_event_close(mod->sync.event);
-        if(mod->sync.fd[0])
-        {
-            close(mod->sync.fd[0]);
-            close(mod->sync.fd[1]);
-        }
-
-        socketpair(AF_LOCAL, SOCK_STREAM, 0, mod->sync.fd);
-        mod->sync.event = asc_event_init(mod->sync.fd[1], mod);
-        asc_event_set_on_read(mod->sync.event, on_thread_read);
-
-        return;
-    }
-
-    module_stream_send(mod, &mod->sync.buffer[pos]);
+    uint8_t ts[TS_PACKET_SIZE];
+    const ssize_t r = asc_thread_buffer_read(mod->thread_output, ts, sizeof(ts));
+    if(r == sizeof(ts))
+        module_stream_send(mod, ts);
 }
 
-static void read_stream_thread(void *arg)
+static void thread_loop(void *arg)
 {
     module_data_t *mod = arg;
 
-    asc_thread_while(mod->sync.thread)
+    mod->is_thread_started = true;
+
+    while(mod->is_thread_started)
     {
         uint64_t time_sync_b, time_sync_e, time_sync_bb, time_sync_be;
 
@@ -302,14 +294,15 @@ static void read_stream_thread(void *arg)
         asc_log_info(MSG("buffering..."));
 
         // flush
-        sync_queue_push(mod, mod->sync.buffer_size + 1);
-
         mod->sync.buffer_count = 0;
         mod->sync.buffer_write = 0;
         mod->sync.buffer_read = 0;
 
         while(mod->sync.buffer_count < mod->sync.buffer_size)
         {
+            if(!mod->is_thread_started)
+                return;
+
             ssize_t len;
             if(mod->sync.buffer_count == 0)
             {
@@ -342,8 +335,8 @@ static void read_stream_thread(void *arg)
             else
             {
                 len = asc_socket_recv(mod->sock
-                                              , &mod->sync.buffer[mod->sync.buffer_count]
-                                              , mod->sync.buffer_size - mod->sync.buffer_count);
+                                      , &mod->sync.buffer[mod->sync.buffer_count]
+                                      , mod->sync.buffer_size - mod->sync.buffer_count);
                 if(len > 0)
                 {
                     mod->sync.buffer_count += len;
@@ -375,7 +368,7 @@ static void read_stream_thread(void *arg)
         block_time_total = 0.0;
         total_sync_diff = 0.0;
 
-        while(1)
+        while(mod->is_thread_started)
         {
             const uint32_t capacity = mod->sync.buffer_size - mod->sync.buffer_count;
             if(capacity > 0)
@@ -443,7 +436,15 @@ static void read_stream_thread(void *arg)
 
             while(block_size > 0)
             {
-                sync_queue_push(mod, mod->sync.buffer_read);
+                if(!mod->is_thread_started)
+                    return;
+
+                const uint8_t *ptr = &mod->sync.buffer[mod->sync.buffer_read];
+                const ssize_t r = asc_thread_buffer_write(mod->thread_output, ptr, TS_PACKET_SIZE);
+                if(r != TS_PACKET_SIZE)
+                {
+                    // overflow
+                }
                 mod->sync.buffer_read += TS_PACKET_SIZE;
                 if(mod->sync.buffer_read >= mod->sync.buffer_size)
                     mod->sync.buffer_read = 0;
@@ -646,11 +647,12 @@ static void on_read(void *arg)
         mod->sync.buffer = malloc(value);
         mod->sync.buffer_size = value;
 
-        socketpair(AF_LOCAL, SOCK_STREAM, 0, mod->sync.fd);
-        mod->sync.event = asc_event_init(mod->sync.fd[1], mod);
-        asc_event_set_on_read(mod->sync.event, on_thread_read);
+        mod->thread = asc_thread_init(mod);
+        mod->thread_output = asc_thread_buffer_init(mod->sync.buffer_size);
+        asc_thread_set_on_close(mod->thread, on_thread_close);
+        asc_thread_set_on_read(mod->thread, mod->thread_output, on_thread_read);
+        asc_thread_start(mod->thread, thread_loop);
 
-        asc_thread_init(&mod->sync.thread, read_stream_thread, mod);
         return;
     }
 
