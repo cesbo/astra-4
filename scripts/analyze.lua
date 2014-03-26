@@ -331,7 +331,9 @@ input_modules.http = function(input_conf)
     end
 
     http_conf.callback = function(self, data)
-            if data.code == 200 then
+            if not data then
+                astra.exit()
+            elseif data.code == 200 then
                 instance.i = self
                 start_analyze()
             elseif data.code == 301 or data.code == 302 then

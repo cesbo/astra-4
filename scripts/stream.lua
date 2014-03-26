@@ -583,8 +583,26 @@ input_list.http = function(channel_data, input_id)
         table.insert(http_conf.headers, "Authorization: Basic " .. input_conf.auth)
     end
 
+    timer_conf = {
+        interval = 5,
+        callback = function(self)
+                instance.request:close()
+                instance.request = http_request(http_conf)
+                collectgarbage()
+            end
+    }
+
     http_conf.callback = function(self, data)
-            if data.code == 200 then
+            if not data then
+                if instance.timeout then
+                    instance.timeout:close()
+                    instance.timeout = nil
+                end
+
+                instance.request = http_request(http_conf)
+                instance.timeout = timer(timer_conf)
+
+            elseif data.code == 200 then
                 if instance.timeout then
                     instance.timeout:close()
                     instance.timeout = nil
@@ -605,14 +623,7 @@ input_list.http = function(channel_data, input_id)
                     http_conf.path = path
                     http_conf.headers[2] = "Host: " .. host .. ":" .. port
                     instance.request = http_request(http_conf)
-
-                    instance.timeout = timer({
-                        interval = 5,
-                        callback = function(self)
-                                instance.request:close()
-                                instance.request = http_request(http_conf)
-                            end
-                    })
+                    instance.timeout = timer(timer_conf)
                 end
 
             else
@@ -623,13 +634,7 @@ input_list.http = function(channel_data, input_id)
 
     instance.tail = transmit({})
     instance.request = http_request(http_conf)
-    instance.timeout = timer({
-        interval = 5,
-        callback = function(self)
-                instance.request:close()
-                instance.request = http_request(http_conf)
-            end
-    })
+    instance.timeout = timer(timer_conf)
 
     return instance
 end

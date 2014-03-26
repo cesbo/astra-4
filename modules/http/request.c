@@ -70,6 +70,7 @@ struct module_data_t
 
     string_buffer_t *content;
 
+    bool is_stream_error;
     bool is_thread_started;
     asc_thread_t *thread;
     asc_thread_buffer_t *thread_output;
@@ -180,14 +181,8 @@ static void on_close(void *arg)
 
     if(mod->idx_self)
     {
-        // get_lua_callback(mod);
-        // lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
-        // lua_pushnil(lua);
-
         luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_self);
         mod->idx_self = 0;
-
-        // lua_call(lua, 2, 0);
     }
 
     if(mod->content)
@@ -208,7 +203,8 @@ static void on_close(void *arg)
 
 static inline int check_pcr(const uint8_t *ts)
 {
-    return (   (ts[3] & 0x20)   /* adaptation field without payload */
+    return (   (ts[0] == 0x47)  /* ts sync */
+            && (ts[3] & 0x20)   /* adaptation field without payload */
             && (ts[4] > 0)      /* adaptation field length */
             && (ts[5] & 0x10)   /* PCR_flag */
             && !(ts[5] & 0x40)  /* random_access_indicator */
@@ -262,6 +258,18 @@ static void on_thread_close(void *arg)
         asc_thread_buffer_destroy(mod->thread_output);
         mod->thread_output = NULL;
     }
+
+    if(mod->is_stream_error)
+    {
+        mod->is_stream_error = false;
+
+        get_lua_callback(mod);
+        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+        lua_pushnil(lua);
+        lua_call(lua, 2, 0);
+    }
+
+    on_close(mod);
 }
 
 static void on_thread_read(void *arg)
@@ -297,9 +305,14 @@ static void thread_loop(void *arg)
         mod->sync.buffer_write = 0;
         mod->sync.buffer_read = 0;
 
+        // check timeout
+        time_sync_e = asc_utime();
+
         while(   mod->is_thread_started
               && mod->sync.buffer_count < mod->sync.buffer_size)
         {
+            time_sync_b = asc_utime();
+
             ssize_t len;
             if(mod->sync.buffer_count == 0)
             {
@@ -308,6 +321,8 @@ static void thread_loop(void *arg)
                                       , 2 * TS_PACKET_SIZE - block_size);
                 if(len > 0)
                 {
+                    time_sync_e = time_sync_b;
+
                     block_size += len;
                     if(block_size < 2 * TS_PACKET_SIZE)
                         continue;
@@ -323,6 +338,7 @@ static void thread_loop(void *arg)
                     }
                     if(mod->sync.buffer_count == 0)
                     {
+                        mod->is_stream_error = true;
                         asc_log_error(MSG("wrong stream format"));
                         return;
                     }
@@ -335,11 +351,22 @@ static void thread_loop(void *arg)
                                       , mod->sync.buffer_size - mod->sync.buffer_count);
                 if(len > 0)
                 {
+                    time_sync_e = time_sync_b;
+
                     mod->sync.buffer_count += len;
                 }
             }
-            if(len < 0)
+
+            if(len <= 0)
+            {
+                if(time_sync_b - time_sync_e >= (uint32_t)mod->timeout_ms * 1000)
+                {
+                    mod->is_stream_error = true;
+                    asc_log_error(MSG("receiving timeout"));
+                    return;
+                }
                 nanosleep(&data_wait, NULL);
+            }
         }
 
         if(!seek_pcr(mod, &block_size))
