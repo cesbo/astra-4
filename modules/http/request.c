@@ -34,7 +34,6 @@
 
 #include <astra.h>
 #include "parser.h"
-#include <sys/socket.h>
 
 #define MSG(_msg) "[http_request] " _msg
 #define HTTP_BUFFER_SIZE 8192
@@ -298,11 +297,9 @@ static void thread_loop(void *arg)
         mod->sync.buffer_write = 0;
         mod->sync.buffer_read = 0;
 
-        while(mod->sync.buffer_count < mod->sync.buffer_size)
+        while(   mod->is_thread_started
+              && mod->sync.buffer_count < mod->sync.buffer_size)
         {
-            if(!mod->is_thread_started)
-                return;
-
             ssize_t len;
             if(mod->sync.buffer_count == 0)
             {
@@ -344,8 +341,6 @@ static void thread_loop(void *arg)
             if(len < 0)
                 nanosleep(&data_wait, NULL);
         }
-        if(mod->sync.buffer_count == 0)
-            continue;
 
         if(!seek_pcr(mod, &block_size))
         {
@@ -389,10 +384,10 @@ static void thread_loop(void *arg)
                 asc_log_error(MSG("sync failed. Next PCR is not found. reload buffer"));
                 break;
             }
-            mod->sync.buffer_count -= block_size;
             pos = mod->sync.buffer_read + block_size;
             if(pos >= mod->sync.buffer_size)
                 pos -= mod->sync.buffer_size;
+            mod->sync.buffer_count -= block_size;
 
             // get PCR
             const uint64_t pcr = calc_pcr(&mod->sync.buffer[pos]);
@@ -428,11 +423,8 @@ static void thread_loop(void *arg)
             uint64_t calc_block_time_ns = 0;
             time_sync_bb = asc_utime();
 
-            while(block_size > 0)
+            while(mod->is_thread_started && block_size > 0)
             {
-                if(!mod->is_thread_started)
-                    return;
-
                 const uint8_t *ptr = &mod->sync.buffer[mod->sync.buffer_read];
                 const ssize_t r = asc_thread_buffer_write(mod->thread_output, ptr, TS_PACKET_SIZE);
                 if(r != TS_PACKET_SIZE)
