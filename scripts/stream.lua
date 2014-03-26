@@ -882,12 +882,12 @@ output_list.http = function(channel_data, output_id)
 
     if http_instance_list[addr] then
         http_instance = http_instance_list[addr]
-        http_instance.uri_list[output_conf.uri] = output_conf.upstream
+        http_instance.uri_list[output_conf.path] = output_conf.upstream
         return http_instance
     end
 
     http_instance = { uri_list = {} }
-    http_instance.uri_list[output_conf.uri] = output_conf.upstream
+    http_instance.uri_list[output_conf.path] = output_conf.upstream
     http_instance.tail = http_server({
         addr = output_conf.host,
         port = output_conf.port,
