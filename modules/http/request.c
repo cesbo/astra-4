@@ -35,13 +35,17 @@
 #include <astra.h>
 #include "parser.h"
 
-#define MSG(_msg) "[http_request] " _msg
+#define MSG(_msg) "[http_request %s:%d%s] " _msg, mod->host, mod->port, mod->path
 #define HTTP_BUFFER_SIZE 8192
 
 struct module_data_t
 {
     MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
+
+    const char *host;
+    int port;
+    const char *path;
 
     int timeout_ms;
     bool is_stream;
@@ -88,7 +92,6 @@ struct module_data_t
 };
 
 static const char __method[] = "method";
-static const char __path[] = "path";
 static const char __version[] = "version";
 static const char __headers[] = "headers";
 static const char __content[] = "content";
@@ -795,26 +798,13 @@ static void on_connect(void *arg)
     mod->method = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : __default_method;
     lua_pop(lua, 1);
 
-    lua_getfield(lua, -1, __path);
-    const char *path = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : "/";
-    lua_pop(lua, 1);
-
-    // TODO: deprecated
-    lua_getfield(lua, -1, "uri");
-    if(lua_isstring(lua, -1))
-    {
-        asc_log_warning(MSG("option 'uri' is deprecated, use 'path' instead"));
-        path = lua_tostring(lua, -1);
-    }
-    lua_pop(lua, 1);
-
     lua_getfield(lua, -1, __version);
     const char *version = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : "HTTP/1.1";
     lua_pop(lua, 1);
 
     buffer_skip = snprintf(mod->buffer, sizeof(mod->buffer)
                            , "%s %s %s\r\n"
-                           , mod->method, path, version);
+                           , mod->method, mod->path, version);
 
     lua_getfield(lua, -1, __headers);
     if(lua_istable(lua, -1))
@@ -896,12 +886,14 @@ static int method_close(module_data_t *mod)
 
 static void module_init(module_data_t *mod)
 {
-    const char *host = NULL;
-    module_option_string("host", &host, NULL);
-    asc_assert(host != NULL, MSG("option 'host' is required"));
+    module_option_string("host", &mod->host, NULL);
+    asc_assert(mod->host != NULL, MSG("option 'host' is required"));
 
-    int port = 80;
-    module_option_number("port", &port);
+    mod->port = 80;
+    module_option_number("port", &mod->port);
+
+    mod->path = "/";
+    module_option_string("path", &mod->path, NULL);
 
     lua_getfield(lua, 2, __callback);
     asc_assert(lua_isfunction(lua, -1), MSG("option 'callback' is required"));
@@ -921,7 +913,7 @@ static void module_init(module_data_t *mod)
     mod->timeout = asc_timer_init(mod->timeout_ms, timeout_callback, mod);
 
     mod->sock = asc_socket_open_tcp4(mod);
-    asc_socket_connect(mod->sock, host, port, on_connect, on_close);
+    asc_socket_connect(mod->sock, mod->host, mod->port, on_connect, on_close);
 }
 
 static void module_destroy(module_data_t *mod)
