@@ -926,11 +926,11 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    if(mod->idx_self == 0)
-        return;
-
     if(mod->is_stream)
         module_stream_destroy(mod);
+
+    if(mod->idx_self == 0)
+        return;
 
     on_close(mod);
 }
