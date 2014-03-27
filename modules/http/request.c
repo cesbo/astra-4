@@ -272,7 +272,7 @@ static void thread_loop(void *arg)
 
     while(mod->is_thread_started)
     {
-        uint64_t time_sync_b, time_sync_e, time_sync_bb, time_sync_be;
+        uint64_t time_sync_b, time_sync_bb;
 
         double block_time_total, total_sync_diff;
         uint32_t next_block, block_size = 0;
@@ -288,7 +288,7 @@ static void thread_loop(void *arg)
         mod->sync.buffer_read = 0;
 
         // check timeout
-        time_sync_e = asc_utime();
+        uint64_t check_timeout = asc_utime();
 
         while(   mod->is_thread_started
               && mod->sync.buffer_count < mod->sync.buffer_size)
@@ -303,7 +303,7 @@ static void thread_loop(void *arg)
                                       , 2 * TS_PACKET_SIZE - block_size);
                 if(len > 0)
                 {
-                    time_sync_e = time_sync_b;
+                    check_timeout = time_sync_b;
 
                     block_size += len;
                     if(block_size < 2 * TS_PACKET_SIZE)
@@ -333,7 +333,7 @@ static void thread_loop(void *arg)
                                       , mod->sync.buffer_size - mod->sync.buffer_count);
                 if(len > 0)
                 {
-                    time_sync_e = time_sync_b;
+                    check_timeout = time_sync_b;
 
                     mod->sync.buffer_count += len;
                 }
@@ -341,7 +341,7 @@ static void thread_loop(void *arg)
 
             if(len <= 0)
             {
-                if(time_sync_b - time_sync_e >= (uint32_t)mod->timeout_ms * 1000)
+                if(time_sync_b - check_timeout >= (uint32_t)mod->timeout_ms * 1000)
                 {
                     mod->is_stream_error = true;
                     asc_log_error(MSG("receiving timeout"));
@@ -372,7 +372,8 @@ static void thread_loop(void *arg)
 
         while(mod->is_thread_started)
         {
-            if(mod->sync.buffer_count < mod->sync.buffer_size)
+            if(   mod->is_thread_started
+               && mod->sync.buffer_count < mod->sync.buffer_size)
             {
                 const uint32_t tail = (mod->sync.buffer_read < mod->sync.buffer_write)
                                     ? (mod->sync.buffer_size - mod->sync.buffer_write)
@@ -430,32 +431,36 @@ static void thread_loop(void *arg)
             uint64_t calc_block_time_ns = 0;
             time_sync_bb = asc_utime();
 
-            while(mod->is_thread_started && mod->sync.buffer_read != next_block)
+            while(   mod->is_thread_started
+                  && mod->sync.buffer_read != next_block)
             {
+                // sending
                 const uint8_t *ptr = &mod->sync.buffer[mod->sync.buffer_read];
                 const ssize_t r = asc_thread_buffer_write(mod->thread_output, ptr, TS_PACKET_SIZE);
                 if(r != TS_PACKET_SIZE)
                 {
                     // overflow
                 }
+
                 mod->sync.buffer_read += TS_PACKET_SIZE;
                 if(mod->sync.buffer_read >= mod->sync.buffer_size)
                     mod->sync.buffer_read = 0;
 
-                // send
+                // sync block
                 if(ts_sync.tv_nsec > 0)
                     nanosleep(&ts_sync, NULL);
 
-                // block syncing
                 calc_block_time_ns += ts_sync_nsec;
-                time_sync_be = asc_utime();
-
+                const uint64_t time_sync_be = asc_utime();
+                if(time_sync_be < time_sync_bb)
+                    break; // timetravel
                 const uint64_t real_block_time_ns = (time_sync_be - time_sync_bb) * 1000;
                 ts_sync.tv_nsec = (real_block_time_ns > calc_block_time_ns) ? 0 : ts_sync_nsec;
             }
 
             // stream syncing
-            time_sync_e = asc_utime();
+            const uint64_t time_sync_e = asc_utime();
+
             if(time_sync_e < time_sync_b)
             {
                 asc_log_warning(MSG("timetravel detected"));

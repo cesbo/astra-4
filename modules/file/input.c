@@ -191,7 +191,7 @@ static void thread_loop(void *arg)
     double pause_total = 0.0;
 
     // block sync
-    uint64_t time_sync_b = asc_utime(), time_sync_e, time_sync_bb, time_sync_be;
+    uint64_t time_sync_b = asc_utime(), time_sync_bb;
     double block_time_total = 0.0, total_sync_diff = 0.0;
     uint32_t block_size = 0;
 
@@ -328,14 +328,14 @@ static void thread_loop(void *arg)
                     }
                 }
             }
-
             mod->buffer_skip += mod->m2ts_header + TS_PACKET_SIZE;
+
+            // sync block
             if(ts_sync.tv_nsec > 0)
                 nanosleep(&ts_sync, NULL);
 
-            // block syncing
             calc_block_time_ns += ts_sync_nsec;
-            time_sync_be = asc_utime();
+            const uint64_t time_sync_be = asc_utime();
             if(time_sync_be < time_sync_bb)
                 break; // timetravel
             const uint64_t real_block_time_ns = (time_sync_be - time_sync_bb) * 1000 - pause_block;
@@ -347,24 +347,23 @@ static void thread_loop(void *arg)
             continue;
 
         // stream syncing
-        time_sync_e = asc_utime();
+        const uint64_t time_sync_e = asc_utime();
 
         if(time_sync_e < time_sync_b)
         {
-            // timetravel
             asc_log_warning(MSG("timetravel detected"));
-            total_sync_diff = -1000000.0;
+
+            reset_values = true;
+            continue;
         }
-        else
-        {
-            const double time_sync_diff = (time_sync_e - time_sync_b) / 1000.0;
-            total_sync_diff = block_time_total - time_sync_diff - pause_total;
-        }
+
+        const double time_sync_diff = (time_sync_e - time_sync_b) / 1000.0;
+        total_sync_diff = block_time_total - time_sync_diff - pause_total;
 
         // reset buffer on changing the system time
         if(total_sync_diff < -100.0 || total_sync_diff > 100.0)
         {
-            asc_log_warning(MSG("wrong syncing time: %.2fms. reset time values"), total_sync_diff);
+            asc_log_warning(MSG("wrong syncing time: %.2fms"), total_sync_diff);
             reset_values = true;
         }
     }

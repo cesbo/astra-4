@@ -187,10 +187,10 @@ static void thread_loop(void *arg)
 
     while(mod->is_thread_started)
     {
-        uint64_t time_sync_b, time_sync_e, time_sync_bb, time_sync_be;
+        uint64_t time_sync_b, time_sync_bb;
 
         double block_time_total, total_sync_diff;
-        uint32_t pos, block_size = 0;
+        uint32_t next_block, block_size = 0;
 
         struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
         static const struct timespec data_wait = { .tv_sec = 0, .tv_nsec = 100000 };
@@ -219,11 +219,11 @@ static void thread_loop(void *arg)
             continue;
         }
         mod->sync.buffer_count -= block_size;
-        pos = mod->sync.buffer_read + block_size;
-        if(pos >= mod->sync.buffer_size)
-            pos -= mod->sync.buffer_size;
-        mod->pcr = calc_pcr(&mod->sync.buffer[pos]);
-        mod->sync.buffer_read = pos;
+        next_block = mod->sync.buffer_read + block_size;
+        if(next_block >= mod->sync.buffer_size)
+            next_block -= mod->sync.buffer_size;
+        mod->pcr = calc_pcr(&mod->sync.buffer[next_block]);
+        mod->sync.buffer_read = next_block;
 
         time_sync_b = asc_utime();
         block_time_total = 0.0;
@@ -251,23 +251,24 @@ static void thread_loop(void *arg)
 
             if(!seek_pcr(mod, &block_size))
             {
-                asc_log_error(MSG("sync failed. Next PCR is not found. reload buffer"));
+                asc_log_error(MSG("next PCR is not found"));
                 break;
             }
-            pos = mod->sync.buffer_read + block_size;
-            if(pos >= mod->sync.buffer_size)
-                pos -= mod->sync.buffer_size;
+
+            next_block = mod->sync.buffer_read + block_size;
+            if(next_block >= mod->sync.buffer_size)
+                next_block -= mod->sync.buffer_size;
             mod->sync.buffer_count -= block_size;
 
             // get PCR
-            const uint64_t pcr = calc_pcr(&mod->sync.buffer[pos]);
+            const uint64_t pcr = calc_pcr(&mod->sync.buffer[next_block]);
             const double block_time = mpegts_pcr_block_ms(mod->pcr, pcr);
             mod->pcr = pcr;
             if(block_time < 0 || block_time > 250)
             {
                 asc_log_error(MSG("block time out of range: %.2f block_size:%u")
                               , block_time, block_size / TS_PACKET_SIZE);
-                mod->sync.buffer_read = pos;
+                mod->sync.buffer_read = next_block;
 
                 time_sync_b = asc_utime();
                 block_time_total = 0.0;
@@ -288,8 +289,9 @@ static void thread_loop(void *arg)
             uint64_t calc_block_time_ns = 0;
             time_sync_bb = asc_utime();
 
-            while(mod->is_thread_started && block_size > 0)
+            while(mod->is_thread_started && mod->sync.buffer_read != next_block)
             {
+                // sending
                 const uint8_t *const pointer = &mod->sync.buffer[mod->sync.buffer_read];
                 on_ts(mod, pointer);
 
@@ -297,38 +299,38 @@ static void thread_loop(void *arg)
                 if(mod->sync.buffer_read >= mod->sync.buffer_size)
                     mod->sync.buffer_read = 0;
 
-                // send
-                block_size -= TS_PACKET_SIZE;
+                // sync block
                 if(ts_sync.tv_nsec > 0)
                     nanosleep(&ts_sync, NULL);
 
-                // block syncing
                 calc_block_time_ns += ts_sync_nsec;
-                time_sync_be = asc_utime();
-
+                const uint64_t time_sync_be = asc_utime();
+                if(time_sync_be < time_sync_bb)
+                    break; // timetravel
                 const uint64_t real_block_time_ns = (time_sync_be - time_sync_bb) * 1000;
                 ts_sync.tv_nsec = (real_block_time_ns > calc_block_time_ns) ? 0 : ts_sync_nsec;
             }
 
             // stream syncing
-            time_sync_e = asc_utime();
+            const uint64_t time_sync_e = asc_utime();
+
             if(time_sync_e < time_sync_b)
             {
-                // timetravel
                 asc_log_warning(MSG("timetravel detected"));
-                total_sync_diff = -1000000.0;
+
+                time_sync_b = asc_utime();
+                block_time_total = 0.0;
+                total_sync_diff = 0.0;
+                continue;
             }
-            else
-            {
-                const double time_sync_diff = (time_sync_e - time_sync_b) / 1000.0;
-                total_sync_diff = block_time_total - time_sync_diff;
-            }
+
+            const double time_sync_diff = (time_sync_e - time_sync_b) / 1000.0;
+            total_sync_diff = block_time_total - time_sync_diff;
 
             // reset buffer on changing the system time
             if(total_sync_diff < -100.0 || total_sync_diff > 100.0)
             {
-                asc_log_warning(MSG("wrong syncing time: %.2fms. reset time values")
-                                , total_sync_diff);
+                asc_log_warning(MSG("wrong syncing time: %.2fms"), total_sync_diff);
 
                 time_sync_b = asc_utime();
                 block_time_total = 0.0;
