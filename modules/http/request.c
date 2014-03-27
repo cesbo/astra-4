@@ -350,6 +350,9 @@ static void thread_loop(void *arg)
                 nanosleep(&data_wait, NULL);
             }
         }
+        mod->sync.buffer_write = mod->sync.buffer_count;
+        if(mod->sync.buffer_write == mod->sync.buffer_size)
+            mod->sync.buffer_write = 0;
 
         if(!seek_pcr(mod, &block_size))
         {
@@ -369,8 +372,7 @@ static void thread_loop(void *arg)
 
         while(mod->is_thread_started)
         {
-            const uint32_t capacity = mod->sync.buffer_size - mod->sync.buffer_count;
-            if(capacity > 0)
+            if(mod->sync.buffer_count < mod->sync.buffer_size)
             {
                 const uint32_t tail = (mod->sync.buffer_read < mod->sync.buffer_write)
                                     ? (mod->sync.buffer_size - mod->sync.buffer_write)
@@ -390,9 +392,10 @@ static void thread_loop(void *arg)
 
             if(!seek_pcr(mod, &block_size))
             {
-                asc_log_error(MSG("sync failed. Next PCR is not found. reload buffer"));
+                asc_log_error(MSG("sync failed. Next PCR is not found"));
                 break;
             }
+
             pos = mod->sync.buffer_read + block_size;
             if(pos >= mod->sync.buffer_size)
                 pos -= mod->sync.buffer_size;
@@ -456,21 +459,21 @@ static void thread_loop(void *arg)
             time_sync_e = asc_utime();
             if(time_sync_e < time_sync_b)
             {
-                // timetravel
                 asc_log_warning(MSG("timetravel detected"));
-                total_sync_diff = -1000000.0;
+
+                time_sync_b = asc_utime();
+                block_time_total = 0.0;
+                total_sync_diff = 0.0;
+                continue;
             }
-            else
-            {
-                const double time_sync_diff = (time_sync_e - time_sync_b) / 1000.0;
-                total_sync_diff = block_time_total - time_sync_diff;
-            }
+
+            const double time_sync_diff = (time_sync_e - time_sync_b) / 1000.0;
+            total_sync_diff = block_time_total - time_sync_diff;
 
             // reset buffer on changing the system time
             if(total_sync_diff < -100.0 || total_sync_diff > 100.0)
             {
-                asc_log_warning(MSG("wrong syncing time: %.2fms. reset time values")
-                                , total_sync_diff);
+                asc_log_warning(MSG("wrong syncing time: %.2fms"), total_sync_diff);
 
                 time_sync_b = asc_utime();
                 block_time_total = 0.0;
@@ -877,10 +880,10 @@ static void module_init(module_data_t *mod)
     {
         module_stream_init(mod, NULL);
 
-        int buffer_size = 5;
+        int buffer_size = 1;
         module_option_number("buffer_size", &buffer_size);
 
-        mod->sync.buffer_size = (buffer_size * 1000 * 1000) / 8;
+        mod->sync.buffer_size = (buffer_size * 1024 * 1024);
         mod->sync.buffer_size = (mod->sync.buffer_size / TS_PACKET_SIZE) * TS_PACKET_SIZE;
     }
 
