@@ -23,8 +23,11 @@
 #include "list.h"
 #include "log.h"
 
-#include <sys/socket.h>
-#include <pthread.h>
+#ifdef _WIN32
+#   include <windows.h>
+#else
+#   include <pthread.h>
+#endif
 
 extern bool is_main_loop_idle;
 
@@ -38,7 +41,11 @@ struct asc_thread_buffer_t
     size_t write;
     size_t count;
 
+#ifdef _WIN32
+    HANDLE mutex;
+#else
     pthread_mutex_t mutex;
+#endif
 };
 
 struct asc_thread_t
@@ -53,7 +60,11 @@ struct asc_thread_t
     bool is_started;
     bool is_closed;
 
+#ifdef _WIN32
+    HANDLE thread;
+#else
     pthread_t thread;
+#endif
 };
 
 typedef struct
@@ -63,6 +74,18 @@ typedef struct
 } thread_observer_t;
 
 static thread_observer_t thread_observer;
+
+#ifdef _WIN32
+#   define asc_thread_mutex_init(_mutex) _mutex = CreateMutex(NULL, FALSE, NULL)
+#   define asc_thread_mutex_destroy(_mutex) CloseHandle(_mutex)
+#   define asc_thread_mutex_lock(_mutex) WaitForSingleObject(_mutex, INFINITE)
+#   define asc_thread_mutex_unlock(_mutex) ReleaseMutex(_mutex)
+#else
+#   define asc_thread_mutex_init(_mutex) pthread_mutex_init(&_mutex, NULL)
+#   define asc_thread_mutex_destroy(_mutex) pthread_mutex_destroy(&_mutex)
+#   define asc_thread_mutex_lock(_mutex) pthread_mutex_lock(&_mutex)
+#   define asc_thread_mutex_unlock(_mutex) pthread_mutex_unlock(&_mutex)
+#endif
 
 void asc_thread_core_init(void)
 {
@@ -101,9 +124,9 @@ void asc_thread_core_loop(void)
 
         if(thread->on_read && thread->buffer)
         {
-            pthread_mutex_lock(&thread->buffer->mutex);
+            asc_thread_mutex_lock(thread->buffer->mutex);
             const bool is_data = (thread->buffer->count > 0);
-            pthread_mutex_unlock(&thread->buffer->mutex);
+            asc_thread_mutex_unlock(thread->buffer->mutex);
 
             if(is_data)
             {
@@ -150,7 +173,11 @@ void asc_thread_set_on_close(asc_thread_t *thread, thread_callback_t on_close)
     thread->on_close = on_close;
 }
 
+#ifdef _WIN32
+DWORD WINAPI asc_thread_loop(void *arg)
+#else
 static void * asc_thread_loop(void *arg)
+#endif
 {
     asc_thread_t *thread = arg;
 
@@ -158,7 +185,11 @@ static void * asc_thread_loop(void *arg)
     thread->loop(thread->arg);
     thread->is_closed = true;
 
+#ifdef _WIN32
+    return 0;
+#else
     pthread_exit(NULL);
+#endif
 }
 
 void asc_thread_start(asc_thread_t *thread, thread_callback_t loop)
@@ -168,6 +199,12 @@ void asc_thread_start(asc_thread_t *thread, thread_callback_t loop)
     asc_assert(thread->loop != NULL, MSG("loop required"));
     asc_assert(thread->on_close != NULL, MSG("on_close required"));
 
+#ifdef _WIN32
+    DWORD tid;
+    thread->thread = CreateThread(NULL, 0, &asc_thread_loop, thread, 0, &tid);
+    if(thread->thread != NULL)
+        return;
+#else
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
@@ -175,6 +212,7 @@ void asc_thread_start(asc_thread_t *thread, thread_callback_t loop)
     pthread_attr_destroy(&attr);
     if(ret == 0)
         return;
+#endif
 
     asc_assert(0, MSG("failed to start thread"));
 }
@@ -185,7 +223,13 @@ void asc_thread_close(asc_thread_t *thread)
         return;
 
     thread->is_closed = true;
+
+#ifdef _WIN32
+    WaitForSingleObject(thread->thread, INFINITE);
+    CloseHandle(thread->thread);
+#else
     pthread_join(thread->thread, NULL);
+#endif
 
     thread_observer.is_changed = true;
     asc_list_remove_item(thread_observer.thread_list, thread);
@@ -198,7 +242,7 @@ asc_thread_buffer_t * asc_thread_buffer_init(size_t size)
     asc_thread_buffer_t * buffer = calloc(1, sizeof(asc_thread_buffer_t));
     buffer->size = size;
     buffer->buffer = malloc(size);
-    pthread_mutex_init(&buffer->mutex, NULL);
+    asc_thread_mutex_init(buffer->mutex);
     return buffer;
 }
 
@@ -207,17 +251,17 @@ void asc_thread_buffer_destroy(asc_thread_buffer_t *buffer)
     if(!buffer)
         return;
     free(buffer->buffer);
-    pthread_mutex_destroy(&buffer->mutex);
+    asc_thread_mutex_destroy(buffer->mutex);
     free(buffer);
 }
 
 void asc_thread_buffer_flush(asc_thread_buffer_t *buffer)
 {
-    pthread_mutex_lock(&buffer->mutex);
+    asc_thread_mutex_lock(buffer->mutex);
     buffer->count = 0;
     buffer->read = 0;
     buffer->write = 0;
-    pthread_mutex_unlock(&buffer->mutex);
+    asc_thread_mutex_unlock(buffer->mutex);
 }
 
 ssize_t asc_thread_buffer_read(asc_thread_buffer_t *buffer, void *data, size_t size)
@@ -225,10 +269,10 @@ ssize_t asc_thread_buffer_read(asc_thread_buffer_t *buffer, void *data, size_t s
     if(!size)
         return 0;
 
-    pthread_mutex_lock(&buffer->mutex);
+    asc_thread_mutex_lock(buffer->mutex);
     if(buffer->count < size)
     {
-        pthread_mutex_unlock(&buffer->mutex);
+        asc_thread_mutex_unlock(buffer->mutex);
         return 0;
     }
 
@@ -246,7 +290,7 @@ ssize_t asc_thread_buffer_read(asc_thread_buffer_t *buffer, void *data, size_t s
         buffer->read += size;
     }
     buffer->count -= size;
-    pthread_mutex_unlock(&buffer->mutex);
+    asc_thread_mutex_unlock(buffer->mutex);
 
     return size;
 }
@@ -256,10 +300,10 @@ ssize_t asc_thread_buffer_write(asc_thread_buffer_t *buffer, const void *data, s
     if(!size)
         return 0;
 
-    pthread_mutex_lock(&buffer->mutex);
+    asc_thread_mutex_lock(buffer->mutex);
     if(buffer->count + size > buffer->size)
     {
-        pthread_mutex_unlock(&buffer->mutex);
+        asc_thread_mutex_unlock(buffer->mutex);
         return -1; // buffer overflow
     }
 
@@ -277,7 +321,7 @@ ssize_t asc_thread_buffer_write(asc_thread_buffer_t *buffer, const void *data, s
         buffer->write += size;
     }
     buffer->count += size;
-    pthread_mutex_unlock(&buffer->mutex);
+    asc_thread_mutex_unlock(buffer->mutex);
 
     return size;
 }
