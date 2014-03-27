@@ -583,6 +583,8 @@ input_list.http = function(channel_data, input_id)
         table.insert(http_conf.headers, "Authorization: Basic " .. input_conf.auth)
     end
 
+    if input_conf.buffer_size then http_conf.buffer_size = input_conf.buffer_size end
+
     timer_conf = {
         interval = 5,
         callback = function(self)

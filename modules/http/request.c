@@ -655,12 +655,7 @@ static void on_read(void *arg)
         lua_setfield(lua, -2, __stream);
         lua_call(lua, 2, 0);
 
-        int value = 2;
-        value = (value * 1000 * 1000) / 8;
-        value = (value / TS_PACKET_SIZE) * TS_PACKET_SIZE;
-
-        mod->sync.buffer = malloc(value);
-        mod->sync.buffer_size = value;
+        mod->sync.buffer = malloc(mod->sync.buffer_size);
 
         mod->thread = asc_thread_init(mod);
         mod->thread_output = asc_thread_buffer_init(mod->sync.buffer_size);
@@ -905,7 +900,15 @@ static void module_init(module_data_t *mod)
 
     module_option_boolean(__stream, &mod->is_stream);
     if(mod->is_stream)
+    {
         module_stream_init(mod, NULL);
+
+        int buffer_size = 5;
+        module_option_number("buffer_size", &buffer_size);
+
+        mod->sync.buffer_size = (buffer_size * 1000 * 1000) / 8;
+        mod->sync.buffer_size = (mod->sync.buffer_size / TS_PACKET_SIZE) * TS_PACKET_SIZE;
+    }
 
     mod->timeout_ms = 10;
     module_option_number("timeout", &mod->timeout_ms);
