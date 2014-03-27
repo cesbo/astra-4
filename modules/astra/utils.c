@@ -36,9 +36,7 @@
 
 #include <dirent.h>
 
-#ifdef _WIN32
-#   include <winsock2.h>
-#else
+#ifndef _WIN32
 #   include <sys/socket.h>
 #   include <ifaddrs.h>
 #   include <netdb.h>

@@ -25,11 +25,6 @@
 
 extern bool is_main_loop_idle;
 
-#ifdef _WIN32
-#   include <winsock2.h>
-#   include <windows.h>
-#endif
-
 #ifndef EV_LIST_SIZE
 #   define EV_LIST_SIZE 1024
 #endif

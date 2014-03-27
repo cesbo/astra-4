@@ -24,11 +24,6 @@
 #include "log.h"
 
 #ifdef _WIN32
-#   ifndef _WIN32_WINNT
-#       define _WIN32_WINNT 0x0501
-#   endif
-#   include <winsock2.h>
-#   include <windows.h>
 #   include <ws2tcpip.h>
 #   define SHUT_RD SD_RECEIVE
 #   define SHUT_WR SD_SEND

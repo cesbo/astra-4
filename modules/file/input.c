@@ -129,7 +129,7 @@ static bool open_file(module_data_t *mod)
     }
 
     const ssize_t len = pread(mod->fd, mod->buffer, mod->buffer_size, mod->file_skip);
-    if(mod->buffer_size != len)
+    if((ssize_t)mod->buffer_size != len)
     {
         asc_log_error(MSG("failed to read file"));
         close(mod->fd);
@@ -415,7 +415,12 @@ static void timer_skip_set(void *arg)
     module_data_t *mod = arg;
     char skip_str[64];
     int fd = open(mod->lock, O_CREAT | O_WRONLY | O_TRUNC
+#ifndef _WIN32
                   , S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+#else
+                  , S_IRUSR | S_IWUSR);
+#endif
+
     if(fd > 0)
     {
         const int l = sprintf(skip_str, "%lu", mod->file_skip);
