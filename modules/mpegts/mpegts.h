@@ -363,8 +363,21 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
 
 #define SDT_ITEM_GET_SID(_psi, _pointer) ((_pointer[0] << 8) | _pointer[1])
 #define SDT_ITEM_DESC_FIRST(_pointer) (&_pointer[5])
-#define SDT_ITEM_DESC_EOL(_pointer, _desc_pointer) \
+#define SDT_ITEM_DESC_EOL(_pointer, _desc_pointer)                                              \
     (_desc_pointer >= SDT_ITEM_DESC_FIRST(_pointer) + __SDT_ITEM_DESC_SIZE(_pointer))
 #define SDT_ITEM_DESC_NEXT(_pointer, _desc_pointer) _desc_pointer += 2 + _desc_pointer[1]
+
+/*
+ * oooooooooo    oooooooo8 oooooooooo
+ *  888    888 o888     88  888    888
+ *  888oooo88  888          888oooo88
+ *  888        888o     oo  888  88o
+ * o888o        888oooo88  o888o  88o8
+ *
+ */
+
+bool mpegts_pcr_check(const uint8_t *ts);
+uint64_t mpegts_pcr(const uint8_t *ts);
+double mpegts_pcr_block_ms(uint64_t pcr_last, uint64_t pcr_current);
 
 #endif /* _MPEGTS_H_ */

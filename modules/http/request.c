@@ -204,27 +204,6 @@ static void on_close(void *arg)
  *
  */
 
-static inline int check_pcr(const uint8_t *ts)
-{
-    return (   (ts[0] == 0x47)  /* ts sync */
-            && (ts[3] & 0x20)   /* adaptation field without payload */
-            && (ts[4] > 0)      /* adaptation field length */
-            && (ts[5] & 0x10)   /* PCR_flag */
-            && !(ts[5] & 0x40)  /* random_access_indicator */
-            );
-}
-
-static inline uint64_t calc_pcr(const uint8_t *ts)
-{
-    const uint64_t pcr_base = (ts[6] << 25)
-                            | (ts[7] << 17)
-                            | (ts[8] << 9 )
-                            | (ts[9] << 1 )
-                            | (ts[10] >> 7);
-    const uint64_t pcr_ext = ((ts[10] & 1) << 8) | (ts[11]);
-    return (pcr_base * 300 + pcr_ext);
-}
-
 static int seek_pcr(module_data_t *mod, uint32_t *block_size)
 {
     uint32_t count;
@@ -234,7 +213,7 @@ static int seek_pcr(module_data_t *mod, uint32_t *block_size)
         if(pos >= mod->sync.buffer_size)
             pos -= mod->sync.buffer_size;
 
-        if(check_pcr(&mod->sync.buffer[pos]))
+        if(mpegts_pcr_check(&mod->sync.buffer[pos]))
         {
             *block_size = count;
             return 1;
@@ -381,7 +360,7 @@ static void thread_loop(void *arg)
         pos = mod->sync.buffer_read + block_size;
         if(pos >= mod->sync.buffer_size)
             pos -= mod->sync.buffer_size;
-        mod->pcr = calc_pcr(&mod->sync.buffer[pos]);
+        mod->pcr = mpegts_pcr(&mod->sync.buffer[pos]);
         mod->sync.buffer_read = pos;
 
         time_sync_b = asc_utime();
@@ -420,14 +399,9 @@ static void thread_loop(void *arg)
             mod->sync.buffer_count -= block_size;
 
             // get PCR
-            const uint64_t pcr = calc_pcr(&mod->sync.buffer[pos]);
-            const uint64_t delta_pcr = pcr - mod->pcr;
+            const uint64_t pcr = mpegts_pcr(&mod->sync.buffer[pos]);
+            const double block_time = mpegts_pcr_block_ms(mod->pcr, pcr);
             mod->pcr = pcr;
-            // get block time
-            const uint64_t dpcr_base = delta_pcr / 300;
-            const uint64_t dpcr_ext = delta_pcr % 300;
-            const double block_time = ((double)(dpcr_base / 90.0)     // 90 kHz
-                                    + (double)(dpcr_ext / 27000.0));  // 27 MHz
             if(block_time < 0 || block_time > 250)
             {
                 asc_log_error(MSG("block time out of range: %.2f block_size:%u")
