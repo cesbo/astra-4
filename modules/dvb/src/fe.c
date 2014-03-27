@@ -312,7 +312,11 @@ static void fe_tune_t(dvb_fe_t *fe)
     struct dtv_properties cmdseq;
     struct dtv_property cmdlist[13];
 
+#if DVB_API >= 503
     const fe_delivery_system_t dvb_sys = (fe->type == DVB_TYPE_T2) ? SYS_DVBT2 : SYS_DVBT;
+#else
+    const fe_delivery_system_t dvb_sys = SYS_DVBT;
+#endif
 
     DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   dvb_sys);
