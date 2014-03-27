@@ -275,7 +275,7 @@ static void thread_loop(void *arg)
         uint64_t time_sync_b, time_sync_e, time_sync_bb, time_sync_be;
 
         double block_time_total, total_sync_diff;
-        uint32_t pos, block_size = 0;
+        uint32_t next_block, block_size = 0;
 
         struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
         static const struct timespec data_wait = { .tv_sec = 0, .tv_nsec = 100000 };
@@ -360,11 +360,11 @@ static void thread_loop(void *arg)
             continue;
         }
         mod->sync.buffer_count -= block_size;
-        pos = mod->sync.buffer_read + block_size;
-        if(pos >= mod->sync.buffer_size)
-            pos -= mod->sync.buffer_size;
-        mod->pcr = mpegts_pcr(&mod->sync.buffer[pos]);
-        mod->sync.buffer_read = pos;
+        next_block = mod->sync.buffer_read + block_size;
+        if(next_block >= mod->sync.buffer_size)
+            next_block -= mod->sync.buffer_size;
+        mod->pcr = mpegts_pcr(&mod->sync.buffer[next_block]);
+        mod->sync.buffer_read = next_block;
 
         time_sync_b = asc_utime();
         block_time_total = 0.0;
@@ -392,24 +392,24 @@ static void thread_loop(void *arg)
 
             if(!seek_pcr(mod, &block_size))
             {
-                asc_log_error(MSG("sync failed. Next PCR is not found"));
+                asc_log_error(MSG("next PCR is not found"));
                 break;
             }
 
-            pos = mod->sync.buffer_read + block_size;
-            if(pos >= mod->sync.buffer_size)
-                pos -= mod->sync.buffer_size;
+            next_block = mod->sync.buffer_read + block_size;
+            if(next_block >= mod->sync.buffer_size)
+                next_block -= mod->sync.buffer_size;
             mod->sync.buffer_count -= block_size;
 
             // get PCR
-            const uint64_t pcr = mpegts_pcr(&mod->sync.buffer[pos]);
+            const uint64_t pcr = mpegts_pcr(&mod->sync.buffer[next_block]);
             const double block_time = mpegts_pcr_block_ms(mod->pcr, pcr);
             mod->pcr = pcr;
             if(block_time < 0 || block_time > 250)
             {
                 asc_log_error(MSG("block time out of range: %.2f block_size:%u")
                               , block_time, block_size / TS_PACKET_SIZE);
-                mod->sync.buffer_read = pos;
+                mod->sync.buffer_read = next_block;
 
                 time_sync_b = asc_utime();
                 block_time_total = 0.0;
@@ -430,7 +430,7 @@ static void thread_loop(void *arg)
             uint64_t calc_block_time_ns = 0;
             time_sync_bb = asc_utime();
 
-            while(mod->is_thread_started && block_size > 0)
+            while(mod->is_thread_started && mod->sync.buffer_read != next_block)
             {
                 const uint8_t *ptr = &mod->sync.buffer[mod->sync.buffer_read];
                 const ssize_t r = asc_thread_buffer_write(mod->thread_output, ptr, TS_PACKET_SIZE);
@@ -443,7 +443,6 @@ static void thread_loop(void *arg)
                     mod->sync.buffer_read = 0;
 
                 // send
-                block_size -= TS_PACKET_SIZE;
                 if(ts_sync.tv_nsec > 0)
                     nanosleep(&ts_sync, NULL);
 
