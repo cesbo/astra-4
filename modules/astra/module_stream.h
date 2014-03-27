@@ -73,19 +73,23 @@ void __module_stream_send(module_stream_t *stream, const uint8_t *ts);
 
 #define module_stream_destroy(_mod)                                                             \
     {                                                                                           \
-        if(_mod->__stream.pid_list)                                                             \
+        if(_mod->__stream.self)                                                                 \
         {                                                                                       \
-            for(int __i = 0; __i < MAX_PID; ++__i)                                              \
+            if(_mod->__stream.pid_list)                                                         \
             {                                                                                   \
-                if(_mod->__stream.pid_list[__i])                                                \
+                for(int __i = 0; __i < MAX_PID; ++__i)                                          \
                 {                                                                               \
-                    module_stream_demux_leave_pid(_mod, __i);                                   \
+                    if(_mod->__stream.pid_list[__i])                                            \
+                    {                                                                           \
+                        module_stream_demux_leave_pid(_mod, __i);                               \
+                    }                                                                           \
                 }                                                                               \
+                free(_mod->__stream.pid_list);                                                  \
+                _mod->__stream.pid_list = NULL;                                                 \
             }                                                                                   \
-            free(_mod->__stream.pid_list);                                                      \
+            __module_stream_destroy(&_mod->__stream);                                           \
+            _mod->__stream.self = NULL;                                                         \
         }                                                                                       \
-        __module_stream_destroy(&_mod->__stream);                                               \
-        _mod->__stream.self = NULL;                                                             \
     }
 
 #define module_stream_send(_mod, _ts)                                                           \
