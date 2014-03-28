@@ -212,6 +212,9 @@ static void thread_loop(void *arg)
             else
                 nanosleep(&data_wait, NULL);
         }
+        mod->sync.buffer_write = mod->sync.buffer_count;
+        if(mod->sync.buffer_write == mod->sync.buffer_size)
+            mod->sync.buffer_write = 0;
 
         if(!seek_pcr(mod, &block_size))
         {
