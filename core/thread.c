@@ -122,13 +122,9 @@ void asc_thread_core_loop(void)
         if(!thread->is_started)
             continue;
 
-        if(thread->on_read && thread->buffer)
+        if(thread->on_read)
         {
-            asc_thread_mutex_lock(thread->buffer->mutex);
-            const bool is_data = (thread->buffer->count > 0);
-            asc_thread_mutex_unlock(thread->buffer->mutex);
-
-            if(is_data)
+            if(thread->buffer->count > 0)
             {
                 is_main_loop_idle = false;
                 thread->on_read(thread->arg);

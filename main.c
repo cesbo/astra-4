@@ -77,7 +77,7 @@ static void signal_handler(int signum)
 
 int main(int argc, const char **argv)
 {
-    static const struct timespec main_loop_delay = { .tv_sec = 0, .tv_nsec = 100000 };
+    static const struct timespec main_loop_delay = { .tv_sec = 0, .tv_nsec = 1000000 };
 
     static const char version_string[] = "Astra " ASTRA_VERSION_STR "\n";
     if(argc == 2 && !strcmp(argv[1], "-v"))
