@@ -31,11 +31,11 @@ void asc_thread_core_init(void);
 void asc_thread_core_destroy(void);
 void asc_thread_core_loop(void);
 
-asc_thread_t * asc_thread_init(  thread_callback_t loop
-                               , thread_callback_t on_read, asc_thread_buffer_t *buffer
-                               , thread_callback_t on_close
-                               , void *arg) __wur;
-void asc_thread_start(asc_thread_t *thread);
+asc_thread_t * asc_thread_init(void *arg) __wur;
+void asc_thread_start(  asc_thread_t *thread
+                      , thread_callback_t loop
+                      , thread_callback_t on_read, asc_thread_buffer_t *buffer
+                      , thread_callback_t on_close);
 void asc_thread_destroy(asc_thread_t *thread);
 
 asc_thread_buffer_t * asc_thread_buffer_init(size_t buffer_size) __wur;

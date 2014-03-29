@@ -503,12 +503,12 @@ static void module_init(module_data_t *mod)
         mod->timer_skip = asc_timer_init(2000, timer_skip_set, mod);
     }
 
+    mod->thread = asc_thread_init(mod);
     mod->thread_output = asc_thread_buffer_init(mod->buffer_size);
-    mod->thread = asc_thread_init(  thread_loop
-                                  , on_thread_read, mod->thread_output
-                                  , on_thread_close
-                                  , mod);
-    asc_thread_start(mod->thread);
+    asc_thread_start(  mod->thread
+                     , thread_loop
+                     , on_thread_read, mod->thread_output
+                     , on_thread_close);
 }
 
 static void module_destroy(module_data_t *mod)

@@ -638,12 +638,12 @@ static void on_read(void *arg)
 
         mod->sync.buffer = malloc(mod->sync.buffer_size);
 
+        mod->thread = asc_thread_init(mod);
         mod->thread_output = asc_thread_buffer_init(mod->sync.buffer_size);
-        mod->thread = asc_thread_init(  thread_loop
-                                      , on_thread_read, mod->thread_output
-                                      , on_thread_close
-                                      , mod);
-        asc_thread_start(mod->thread);
+        asc_thread_start(  mod->thread
+                         , thread_loop
+                         , on_thread_read, mod->thread_output
+                         , on_thread_close);
 
         return;
     }

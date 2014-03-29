@@ -395,12 +395,12 @@ static void module_init(module_data_t *mod)
         mod->sync.buffer_size = SYNC_BUFFER_SIZE;
         mod->sync.buffer = malloc(mod->sync.buffer_size);
 
+        mod->thread = asc_thread_init(mod);
         mod->thread_input = asc_thread_buffer_init((value * 1000 * 1000) / 8);
-        mod->thread = asc_thread_init(  thread_loop
-                                      , NULL, NULL
-                                      , on_thread_close
-                                      , mod);
-        asc_thread_start(mod->thread);
+        asc_thread_start(  mod->thread
+                         , thread_loop
+                         , NULL, NULL
+                         , on_thread_close);
     }
     else
     {

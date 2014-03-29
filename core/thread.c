@@ -143,26 +143,9 @@ void asc_thread_core_loop(void)
     }
 }
 
-
-asc_thread_t * asc_thread_init(  thread_callback_t loop
-                               , thread_callback_t on_read, asc_thread_buffer_t *buffer
-                               , thread_callback_t on_close
-                               , void *arg)
+asc_thread_t * asc_thread_init(void *arg)
 {
     asc_thread_t *thread = calloc(1, sizeof(asc_thread_t));
-
-    thread->loop = loop;
-    asc_assert(thread->loop != NULL, MSG("loop required"));
-
-    thread->on_read = on_read;
-    if(on_read)
-    {
-        thread->buffer = buffer;
-        asc_assert(thread->buffer != NULL, MSG("buffer required"));
-    }
-
-    thread->on_close = on_close;
-    asc_assert(thread->on_close != NULL, MSG("on_close required"));
 
     thread->arg = arg;
 
@@ -191,8 +174,25 @@ static void * asc_thread_loop(void *arg)
 #endif
 }
 
-void asc_thread_start(asc_thread_t *thread)
+void asc_thread_start(  asc_thread_t *thread
+                      , thread_callback_t loop
+                      , thread_callback_t on_read, asc_thread_buffer_t *buffer
+                      , thread_callback_t on_close)
 {
+
+    thread->loop = loop;
+    asc_assert(thread->loop != NULL, MSG("loop required"));
+
+    thread->on_read = on_read;
+    if(on_read)
+    {
+        thread->buffer = buffer;
+        asc_assert(thread->buffer != NULL, MSG("buffer required"));
+    }
+
+    thread->on_close = on_close;
+    asc_assert(thread->on_close != NULL, MSG("on_close required"));
+
 #ifdef _WIN32
     DWORD tid;
     thread->thread = CreateThread(NULL, 0, &asc_thread_loop, thread, 0, &tid);

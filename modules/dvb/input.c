@@ -708,11 +708,11 @@ static void module_init(module_data_t *mod)
 
     module_options(mod);
 
-    mod->thread = asc_thread_init(  thread_loop
-                                  , NULL, NULL
-                                  , on_thread_close
-                                  , mod);
-    asc_thread_start(mod->thread);
+    mod->thread = asc_thread_init(mod);
+    asc_thread_start(  mod->thread
+                     , thread_loop
+                     , NULL, NULL
+                     , on_thread_close);
 
     dvr_open(mod);
 

@@ -132,12 +132,12 @@ static void sec_open(module_data_t *mod)
         astra_abort();
     }
 
+    mod->sec_thread = asc_thread_init(mod);
     mod->sec_thread_output = asc_thread_buffer_init(BUFFER_SIZE);
-    mod->sec_thread = asc_thread_init(  thread_loop
-                                      , on_thread_read, mod->sec_thread_output
-                                      , on_thread_close
-                                      , mod);
-    asc_thread_start(mod->sec_thread);
+    asc_thread_start(  mod->sec_thread
+                     , thread_loop
+                     , on_thread_read, mod->sec_thread_output
+                     , on_thread_close);
 }
 
 static void sec_close(module_data_t *mod)
@@ -281,11 +281,11 @@ static void module_init(module_data_t *mod)
     mod->ca->device = mod->device;
     sprintf(mod->dev_name, "/dev/dvb/adapter%d/sec%d", mod->adapter, mod->device);
 
-    mod->ca_thread = asc_thread_init(  ca_thread_loop
-                                     , NULL, NULL
-                                     , on_ca_thread_close
-                                     , mod);
-    asc_thread_start(mod->ca_thread);
+    mod->ca_thread = asc_thread_init(mod);
+    asc_thread_start(  mod->ca_thread
+                     , ca_thread_loop
+                     , NULL, NULL
+                     , on_ca_thread_close);
 
     sec_open(mod);
 
