@@ -213,7 +213,7 @@ void asc_thread_start(asc_thread_t *thread, thread_callback_t loop)
     asc_assert(0, MSG("failed to start thread"));
 }
 
-void asc_thread_close(asc_thread_t *thread)
+void asc_thread_destroy(asc_thread_t *thread)
 {
     if(!thread)
         return;

@@ -37,7 +37,7 @@ void asc_thread_set_on_read(asc_thread_t *thread
                             , thread_callback_t on_read);
 void asc_thread_set_on_close(asc_thread_t *thread, thread_callback_t on_close);
 void asc_thread_start(asc_thread_t *thread, thread_callback_t loop);
-void asc_thread_close(asc_thread_t *thread);
+void asc_thread_destroy(asc_thread_t *thread);
 
 asc_thread_buffer_t * asc_thread_buffer_init(size_t buffer_size) __wur;
 void asc_thread_buffer_destroy(asc_thread_buffer_t *buffer);

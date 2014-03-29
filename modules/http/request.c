@@ -231,7 +231,7 @@ static void on_thread_close(void *arg)
 
     if(mod->thread)
     {
-        asc_thread_close(mod->thread);
+        asc_thread_destroy(mod->thread);
         mod->thread = NULL;
     }
 

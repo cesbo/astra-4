@@ -78,7 +78,7 @@ static void on_thread_close(void *arg)
 
     if(mod->sec_thread)
     {
-        asc_thread_close(mod->sec_thread);
+        asc_thread_destroy(mod->sec_thread);
         mod->sec_thread = NULL;
     }
 
@@ -168,7 +168,7 @@ static void on_ca_thread_close(void *arg)
 
     if(mod->ca_thread)
     {
-        asc_thread_close(mod->ca_thread);
+        asc_thread_destroy(mod->ca_thread);
         mod->ca_thread = NULL;
     }
 }
