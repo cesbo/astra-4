@@ -25,11 +25,14 @@
  * Module Options:
  *      host        - string, server hostname or IP address
  *      port        - number, server port (default: 80)
- *      callback    - function,
- *      stream      - boolean, true to read MPEG-TS stream
- *      method      - string, method (default: "GET")
  *      path        - string, request path
+ *      method      - string, method (default: "GET")
  *      version     - string, HTTP version (default: "HTTP/1.1")
+ *      headers     - table, list of the request headers
+ *      content     - string, request content
+ *      stream      - boolean, true to read MPEG-TS stream
+ *      timeout     - number, request timeout
+ *      callback    - function,
  */
 
 #include <astra.h>
@@ -101,6 +104,7 @@ static const char __code[] = "code";
 static const char __message[] = "message";
 
 static const char __default_method[] = "GET";
+static const char __default_version[] = "HTTP/1.1";
 
 static const char __content_length[] = "Content-Length: ";
 
@@ -776,7 +780,7 @@ static void on_connect(void *arg)
     lua_pop(lua, 1);
 
     lua_getfield(lua, -1, __version);
-    const char *version = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : "HTTP/1.1";
+    const char *version = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : __default_version;
     lua_pop(lua, 1);
 
     buffer_skip = snprintf(mod->buffer, sizeof(mod->buffer)
