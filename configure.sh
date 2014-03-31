@@ -90,7 +90,7 @@ fi
 
 if test -f $MAKEFILE ; then
     echo "Cleaning previous build..." >&2
-    make distclean
+    make clean
     echo >&2
 fi
 
@@ -249,9 +249,9 @@ MODS_OBJS   =
 all: \$(APP)
 
 clean: \$(APP)-clean
-
-distclean: \$(APP)-distclean
 	@rm -f Makefile config.h
+
+distclean: clean
 EOF
 
 echo "Check modules:" >&2
@@ -519,9 +519,8 @@ link:
 
 \$(APP)-clean:
 	@echo "CLEAN: \$(APP)"
-	@rm -f \$(APP) $APP_OBJS \$(MODS_OBJS)
-
-\$(APP)-distclean: \$(APP)-clean
+	@rm -f \$(APP) $APP_OBJS
+	@rm -f \$(MODS_OBJS)
 	@rm -f \$(CORE_OBJS)
 EOF
 
