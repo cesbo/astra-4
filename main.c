@@ -26,7 +26,6 @@
 #include "config.h"
 
 static jmp_buf main_loop;
-
 bool is_main_loop_idle = true;
 
 void astra_exit(void)
@@ -188,7 +187,7 @@ astra_reload_entry:
     asc_timer_core_destroy();
     asc_thread_core_destroy();
 
-    asc_log_info("[main] exit");
+    asc_log_info("[main] %s", (main_loop_status == 2) ? "reload" : "exit");
     asc_log_core_destroy();
 
     if(main_loop_status == 2)
