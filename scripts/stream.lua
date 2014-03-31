@@ -16,8 +16,6 @@
 -- You should have received a copy of the GNU General Public License
 -- along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-log.info("Starting Astra " .. astra.version)
-
 function dump_table(t, p, i)
     if not p then p = print end
     if not i then
@@ -140,6 +138,36 @@ function on_analyze(channel_data, input_id, data)
         else
             log.error(name .. "Unknown PSI: " .. data.psi)
         end
+
+    elseif data.analyze then
+        local input_data = channel_data.input[input_id]
+
+        if data.on_air ~= input_data.on_air then
+            if data.on_air == false then
+                local analyze_message = "[" .. channel_data.config.name .. " #" .. input_id .. "] " .. "Bitrate:" .. data.total.bitrate .. "Kbit/s"
+
+                if data.total.cc_errors > 0 then
+                    analyze_message = analyze_message .. " CC-Error:" .. data.total.cc_errors
+                end
+
+                if data.total.pes_errors > 0 then
+                    analyze_message = analyze_message .. " PES-Error"
+                end
+
+                if data.total.scrambled then
+                    analyze_message = analyze_message .. " Scrambled"
+                end
+
+                log.error(analyze_message)
+            else
+                local analyze_message = "[" .. channel_data.config.name .. " #" .. input_id .. "] " .. "Bitrate:" .. data.total.bitrate .. "Kbit/s"
+                log.info(analyze_message)
+            end
+
+            input_data.on_air = data.on_air
+            start_reserve(channel_data)
+        end
+
     end
 end
 
@@ -354,36 +382,6 @@ function start_reserve(channel_data)
     end
 end
 
-function log_analyze_error(channel_data, input_id, analyze_data)
-    local bitrate = 0
-    local cc_errors = 0
-    local pes_errors = 0
-    local scrambled = false
-
-    for _,item in pairs(analyze_data.analyze) do
-        bitrate = bitrate + item.bitrate
-        cc_errors = cc_errors + item.cc_error
-        pes_errors = pes_errors + item.pes_error
-        if item.sc_error > 0 then scrambled = true end
-    end
-
-    local analyze_message = "[" .. channel_data.config.name .. " #" .. input_id .. "] " .. "Bitrate:" .. bitrate .. "Kbit/s"
-
-    if cc_errors > 0 then
-        analyze_message = analyze_message .. " CC-Error:" .. cc_errors
-    end
-
-    if pes_errors > 0 then
-        analyze_message = analyze_message .. " PES-Error"
-    end
-
-    if scrambled then
-        analyze_message = analyze_message .. " Scrambled"
-    end
-
-    log.error(analyze_message)
-end
-
 -- ooooo         ooooooooo  ooooo  oooo oooooooooo
 --  888           888    88o 888    88   888    888
 --  888 ooooooooo 888    888  888  88    888oooo88
@@ -541,13 +539,13 @@ function http_parse_location(headers)
     for _, header in pairs(headers) do
         local _,_,location = header:find("^Location: http://(.*)")
         if location then
-            local port, uri
+            local port, path
             local p,_ = location:find("/")
             if p then
-                uri = location:sub(p)
+                path = location:sub(p)
                 location = location:sub(1, p - 1)
             else
-                uri = "/"
+                path = "/"
             end
             local p,_ = location:find(":")
             if p then
@@ -556,7 +554,7 @@ function http_parse_location(headers)
             else
                 port = 80
             end
-            return location, port, uri
+            return location, port, path
         end
     end
     return nil
@@ -624,6 +622,7 @@ input_list.http = function(channel_data, input_id)
                     http_conf.port = port
                     http_conf.path = path
                     http_conf.headers[2] = "Host: " .. host .. ":" .. port
+
                     instance.request = http_request(http_conf)
                     instance.timeout = timer(timer_conf)
                 end
@@ -753,16 +752,6 @@ function init_input(channel_data, input_id)
             cc_limit = cc_limit,
             callback = function(data)
                     on_analyze(channel_data, input_id, data)
-
-                    if data.analyze then
-                        if data.on_air ~= input_data.on_air then
-                            if data.on_air == false then
-                                log_analyze_error(channel_data, input_id, data)
-                            end
-                            input_data.on_air = data.on_air
-                            start_reserve(channel_data)
-                        end
-                    end
                 end
         })
     end
@@ -889,12 +878,12 @@ output_list.http = function(channel_data, output_id)
 
     if http_instance_list[addr] then
         http_instance = http_instance_list[addr]
-        http_instance.uri_list[output_conf.path] = output_conf.upstream
+        http_instance.path_list[output_conf.path] = output_conf.upstream
         return http_instance
     end
 
-    http_instance = { uri_list = {} }
-    http_instance.uri_list[output_conf.path] = output_conf.upstream
+    http_instance = { path_list = {} }
+    http_instance.path_list[output_conf.path] = output_conf.upstream
     http_instance.tail = http_server({
         addr = output_conf.host,
         port = output_conf.port,
@@ -903,7 +892,7 @@ output_list.http = function(channel_data, output_id)
         buffer_prefill = output_conf.buffer_prefill,
         callback = function(self, client, data)
                 if type(data) == 'table' then
-                    local http_upstream = http_instance.uri_list[data.uri]
+                    local http_upstream = http_instance.path_list[data.uri]
                     if http_upstream then
                         http_server_send_200(self, client, http_upstream)
                     else
@@ -922,14 +911,14 @@ kill_output_list.http = function(output_conf, output_data)
 
     local http_instance = http_instance_list[addr]
 
-    http_instance.uri_list[output_conf.uri] = nil
-    local has_uri = false
-    for _ in pairs(http_instance.uri_list) do
-        has_uri = true
+    http_instance.path_list[output_conf.path] = nil
+    local has_path = false
+    for _ in ipairs(http_instance.path_list) do
+        has_path = true
         break
     end
 
-    if has_uri == true then return nil end
+    if has_path == true then return nil end
 
     http_instance.tail:close()
     http_instance.tail = nil
@@ -1125,6 +1114,8 @@ end
 -- o888ooooo88   88ooo88 o88o  o888o o888ooo88
 
 function main()
+    log.info("Starting Astra " .. astra.version)
+
     if #argv > 0 then
         if argv[1] == '-' then
             dofile()

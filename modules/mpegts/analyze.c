@@ -612,8 +612,10 @@ static void on_check_stat(void *arg)
 
     bool on_air = true;
 
-    int cc_total = 0;
     uint32_t bitrate = 0;
+    uint32_t cc_errors = 0;
+    uint32_t pes_errors = 0;
+    bool scrambled = false;
 
     lua_newtable(lua);
     for(int i = 0; i < MAX_PID; ++i)
@@ -645,13 +647,16 @@ static void on_check_stat(void *arg)
         lua_pushnumber(lua, item->pes_error);
         lua_setfield(lua, -2, "pes_error");
 
-        if(item->cc_error > 0)
-            cc_total += item->cc_error;
+        cc_errors += item->cc_error;
+        pes_errors += item->pes_error;
 
         if(item->type == MPEGTS_PACKET_VIDEO || item->type == MPEGTS_PACKET_AUDIO)
         {
             if(item->sc_error)
+            {
+                scrambled = true;
                 on_air = false;
+            }
             if(item->pes_error > 2)
                 on_air = false;
         }
@@ -665,9 +670,22 @@ static void on_check_stat(void *arg)
     }
     lua_setfield(lua, -2, "analyze");
 
+    lua_newtable(lua);
+    {
+        lua_pushnumber(lua, bitrate);
+        lua_setfield(lua, -2, "bitrate");
+        lua_pushnumber(lua, cc_errors);
+        lua_setfield(lua, -2, "cc_errors");
+        lua_pushnumber(lua, pes_errors);
+        lua_setfield(lua, -2, "pes_errors");
+        lua_pushboolean(lua, scrambled);
+        lua_setfield(lua, -2, "scrambled");
+    }
+    lua_setfield(lua, -2, "total");
+
     if(bitrate < 32)
         on_air = false;
-    if(mod->cc_limit > 0 && cc_total >= mod->cc_limit)
+    if(mod->cc_limit > 0 && cc_errors >= (uint32_t)mod->cc_limit)
         on_air = false;
     if(!mod->cc_check)
         mod->cc_check = true;
