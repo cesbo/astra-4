@@ -43,9 +43,7 @@ void mpegts_pes_destroy(mpegts_pes_t *pes)
     free(pes);
 }
 
-void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts
-                    , void (*callback)(void *, mpegts_pes_t *)
-                    , void *arg)
+void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callback, void *arg)
 {
     const uint8_t *payload = TS_PTR(ts);
     if(!payload)
@@ -112,9 +110,7 @@ void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts
     pes->cc = cc;
 }
 
-void mpegts_pes_demux(mpegts_pes_t *pes
-                      , void (*callback)(void *, uint8_t *)
-                      , void *arg)
+void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg)
 {
     const size_t buffer_size = pes->buffer_size;
     if(!buffer_size)

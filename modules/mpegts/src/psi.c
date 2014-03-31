@@ -42,9 +42,7 @@ void mpegts_psi_destroy(mpegts_psi_t *psi)
     free(psi);
 }
 
-void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts
-                    , void (*callback)(void *, mpegts_psi_t *)
-                    , void *arg)
+void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts, psi_callback_t callback, void *arg)
 {
     const uint8_t *payload = TS_PTR(ts);
     if(!payload)
@@ -169,9 +167,7 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts
     psi->cc = cc;
 } /* mpegts_psi_mux */
 
-void mpegts_psi_demux(mpegts_psi_t *psi
-                      , void (*callback)(void *, const uint8_t *)
-                      , void *arg)
+void mpegts_psi_demux(mpegts_psi_t *psi, ts_callback_t callback, void *arg)
 {
     const size_t buffer_size = psi->buffer_size;
     if(!buffer_size)
