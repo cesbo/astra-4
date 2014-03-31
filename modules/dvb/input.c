@@ -280,6 +280,7 @@ static void module_option_fec(module_data_t *mod)
     if(module_option_string(__fec, &string_val, NULL))
     {
         if(!strcasecmp(string_val, "NONE")) mod->fe->fec = FEC_NONE;
+        else if(!strcasecmp(string_val, "AUTO")) mod->fe->fec = FEC_AUTO;
         else if(!strcasecmp(string_val, "1/2")) mod->fe->fec = FEC_1_2;
         else if(!strcasecmp(string_val, "2/3")) mod->fe->fec = FEC_2_3;
         else if(!strcasecmp(string_val, "3/4")) mod->fe->fec = FEC_3_4;
