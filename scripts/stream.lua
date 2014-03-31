@@ -1131,8 +1131,5 @@ function main()
         elseif utils.stat(argv[1]).type == 'file' then
             dofile(argv[1])
         end
-    else
-        print("Usage: astra script.lua [OPTIONS]")
-        astra.exit()
     end
 end
