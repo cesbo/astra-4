@@ -394,7 +394,6 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
         if(mod->pid_map[pid] == MAX_PID)
         { // skip filtered pid
-            PMT_ITEMS_NEXT(psi, pointer);
             continue;
         }
 
@@ -461,8 +460,6 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                 custom_pointer[2] = custom_pid & 0xFF;
             }
         }
-
-        PMT_ITEMS_NEXT(psi, pointer);
     }
     mod->custom_pmt->buffer_size += CRC32_SIZE;
 
