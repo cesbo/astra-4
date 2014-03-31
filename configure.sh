@@ -260,7 +260,7 @@ echo "Check modules:" >&2
 
 APP_SOURCES="$SRCDIR/main.c"
 APP_OBJS=""
-APP_SCRIPTS="$SRCDIR/scripts/stream.lua"
+APP_SCRIPTS=""
 
 __check_main_app()
 {

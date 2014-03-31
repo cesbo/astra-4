@@ -1116,3 +1116,23 @@ function find_channel(key, value)
         end
     end
 end
+
+
+-- ooooo         ooooooo      o      ooooooooo
+--  888        o888   888o   888      888    88o
+--  888        888     888  8  88     888    888
+--  888      o 888o   o888 8oooo88    888    888
+-- o888ooooo88   88ooo88 o88o  o888o o888ooo88
+
+function main()
+    if #argv > 0 then
+        if argv[1] == '-' then
+            dofile()
+        elseif utils.stat(argv[1]).type == 'file' then
+            dofile(argv[1])
+        end
+    else
+        print("Usage: astra script.lua [OPTIONS]")
+        astra.exit()
+    end
+end
