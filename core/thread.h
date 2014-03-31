@@ -24,19 +24,26 @@
 #include "base.h"
 
 typedef struct asc_thread_t asc_thread_t;
+typedef struct asc_thread_buffer_t asc_thread_buffer_t;
+typedef void (*thread_callback_t)(void *);
 
-#ifndef _WIN32
-jmp_buf * __thread_getjmp(void);
-void __thread_setjmp(asc_thread_t *thread);
-#   define asc_thread_while(_thread)                                                            \
-        const int __thread_loop = setjmp(*__thread_getjmp());                                   \
-        if(!__thread_loop) __thread_setjmp(_thread);                                            \
-        while(!__thread_loop)
-#else
-#   define thread_while() while(1)
-#endif
+void asc_thread_core_init(void);
+void asc_thread_core_destroy(void);
+void asc_thread_core_loop(void);
 
-void asc_thread_init(asc_thread_t **thread_ptr, void (*loop)(void *), void *arg);
-void asc_thread_destroy(asc_thread_t **thread_ptr);
+asc_thread_t * asc_thread_init(void *arg) __wur;
+void asc_thread_start(  asc_thread_t *thread
+                      , thread_callback_t loop
+                      , thread_callback_t on_read, asc_thread_buffer_t *buffer
+                      , thread_callback_t on_close);
+void asc_thread_destroy(asc_thread_t *thread);
+
+asc_thread_buffer_t * asc_thread_buffer_init(size_t buffer_size) __wur;
+void asc_thread_buffer_destroy(asc_thread_buffer_t *buffer);
+
+void asc_thread_buffer_flush(asc_thread_buffer_t *buffer);
+
+ssize_t asc_thread_buffer_read(asc_thread_buffer_t *buffer, void *data, size_t size) __wur;
+ssize_t asc_thread_buffer_write(asc_thread_buffer_t *buffer, const void *data, size_t size) __wur;
 
 #endif /* _THREAD_H_ */

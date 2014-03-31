@@ -2,7 +2,7 @@
  * Astra Core
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,10 +23,7 @@
 #include "list.h"
 #include "log.h"
 
-#ifdef _WIN32
-#   include <windows.h>
-#   include <winsock2.h>
-#endif
+extern bool is_main_loop_idle;
 
 #ifndef EV_LIST_SIZE
 #   define EV_LIST_SIZE 1024
@@ -139,17 +136,15 @@ void asc_event_core_destroy(void)
 
 void asc_event_core_loop(void)
 {
-    static struct timespec tv = { 0, 10000000 };
     if(!asc_list_size(event_observer.event_list))
-    {
-        nanosleep(&tv, NULL);
         return;
-    }
 
 #if defined(EV_TYPE_KQUEUE)
-    const int ret = kevent(event_observer.fd, NULL, 0, event_observer.ed_list, EV_LIST_SIZE, &tv);
+    static const struct timespec timeout = { 0, 0 };
+    const int ret = kevent(event_observer.fd, NULL, 0
+                           , event_observer.ed_list, EV_LIST_SIZE, &timeout);
 #else
-    const int ret = epoll_wait(event_observer.fd, event_observer.ed_list, EV_LIST_SIZE, 10);
+    const int ret = epoll_wait(event_observer.fd, event_observer.ed_list, EV_LIST_SIZE, 0);
 #endif
 
     if(ret == -1)
@@ -175,18 +170,21 @@ void asc_event_core_loop(void)
 #endif
         if(event->on_read && is_rd)
         {
+            is_main_loop_idle = false;
             event->on_read(event->arg);
             if(event_observer.is_changed)
                 break;
         }
         if(event->on_write && is_wr)
         {
+            is_main_loop_idle = false;
             event->on_write(event->arg);
             if(event_observer.is_changed)
                 break;
         }
         if(event->on_error && is_er)
         {
+            is_main_loop_idle = false;
             event->on_error(event->arg);
             if(event_observer.is_changed)
                 break;
@@ -344,10 +342,7 @@ void asc_event_core_loop(void)
 {
     static struct timespec tv = { 0, 10000000 };
     if(!event_observer.fd_count)
-    {
-        nanosleep(&tv, NULL);
         return;
-    }
 
     int ret = poll(event_observer.fd_list, event_observer.fd_count, 10);
     if(ret == -1)
@@ -367,18 +362,21 @@ void asc_event_core_loop(void)
         asc_event_t *event = event_observer.event_list[i];
         if(event->on_read && (revents & POLLIN))
         {
+            is_main_loop_idle = false;
             event->on_read(event->arg);
             if(event_observer.is_changed)
                 break;
         }
         if(event->on_write && (revents & POLLOUT))
         {
+            is_main_loop_idle = false;
             event->on_write(event->arg);
             if(event_observer.is_changed)
                 break;
         }
         if(event->on_error && (revents & (POLLERR | POLLHUP | POLLNVAL)))
         {
+            is_main_loop_idle = false;
             event->on_error(event->arg);
             if(event_observer.is_changed)
                 break;
@@ -501,15 +499,7 @@ void asc_event_core_destroy(void)
 void asc_event_core_loop(void)
 {
     if(!asc_list_size(event_observer.event_list))
-    {
-#ifdef _WIN32
-        Sleep(10);
-#else
-        static struct timespec tv = { .tv_sec = 0, .tv_nsec = 10000000 };
-        nanosleep(&tv, NULL);
-#endif
         return;
-    }
 
     fd_set rset;
     fd_set wset;
@@ -518,7 +508,7 @@ void asc_event_core_loop(void)
     memcpy(&wset, &event_observer.wmaster, sizeof(wset));
     memcpy(&eset, &event_observer.emaster, sizeof(eset));
 
-    static struct timeval timeout = { .tv_sec = 0, .tv_usec = 10000 };
+    static const struct timeval timeout = { .tv_sec = 0, .tv_usec = 0 };
     const int ret = select(event_observer.max_fd + 1, &rset, &wset, &eset, &timeout);
     if(ret == -1)
     {
@@ -538,18 +528,21 @@ void asc_event_core_loop(void)
             asc_event_t *event = asc_list_data(event_observer.event_list);
             if(event->on_read && FD_ISSET(event->fd, &rset))
             {
+                is_main_loop_idle = false;
                 event->on_read(event->arg);
                 if(event_observer.is_changed)
                     break;
             }
             if(event->on_write && FD_ISSET(event->fd, &wset))
             {
+                is_main_loop_idle = false;
                 event->on_write(event->arg);
                 if(event_observer.is_changed)
                     break;
             }
             if(event->on_error && FD_ISSET(event->fd, &eset))
             {
+                is_main_loop_idle = false;
                 event->on_error(event->arg);
                 if(event_observer.is_changed)
                     break;

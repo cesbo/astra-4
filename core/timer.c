@@ -2,7 +2,7 @@
  * Astra Core
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,8 @@
 #include "timer.h"
 #include "list.h"
 #include "utils.h"
+
+extern bool is_main_loop_idle;
 
 struct asc_timer_t
 {
@@ -70,12 +72,14 @@ void asc_timer_core_loop(void)
             if(timer->interval == 0)
             {
                 // one shot timer
+                is_main_loop_idle = false;
                 timer->callback(timer->arg);
                 timer->callback = NULL;
                 ++is_detached;
             }
             else
             {
+                is_main_loop_idle = false;
                 timer->next_shot += timer->interval;
                 timer->callback(timer->arg);
             }

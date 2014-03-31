@@ -39,8 +39,7 @@ struct module_data_t
 
     /* Base */
     char dev_name[32];
-    asc_thread_t *thread;
-    bool thread_ready;
+    // bool is_thread;
 
     /* */
     dvb_ca_t *ca;
@@ -50,20 +49,12 @@ struct module_data_t
 
     /* */
     int dec_sec_fd;
-    struct
-    {
-        asc_thread_t *thread;
 
-        int fd[2];
-        asc_event_t *event;
+    asc_thread_t *sec_thread;
+    asc_thread_buffer_t *sec_thread_output;
 
-        uint8_t *buffer;
-        uint32_t buffer_size;
-        uint32_t buffer_count;
-        uint32_t buffer_read;
-        uint32_t buffer_write;
-        uint32_t buffer_overflow;
-    } sync;
+    bool is_ca_thread_started;
+    asc_thread_t *ca_thread;
 };
 
 /*
@@ -75,61 +66,27 @@ struct module_data_t
  *
  */
 
-
-static void sync_queue_push(module_data_t *mod, const uint8_t *ts)
-{
-    if(mod->sync.buffer_count >= mod->sync.buffer_size)
-    {
-        ++mod->sync.buffer_overflow;
-        return;
-    }
-
-    if(mod->sync.buffer_overflow)
-    {
-        asc_log_error(MSG("sync buffer overflow. dropped %d packets"), mod->sync.buffer_overflow);
-        mod->sync.buffer_overflow = 0;
-    }
-
-    memcpy(&mod->sync.buffer[mod->sync.buffer_write], ts, TS_PACKET_SIZE);
-    mod->sync.buffer_write += TS_PACKET_SIZE;
-    if(mod->sync.buffer_write >= mod->sync.buffer_size)
-        mod->sync.buffer_write = 0;
-
-    __sync_fetch_and_add(&mod->sync.buffer_count, TS_PACKET_SIZE);
-
-    uint8_t cmd[1] = { 0 };
-    if(send(mod->sync.fd[0], cmd, sizeof(cmd), 0) != sizeof(cmd))
-        asc_log_error(MSG("failed to push signal to queue\n"));
-}
-
-static void sync_queue_pop(module_data_t *mod, uint8_t *ts)
-{
-    uint8_t cmd[1];
-    if(recv(mod->sync.fd[1], cmd, sizeof(cmd), 0) != sizeof(cmd))
-        asc_log_error(MSG("failed to pop signal from queue\n"));
-
-    memcpy(ts, &mod->sync.buffer[mod->sync.buffer_read], TS_PACKET_SIZE);
-    mod->sync.buffer_read += TS_PACKET_SIZE;
-    if(mod->sync.buffer_read >= mod->sync.buffer_size)
-        mod->sync.buffer_read = 0;
-
-    __sync_fetch_and_sub(&mod->sync.buffer_count, TS_PACKET_SIZE);
-}
-
-static void sec_thread_loop(void *arg)
+static void on_thread_close(void *arg)
 {
     module_data_t *mod = arg;
-    uint8_t ts[TS_PACKET_SIZE];
 
-    mod->dec_sec_fd = open(mod->dev_name, O_RDONLY);
-    asc_thread_while(mod->sync.thread)
-    {
-        const ssize_t len = read(mod->dec_sec_fd, ts, sizeof(ts));
-        if(len == sizeof(ts) && ts[0] == 0x47)
-            sync_queue_push(mod, ts);
-    }
     if(mod->dec_sec_fd > 0)
+    {
         close(mod->dec_sec_fd);
+        mod->dec_sec_fd = 0;
+    }
+
+    if(mod->sec_thread)
+    {
+        asc_thread_destroy(mod->sec_thread);
+        mod->sec_thread = NULL;
+    }
+
+    if(mod->sec_thread_output)
+    {
+        asc_thread_buffer_destroy(mod->sec_thread_output);
+        mod->sec_thread_output = NULL;
+    }
 }
 
 static void on_thread_read(void *arg)
@@ -137,8 +94,33 @@ static void on_thread_read(void *arg)
     module_data_t *mod = arg;
 
     uint8_t ts[TS_PACKET_SIZE];
-    sync_queue_pop(mod, ts);
-    module_stream_send(mod, ts);
+    const ssize_t r = asc_thread_buffer_read(mod->sec_thread_output, ts, sizeof(ts));
+    if(r == sizeof(ts))
+        module_stream_send(mod, ts);
+}
+
+static void thread_loop(void *arg)
+{
+    module_data_t *mod = arg;
+    uint8_t ts[TS_PACKET_SIZE];
+
+    mod->dec_sec_fd = open(mod->dev_name, O_RDONLY);
+
+    while(1)
+    {
+        const ssize_t len = read(mod->dec_sec_fd, ts, sizeof(ts));
+        if(len == -1)
+            break;
+
+        if(len == sizeof(ts) && ts[0] == 0x47)
+        {
+            const ssize_t r = asc_thread_buffer_write(mod->sec_thread_output, ts, sizeof(ts));
+            if(r != TS_PACKET_SIZE)
+            {
+                // overflow
+            }
+        }
+    }
 }
 
 static void sec_open(module_data_t *mod)
@@ -150,14 +132,12 @@ static void sec_open(module_data_t *mod)
         astra_abort();
     }
 
-    socketpair(AF_LOCAL, SOCK_STREAM, 0, mod->sync.fd);
-
-    mod->sync.event = asc_event_init(mod->sync.fd[1], mod);
-    asc_event_set_on_read(mod->sync.event, on_thread_read);
-    mod->sync.buffer = malloc(BUFFER_SIZE);
-    mod->sync.buffer_size = BUFFER_SIZE;
-
-    asc_thread_init(&mod->sync.thread, sec_thread_loop, mod);
+    mod->sec_thread = asc_thread_init(mod);
+    mod->sec_thread_output = asc_thread_buffer_init(BUFFER_SIZE);
+    asc_thread_start(  mod->sec_thread
+                     , thread_loop
+                     , on_thread_read, mod->sec_thread_output
+                     , on_thread_close);
 }
 
 static void sec_close(module_data_t *mod)
@@ -168,15 +148,8 @@ static void sec_close(module_data_t *mod)
         mod->enc_sec_fd = 0;
     }
 
-    asc_thread_destroy(&mod->sync.thread);
-    asc_event_close(mod->sync.event);
-    if(mod->sync.fd[0])
-    {
-        close(mod->sync.fd[0]);
-        close(mod->sync.fd[1]);
-    }
-    if(mod->sync.buffer)
-        free(mod->sync.buffer);
+    if(mod->sec_thread)
+        on_thread_close(mod);
 }
 
 /*
@@ -188,13 +161,24 @@ static void sec_close(module_data_t *mod)
  *
  */
 
+static void on_ca_thread_close(void *arg)
+{
+    module_data_t *mod = arg;
+
+    mod->is_ca_thread_started = false;
+
+    if(mod->ca_thread)
+    {
+        asc_thread_destroy(mod->ca_thread);
+        mod->ca_thread = NULL;
+    }
+}
+
 static void ca_thread_loop(void *arg)
 {
     module_data_t *mod = arg;
 
     ca_open(mod->ca);
-    if(!mod->ca->ca_fd)
-        astra_abort();
 
     nfds_t nfds = 0;
 
@@ -205,11 +189,16 @@ static void ca_thread_loop(void *arg)
     fds[nfds].events = POLLIN;
     ++nfds;
 
-    mod->thread_ready = true;
+    mod->is_ca_thread_started = true;
 
-    asc_thread_while(mod->thread)
+    uint64_t current_time = asc_utime();
+    uint64_t ca_check_timeout = current_time;
+
+#define CA_TIMEOUT (1 * 1000 * 1000)
+
+    while(mod->is_ca_thread_started)
     {
-        const int ret = poll(fds, nfds, 1000);
+        const int ret = poll(fds, nfds, 100);
         if(ret > 0)
         {
             if(fds[0].revents)
@@ -217,7 +206,11 @@ static void ca_thread_loop(void *arg)
         }
         else if(ret == 0)
         {
-            ca_loop(mod->ca, 0);
+            if((current_time - ca_check_timeout) >= CA_TIMEOUT)
+            {
+                ca_check_timeout = current_time;
+                ca_loop(mod->ca, 0);
+            }
         }
         else
         {
@@ -225,6 +218,8 @@ static void ca_thread_loop(void *arg)
             astra_abort();
         }
     }
+
+#undef CA_TIMEOUT
 
     ca_close(mod->ca);
 }
@@ -286,11 +281,16 @@ static void module_init(module_data_t *mod)
     mod->ca->device = mod->device;
     sprintf(mod->dev_name, "/dev/dvb/adapter%d/sec%d", mod->adapter, mod->device);
 
-    asc_thread_init(&mod->thread, ca_thread_loop, mod);
+    mod->ca_thread = asc_thread_init(mod);
+    asc_thread_start(  mod->ca_thread
+                     , ca_thread_loop
+                     , NULL, NULL
+                     , on_ca_thread_close);
+
     sec_open(mod);
 
     struct timespec ts = { .tv_sec = 0, .tv_nsec = 500000 };
-    while(!mod->thread_ready)
+    while(!mod->is_ca_thread_started)
         nanosleep(&ts, NULL);
 }
 
@@ -299,7 +299,9 @@ static void module_destroy(module_data_t *mod)
     module_stream_destroy(mod);
 
     sec_close(mod);
-    asc_thread_destroy(&mod->thread);
+
+    if(mod->ca_thread)
+        on_ca_thread_close(mod);
 
     free(mod->ca);
 }
