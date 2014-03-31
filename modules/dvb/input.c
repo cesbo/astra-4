@@ -113,7 +113,8 @@ static void dvr_open(module_data_t *mod)
     if(mod->dvr_fd <= 0)
     {
         asc_log_error(MSG("failed to open dvr [%s]"), strerror(errno));
-        astra_abort();
+        mod->dvr_fd = 0;
+        return;
     }
 
     if(mod->dvr_buffer_size > 0)
@@ -709,13 +710,15 @@ static void module_init(module_data_t *mod)
 
     module_options(mod);
 
+    dvr_open(mod);
+    if(mod->dvr_fd == 0)
+        return;
+
     mod->thread = asc_thread_init(mod);
     asc_thread_start(  mod->thread
                      , thread_loop
                      , NULL, NULL
                      , on_thread_close);
-
-    dvr_open(mod);
 
     struct timespec ts = { .tv_sec = 0, .tv_nsec = 500000 };
     while(!mod->is_thread_started)
