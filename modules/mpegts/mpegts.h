@@ -399,6 +399,25 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
         ; SDT_ITEM_DESC_NEXT(_ptr, _desc_ptr))
 
 /*
+ * ooooooooooo ooooo ooooooooooo
+ *  888    88   888  88  888  88
+ *  888ooo8     888      888
+ *  888    oo   888      888
+ * o888ooo8888 o888o    o888o
+ *
+ */
+
+#define EIT_GET_PNR(_psi) ((_psi->buffer[3] << 8) | _psi->buffer[4])
+#define EIT_SET_PNR(_psi, _pnr)                                                                 \
+    {                                                                                           \
+        const uint16_t __pnr = _pnr;                                                            \
+        _psi->buffer[3] = __pnr >> 8;                                                           \
+        _psi->buffer[4] = __pnr & 0xFF;                                                         \
+    }
+
+#define EIT_GET_TSID(_psi) ((_psi->buffer[8] << 8) | _psi->buffer[9])
+
+/*
  * oooooooooo    oooooooo8 oooooooooo
  *  888    888 o888     88  888    888
  *  888oooo88  888          888oooo88

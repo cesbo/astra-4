@@ -63,12 +63,11 @@ struct module_data_t
     uint16_t pid_map[MAX_PID];
     uint8_t custom_ts[TS_PACKET_SIZE];
 
-    int send_eit;
-
     mpegts_psi_t *pat;
     mpegts_psi_t *cat;
     mpegts_psi_t *pmt;
     mpegts_psi_t *sdt;
+    mpegts_psi_t *eit;
 
     mpegts_packet_type_t stream[MAX_PID];
 
@@ -120,6 +119,7 @@ static void stream_reload(module_data_t *mod)
 
     if(mod->config.eit)
     {
+        mod->stream[0x12] = MPEGTS_PACKET_EIT;
         module_stream_demux_join_pid(mod, 0x12);
     }
 
@@ -570,6 +570,40 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
 }
 
 /*
+ * ooooooooooo ooooo ooooooooooo
+ *  888    88   888  88  888  88
+ *  888ooo8     888      888
+ *  888    oo   888      888
+ * o888ooo8888 o888o    o888o
+ *
+ */
+
+static void on_eit(void *arg, mpegts_psi_t *psi)
+{
+    module_data_t *mod = arg;
+
+    const uint8_t table_id = psi->buffer[0];
+    const bool is_actual_eit = (table_id == 0x4E || (table_id >= 0x50 && table_id <= 0x5F));
+    if(!is_actual_eit)
+        return;
+
+    if(mod->tsid != EIT_GET_TSID(psi))
+        return;
+
+    if(mod->config.pnr != EIT_GET_PNR(psi))
+        return;
+
+    psi->cc = mod->eit_cc;
+
+    if(mod->config.set_pnr)
+        EIT_SET_PNR(psi, mod->config.set_pnr);
+
+    mpegts_psi_demux(psi, (ts_callback_t)__module_stream_send, &mod->__stream);
+
+    mod->eit_cc = psi->cc;
+}
+
+/*
  * ooooooooooo  oooooooo8
  * 88  888  88 888
  *     888      888oooooo
@@ -587,46 +621,6 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     if(pid == NULL_TS_PID)
         return;
 
-    if(pid == 0x12)
-    {
-        if(!mod->config.eit)
-            return;
-
-        bool is_pusi = (TS_PUSI(ts) != 0);
-        uint8_t header_size = 0;
-
-        if(is_pusi)
-        {
-            mod->send_eit = false;
-
-            const uint8_t *payload = TS_PTR(ts);
-            if(!payload)
-                return;
-            payload = payload + payload[0] + 1;
-            header_size = payload - ts;
-
-            const uint8_t table_id = payload[0];
-
-            if(table_id == 0x4E || (table_id >= 0x50 && table_id <= 0x5F))
-                mod->send_eit = (((payload[3] << 8) | payload[4]) == mod->config.pnr);
-        }
-
-        if(mod->send_eit)
-        {
-            memcpy(mod->custom_ts, ts, TS_PACKET_SIZE);
-            mod->custom_ts[3] = (ts[3] & 0xF0) | mod->eit_cc;
-            mod->eit_cc = (mod->eit_cc + 1) & 0x0F;
-            if(mod->config.set_pnr && is_pusi)
-            {
-                mod->custom_ts[header_size + 3] = (mod->config.set_pnr >> 8) & 0xFF;
-                mod->custom_ts[header_size + 4] = (mod->config.set_pnr     ) & 0xFF;
-            }
-            module_stream_send(mod, mod->custom_ts);
-        }
-
-        return;
-    }
-
     switch(mod->stream[pid])
     {
         case MPEGTS_PACKET_UNKNOWN:
@@ -643,6 +637,9 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             return;
         case MPEGTS_PACKET_SDT:
             mpegts_psi_mux(mod->sdt, ts, on_sdt, mod);
+            return;
+        case MPEGTS_PACKET_EIT:
+            mpegts_psi_mux(mod->eit, ts, on_eit, mod);
             return;
         default:
             break;
@@ -726,7 +723,11 @@ static void module_init(module_data_t *mod)
 
     module_option_boolean("eit", &mod->config.eit);
     if(mod->config.eit)
+    {
+        mod->eit = mpegts_psi_init(MPEGTS_PACKET_EIT, 0x12);
+        mod->stream[0x12] = MPEGTS_PACKET_EIT;
         module_stream_demux_join_pid(mod, 0x12);
+    }
 
     lua_getfield(lua, 2, "map");
     if(!lua_isnil(lua, -1))
@@ -776,6 +777,9 @@ static void module_destroy(module_data_t *mod)
         if(mod->sdt_checksum_list)
             free(mod->sdt_checksum_list);
     }
+
+    if(mod->eit)
+        mpegts_psi_destroy(mod->eit);
 
     if(mod->map)
     {
