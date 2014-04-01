@@ -54,8 +54,8 @@ struct module_data_t
         const char *name;
         int pnr;
         int set_pnr;
-        int sdt;
-        int eit;
+        bool sdt;
+        bool eit;
     } config;
 
     /* */
@@ -177,12 +177,15 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     PAT_ITEMS_FOREACH(psi, pointer)
     {
         const uint16_t pnr = PAT_ITEMS_GET_PNR(psi, pointer);
-        const uint16_t pid = PAT_ITEMS_GET_PID(psi, pointer);
+        if(!pnr)
+            continue;
 
-        if(pnr && (!mod->config.pnr || pnr == mod->config.pnr))
+        if(!mod->config.pnr)
+            mod->config.pnr = pnr;
+
+        if(pnr == mod->config.pnr)
         {
-            mod->config.pnr = pnr; // if(!mod->config.pnr)
-
+            const uint16_t pid = PAT_ITEMS_GET_PID(psi, pointer);
             module_stream_demux_join_pid(mod, pid);
             mod->stream[pid] = MPEGTS_PACKET_PMT;
             mod->pmt->pid = pid;
@@ -712,7 +715,8 @@ static void module_init(module_data_t *mod)
     mod->stream[1] = MPEGTS_PACKET_CAT;
     module_stream_demux_join_pid(mod, 1);
 
-    if(module_option_number("sdt", &mod->config.sdt) && mod->config.sdt)
+    module_option_boolean("sdt", &mod->config.sdt);
+    if(mod->config.sdt)
     {
         mod->sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
         mod->custom_sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
@@ -720,7 +724,8 @@ static void module_init(module_data_t *mod)
         module_stream_demux_join_pid(mod, 0x11);
     }
 
-    if(module_option_number("eit", &mod->config.eit) && mod->config.eit)
+    module_option_boolean("eit", &mod->config.eit);
+    if(mod->config.eit)
         module_stream_demux_join_pid(mod, 0x12);
 
     lua_getfield(lua, 2, "map");
