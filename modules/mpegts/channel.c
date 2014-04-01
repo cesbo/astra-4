@@ -176,7 +176,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 
     PAT_ITEMS_FOREACH(psi, pointer)
     {
-        const uint16_t pnr = PAT_ITEMS_GET_PNR(psi, pointer);
+        const uint16_t pnr = PAT_ITEM_GET_PNR(psi, pointer);
         if(!pnr)
             continue;
 
@@ -185,7 +185,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 
         if(pnr == mod->config.pnr)
         {
-            const uint16_t pid = PAT_ITEMS_GET_PID(psi, pointer);
+            const uint16_t pid = PAT_ITEM_GET_PID(psi, pointer);
             module_stream_demux_join_pid(mod, pid);
             mod->stream[pid] = MPEGTS_PACKET_PMT;
             mod->pmt->pid = pid;
@@ -210,8 +210,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     if(mod->config.set_pnr)
     {
         uint8_t *custom_pointer = PAT_ITEMS_FIRST(mod->custom_pat);
-        custom_pointer[0] = mod->config.set_pnr >> 8;
-        custom_pointer[1] = mod->config.set_pnr & 0xFF;
+        PAT_ITEM_SET_PNR(mod->custom_pat, custom_pointer, mod->config.set_pnr);
     }
 
     if(mod->map)
@@ -229,9 +228,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
                 mod->pid_map[mod->pmt->pid] = map_item->custom_pid;
 
                 uint8_t *custom_pointer = PAT_ITEMS_FIRST(mod->custom_pat);
-                custom_pointer[2] = (custom_pointer[2] & ~0x1F)
-                                  | ((map_item->custom_pid >> 8) & 0x1F);
-                custom_pointer[3] = map_item->custom_pid & 0xFF;
+                PAT_ITEM_SET_PID(mod->custom_pat, custom_pointer, map_item->custom_pid);
 
                 mod->custom_pmt->pid = map_item->custom_pid;
                 break;
@@ -458,10 +455,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
             }
 
             if(custom_pid)
-            {
-                custom_pointer[1] = (custom_pointer[1] & ~0x1F) | ((custom_pid >> 8) & 0x1F);
-                custom_pointer[2] = custom_pid & 0xFF;
-            }
+                PMT_ITEM_SET_PID(mod->custom_pmt, custom_pointer, custom_pid);
         }
     }
     mod->custom_pmt->buffer_size += CRC32_SIZE;
@@ -472,12 +466,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     if(mod->map)
     {
         if(mod->pid_map[pcr_pid])
-        {
-            const uint16_t custom_pcr_pid = mod->pid_map[pcr_pid];
-            mod->custom_pmt->buffer[8] = (mod->custom_pmt->buffer[8] & ~0x1F)
-                                       | ((custom_pcr_pid >> 8) & 0x1F);
-            mod->custom_pmt->buffer[9] = custom_pcr_pid & 0xFF;
-        }
+            PMT_SET_PCR(mod->custom_pmt, mod->pid_map[pcr_pid]);
     }
 
     PSI_SET_SIZE(mod->custom_pmt);
@@ -653,11 +642,8 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         const uint16_t custom_pid = mod->pid_map[pid];
         if(custom_pid)
         {
-            // (((_ts[1] & 0x1f) << 8) | _ts[2])
             memcpy(mod->custom_ts, ts, TS_PACKET_SIZE);
-            mod->custom_ts[1] = (mod->custom_ts[1] & ~0x1F)
-                              | ((custom_pid >> 8) & 0x1F);
-            mod->custom_ts[2] = custom_pid & 0xFF;
+            TS_SET_PID(mod->custom_ts, custom_pid);
             module_stream_send(mod, mod->custom_ts);
             return;
         }
