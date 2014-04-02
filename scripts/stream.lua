@@ -172,6 +172,7 @@ function on_analyze(channel_data, input_id, data)
                     start_reserve(channel_data)
                 else
                     channel_data.ri_delay = channel_data.ri_delay - 1
+                    input_data.on_air = nil
                 end
             else
                 start_reserve(channel_data)
@@ -1059,7 +1060,7 @@ function make_channel(channel_conf)
     channel_data.config = channel_conf
     channel_data.input = {}
     channel_data.output = {}
-    channel_data.ri_delay = 5 -- the delay for reserve
+    channel_data.ri_delay = 3 -- the delay for reserve
 
     for input_id = 1, #channel_conf.input do
         channel_data.input[input_id] = { on_air = false, }
