@@ -685,44 +685,56 @@ static void module_init(module_data_t *mod)
     module_option_string("name", &mod->config.name, NULL);
     asc_assert(mod->config.name != NULL, "[channel] option 'name' is required");
 
-    module_option_number("pnr", &mod->config.pnr);
-    module_option_number("set_pnr", &mod->config.set_pnr);
-
-    mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
-    mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
-    mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
-    mod->custom_pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
-    mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
-    mod->stream[0] = MPEGTS_PACKET_PAT;
-    module_stream_demux_join_pid(mod, 0);
-    mod->stream[1] = MPEGTS_PACKET_CAT;
-    module_stream_demux_join_pid(mod, 1);
-
-    module_option_boolean("sdt", &mod->config.sdt);
-    if(mod->config.sdt)
+    if(module_option_number("pnr", &mod->config.pnr))
     {
-        mod->sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
-        mod->custom_sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
-        mod->stream[0x11] = MPEGTS_PACKET_SDT;
-        module_stream_demux_join_pid(mod, 0x11);
+        module_option_number("set_pnr", &mod->config.set_pnr);
+
+        mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
+        mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
+        mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
+        mod->custom_pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
+        mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
+        mod->stream[0] = MPEGTS_PACKET_PAT;
+        module_stream_demux_join_pid(mod, 0);
+        mod->stream[1] = MPEGTS_PACKET_CAT;
+        module_stream_demux_join_pid(mod, 1);
+
+        module_option_boolean("sdt", &mod->config.sdt);
+        if(mod->config.sdt)
+        {
+            mod->sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
+            mod->custom_sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
+            mod->stream[0x11] = MPEGTS_PACKET_SDT;
+            module_stream_demux_join_pid(mod, 0x11);
+        }
+
+        module_option_boolean("eit", &mod->config.eit);
+        if(mod->config.eit)
+        {
+            mod->eit = mpegts_psi_init(MPEGTS_PACKET_EIT, 0x12);
+            mod->stream[0x12] = MPEGTS_PACKET_EIT;
+            module_stream_demux_join_pid(mod, 0x12);
+        }
+    }
+    else
+    {
+        lua_getfield(lua, MODULE_OPTIONS_IDX, "pid");
+        if(lua_istable(lua, -1))
+        {
+            lua_foreach(lua, -2)
+            {
+                const int pid = lua_tonumber(lua, -1);
+                module_stream_demux_join_pid(mod, pid);
+            }
+        }
+        lua_pop(lua, 1); // pid
     }
 
-    module_option_boolean("eit", &mod->config.eit);
-    if(mod->config.eit)
+    lua_getfield(lua, MODULE_OPTIONS_IDX, "map");
+    if(lua_istable(lua, -1))
     {
-        mod->eit = mpegts_psi_init(MPEGTS_PACKET_EIT, 0x12);
-        mod->stream[0x12] = MPEGTS_PACKET_EIT;
-        module_stream_demux_join_pid(mod, 0x12);
-    }
-
-    lua_getfield(lua, 2, "map");
-    if(!lua_isnil(lua, -1))
-    {
-        asc_assert(lua_type(lua, -1) == LUA_TTABLE, "option 'map' required table");
-
         mod->map = asc_list_init();
-        const int map = lua_gettop(lua);
-        for(lua_pushnil(lua); lua_next(lua, map); lua_pop(lua, 1))
+        lua_foreach(lua, -2)
         {
             const char *map_item = lua_tostring(lua, -1);
             __parse_map_item(mod, map_item);
@@ -730,13 +742,10 @@ static void module_init(module_data_t *mod)
     }
     lua_pop(lua, 1); // map
 
-    lua_getfield(lua, 2, "filter");
-    if(!lua_isnil(lua, -1))
+    lua_getfield(lua, MODULE_OPTIONS_IDX, "filter");
+    if(lua_istable(lua, -1))
     {
-        asc_assert(lua_type(lua, -1) == LUA_TTABLE, "option 'filter' required table");
-
-        const int filter = lua_gettop(lua);
-        for(lua_pushnil(lua); lua_next(lua, filter); lua_pop(lua, 1))
+        lua_foreach(lua, -2)
         {
             const int pid = lua_tonumber(lua, -1);
             mod->pid_map[pid] = MAX_PID;
