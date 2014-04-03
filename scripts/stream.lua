@@ -695,7 +695,7 @@ function init_input(channel_data, input_id)
     if input_conf.pnr ~= nil or input_conf.pid ~= nil then
         local channel_conf =
         {
-            name = channel_data.config.name .. " #" .. input_id,
+            name = input_data.name,
             upstream = input_data.tail:stream(),
         }
 
@@ -724,7 +724,7 @@ function init_input(channel_data, input_id)
     if input_conf.biss then
         input_data.decrypt = decrypt({
             upstream = input_data.tail:stream(),
-            name = channel_data.config.name,
+            name = input_data.name,
             biss = input_conf.biss,
         })
         input_data.tail = input_data.decrypt
@@ -732,7 +732,7 @@ function init_input(channel_data, input_id)
     elseif input_conf.cam then
         local decrypt_conf = {
             upstream = input_data.tail:stream(),
-            name = channel_data.config.name,
+            name = input_data.name,
             cam = input_conf.cam,
         }
         if input_conf.cas_data then decrypt_conf.cas_data = input_conf.cas_data end
@@ -760,7 +760,7 @@ function init_input(channel_data, input_id)
         end
         input_data.analyze = analyze({
             upstream = input_data.tail:stream(),
-            name = channel_data.config.name,
+            name = input_data.name,
             cc_limit = cc_limit,
             callback = function(data)
                     on_analyze(channel_data, input_id, data)
