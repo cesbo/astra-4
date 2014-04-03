@@ -26,11 +26,13 @@
  *      upstream    - object, stream instance returned by module_instance:stream()
  *      name        - string, channel name
  *      pnr         - number, join PID related to the program number
+ *      pid         - list, join PID in list
  *      sdt         - boolean, join SDT table
  *      eit         - boolean, join EIT table
  *      map         - list, map PID by stream type, item format: "type=pid"
- *                    type: video, audio, rus, end... and other language code
+ *                    type: video, audio, rus, eng... and other languages code
  *                     pid: number identifier in range 32-8190
+ *      filter      - list, drop PID
  */
 
 #include <astra.h>
