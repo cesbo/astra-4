@@ -29,9 +29,6 @@
 
 #include "modules/mpegts/mpegts.h"
 
-#define STACK_DEBUG() printf("%s:%d %s(): stack:%d\n"                                           \
-                             , __FILE__, __LINE__, __FUNCTION__, lua_gettop(lua))
-
 /* version */
 
 #include "version.h"
