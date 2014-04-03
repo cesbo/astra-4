@@ -59,6 +59,14 @@
                        )                                                                        \
                     )
 
+#define TS_SET_PID(_ts, _pid)                                                                   \
+    {                                                                                           \
+        uint8_t *__ts = _ts;                                                                    \
+        const uint16_t __pid = _pid;                                                            \
+        __ts[1] = (__ts[1] & ~0x1F) | ((__pid >> 8) & 0x1F);                                    \
+        __ts[2] = __pid & 0xFF;                                                                 \
+    }
+
 typedef void (*ts_callback_t)(void *, const uint8_t *);
 
 /*
@@ -265,8 +273,24 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
         ; !PAT_ITEMS_EOL(_psi, _ptr)                                                            \
         ; PAT_ITEMS_NEXT(_psi, _ptr))
 
-#define PAT_ITEMS_GET_PNR(_psi, _pointer) ((_pointer[0] << 8) | _pointer[1])
-#define PAT_ITEMS_GET_PID(_psi, _pointer) (((_pointer[2] & 0x1F) << 8) | _pointer[3])
+#define PAT_ITEM_GET_PNR(_psi, _pointer) ((_pointer[0] << 8) | _pointer[1])
+#define PAT_ITEM_GET_PID(_psi, _pointer) (((_pointer[2] & 0x1F) << 8) | _pointer[3])
+
+#define PAT_ITEM_SET_PNR(_psi, _pointer, _pnr)                                                  \
+    {                                                                                           \
+        uint8_t *const __pointer = _pointer;                                                    \
+        const uint16_t __pnr = _pnr;                                                            \
+        __pointer[0] = __pnr >> 8;                                                              \
+        __pointer[1] = __pnr & 0xFF;                                                            \
+    }
+
+#define PAT_ITEM_SET_PID(_psi, _pointer, _pid)                                                  \
+    {                                                                                           \
+        uint8_t *const __pointer = _pointer;                                                    \
+        const uint16_t __pid = _pid;                                                            \
+        __pointer[2] = 0xE0 | ((__pid >> 8) & 0x1F);                                            \
+        __pointer[3] = __pid & 0xFF;                                                            \
+    }
 
 /*
  *   oooooooo8     o   ooooooooooo
@@ -310,7 +334,7 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
 #define PMT_SET_PCR(_psi, _pcr)                                                                 \
     {                                                                                           \
         const uint16_t __pcr = _pcr;                                                            \
-        _psi->buffer[8] = (__pcr >> 8) & 0x1F;                                                  \
+        _psi->buffer[8] = 0xE0 | ((__pcr >> 8) & 0x1F);                                         \
         _psi->buffer[9] = __pcr & 0xFF;                                                         \
     }
 
@@ -351,6 +375,14 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
     for(_desc_ptr = PMT_ITEM_DESC_FIRST(_ptr)                                                   \
         ; !PMT_ITEM_DESC_EOL(_ptr, _desc_ptr)                                                   \
         ; PMT_ITEM_DESC_NEXT(_ptr, _desc_ptr))
+
+#define PMT_ITEM_SET_PID(_psi, _pointer, _pid)                                                  \
+    {                                                                                           \
+        uint8_t *const __pointer = _pointer;                                                    \
+        const uint16_t __pid = _pid;                                                            \
+        __pointer[1] = 0xE0 | ((__pid >> 8) & 0x1F);                                            \
+        __pointer[2] = __pid & 0xFF;                                                            \
+    }
 
 /*
  *  oooooooo8 ooooooooo   ooooooooooo
@@ -397,6 +429,25 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
     for(_desc_ptr = SDT_ITEM_DESC_FIRST(_ptr)                                                   \
         ; !SDT_ITEM_DESC_EOL(_ptr, _desc_ptr)                                                   \
         ; SDT_ITEM_DESC_NEXT(_ptr, _desc_ptr))
+
+/*
+ * ooooooooooo ooooo ooooooooooo
+ *  888    88   888  88  888  88
+ *  888ooo8     888      888
+ *  888    oo   888      888
+ * o888ooo8888 o888o    o888o
+ *
+ */
+
+#define EIT_GET_PNR(_psi) ((_psi->buffer[3] << 8) | _psi->buffer[4])
+#define EIT_SET_PNR(_psi, _pnr)                                                                 \
+    {                                                                                           \
+        const uint16_t __pnr = _pnr;                                                            \
+        _psi->buffer[3] = __pnr >> 8;                                                           \
+        _psi->buffer[4] = __pnr & 0xFF;                                                         \
+    }
+
+#define EIT_GET_TSID(_psi) ((_psi->buffer[8] << 8) | _psi->buffer[9])
 
 /*
  * oooooooooo    oooooooo8 oooooooooo

@@ -201,6 +201,10 @@ parse_option.cam = function(val, result)
     end
 end
 
+parse_option.pid = function(val, result)
+    result.pid = split(val, ',')
+end
+
 parse_option.filter = function(val, result)
     result.filter = split(val, ',')
 end
@@ -670,50 +674,48 @@ input_module = {}
 kill_input_module = {}
 
 function init_input(channel_data, input_id)
+    channel_data.input[input_id] = {}
+
     local input_conf = channel_data.config.input[input_id]
+    local input_data = channel_data.input[input_id]
 
-    if not input_conf.module_name then
-        log.error("[stream.lua] option 'module_name' is required for input")
-        astra.abort()
-    end
-
-    local init_input_type = input_list[input_conf.module_name]
-    if not init_input_type then
-        log.error("[" .. channel_data.config.name .. " #" .. input_id .. "] Unknown type of input " .. input_id)
-        astra.abort()
-    end
-
-    local input_data = { }
-    channel_data.input[input_id] = input_data
-
+    input_data.name = channel_data.config.name .. " #" .. input_id
     input_data.config = input_conf
-    input_data.source = init_input_type(channel_data, input_id)
+    input_data.source = input_list[input_conf.module_name](channel_data, input_id)
     input_data.tail = input_data.source.tail
 
-    if input_conf.pnr or
-       input_conf.set_pnr or
-       channel_data.config.map or
-       input_conf.filter
-    then
+    if input_conf.pnr == nil and input_conf.pid == nil then
+        if  input_conf.set_pnr or
+            input_conf.map or channel_data.config.map or
+            input_conf.filter
+        then
+            input_conf.pnr = 0
+        end
+    end
+
+    if input_conf.pnr ~= nil or input_conf.pid ~= nil then
         local channel_conf =
         {
-            name = channel_data.config.name,
+            name = input_data.name,
             upstream = input_data.tail:stream(),
-            pnr = input_conf.pnr,
-            sdt = true,
-            eit = true,
         }
 
-        if (input_conf.no_sdt or no_sdt) then channel_conf.sdt = nil end
-        if (input_conf.no_eit or no_eit) then channel_conf.eit = nil end
-        if input_conf.set_pnr then channel_conf.set_pnr = input_conf.set_pnr end
+        if input_conf.pnr ~= nil then
+            channel_conf.pnr = input_conf.pnr
+            if input_conf.set_pnr then channel_conf.set_pnr = input_conf.set_pnr end
+
+            if input_conf.no_sdt ~= true and _G.no_sdt ~= true then channel_conf.sdt = true end
+            if input_conf.no_eit ~= true and _G.no_eit ~= true then channel_conf.eit = true end
+        end
+
+        if input_conf.pid then channel_conf.pid = input_conf.pid end
+
         if input_conf.map then
             channel_conf.map = input_conf.map
-        else
-            if channel_data.config.map then
-                channel_conf.map = channel_data.config.map
-            end
+        elseif channel_data.config.map then
+            channel_conf.map = channel_data.config.map
         end
+
         if input_conf.filter then channel_conf.filter = input_conf.filter end
 
         input_data.channel = channel(channel_conf)
@@ -723,7 +725,7 @@ function init_input(channel_data, input_id)
     if input_conf.biss then
         input_data.decrypt = decrypt({
             upstream = input_data.tail:stream(),
-            name = channel_data.config.name,
+            name = input_data.name,
             biss = input_conf.biss,
         })
         input_data.tail = input_data.decrypt
@@ -731,7 +733,7 @@ function init_input(channel_data, input_id)
     elseif input_conf.cam then
         local decrypt_conf = {
             upstream = input_data.tail:stream(),
-            name = channel_data.config.name,
+            name = input_data.name,
             cam = input_conf.cam,
         }
         if input_conf.cas_data then decrypt_conf.cas_data = input_conf.cas_data end
@@ -759,7 +761,7 @@ function init_input(channel_data, input_id)
         end
         input_data.analyze = analyze({
             upstream = input_data.tail:stream(),
-            name = channel_data.config.name,
+            name = input_data.name,
             cc_limit = cc_limit,
             callback = function(data)
                     on_analyze(channel_data, input_id, data)

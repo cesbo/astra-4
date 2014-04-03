@@ -145,13 +145,13 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     const uint8_t *pointer = PAT_ITEMS_FIRST(psi);
     while(!PAT_ITEMS_EOL(psi, pointer))
     {
-        const uint16_t pnr = PAT_ITEMS_GET_PNR(psi, pointer);
+        const uint16_t pnr = PAT_ITEM_GET_PNR(psi, pointer);
         if(pnr)
         {
             mod->__decrypt.pnr = pnr;
             if(mod->__decrypt.cas_pnr == 0)
                 mod->__decrypt.cas_pnr = pnr;
-            const uint16_t pmt_pid = PAT_ITEMS_GET_PID(psi, pointer);
+            const uint16_t pmt_pid = PAT_ITEM_GET_PID(psi, pointer);
             mod->stream[pmt_pid] = MPEGTS_PACKET_PMT;
             mod->pmt->pid = pmt_pid;
             break;
