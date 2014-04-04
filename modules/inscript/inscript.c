@@ -350,11 +350,6 @@ int main(int argc, char const *argv[])
     }
     script[skip] = 0;
 
-    unsigned int cs = 0;
-    for(size_t i = 0; i < skip; ++i)
-        cs += (uint8_t)script[i];
-    printf("static unsigned int cs_%s = 0x%x;\n", argv[1], cs);
-
     printf("static unsigned char %s[] = {\n", argv[1]);
     const size_t tail = skip % 8;
     const size_t limit = skip - tail;
