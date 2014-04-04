@@ -706,6 +706,7 @@ function init_input(channel_data, input_id)
 
             if input_conf.no_sdt ~= true and _G.no_sdt ~= true then channel_conf.sdt = true end
             if input_conf.no_eit ~= true and _G.no_eit ~= true then channel_conf.eit = true end
+            if channel_conf.eit and input_conf.pass_eit then channel_conf.pass_eit = true end
         end
 
         if input_conf.pid then channel_conf.pid = input_conf.pid end

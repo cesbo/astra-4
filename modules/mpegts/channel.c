@@ -58,6 +58,7 @@ struct module_data_t
         int set_pnr;
         bool sdt;
         bool eit;
+        bool pass_eit;
     } config;
 
     /* */
@@ -630,7 +631,10 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             mpegts_psi_mux(mod->sdt, ts, on_sdt, mod);
             return;
         case MPEGTS_PACKET_EIT:
-            mpegts_psi_mux(mod->eit, ts, on_eit, mod);
+            if(mod->config.pass_eit)
+                module_stream_send(mod, ts);
+            else
+                mpegts_psi_mux(mod->eit, ts, on_eit, mod);
             return;
         default:
             break;
@@ -716,6 +720,8 @@ static void module_init(module_data_t *mod)
             mod->eit = mpegts_psi_init(MPEGTS_PACKET_EIT, 0x12);
             mod->stream[0x12] = MPEGTS_PACKET_EIT;
             module_stream_demux_join_pid(mod, 0x12);
+
+            module_option_boolean("pass_eit", &mod->config.pass_eit);
         }
     }
     else
