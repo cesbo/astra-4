@@ -3,6 +3,6 @@
 
 #define ASTRA_VERSION_MAJOR 4
 #define ASTRA_VERSION_MINOR 1
-#define ASTRA_VERSION_DEV 9
+#define ASTRA_VERSION_DEV 10
 
 #endif /* _VERSION_H_ */
