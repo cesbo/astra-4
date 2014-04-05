@@ -66,7 +66,7 @@ struct module_data_t
     char buffer[HTTP_BUFFER_SIZE];
 
     int status_code;
-    int response_idx;
+    int idx_response;
     bool is_status_line;
     bool is_response_headers;
 
@@ -117,25 +117,25 @@ static const char __keep_alive[] = "keep-alive";
 
 static void on_close(void *);
 
-static void get_lua_callback(module_data_t *mod)
+static void callback(module_data_t *mod)
 {
+    const int request = lua_gettop(lua);
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
     lua_getfield(lua, -1, "callback");
-    lua_remove(lua, -2);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+    lua_pushvalue(lua, request);
+    lua_call(lua, 2, 0);
+    lua_pop(lua, 2); // oref + request
 }
 
 static void call_error(module_data_t *mod, const char *msg)
 {
-    get_lua_callback(mod);
-
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
     lua_newtable(lua);
     lua_pushnumber(lua, 0);
     lua_setfield(lua, -2, __code);
     lua_pushstring(lua, msg);
     lua_setfield(lua, -2, __message);
-
-    lua_call(lua, 2, 0);
+    callback(mod);
 }
 
 void timeout_callback(void *arg)
@@ -180,10 +180,10 @@ static void on_close(void *arg)
         mod->sock = NULL;
     }
 
-    if(mod->response_idx)
+    if(mod->idx_response)
     {
-        luaL_unref(lua, LUA_REGISTRYINDEX, mod->response_idx);
-        mod->response_idx = 0;
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_response);
+        mod->idx_response = 0;
     }
 
     if(mod->idx_self)
@@ -249,10 +249,8 @@ static void on_thread_close(void *arg)
     {
         mod->is_stream_error = false;
 
-        get_lua_callback(mod);
-        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
         lua_pushnil(lua);
-        lua_call(lua, 2, 0);
+        callback(mod);
     }
 
     on_close(mod);
@@ -532,8 +530,8 @@ static void on_read(void *arg)
         }
 
         lua_newtable(lua);
-        mod->response_idx = luaL_ref(lua, LUA_REGISTRYINDEX);
-        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->response_idx);
+        lua_pushvalue(lua, -1);
+        mod->idx_response = luaL_ref(lua, LUA_REGISTRYINDEX);
         const int response = lua_gettop(lua);
 
         mod->status_code = atoi(&mod->buffer[m[2].so]);
@@ -554,7 +552,7 @@ static void on_read(void *arg)
     // response headers
     if(!mod->is_response_headers)
     {
-        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->response_idx);
+        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_response);
         const int response = lua_gettop(lua);
 
         lua_getfield(lua, response, __headers);
@@ -585,7 +583,7 @@ static void on_read(void *arg)
             {
                 const char *val = &header[sizeof(__transfer_encoding) - 1];
                 if(!strncasecmp(val, __chunked, sizeof(__chunked) - 1))
-                    mod->is_chunked = 1;
+                    mod->is_chunked = true;
             }
             else if(!strncasecmp(header, __content_length, sizeof(__content_length) - 1))
             {
@@ -610,10 +608,8 @@ static void on_read(void *arg)
                || (mod->status_code == 204)
                || (mod->status_code == 304))
             {
-                get_lua_callback(mod);
-                lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
-                lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->response_idx);
-                lua_call(lua, 2, 0);
+                lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_response);
+                callback(mod);
 
                 if(mod->is_connection_close)
                     on_close(mod);
@@ -633,12 +629,10 @@ static void on_read(void *arg)
         asc_socket_set_on_ready(mod->sock, NULL);
         asc_socket_set_on_close(mod->sock, NULL);
 
-        get_lua_callback(mod);
-        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
-        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->response_idx);
+        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_response);
         lua_pushboolean(lua, mod->is_stream);
         lua_setfield(lua, -2, __stream);
-        lua_call(lua, 2, 0);
+        callback(mod);
 
         mod->sync.buffer = malloc(mod->sync.buffer_size);
 
@@ -684,13 +678,11 @@ static void on_read(void *arg)
 
                 if(!mod->chunk_left)
                 {
-                    get_lua_callback(mod);
-                    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
-                    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->response_idx);
+                    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_response);
                     string_buffer_push(lua, mod->content);
                     mod->content = NULL;
                     lua_setfield(lua, -2, __content);
-                    lua_call(lua, 2, 0);
+                    callback(mod);
 
                     if(mod->is_connection_close)
                         on_close(mod);
@@ -738,13 +730,11 @@ static void on_read(void *arg)
                                      , mod->chunk_left);
             mod->chunk_left = 0;
 
-            get_lua_callback(mod);
-            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
-            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->response_idx);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_response);
             string_buffer_push(lua, mod->content);
             mod->content = NULL;
             lua_setfield(lua, -2, __content);
-            lua_call(lua, 2, 0);
+            callback(mod);
 
             if(mod->is_connection_close)
                 on_close(mod);
@@ -795,12 +785,12 @@ static void on_connect(void *arg)
             const char *h = lua_tostring(lua, -1);
             const size_t hs = luaL_len(lua, -1);
 
-            if(0 == strncasecmp(h, __connection, sizeof(__connection) - 1))
+            if(!strncasecmp(h, __connection, sizeof(__connection) - 1))
             {
                 const char *hp = &h[sizeof(__connection) - 1];
-                if(0 == strncasecmp(hp, __close, sizeof(__close) - 1))
+                if(!strncasecmp(hp, __close, sizeof(__close) - 1))
                     mod->is_connection_close = true;
-                else if(0 == strncasecmp(hp, __keep_alive, sizeof(__keep_alive) - 1))
+                else if(!strncasecmp(hp, __keep_alive, sizeof(__keep_alive) - 1))
                     mod->is_connection_keep_alive = true;
             }
 
