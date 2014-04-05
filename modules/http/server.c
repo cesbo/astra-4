@@ -348,11 +348,13 @@ static void on_client_read(void *arg)
             {
                 lua_getglobal(lua, "json");
                 lua_getfield(lua, -1, "decode");
+                lua_remove(lua, -2); // json
                 string_buffer_push(lua, client->content);
                 lua_call(lua, 1, 1);
             }
             else if(client->is_urlencoded)
             {
+                string_buffer_push(lua, client->content);
                 // TODO: parse url arguments
             }
             else
