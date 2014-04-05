@@ -33,20 +33,20 @@ static const uint8_t base64_index[256] =
     XX,XX,XX,XX, XX,XX,XX,XX, XX,XX,XX,XX, XX,XX,XX,XX,
 };
 
-char * base64_encode(const char *in, size_t size, size_t *out_size)
+char * base64_encode(const void *in, size_t in_size, size_t *out_size)
 {
     if(!in)
         return NULL;
 
-    *out_size = ((size + 2) / 3) * 4;
+    size_t size = ((in_size + 2) / 3) * 4;
 
-    char *out = malloc(*out_size + 1);
+    char *out = malloc(size + 1);
 
-    for(size_t i = 0, j = 0; i < size;)
+    for(size_t i = 0, j = 0; i < in_size;)
     {
-        uint32_t octet_a = (i < size) ? (uint8_t)in[i++] : 0;
-        uint32_t octet_b = (i < size) ? (uint8_t)in[i++] : 0;
-        uint32_t octet_c = (i < size) ? (uint8_t)in[i++] : 0;
+        uint32_t octet_a = (i < in_size) ? ((uint8_t *)in)[i++] : 0;
+        uint32_t octet_b = (i < in_size) ? ((uint8_t *)in)[i++] : 0;
+        uint32_t octet_c = (i < in_size) ? ((uint8_t *)in)[i++] : 0;
 
         uint32_t triple = (octet_a << 0x10) + (octet_b << 0x08) + octet_c;
 
@@ -56,40 +56,45 @@ char * base64_encode(const char *in, size_t size, size_t *out_size)
         out[j++] = base64_list[(triple >> 0 * 6) & 0x3F];
     }
 
-    switch(size % 3)
+    switch(in_size % 3)
     {
         case 0:
             break;
         case 1:
-            out[*out_size - 2] = '=';
+            out[size - 2] = '=';
         case 2:
-            out[*out_size - 1] = '=';
+            out[size - 1] = '=';
             break;
     }
-    out[*out_size] = '\0';
+    out[size] = 0;
+
+    if(out_size)
+        *out_size = size;
 
     return out;
 }
 
-char * base64_decode(const char *in, size_t *out_size)
+void * base64_decode(const char *in, size_t in_size, size_t *out_size)
 {
-    size_t size = 0;
-    while(in[size])
-        ++size;
+    if(in_size == 0)
+    {
+        while(in[in_size])
+            ++in_size;
+    }
 
-    if(size % 4 != 0)
+    if(in_size % 4 != 0)
         return NULL;
 
-    *out_size = (size / 4) * 3;
+    size_t size = (in_size / 4) * 3;
 
-    if(in[size - 1] == '=')
-        --(*out_size);
-    if(in[size - 2] == '=')
-        --(*out_size);
+    if(in[in_size - 2] == '=')
+        size -= 2;
+    else if(in[in_size - 1] == '=')
+        size -= 1;
 
-    char *out = malloc(*out_size + 1);
+    uint8_t *out = malloc(size);
 
-    for(size_t i = 0, j = 0; i < size;)
+    for(size_t i = 0, j = 0; i < in_size;)
     {
         uint32_t sextet_a = (in[i] == '=') ? (0 & i++) : base64_index[(uint8_t)in[i++]];
         uint32_t sextet_b = (in[i] == '=') ? (0 & i++) : base64_index[(uint8_t)in[i++]];
@@ -101,14 +106,16 @@ char * base64_decode(const char *in, size_t *out_size)
                         + (sextet_c << 1 * 6)
                         + (sextet_d << 0 * 6);
 
-        if (j < *out_size)
+        if (j < size)
             out[j++] = (triple >> 2 * 8) & 0xFF;
-        if (j < *out_size)
+        if (j < size)
             out[j++] = (triple >> 1 * 8) & 0xFF;
-        if (j < *out_size)
+        if (j < size)
             out[j++] = (triple >> 0 * 8) & 0xFF;
     }
-    out[*out_size] = '\0';
+
+    if(out_size)
+        *out_size = size;
 
     return out;
 }
@@ -130,9 +137,10 @@ static int lua_base64_encode(lua_State *L)
 static int lua_base64_decode(lua_State *L)
 {
     const char *data = luaL_checkstring(L, 1);
+    int data_size = luaL_len(lua, 1);
 
     size_t data_dec_size = 0;
-    const char *data_dec = base64_decode(data, &data_dec_size);
+    const char *data_dec = base64_decode(data, data_size, &data_dec_size);
     lua_pushlstring(lua, data_dec, data_dec_size);
 
     free((void *)data_dec);
