@@ -72,6 +72,41 @@
     }                                                                       \
 }
 
+/* RFC 3986 */
+
+#define IS_UPPER_ALPHA(_c) (_c >= 'A' && _c <= 'Z')
+#define IS_LOWER_ALPHA(_c) (_c >= 'a' && _c <= 'z')
+#define IS_ALPHA(_c) (IS_UPPER_ALPHA(_c) || IS_LOWER_ALPHA(_c))
+
+#define IS_DIGIT(_c) (_c >= '0' && _c <= '9')
+
+#define IS_UNRESERVED(_c) (   IS_ALPHA(_c)                                  \
+                           || IS_DIGIT(_c)                                  \
+                           || (_c == '-')                                   \
+                           || (_c == '.')                                   \
+                           || (_c == '_')                                   \
+                           || (_c == '~'))
+
+#define IS_HEXDIGIT(_c) (   IS_DIGIT(_c)                                    \
+                         || (_c >= 'A' && _c <= 'F')                        \
+                         || (_c >= 'a' && _c <= 'f'))
+
+#define IS_GEN_DELIMS(_c) (   (_c == ':')                                   \
+                           || (_c == '/')                                   \
+                           || (_c == '?')                                   \
+                           || (_c == '#')                                   \
+                           || (_c == '[')                                   \
+                           || (_c == ']')                                   \
+                           || (_c == '@'))
+
+#define IS_SUB_DELIMS(_c) (   (_c == '!')                                   \
+                           || (_c == '$')                                   \
+                           || (_c >= '&' && _c <= ',') /* &'()*+, */        \
+                           || (_c == ';')                                   \
+                           || (_c == '='))
+
+#define IS_RESERVED(_c) (IS_GEN_DELIMS(_c) || IS_SUB_DELIMS(_c))
+
 bool http_parse_response(const char *str, parse_match_t *match)
 {
     size_t i = 0;
@@ -105,7 +140,8 @@ bool http_parse_request(const char *str, parse_match_t *match)
     match[0].so = 0;
 
     // metod
-    SEEK(1, 1, 16, ((c >= 'A' && c <= 'Z') || c == '_'))
+    SEEK(1, 1, 16, (   IS_UPPER_ALPHA(c)
+                    || c == '_'))
     CHECK_SP()
 
     // uri
@@ -113,8 +149,8 @@ bool http_parse_request(const char *str, parse_match_t *match)
     CHECK_SP()
 
     // version
-    SEEK(3, 1, 16, (   (c >= 'A' && c <= 'Z')
-                    || (c >= '0' && c <= '9')
+    SEEK(3, 1, 16, (   IS_UPPER_ALPHA(c)
+                    || IS_DIGIT(c)
                     || (c == '.')
                     || (c == '/')))
     CHECK_CRLF()
@@ -140,9 +176,7 @@ bool http_parse_chunk(const char *str, parse_match_t *match)
     size_t i = 0;
     match[0].so = 0;
 
-    SEEK(1, 1, 8, (   (c >= 'A' && c <= 'F')
-                   || (c >= 'a' && c <= 'f')
-                   || (c >= '0' && c <= '9')))
+    SEEK(1, 1, 8, IS_HEXDIGIT(c))
     if(str[i] == ';')
     {
         // chunk extension
@@ -152,5 +186,94 @@ bool http_parse_chunk(const char *str, parse_match_t *match)
     CHECK_CRLF()
 
     match[0].eo = i;
+    return true;
+}
+
+bool http_parse_query(const char *str, parse_match_t *match)
+{
+    size_t skip = 0;
+
+    match[0].so = 0;
+
+    // parse key
+    match[1].so = skip;
+    while(1)
+    {
+        const char c = str[skip];
+        if(skip - match[1].so > 1024)
+            return false;
+
+        if(IS_UNRESERVED(c) || c == '+')
+        {
+            skip += 1;
+        }
+        else if(c == '%')
+        {
+            const char d1 = str[skip + 1];
+            if(!IS_HEXDIGIT(d1))
+                return false;
+
+            const char d2 = str[skip + 2];
+            if(!IS_HEXDIGIT(d2))
+                return false;
+
+            skip += 3;
+        }
+        else
+        {
+            match[1].eo = skip;
+
+            if(skip - match[1].so == 0)
+            {
+                match[0].eo = skip;
+                return true;
+            }
+
+            break;
+        }
+    }
+
+    if(str[skip] != '=')
+    {
+        match[2].so = 0;
+        match[2].eo = 0;
+
+        match[0].eo = skip;
+        return true;
+    }
+
+    ++skip; // skip '='
+
+    match[2].so = skip;
+    while(1)
+    {
+        const char c = str[skip];
+        if(skip - match[2].so > 1024)
+            return false;
+
+        if(IS_UNRESERVED(c) || c == '+' || c == '=')
+        {
+            skip += 1;
+        }
+        else if(c == '%')
+        {
+            const char d1 = str[skip + 1];
+            if(!IS_HEXDIGIT(d1))
+                return false;
+
+            const char d2 = str[skip + 2];
+            if(!IS_HEXDIGIT(d2))
+                return false;
+
+            skip += 3;
+        }
+        else
+        {
+            match[2].eo = skip;
+            break;
+        }
+    }
+
+    match[0].eo = skip;
     return true;
 }

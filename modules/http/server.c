@@ -99,6 +99,7 @@ struct module_data_t
 static const char __method[] = "method";
 static const char __version[] = "version";
 static const char __path[] = "path";
+static const char __query[] = "query";
 static const char __headers[] = "headers";
 static const char __content[] = "content";
 
@@ -170,6 +171,65 @@ static void on_client_close(void *arg)
     free(client);
 }
 
+static void lua_url_decode(const char *str, size_t size)
+{
+    if(size == 0)
+    {
+        lua_pushstring(lua, "");
+        return;
+    }
+
+    size_t skip = 0;
+    string_buffer_t *buffer = string_buffer_alloc();
+    while(skip < size)
+    {
+        const char c = str[skip];
+        if(c == '%')
+        {
+            char c = ' ';
+            str_to_hex(&str[skip + 1] , (uint8_t *)&c, 1);
+            string_buffer_addchar(buffer, c);
+            skip += 3;
+        }
+        else if(c == '+')
+        {
+            string_buffer_addchar(buffer, ' ');
+            skip += 1;
+        }
+        else
+        {
+            string_buffer_addchar(buffer, c);
+            skip += 1;
+        }
+    }
+    string_buffer_push(lua, buffer);
+}
+
+static bool lua_parse_query(const char *str, size_t size)
+{
+    size_t skip = 0;
+    parse_match_t m[3];
+
+    lua_newtable(lua);
+    while(skip < size && http_parse_query(&str[skip], m))
+    {
+        if(m[1].eo > m[1].so)
+        {
+            lua_url_decode(&str[skip + m[1].so], m[1].eo - m[1].so); // key
+            lua_url_decode(&str[skip + m[2].so], m[2].eo - m[2].so); // value
+
+            lua_settable(lua, -3);
+        }
+
+        skip += m[0].eo;
+
+        if(skip < size)
+            ++skip; // skip &
+    }
+
+    return (skip == size);
+}
+
 static void on_client_read(void *arg)
 {
     http_client_t *client = arg;
@@ -198,6 +258,7 @@ static void on_client_read(void *arg)
     {
         if(!http_parse_request(client->buffer, m))
         {
+            asc_log_error(MSG("failed to parse request line"));
             on_client_close(client);
             return;
         }
@@ -216,7 +277,16 @@ static void on_client_read(void *arg)
         {
             lua_pushlstring(lua, &client->buffer[m[2].so], path_skip - m[2].so);
             lua_setfield(lua, request, __path);
-            // TODO: parse url arguments
+
+            ++path_skip; // skip '?'
+            if(!lua_parse_query(&client->buffer[path_skip], m[2].eo - path_skip))
+            {
+                asc_log_error(MSG("failed to parse query line"));
+                lua_pop(lua, 2); // query + response
+                on_client_close(client);
+                return;
+            }
+            lua_setfield(lua, request, __query);
         }
         else
         {
@@ -355,13 +425,24 @@ static void on_client_read(void *arg)
             else if(client->is_urlencoded)
             {
                 string_buffer_push(lua, client->content);
-                // TODO: parse url arguments
+                const char *str = lua_tostring(lua, -1);
+                const int size = luaL_len(lua, -1);
+                if(!lua_parse_query(str, size))
+                {
+                    asc_log_error(MSG("failed to parse urlencoded content"));
+                    lua_pop(lua, 1); // query
+                }
+                else
+                {
+                    lua_remove(lua, -2); // buffer
+                }
             }
             else
             {
                 string_buffer_push(lua, client->content);
             }
 
+            client->is_request_ok = true;
             client->content = NULL;
             lua_setfield(lua, -2, __content);
             callback(client);

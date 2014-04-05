@@ -34,5 +34,6 @@ bool http_parse_request(const char *, parse_match_t *);
 bool http_parse_response(const char *, parse_match_t *);
 bool http_parse_header(const char *, parse_match_t *);
 bool http_parse_chunk(const char *, parse_match_t *);
+bool http_parse_query(const char *, parse_match_t *);
 
 #endif /* _PARSE_H_ */
