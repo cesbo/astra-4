@@ -77,6 +77,7 @@ typedef struct
     bool is_urlencoded;
     bool is_multipart;
     const char *boundary;
+    bool is_websocket;
 
     size_t chunk_left; // is_content_length
 
@@ -108,12 +109,18 @@ static const char __content_length[] = "Content-Length: ";
 static const char __content_type[] = "Content-Type: ";
 static const char __multipart[] = "multipart";
 // TODO: static const char __boundary[] = "boundary";
-static const char __json[] = "application/json";
-static const char __urlencoded[] = "application/x-www-form-urlencoded";
+static const char __mime_json[] = "application/json";
+static const char __mime_urlencoded[] = "application/x-www-form-urlencoded";
 
 static const char __connection[] = "Connection: ";
 static const char __close[] = "close";
 static const char __keep_alive[] = "keep-alive";
+
+static const char __upgrade[] = "Upgrade: ";
+static const char __websocket[] = "websocket";
+
+static const char __sec_websocket_key[] = "Sec-WebSocket-Key: ";
+static const char __websocket_magic[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 /*
  *   oooooooo8 ooooo       ooooo ooooooooooo oooo   oooo ooooooooooo
@@ -141,8 +148,6 @@ static void on_client_close(void *arg)
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
-    printf(MSG("%s(): %p\n"), __FUNCTION__, (void *)client);
-
     if(!client->sock)
         return;
 
@@ -153,6 +158,12 @@ static void on_client_close(void *arg)
     {
         lua_pushnil(lua);
         callback(client);
+    }
+
+    if(client->idx_request)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
+        client->idx_request = 0;
     }
 
     if(client->idx_data)
@@ -282,7 +293,7 @@ static void on_client_read(void *arg)
             if(!lua_parse_query(&client->buffer[path_skip], m[2].eo - path_skip))
             {
                 asc_log_error(MSG("failed to parse query line"));
-                lua_pop(lua, 2); // query + response
+                lua_pop(lua, 2); // query + request
                 on_client_close(client);
                 return;
             }
@@ -299,7 +310,7 @@ static void on_client_read(void *arg)
         skip += m[0].eo;
         client->is_request_line = true;
 
-        lua_pop(lua, 1); // response
+        lua_pop(lua, 1); // request
 
         if(skip >= size)
             return;
@@ -309,15 +320,15 @@ static void on_client_read(void *arg)
     if(!client->is_request_headers)
     {
         lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_request);
-        const int response = lua_gettop(lua);
+        const int request = lua_gettop(lua);
 
-        lua_getfield(lua, response, __headers);
+        lua_getfield(lua, request, __headers);
         if(lua_isnil(lua, -1))
         {
             lua_pop(lua, 1);
             lua_newtable(lua);
             lua_pushvalue(lua, -1);
-            lua_setfield(lua, response, __headers);
+            lua_setfield(lua, request, __headers);
         }
         int headers_count = luaL_len(lua, -1);
         const int headers = lua_gettop(lua);
@@ -358,14 +369,38 @@ static void on_client_read(void *arg)
                 {
                     // TODO: multipart
                 }
-                else if(!strncasecmp(val, __json, sizeof(__json) - 1))
-                {
+                else if(!strncasecmp(val, __mime_json, sizeof(__mime_json) - 1))
                     client->is_json = true;
-                }
-                else if(!strncasecmp(val, __urlencoded, sizeof(__urlencoded) - 1))
-                {
+                else if(!strncasecmp(val, __mime_urlencoded, sizeof(__mime_urlencoded) - 1))
                     client->is_urlencoded = true;
-                }
+            }
+            else if(!strncasecmp(header, __upgrade, sizeof(__upgrade) - 1))
+            {
+                const char *val = &header[sizeof(__upgrade) - 1];
+                if(!strncasecmp(val, __websocket, sizeof(__websocket) - 1))
+                    client->is_websocket = true;
+            }
+            else if(!strncasecmp(header, __sec_websocket_key, sizeof(__sec_websocket_key) - 1))
+            {
+                sha1_ctx_t ctx;
+                memset(&ctx, 0, sizeof(sha1_ctx_t));
+                sha1_init(&ctx);
+                sha1_update(&ctx
+                            , (const uint8_t *)&header[sizeof(__sec_websocket_key) - 1]
+                            , length - (sizeof(__sec_websocket_key) - 1));
+                sha1_update(&ctx
+                            , (const uint8_t *)__websocket_magic
+                            , sizeof(__websocket_magic) - 1);
+                uint8_t digest[SHA1_DIGEST_SIZE];
+                sha1_final(&ctx, digest);
+
+                size_t accept_size = 0;
+                char *accept = base64_encode((const char *)digest, sizeof(digest), &accept_size);
+
+                lua_pushlstring(lua, accept, accept_size);
+                lua_setfield(lua, request, "websocket_accept");
+
+                free(accept);
             }
 
             ++headers_count;
@@ -375,7 +410,7 @@ static void on_client_read(void *arg)
             skip += m[0].eo;
         }
 
-        lua_pop(lua, 2); // headers + response
+        lua_pop(lua, 2); // headers + request
 
         if(client->is_request_headers)
         {
@@ -511,7 +546,6 @@ static void on_server_accept(void *arg)
         astra_abort(); // TODO: try to restart server
     }
 
-    printf(MSG("%s(): %p\n"), __FUNCTION__, (void *)client);
     asc_list_insert_tail(mod->clients, client);
 
     asc_socket_set_on_read(client->sock, on_client_read);
