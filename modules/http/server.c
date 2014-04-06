@@ -34,11 +34,12 @@
  *      close(client)
  *                  - close client connection
  *      send(client, response)
- *                  - stream response to client. response - table:
+ *                  - response - table, possible values:
+ *                    * code - number, response code. required
+ *                    * message - string, response code description. default: see http_code()
  *                    * version - string, protocol version. default: "HTTP/1.1"
- *                    * code - number, response code. default: 200
- *                    * message - string, response code description. default: "OK"
  *                    * headers - table (list of strings), response headers
+ *                    * location - string, Location header for 301, 302
  *                    * content - string, response body from the string
  *                    * file - string, full path to file, reponse body from the file
  *                    * upstream - object, stream instance returned by module_instance:stream()
@@ -845,6 +846,16 @@ static int method_send(module_data_t *mod)
         }
 
         asc_socket_set_on_read(client->sock, on_client_read_websocket);
+    }
+
+    else if(code == 301 || code == 302)
+    {
+        lua_getfield(lua, response, "location");
+        const char *location = lua_tostring(lua, -1);
+        skip += snprintf(  &client->buffer[skip]
+                         , HTTP_BUFFER_SIZE - skip
+                         , "Location: %s\r\n", location);
+        lua_pop(lua, 1); // location
     }
 
     lua_getfield(lua, response, __content);
