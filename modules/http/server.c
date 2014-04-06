@@ -25,6 +25,7 @@
  * Module Options:
  *      addr        - string, server IP address
  *      port        - number, server port
+ *      server_name - string, default value: "Astra"
  *      callback    - function,
  *
  * Module Methods:
@@ -113,6 +114,7 @@ struct module_data_t
 
     const char *addr;
     int port;
+    const char *server_name;
 
     asc_socket_t *sock;
     asc_list_t *clients;
@@ -124,6 +126,7 @@ static const char __path[] = "path";
 static const char __query[] = "query";
 static const char __headers[] = "headers";
 static const char __content[] = "content";
+static const char __callback[] = "callback";
 static const char __code[] = "code";
 static const char __message[] = "message";
 
@@ -158,7 +161,7 @@ static void callback(http_client_t *client)
 {
     const int request = lua_gettop(lua);
     lua_rawgeti(lua, LUA_REGISTRYINDEX, client->mod->__lua.oref);
-    lua_getfield(lua, -1, "callback");
+    lua_getfield(lua, -1, __callback);
     lua_rawgeti(lua, LUA_REGISTRYINDEX, client->mod->idx_self);
     lua_pushlightuserdata(lua, client);
     lua_pushvalue(lua, request);
@@ -731,6 +734,7 @@ static void on_ready_send_response(void *arg)
 
     if(client->chunk_left == client->response_size)
     {
+        client->response_size = 0;
         client->chunk_left = 0;
 
         if(client->idx_content)
@@ -767,7 +771,11 @@ static int method_send(module_data_t *mod)
     ssize_t skip;
     skip = snprintf(client->buffer, HTTP_BUFFER_SIZE, "%s %s %s\r\n", version, code, message);
 
-    skip += snprintf(&client->buffer[skip], HTTP_BUFFER_SIZE - skip, "Server: Astra\r\n");
+    skip += snprintf(&client->buffer[skip]
+                     , HTTP_BUFFER_SIZE - skip
+                     , "Server: %s\r\n"
+                     , mod->server_name);
+
     lua_getfield(lua, response, __headers);
     if(lua_istable(lua, -1))
     {
@@ -934,8 +942,11 @@ static void module_init(module_data_t *mod)
     mod->port = 80;
     module_option_number("port", &mod->port);
 
+    mod->server_name = "Astra";
+    module_option_string("server_name", &mod->server_name, NULL);
+
     // store callback in registry
-    lua_getfield(lua, 2, "callback");
+    lua_getfield(lua, 2, __callback);
     asc_assert(lua_isfunction(lua, -1), MSG("option 'callback' is required"));
     lua_pop(lua, 1); // callback
 
