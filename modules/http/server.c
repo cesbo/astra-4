@@ -263,6 +263,15 @@ static bool lua_parse_query(const char *str, size_t size)
     return (skip == size);
 }
 
+/*
+ * oooo     oooo oooooooo8          oooooooooo  ooooooooooo      o      ooooooooo
+ *  88   88  88 888                  888    888  888    88      888      888    88o
+ *   88 888 88   888oooooo  ooooooo  888oooo88   888ooo8       8  88     888    888
+ *    888 888           888          888  88o    888    oo    8oooo88    888    888
+ *     8   8    o88oooo888          o888o  88o8 o888ooo8888 o88o  o888o o888ooo88
+ *
+ */
+
 static void on_client_read_websocket(void *arg)
 {
     http_client_t *client = arg;
@@ -357,6 +366,15 @@ static void on_client_read_websocket(void *arg)
     }
 }
 
+/*
+ * oooooooooo  ooooooooooo      o      ooooooooo
+ *  888    888  888    88      888      888    88o
+ *  888oooo88   888ooo8       8  88     888    888
+ *  888  88o    888    oo    8oooo88    888    888
+ * o888o  88o8 o888ooo8888 o88o  o888o o888ooo88
+ *
+ */
+
 static void on_client_read(void *arg)
 {
     http_client_t *client = arg;
@@ -379,7 +397,15 @@ static void on_client_read(void *arg)
 
     parse_match_t m[4];
 
-    // request line
+/*
+ *     oooooooooo  ooooooooooo  ooooooo  ooooo  oooo ooooooooooo  oooooooo8 ooooooooooo
+ *      888    888  888    88 o888   888o 888    88   888    88  888        88  888  88
+ *      888oooo88   888ooo8   888     888 888    88   888ooo8     888oooooo     888
+ * ooo  888  88o    888    oo 888o  8o888 888    88   888    oo          888    888
+ * 888 o888o  88o8 o888ooo8888  88ooo88    888oo88   o888ooo8888 o88oooo888    o888o
+ *                                   88o8
+ */
+
     if(!client->is_request_line)
     {
         if(!http_parse_request(client->buffer, m))
@@ -431,7 +457,15 @@ static void on_client_read(void *arg)
             return;
     }
 
-    // request headers
+/*
+ *     ooooo ooooo ooooooooooo      o      ooooooooo  ooooooooooo oooooooooo   oooooooo8
+ *      888   888   888    88      888      888    88o 888    88   888    888 888
+ *      888ooo888   888ooo8       8  88     888    888 888ooo8     888oooo88   888oooooo
+ * ooo  888   888   888    oo    8oooo88    888    888 888    oo   888  88o           888
+ * 888 o888o o888o o888ooo8888 o88o  o888o o888ooo88  o888ooo8888 o888o  88o8 o88oooo888
+ *
+ */
+
     if(!client->is_request_headers)
     {
         lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_request);
@@ -542,6 +576,15 @@ static void on_client_read(void *arg)
         if(skip >= size)
             return;
     }
+
+/*
+ *       oooooooo8   ooooooo  oooo   oooo ooooooooooo ooooooooooo oooo   oooo ooooooooooo
+ *     o888     88 o888   888o 8888o  88  88  888  88  888    88   8888o  88  88  888  88
+ *     888         888     888 88 888o88      888      888ooo8     88 888o88      888
+ * ooo 888o     oo 888o   o888 88   8888      888      888    oo   88   8888      888
+ * 888  888oooo88    88ooo88  o88o    88     o888o    o888ooo8888 o88o    88     o888o
+ *
+ */
 
     if(!client->content)
         client->content = string_buffer_alloc();
