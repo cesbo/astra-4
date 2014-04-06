@@ -749,6 +749,33 @@ static void on_ready_send_response(void *arg)
     }
 }
 
+static const char * http_code(int code)
+{
+    switch(code)
+    {
+        case 101: return "Switching Protocols";
+
+        case 200: return "OK";
+
+        case 301: return "Moved Permanently";
+        case 302: return "Found";
+        case 304: return "Not Modified";
+
+        case 400: return "Bad Request";
+        case 401: return "Unauthorized";
+        case 403: return "Forbidden";
+        case 404: return "Not Found";
+        case 405: return "Method Not Allowed";
+
+        case 500: return "Internal Server Error";
+        case 501: return "Not Implemented";
+        case 502: return "Bad Gateway";
+        case 503: return "Service Unavailable";
+
+        default:  return "Status Code Undefined";
+    }
+}
+
 static int method_send(module_data_t *mod)
 {
     asc_assert(lua_islightuserdata(lua, 2), MSG(":send() client instance required"));
@@ -761,15 +788,15 @@ static int method_send(module_data_t *mod)
     lua_pop(lua, 1); // version
 
     lua_getfield(lua, response, __code);
-    const char *code = lua_tostring(lua, -1);
+    const int code = lua_tonumber(lua, -1);
     lua_pop(lua, 1); // code
 
     lua_getfield(lua, response, __message);
-    const char *message = lua_tostring(lua, -1);
+    const char *message = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : http_code(code);
     lua_pop(lua, 1); // message
 
     ssize_t skip;
-    skip = snprintf(client->buffer, HTTP_BUFFER_SIZE, "%s %s %s\r\n", version, code, message);
+    skip = snprintf(client->buffer, HTTP_BUFFER_SIZE, "%s %d %s\r\n", version, code, message);
 
     skip += snprintf(&client->buffer[skip]
                      , HTTP_BUFFER_SIZE - skip
@@ -794,6 +821,32 @@ static int method_send(module_data_t *mod)
     }
     lua_pop(lua, 1); // headers
 
+    if(client->is_websocket && code == 101)
+    {
+        skip += snprintf(  &client->buffer[skip]
+                         , HTTP_BUFFER_SIZE - skip
+                         , "%s%s\r\n"
+                         , __upgrade, __websocket);
+
+        skip += snprintf(  &client->buffer[skip]
+                         , HTTP_BUFFER_SIZE - skip
+                         , "%s%s\r\n"
+                         , __connection, "Upgrade");
+
+        if(client->websocket.accept_key)
+        {
+            skip += snprintf(  &client->buffer[skip]
+                             , HTTP_BUFFER_SIZE - skip
+                             , "Sec-WebSocket-Accept: %s\r\n"
+                             , client->websocket.accept_key);
+
+            free(client->websocket.accept_key);
+            client->websocket.accept_key = NULL;
+        }
+
+        asc_socket_set_on_read(client->sock, on_client_read_websocket);
+    }
+
     lua_getfield(lua, response, __content);
     if(lua_isstring(lua, -1))
     {
@@ -813,18 +866,6 @@ static int method_send(module_data_t *mod)
     client->chunk_left = 0;
     client->response_size = skip;
     asc_socket_set_on_ready(client->sock, on_ready_send_response);
-
-    return 0;
-}
-
-static int method_websocket_accept(module_data_t *mod)
-{
-    asc_assert(lua_islightuserdata(lua, 2), MSG(":websocket_accept() client instance required"));
-    http_client_t *client = lua_touserdata(lua, 2);
-
-    // TODO: send response
-
-    asc_socket_set_on_read(client->sock, on_client_read_websocket);
 
     return 0;
 }
@@ -977,7 +1018,6 @@ static void module_destroy(module_data_t *mod)
 MODULE_LUA_METHODS()
 {
     { "send", method_send },
-    { "websocket_accept", method_websocket_accept },
     { "close", method_close },
     { "data", method_data }
 };
