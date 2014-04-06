@@ -119,13 +119,13 @@ static void on_close(void *);
 
 static void callback(module_data_t *mod)
 {
-    const int request = lua_gettop(lua);
+    const int response = lua_gettop(lua);
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
     lua_getfield(lua, -1, "callback");
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
-    lua_pushvalue(lua, request);
+    lua_pushvalue(lua, response);
     lua_call(lua, 2, 0);
-    lua_pop(lua, 2); // oref + request
+    lua_pop(lua, 2); // oref + response
 }
 
 static void call_error(module_data_t *mod, const char *msg)
