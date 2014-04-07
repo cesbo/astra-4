@@ -21,58 +21,7 @@
 #include <stdio.h>
 #include "parser.h"
 
-#define SEEK(_m, _min_l, _max_l, _check_char)                               \
-{                                                                           \
-    int __l##_m = 0;                                                        \
-    match[_m].so = i;                                                       \
-    while(1)                                                                \
-    {                                                                       \
-        const char c = str[i];                                              \
-        if(!(_check_char))                                                  \
-        {                                                                   \
-            if((c == ' ' || c == '\r' || c == '\n')                         \
-               && __l##_m >= _min_l                                         \
-               && __l##_m <= _max_l)                                        \
-            {                                                               \
-                match[_m].eo = i;                                           \
-                break;                                                      \
-            }                                                               \
-            else                                                            \
-            {                                                               \
-                match[0].eo = i;                                            \
-                return false;                                               \
-            }                                                               \
-        }                                                                   \
-        ++i;                                                                \
-        ++__l##_m;                                                          \
-    }                                                                       \
-}
-
-#define CHECK_SP()                                                          \
-{                                                                           \
-    if(str[i] == ' ')                                                       \
-        ++i;                                                                \
-    else                                                                    \
-    {                                                                       \
-        match[0].eo = i;                                                    \
-        return false;                                                       \
-    }                                                                       \
-}
-
-#define CHECK_CRLF()                                                        \
-{                                                                           \
-    if(str[i] == '\r')                                                      \
-        ++i;                                                                \
-    if(str[i] == '\n')                                                      \
-        ++i;                                                                \
-    else                                                                    \
-    {                                                                       \
-        match[0].eo = i;                                                    \
-        return false;                                                       \
-    }                                                                       \
-}
-
-/* RFC 3986 */
+/* RFC: 2616 (HTTP/1.1), 3986 (URI) */
 
 #define IS_UPPER_ALPHA(_c) (_c >= 'A' && _c <= 'Z')
 #define IS_LOWER_ALPHA(_c) (_c >= 'a' && _c <= 'z')
@@ -91,27 +40,9 @@
                          || (_c >= 'A' && _c <= 'F')                        \
                          || (_c >= 'a' && _c <= 'f'))
 
-#define IS_GEN_DELIMS(_c) (   (_c == ':')                                   \
-                           || (_c == '/')                                   \
-                           || (_c == '?')                                   \
-                           || (_c == '#')                                   \
-                           || (_c == '[')                                   \
-                           || (_c == ']')                                   \
-                           || (_c == '@'))
-
-#define IS_SUB_DELIMS(_c) (   (_c == '!')                                   \
-                           || (_c == '$')                                   \
-                           || (_c >= '&' && _c <= ',') /* &'()*+, */        \
-                           || (_c == ';')                                   \
-                           || (_c == '='))
-
-#define IS_RESERVED(_c) (IS_GEN_DELIMS(_c) || IS_SUB_DELIMS(_c))
-
-/* RFC 2616 */
-
 #define IS_CTL(_c) (_c <= 0x1F || _c == 0x7F)
 
-#define IS_SEP(_c) (   (_c == 0x09)                                 \
+#define IS_SEP(_c) (   (_c == '\t')                                 \
                     || (_c == ' ')                                  \
                     || (_c == '"')                                  \
                     || (_c == '(')                                  \
@@ -132,6 +63,15 @@
                     || (_c == '}'))
 
 #define IS_TOKEN(_c) (!IS_CTL(_c) && !IS_SEP(_c))
+
+/*
+ * oooooooooo  ooooooooooo  oooooooo8 oooooooooo
+ *  888    888  888    88  888         888    888
+ *  888oooo88   888ooo8     888oooooo  888oooo88
+ *  888  88o    888    oo          888 888         ooo
+ * o888o  88o8 o888ooo8888 o88oooo888 o888o        888
+ *
+ */
 
 bool http_parse_response(const char *str, parse_match_t *match)
 {
@@ -208,6 +148,15 @@ bool http_parse_response(const char *str, parse_match_t *match)
     match[0].eo = skip;
     return true;
 }
+
+/*
+ * oooooooooo  ooooooooooo  ooooooo
+ *  888    888  888    88 o888   888o
+ *  888oooo88   888ooo8   888     888
+ *  888  88o    888    oo 888o  8o888  ooo
+ * o888o  88o8 o888ooo8888  88ooo88    888
+ *                               88o8
+ */
 
 bool http_parse_request(const char *str, parse_match_t *match)
 {
@@ -309,6 +258,15 @@ bool http_parse_request(const char *str, parse_match_t *match)
     return true;
 }
 
+/*
+ * ooooo ooooo ooooooooooo      o      ooooooooo  ooooooooooo oooooooooo
+ *  888   888   888    88      888      888    88o 888    88   888    888
+ *  888ooo888   888ooo8       8  88     888    888 888ooo8     888oooo88
+ *  888   888   888    oo    8oooo88    888    888 888    oo   888  88o
+ * o888o o888o o888ooo8888 o88o  o888o o888ooo88  o888ooo8888 o888o  88o8
+ *
+ */
+
 bool http_parse_header(const char *str, parse_match_t *match)
 {
     size_t skip = 0;
@@ -384,23 +342,74 @@ bool http_parse_header(const char *str, parse_match_t *match)
     return true;
 }
 
+/*
+ *   oooooooo8 ooooo ooooo ooooo  oooo oooo   oooo oooo   oooo
+ * o888     88  888   888   888    88   8888o  88   888  o88
+ * 888          888ooo888   888    88   88 888o88   888888
+ * 888o     oo  888   888   888    88   88   8888   888  88o
+ *  888oooo88  o888o o888o   888oo88   o88o    88  o888o o888o
+ *
+ */
+
 bool http_parse_chunk(const char *str, parse_match_t *match)
 {
-    size_t i = 0;
+    size_t skip = 0;
     match[0].so = 0;
 
-    SEEK(1, 1, 8, IS_HEXDIGIT(c))
-    if(str[i] == ';')
+    // parse chunk
+    match[1].so = 0;
+    while(1)
     {
-        // chunk extension
-        ++i;
-        SEEK(2, 0, 1024, (c >= 0x20 && c <= 0x7E))
-    }
-    CHECK_CRLF()
+        const char c = str[skip];
+        if(IS_HEXDIGIT(c))
+            ++skip;
+        else
+        {
+            if(skip == 0)
+                return false;
 
-    match[0].eo = i;
-    return true;
+            match[1].eo = skip;
+
+            if(c == '\r' && str[skip + 1] == '\n')
+            {
+                match[0].eo = skip + 2;
+                return true;
+            }
+
+            if(c == ';')
+                break;
+
+            return false;
+        }
+    }
+
+    // chunk extension
+    ++skip; // skip ';'
+    while(1)
+    {
+        const char c = str[skip];
+        if(IS_TOKEN(c))
+            ++skip;
+        else if(c == '\r' && str[skip + 1] == '\n')
+        {
+            match[0].eo = skip + 2;
+            return true;
+        }
+        else
+            break;
+    }
+
+    return false;
 }
+
+/*
+ *   ooooooo  ooooo  oooo ooooooooooo oooooooooo ooooo  oooo
+ * o888   888o 888    88   888    88   888    888  888  88
+ * 888     888 888    88   888ooo8     888oooo88     888
+ * 888o  8o888 888    88   888    oo   888  88o      888
+ *   88ooo88    888oo88   o888ooo8888 o888o  88o8   o888o
+ *        88o8
+ */
 
 bool http_parse_query(const char *str, parse_match_t *match)
 {
