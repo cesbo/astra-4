@@ -2,7 +2,7 @@
  * Astra Module: HTTP
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -135,28 +135,77 @@
 
 bool http_parse_response(const char *str, parse_match_t *match)
 {
-    size_t i = 0;
+    size_t skip = 0;
     match[0].so = 0;
 
-    // version
-    SEEK(1, 1, 16, (   (c >= 'A' && c <= 'Z')
-                    || (c >= '0' && c <= '9')
-                    || (c == '.')
-                    || (c == '/')))
-    CHECK_SP()
+    // parse version
+    match[1].so = skip;
+    while(1)
+    {
+        const char c = str[skip];
+        if(IS_UPPER_ALPHA(c))
+            ++skip;
+        else if(c == '/')
+        {
+            ++skip;
+            break;
+        }
+        else
+            return false;
+    }
+    while(1)
+    {
+        const char c = str[skip];
+        if(IS_DIGIT(c) || (c == '.'))
+            ++skip;
+        else if(c == ' ')
+        {
+            match[1].eo = skip;
+            ++skip;
+            break;
+        }
+        else
+            return false;
+    }
 
-    // code
-    SEEK(2, 1, 3, (c >= '0' && c <= '9'))
-    if(str[i] == ' ')
-        CHECK_SP()
-    else
-        CHECK_CRLF()
+    // parse code
+    match[2].so = skip;
+    while(1)
+    {
+        const char c = str[skip];
+        if(IS_DIGIT(c))
+            ++skip;
+        else if(c == ' ')
+        {
+            if(skip - match[2].so != 3)
+                return false;
 
-    // message
-    SEEK(3, 1, 1024, (c >= 0x20 && c <= 0x7E))
-    CHECK_CRLF()
+            match[2].eo = skip;
+            ++skip;
+            break;
+        }
+        else
+            return false;
+    }
 
-    match[0].eo = i;
+    // parse message
+    match[3].so = skip;
+    while(1)
+    {
+        const char c = str[skip];
+        if((c >= 0x20 && c < 0x7F) || (c == '\t'))
+            ++skip;
+        else if(c == '\r' && str[skip + 1] == '\n')
+        {
+            match[3].eo = skip;
+            skip += 2;
+            break;
+        }
+        else
+            return false;
+    }
+
+    match[0].eo = skip;
     return true;
 }
 
