@@ -71,11 +71,14 @@ typedef struct
     asc_socket_t *sock;
 
     char buffer[HTTP_BUFFER_SIZE];
+    size_t buffer_skip;
+
+    struct
+    {
+        int status; // 1 - empty line is found, 2 - request ready, 3 - release
+    } request;
 
     int idx_request;
-    bool is_request_line;
-    bool is_request_headers;
-    bool is_request_ok;
 
     bool is_connection_close;
     bool is_connection_keep_alive;
@@ -130,7 +133,6 @@ static const char __content[] = "content";
 static const char __callback[] = "callback";
 static const char __code[] = "code";
 static const char __message[] = "message";
-static const char __filename[] = "filename";
 
 static const char __content_length[] = "Content-Length: ";
 
@@ -182,7 +184,7 @@ static void on_client_close(void *arg)
     asc_socket_close(client->sock);
     client->sock = NULL;
 
-    if(client->is_request_ok)
+    if(client->request.status == 3)
     {
         lua_pushnil(lua);
         callback(client);
@@ -398,22 +400,51 @@ static void on_client_read(void *arg)
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
-    ssize_t skip = 0;
-
-    ssize_t size = asc_socket_recv(client->sock, client->buffer, HTTP_BUFFER_SIZE);
+    ssize_t size = asc_socket_recv(  client->sock
+                                   , &client->buffer[client->buffer_skip]
+                                   , HTTP_BUFFER_SIZE - client->buffer_skip);
     if(size <= 0)
     {
         on_client_close(client);
         return;
     }
 
-    if(client->is_request_ok)
+    if(client->request.status == 3)
     {
         asc_log_warning(MSG("received data after request"));
         return;
     }
 
-    parse_match_t m[4];
+    size_t eoh = 0; // end of headers
+    size_t skip = 0;
+    client->buffer_skip += size;
+
+    if(client->request.status == 0)
+    {
+        // check empty line
+        while(skip < client->buffer_skip)
+        {
+            if(   client->buffer[skip + 0] == '\r'
+               && client->buffer[skip + 1] == '\n'
+               && client->buffer[skip + 2] == '\r'
+               && client->buffer[skip + 3] == '\n')
+            {
+                eoh = skip + 4;
+                client->request.status = 1; // empty line is found
+                break;
+            }
+            ++skip;
+        }
+
+        if(client->request.status != 1)
+            return;
+    }
+
+    if(client->request.status == 1)
+    {
+        parse_match_t m[4];
+
+        skip = 0;
 
 /*
  *     oooooooooo  ooooooooooo  ooooooo  ooooo  oooo ooooooooooo  oooooooo8 ooooooooooo
@@ -424,14 +455,15 @@ static void on_client_read(void *arg)
  *                                   88o8
  */
 
-    if(!client->is_request_line)
-    {
         if(!http_parse_request(client->buffer, m))
         {
             asc_log_error(MSG("failed to parse request line"));
             on_client_close(client);
             return;
         }
+
+        if(client->idx_request)
+            luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
 
         lua_newtable(lua);
         lua_pushvalue(lua, -1);
@@ -467,13 +499,6 @@ static void on_client_read(void *arg)
         lua_setfield(lua, request, __version);
 
         skip += m[0].eo;
-        client->is_request_line = true;
-
-        lua_pop(lua, 1); // request
-
-        if(skip >= size)
-            return;
-    }
 
 /*
  *     ooooo ooooo ooooooooooo      o      ooooooooo  ooooooooooo oooooooooo   oooooooo8
@@ -484,23 +509,13 @@ static void on_client_read(void *arg)
  *
  */
 
-    if(!client->is_request_headers)
-    {
-        lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_request);
-        const int request = lua_gettop(lua);
-
-        lua_getfield(lua, request, __headers);
-        if(lua_isnil(lua, -1))
-        {
-            lua_pop(lua, 1);
-            lua_newtable(lua);
-            lua_pushvalue(lua, -1);
-            lua_setfield(lua, request, __headers);
-        }
-        int headers_count = luaL_len(lua, -1);
+        lua_newtable(lua);
+        lua_pushvalue(lua, -1);
+        lua_setfield(lua, request, __headers);
         const int headers = lua_gettop(lua);
+        int headers_count = 0;
 
-        while(skip < size && http_parse_header(&client->buffer[skip], m))
+        while(skip < eoh && http_parse_header(&client->buffer[skip], m))
         {
             const size_t so = m[1].so;
             const size_t length = m[1].eo - so;
@@ -508,7 +523,7 @@ static void on_client_read(void *arg)
             if(!length)
             { /* empty line */
                 skip += m[0].eo;
-                client->is_request_headers = true;
+                client->request.status = 2;
                 break;
             }
 
@@ -578,20 +593,19 @@ static void on_client_read(void *arg)
             skip += m[0].eo;
         }
 
-        lua_pop(lua, 2); // headers + request
+        lua_pop(lua, 1); // headers
 
-        if(client->is_request_headers)
+        if(!client->is_content)
         {
-            if(!client->is_content)
-            {
-                client->is_request_ok = true;
-                lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_request);
-                callback(client);
-                return;
-            }
+            // request in the stack send it to callback
+            client->request.status = 3;
+            callback(client);
+            return;
         }
 
-        if(skip >= size)
+        lua_pop(lua, 1); // request
+
+        if(skip >= client->buffer_skip)
             return;
     }
 
@@ -658,7 +672,7 @@ static void on_client_read(void *arg)
                 client->content = NULL;
             }
 
-            client->is_request_ok = true;
+            client->request.status = 3;
             lua_setfield(lua, -2, __content);
             callback(client);
         }
