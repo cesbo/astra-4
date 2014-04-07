@@ -3,7 +3,7 @@ MODULES="mixaudio"
 
 check_cflags()
 {
-    $APP_C -Werror $APP_CFLAGS $1 -x c -o /dev/null -c $MODULE/mixaudio.c >/dev/null 2>&1
+    $APP_C $APP_CFLAGS $1 -x c -o /dev/null -c $MODULE/mixaudio.c >/dev/null 2>&1
 }
 
 check_pkg_config()
