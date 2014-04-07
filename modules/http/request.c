@@ -568,8 +568,8 @@ static void on_read(void *arg)
 
         while(skip < size && http_parse_header(&mod->buffer[skip], m))
         {
-            const size_t so = m[1].so;
-            const size_t length = m[1].eo - so;
+            const size_t so = m[0].so;
+            const size_t length = m[0].eo - so - 2;
 
             if(!length)
             { /* empty line */

@@ -224,6 +224,29 @@ static void on_client_close(void *arg)
     free(client);
 }
 
+static void lua_string_to_lower(const char *str, size_t size)
+{
+    if(size == 0)
+    {
+        lua_pushstring(lua, "");
+        return;
+    }
+
+    size_t skip = 0;
+    string_buffer_t *buffer = string_buffer_alloc();
+    while(skip < size)
+    {
+        const char c = str[skip];
+        if(c >= 'A' && c <= 'Z')
+            string_buffer_addchar(buffer, c + ('a' - 'A'));
+        else
+            string_buffer_addchar(buffer, c);
+
+        skip += 1;
+    }
+    string_buffer_push(lua, buffer);
+}
+
 static void lua_url_decode(const char *str, size_t size)
 {
     if(size == 0)
@@ -513,21 +536,25 @@ static void on_client_read(void *arg)
         lua_pushvalue(lua, -1);
         lua_setfield(lua, request, __headers);
         const int headers = lua_gettop(lua);
-        int headers_count = 0;
 
-        while(skip < eoh && http_parse_header(&client->buffer[skip], m))
+        while(skip < eoh)
         {
-            const size_t so = m[1].so;
-            const size_t length = m[1].eo - so;
+            const char *header = &client->buffer[skip];
 
-            if(!length)
+            if(!http_parse_header(header, m))
+            {
+                asc_log_error(MSG("failed to parse request headers"));
+                on_client_close(client);
+                return;
+            }
+
+            if(m[1].eo == 0)
             { /* empty line */
                 skip += m[0].eo;
                 client->request.status = 2;
                 break;
             }
 
-            const char *header = &client->buffer[skip + so];
             if(!strncasecmp(header, __connection, sizeof(__connection) - 1))
             {
                 const char *val = &header[sizeof(__connection) - 1];
@@ -573,8 +600,8 @@ static void on_client_read(void *arg)
                 memset(&ctx, 0, sizeof(sha1_ctx_t));
                 sha1_init(&ctx);
                 sha1_update(&ctx
-                            , (const uint8_t *)&header[sizeof(__sec_websocket_key) - 1]
-                            , length - (sizeof(__sec_websocket_key) - 1));
+                            , (const uint8_t *)&header[m[2].so]
+                            , m[2].eo - m[2].so);
                 sha1_update(&ctx
                             , (const uint8_t *)__websocket_magic
                             , sizeof(__websocket_magic) - 1);
@@ -586,10 +613,10 @@ static void on_client_read(void *arg)
                 client->websocket.accept_key = base64_encode(digest, sizeof(digest), NULL);
             }
 
-            ++headers_count;
-            lua_pushnumber(lua, headers_count);
-            lua_pushlstring(lua, header, length);
+            lua_string_to_lower(header, m[1].eo);
+            lua_pushlstring(lua, &header[m[2].so], m[2].eo - m[2].so);
             lua_settable(lua, headers);
+
             skip += m[0].eo;
         }
 

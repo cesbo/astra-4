@@ -107,6 +107,33 @@
 
 #define IS_RESERVED(_c) (IS_GEN_DELIMS(_c) || IS_SUB_DELIMS(_c))
 
+/* RFC 2616 */
+
+
+#define IS_CTL(_c) (_c <= 0x1F || _c == 0x7F)
+
+#define IS_SEP(_c) (   (_c == 0x09)                                 \
+                    || (_c == ' ')                                  \
+                    || (_c == '"')                                  \
+                    || (_c == '(')                                  \
+                    || (_c == ')')                                  \
+                    || (_c == ',')                                  \
+                    || (_c == '/')                                  \
+                    || (_c == ':')                                  \
+                    || (_c == ';')                                  \
+                    || (_c == '<')                                  \
+                    || (_c == '=')                                  \
+                    || (_c == '>')                                  \
+                    || (_c == '?')                                  \
+                    || (_c == '@')                                  \
+                    || (_c == '[')                                  \
+                    || (_c == '\\')                                 \
+                    || (_c == ']')                                  \
+                    || (_c == '{')                                  \
+                    || (_c == '}'))
+
+#define IS_TOKEN(_c) (!IS_CTL(_c) && !IS_SEP(_c))
+
 bool http_parse_response(const char *str, parse_match_t *match)
 {
     size_t i = 0;
@@ -161,13 +188,80 @@ bool http_parse_request(const char *str, parse_match_t *match)
 
 bool http_parse_header(const char *str, parse_match_t *match)
 {
-    size_t i = 0;
+    size_t skip = 0;
+
     match[0].so = 0;
 
-    SEEK(1, 0, 1024, (c >= 0x20 && c <= 0x7E))
-    CHECK_CRLF()
+    if(str[0] == '\r' && str[1] == '\n')
+    {
+        // empty line
+        match[1].so = 0;
+        match[1].eo = 0;
+        match[2].so = 0;
+        match[2].eo = 0;
+        match[0].eo = 2;
+        return true;
+    }
 
-    match[0].eo = i;
+    // parse key
+    match[1].so = 0;
+    while(1)
+    {
+        const char c = str[skip];
+        if(skip - match[1].so > 1024)
+            return false;
+
+        if(IS_TOKEN(c))
+        {
+            skip += 1;
+        }
+        else if(c == ':')
+        {
+            match[1].eo = skip;
+
+            if(skip - match[1].so == 0)
+                return false;
+
+            break;
+        }
+        else
+            return false;
+    }
+
+    ++skip; // skip ':'
+
+    if(str[skip] == '\r' && str[skip + 1] == '\n')
+    {
+        match[2].so = skip;
+        match[2].eo = skip;
+        match[0].eo = skip + 2;
+        return true;
+    }
+
+    if(str[skip] != ' ')
+        return false;
+    ++skip; // skip ' '
+
+    // parse value
+    match[2].so = skip;
+    while(1)
+    {
+        if(skip - match[2].so > 1024)
+            return false;
+
+        if(str[skip] == '\r' && str[skip + 1] == '\n')
+        {
+            match[2].eo = skip;
+            break;
+        }
+
+        skip += 1;
+    }
+
+    if(!(str[skip] == '\r' && str[skip + 1] == '\n'))
+        return false;
+
+    match[0].eo = skip + 2;
     return true;
 }
 
@@ -196,7 +290,7 @@ bool http_parse_query(const char *str, parse_match_t *match)
     match[0].so = 0;
 
     // parse key
-    match[1].so = skip;
+    match[1].so = 0;
     while(1)
     {
         const char c = str[skip];
@@ -225,6 +319,8 @@ bool http_parse_query(const char *str, parse_match_t *match)
 
             if(skip - match[1].so == 0)
             {
+                match[2].so = skip;
+                match[2].eo = skip;
                 match[0].eo = skip;
                 return true;
             }
@@ -235,8 +331,8 @@ bool http_parse_query(const char *str, parse_match_t *match)
 
     if(str[skip] != '=')
     {
-        match[2].so = 0;
-        match[2].eo = 0;
+        match[2].so = skip;
+        match[2].eo = skip;
 
         match[0].eo = skip;
         return true;
