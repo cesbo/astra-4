@@ -109,7 +109,6 @@
 
 /* RFC 2616 */
 
-
 #define IS_CTL(_c) (_c <= 0x1F || _c == 0x7F)
 
 #define IS_SEP(_c) (   (_c == 0x09)                                 \
@@ -163,33 +162,107 @@ bool http_parse_response(const char *str, parse_match_t *match)
 
 bool http_parse_request(const char *str, parse_match_t *match)
 {
-    size_t i = 0;
+    size_t skip = 0;
     match[0].so = 0;
 
-    // metod
-    SEEK(1, 1, 16, (   IS_UPPER_ALPHA(c)
-                    || c == '_'))
-    CHECK_SP()
+    // parse method
+    match[1].so = 0;
+    while(1)
+    {
+        const char c = str[skip];
 
-    // uri
-    SEEK(2, 1, 1024, (c > 0x20 && c <= 0x7E))
-    CHECK_SP()
+        if(IS_TOKEN(c))
+        {
+            skip += 1;
+        }
+        else if(c == ' ')
+        {
+            match[1].eo = skip;
+            ++skip;
 
-    // version
-    SEEK(3, 1, 16, (   IS_UPPER_ALPHA(c)
-                    || IS_DIGIT(c)
-                    || (c == '.')
-                    || (c == '/')))
-    CHECK_CRLF()
+            if(skip == 0)
+                return false;
 
-    match[0].eo = i;
+            break;
+        }
+        else
+            return false;
+    }
+
+    // parse path
+    match[2].so = skip;
+    while(1)
+    {
+        const char c = str[skip];
+
+        if(c == ' ')
+        {
+            match[2].eo = skip;
+            ++skip;
+
+            break;
+        }
+        else if(c == '%')
+        {
+            const char d1 = str[skip + 1];
+            if(!IS_HEXDIGIT(d1))
+                return false;
+
+            const char d2 = str[skip + 2];
+            if(!IS_HEXDIGIT(d2))
+                return false;
+
+            skip += 3;
+        }
+        else if(   (c > 0x20 && c < 0x7F)
+                && (c != '<')
+                && (c != '>')
+                && (c != '#')
+                && (c != '"'))
+        {
+            ++skip;
+        }
+        else
+            return false;
+    }
+
+    // parse version
+    match[3].so = skip;
+    while(1)
+    {
+        const char c = str[skip];
+        if(IS_UPPER_ALPHA(c))
+            ++skip;
+        else if(c == '/')
+        {
+            ++skip;
+            break;
+        }
+        else
+            return false;
+    }
+    while(1)
+    {
+        const char c = str[skip];
+        if(IS_DIGIT(c) || (c == '.'))
+            ++skip;
+        else if(c == '\r' && str[skip + 1] == '\n')
+        {
+            match[3].eo = skip;
+            skip += 2;
+            break;
+        }
+        else
+            return false;
+    }
+
+    match[0].eo = skip;
     return true;
 }
 
 bool http_parse_header(const char *str, parse_match_t *match)
 {
     size_t skip = 0;
-
     match[0].so = 0;
 
     // empty line
@@ -244,19 +317,21 @@ bool http_parse_header(const char *str, parse_match_t *match)
     match[2].so = skip;
     while(1)
     {
-        if(str[skip] == '\r' && str[skip + 1] == '\n')
+        const char c = str[skip];
+
+        if(c >= 0x20 && c < 0x7F)
+            ++skip;
+        else if(c == '\r' && str[skip + 1] == '\n')
         {
             match[2].eo = skip;
+            skip += 2;
             break;
         }
-
-        ++skip;
+        else
+            return false;
     }
 
-    if(!(str[skip] == '\r' && str[skip + 1] == '\n'))
-        return false;
-
-    match[0].eo = skip + 2;
+    match[0].eo = skip;
     return true;
 }
 
@@ -281,7 +356,6 @@ bool http_parse_chunk(const char *str, parse_match_t *match)
 bool http_parse_query(const char *str, parse_match_t *match)
 {
     size_t skip = 0;
-
     match[0].so = 0;
 
     // parse key
