@@ -130,6 +130,7 @@ static const char __content[] = "content";
 static const char __callback[] = "callback";
 static const char __code[] = "code";
 static const char __message[] = "message";
+static const char __filename[] = "filename";
 
 static const char __content_length[] = "Content-Length: ";
 
@@ -822,6 +823,20 @@ static int method_send(module_data_t *mod)
     }
     lua_pop(lua, 1); // headers
 
+    lua_getfield(lua, response, __content);
+    if(lua_isstring(lua, -1))
+    {
+        const int content_length = luaL_len(lua, -1);
+        skip += snprintf(  &client->buffer[skip]
+                         , HTTP_BUFFER_SIZE - skip
+                         , "%s%d\r\n"
+                         , __content_length, content_length);
+
+        lua_pushvalue(lua, -1);
+        client->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
+    }
+    lua_pop(lua, 1); // content
+
     if(client->is_websocket && code == 101)
     {
         skip += snprintf(  &client->buffer[skip]
@@ -851,26 +866,13 @@ static int method_send(module_data_t *mod)
     else if(code == 301 || code == 302)
     {
         lua_getfield(lua, response, "location");
+        asc_assert(lua_isstring(lua, -1), ":send() location required");
         const char *location = lua_tostring(lua, -1);
         skip += snprintf(  &client->buffer[skip]
                          , HTTP_BUFFER_SIZE - skip
                          , "Location: %s\r\n", location);
         lua_pop(lua, 1); // location
     }
-
-    lua_getfield(lua, response, __content);
-    if(lua_isstring(lua, -1))
-    {
-        const int content_length = luaL_len(lua, -1);
-        skip += snprintf(  &client->buffer[skip]
-                         , HTTP_BUFFER_SIZE - skip
-                         , "%s%d\r\n"
-                         , __content_length, content_length);
-
-        lua_pushvalue(lua, -1);
-        client->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
-    }
-    lua_pop(lua, 1); // content
 
     skip += snprintf(&client->buffer[skip], HTTP_BUFFER_SIZE - skip, "\r\n");
 
