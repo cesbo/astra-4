@@ -192,9 +192,9 @@ bool http_parse_header(const char *str, parse_match_t *match)
 
     match[0].so = 0;
 
+    // empty line
     if(str[0] == '\r' && str[1] == '\n')
     {
-        // empty line
         match[1].so = 0;
         match[1].eo = 0;
         match[2].so = 0;
@@ -208,8 +208,6 @@ bool http_parse_header(const char *str, parse_match_t *match)
     while(1)
     {
         const char c = str[skip];
-        if(skip - match[1].so > 1024)
-            return false;
 
         if(IS_TOKEN(c))
         {
@@ -219,7 +217,7 @@ bool http_parse_header(const char *str, parse_match_t *match)
         {
             match[1].eo = skip;
 
-            if(skip - match[1].so == 0)
+            if(skip == 0)
                 return false;
 
             break;
@@ -246,16 +244,13 @@ bool http_parse_header(const char *str, parse_match_t *match)
     match[2].so = skip;
     while(1)
     {
-        if(skip - match[2].so > 1024)
-            return false;
-
         if(str[skip] == '\r' && str[skip + 1] == '\n')
         {
             match[2].eo = skip;
             break;
         }
 
-        skip += 1;
+        ++skip;
     }
 
     if(!(str[skip] == '\r' && str[skip + 1] == '\n'))
@@ -294,8 +289,6 @@ bool http_parse_query(const char *str, parse_match_t *match)
     while(1)
     {
         const char c = str[skip];
-        if(skip - match[1].so > 1024)
-            return false;
 
         if(IS_UNRESERVED(c) || c == '+')
         {
@@ -317,7 +310,7 @@ bool http_parse_query(const char *str, parse_match_t *match)
         {
             match[1].eo = skip;
 
-            if(skip - match[1].so == 0)
+            if(skip == 0)
             {
                 match[2].so = skip;
                 match[2].eo = skip;
@@ -333,7 +326,6 @@ bool http_parse_query(const char *str, parse_match_t *match)
     {
         match[2].so = skip;
         match[2].eo = skip;
-
         match[0].eo = skip;
         return true;
     }
@@ -344,8 +336,6 @@ bool http_parse_query(const char *str, parse_match_t *match)
     while(1)
     {
         const char c = str[skip];
-        if(skip - match[2].so > 1024)
-            return false;
 
         if(IS_UNRESERVED(c) || c == '+' || c == '=')
         {
