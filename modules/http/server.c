@@ -75,6 +75,7 @@ typedef struct
 
     char buffer[HTTP_BUFFER_SIZE];
     size_t buffer_skip;
+    size_t chunk_left;
 
     // request
     int status; // 1 - empty line is found, 2 - request ready, 3 - release
@@ -82,12 +83,9 @@ typedef struct
     int idx_callback;
 
     bool is_content_length;
-    size_t chunk_left; // is_content_length
     string_buffer_t *content;
 
     // response
-    size_t response_size;
-
     int idx_content;
 } http_client_t;
 
@@ -454,6 +452,7 @@ static void on_client_read(void *arg)
         lua_getfield(lua, headers, "content-length");
         if(lua_isnumber(lua, -1))
         {
+            client->content = string_buffer_alloc();
             client->is_content_length = true;
             client->chunk_left = lua_tonumber(lua, -1);
         }
@@ -468,9 +467,8 @@ static void on_client_read(void *arg)
             return;
         }
 
-        if(!client->is_content_length)
+        if(!client->content)
         {
-            // request in the stack send it to callback
             client->status = 3;
             callback(client);
             return;
@@ -488,9 +486,6 @@ static void on_client_read(void *arg)
  * 888  888oooo88    88ooo88  o88o    88     o888o    o888ooo8888 o88o    88     o888o
  *
  */
-
-    if(!client->content)
-        client->content = string_buffer_alloc();
 
     // Content-Length: *
     if(client->is_content_length)
@@ -538,16 +533,20 @@ static void on_ready_send_content(void *arg)
     module_data_t *mod = client->mod;
 
     lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_content);
-    const size_t content_size = luaL_len(lua, -1);
     const char *content = lua_tostring(lua, -1);
 
-    const size_t content_left = content_size - client->chunk_left;
-    const size_t content_send = (content_left > HTTP_BUFFER_SIZE)
+    if(client->chunk_left == 0)
+    {
+        client->buffer_skip = 0;
+        client->chunk_left = luaL_len(lua, -1);
+    }
+
+    const size_t content_send = (client->chunk_left > HTTP_BUFFER_SIZE)
                               ? HTTP_BUFFER_SIZE
-                              : content_left;
+                              : client->chunk_left;
 
     const ssize_t send_size = asc_socket_send(  client->sock
-                                              , (void *)&content[client->chunk_left]
+                                              , (void *)&content[client->buffer_skip]
                                               , content_send);
     if(send_size <= 0)
     {
@@ -556,18 +555,11 @@ static void on_ready_send_content(void *arg)
         on_client_close(client);
         return;
     }
-    client->chunk_left += send_size;
+    client->buffer_skip += send_size;
+    client->chunk_left -= send_size;
 
-    if(client->chunk_left == content_size)
-    {
-        client->chunk_left = 0;
-
-        luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_content);
-        client->idx_content = 0;
-        asc_socket_set_on_ready(client->sock, NULL);
-
+    if(client->chunk_left == 0)
         on_client_close(client);
-    }
 }
 
 static void on_ready_send_response(void *arg)
@@ -575,11 +567,13 @@ static void on_ready_send_response(void *arg)
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
-    const size_t content_left = client->response_size - client->chunk_left;
+    const size_t content_send = (client->chunk_left > HTTP_BUFFER_SIZE)
+                              ? HTTP_BUFFER_SIZE
+                              : client->chunk_left;
 
     const ssize_t send_size = asc_socket_send(  client->sock
-                                              , &client->buffer[client->chunk_left]
-                                              , content_left);
+                                              , &client->buffer[client->buffer_skip]
+                                              , content_send);
     if(send_size <= 0)
     {
         asc_log_error(MSG("failed to send response to client:%d [%s]")
@@ -587,21 +581,15 @@ static void on_ready_send_response(void *arg)
         on_client_close(client);
         return;
     }
-    client->chunk_left += send_size;
+    client->buffer_skip += send_size;
+    client->chunk_left -= send_size;
 
-    if(client->chunk_left == client->response_size)
+    if(client->chunk_left == 0)
     {
-        client->response_size = 0;
-        client->chunk_left = 0;
-
         if(client->idx_content)
             asc_socket_set_on_ready(client->sock, on_ready_send_content);
         else
-        {
-            asc_socket_set_on_ready(client->sock, NULL);
-
             on_client_close(client);
-        }
     }
 }
 
@@ -651,7 +639,7 @@ static int method_send(module_data_t *mod)
     const char *message = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : http_code(code);
     lua_pop(lua, 1); // message
 
-    ssize_t skip;
+    size_t skip;
     skip = snprintf(client->buffer, HTTP_BUFFER_SIZE, "%s %d %s\r\n", version, code, message);
 
     skip += snprintf(&client->buffer[skip]
@@ -689,8 +677,10 @@ static int method_send(module_data_t *mod)
 
     skip += snprintf(&client->buffer[skip], HTTP_BUFFER_SIZE - skip, "\r\n");
 
-    client->chunk_left = 0;
-    client->response_size = skip;
+    client->buffer_skip = 0;
+    client->chunk_left = skip;
+
+    asc_socket_set_on_read(client->sock, NULL);
     asc_socket_set_on_ready(client->sock, on_ready_send_response);
 
     return 0;
