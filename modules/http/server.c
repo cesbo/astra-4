@@ -26,7 +26,7 @@
  *      addr        - string, server IP address
  *      port        - number, server port
  *      server_name - string, default value: "Astra"
- *      callback    - function,
+ *      route       - list, format: { { "/path", callback }, ... }
  *
  * Module Methods:
  *      port()      - return number, server port
@@ -59,6 +59,12 @@
 
 typedef struct
 {
+    const char *path;
+    int idx_callback;
+} route_t;
+
+typedef struct
+{
     MODULE_STREAM_DATA();
 
     module_data_t *mod;
@@ -73,6 +79,7 @@ typedef struct
     // request
     int status; // 1 - empty line is found, 2 - request ready, 3 - release
     int idx_request;
+    int idx_callback;
 
     bool is_content_length;
     size_t chunk_left; // is_content_length
@@ -94,6 +101,8 @@ struct module_data_t
     int port;
     const char *server_name;
 
+    asc_list_t *routes;
+
     asc_socket_t *sock;
     asc_list_t *clients;
 };
@@ -104,7 +113,6 @@ static const char __path[] = "path";
 static const char __query[] = "query";
 static const char __headers[] = "headers";
 static const char __content[] = "content";
-static const char __callback[] = "callback";
 static const char __code[] = "code";
 static const char __message[] = "message";
 
@@ -119,8 +127,7 @@ static const char __message[] = "message";
 
 static void callback(http_client_t *client)
 {
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, client->mod->__lua.oref);
-    lua_getfield(lua, -1, __callback);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_callback);
     lua_rawgeti(lua, LUA_REGISTRYINDEX, client->mod->idx_self);
     lua_pushlightuserdata(lua, client);
     if(client->status == 3)
@@ -128,7 +135,6 @@ static void callback(http_client_t *client)
     else
         lua_pushnil(lua);
     lua_call(lua, 3, 0);
-    lua_pop(lua, 1); // oref
 }
 
 static void on_client_close(void *arg)
@@ -258,6 +264,33 @@ static bool lua_parse_query(const char *str, size_t size)
     return (skip == size);
 }
 
+static bool routecmp(const char *path, const char *route)
+{
+    size_t skip = 0;
+    while(1)
+    {
+        const char cp = path[skip];
+        const char cr = route[skip];
+
+        if(cp == cr)
+        {
+            if(cp == '\0')
+                return true;
+
+            ++skip;
+        }
+        else
+        {
+            if(cr == '*')
+                return true;
+
+            break;
+        }
+    }
+
+    return false;
+}
+
 /*
  * oooooooooo  ooooooooooo      o      ooooooooo
  *  888    888  888    88      888      888    88o
@@ -344,14 +377,27 @@ static void on_client_read(void *arg)
 
         lua_pushlstring(lua, &client->buffer[m[1].so], m[1].eo - m[1].so);
         lua_setfield(lua, request, __method);
+
         size_t path_skip = m[2].so;
         while(path_skip < m[2].eo && client->buffer[path_skip] != '?')
             ++path_skip;
+
+        lua_pushlstring(lua, &client->buffer[m[2].so], path_skip - m[2].so);
+        const char *path = lua_tostring(lua, -1);
+        client->idx_callback = 0;
+        asc_list_for(mod->routes)
+        {
+            route_t *route = asc_list_data(mod->routes);
+            if(routecmp(path, route->path))
+            {
+                client->idx_callback = route->idx_callback;
+                break;
+            }
+        }
+        lua_setfield(lua, request, __path);
+
         if(path_skip < m[2].eo)
         {
-            lua_pushlstring(lua, &client->buffer[m[2].so], path_skip - m[2].so);
-            lua_setfield(lua, request, __path);
-
             ++path_skip; // skip '?'
             if(!lua_parse_query(&client->buffer[path_skip], m[2].eo - path_skip))
             {
@@ -362,11 +408,7 @@ static void on_client_read(void *arg)
             }
             lua_setfield(lua, request, __query);
         }
-        else
-        {
-            lua_pushlstring(lua, &client->buffer[m[2].so], m[2].eo - m[2].so);
-            lua_setfield(lua, request, __path);
-        }
+
         lua_pushlstring(lua, &client->buffer[m[3].so], m[3].eo - m[3].so);
         lua_setfield(lua, request, __version);
 
@@ -418,6 +460,13 @@ static void on_client_read(void *arg)
         lua_pop(lua, 1); // content-length
 
         lua_pop(lua, 2); // headers + request
+
+        if(!client->idx_callback)
+        {
+            // TODO: send 404
+            on_client_close(client);
+            return;
+        }
 
         if(!client->is_content_length)
         {
@@ -685,6 +734,22 @@ static void on_server_close(void *arg)
         mod->clients = NULL;
     }
 
+    if(mod->routes)
+    {
+        for(  asc_list_first(mod->routes)
+            ; !asc_list_eol(mod->routes)
+            ; asc_list_first(mod->routes))
+        {
+            route_t *route = asc_list_data(mod->routes);
+            luaL_unref(lua, LUA_REGISTRYINDEX, route->idx_callback);
+            free(route);
+            asc_list_remove_current(mod->routes);
+        }
+
+        asc_list_destroy(mod->routes);
+        mod->routes = NULL;
+    }
+
     if(mod->idx_self)
     {
         luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_self);
@@ -763,10 +828,39 @@ static void module_init(module_data_t *mod)
     mod->server_name = "Astra";
     module_option_string("server_name", &mod->server_name, NULL);
 
-    // store callback in registry
-    lua_getfield(lua, 2, __callback);
-    asc_assert(lua_isfunction(lua, -1), MSG("option 'callback' is required"));
-    lua_pop(lua, 1); // callback
+    // store routes in registry
+    mod->routes = asc_list_init();
+    lua_getfield(lua, MODULE_OPTIONS_IDX, "route");
+    asc_assert(lua_istable(lua, -1), MSG("option 'route' is required"));
+    for(lua_pushnil(lua); lua_next(lua, -2); lua_pop(lua, 1))
+    {
+        bool is_ok = false;
+        do
+        {
+            const int item = lua_gettop(lua);
+            if(!lua_istable(lua, item))
+                break;
+
+            lua_rawgeti(lua, item, 1); // path
+            if(!lua_isstring(lua, -1))
+                break;
+
+            lua_rawgeti(lua, item, 2); // callback
+            if(!lua_isfunction(lua, -1))
+                break;
+
+            is_ok = true;
+        } while(0);
+        asc_assert(is_ok, MSG("route format: { { \"/path\", callback }, ... }"));
+
+        route_t *route = malloc(sizeof(route_t));
+        route->idx_callback = luaL_ref(lua, LUA_REGISTRYINDEX);
+        route->path = lua_tostring(lua, -1);
+        lua_pop(lua, 1); // path
+
+        asc_list_insert_tail(mod->routes, route);
+    }
+    lua_pop(lua, 1); // route
 
     // store self in registry
     lua_pushvalue(lua, 3);
