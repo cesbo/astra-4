@@ -168,12 +168,6 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     process_ts(mod, ts, hdr_size);
 }
 
-static int module_call(module_data_t *mod)
-{
-    __uarg(mod);
-    return 0;
-}
-
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, on_ts);

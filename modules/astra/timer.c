@@ -68,12 +68,6 @@ static int method_close(module_data_t *mod)
     return 0;
 }
 
-static int module_call(module_data_t *mod)
-{
-    __uarg(mod);
-    return 0;
-}
-
 static void module_init(module_data_t *mod)
 {
     int interval = 0;

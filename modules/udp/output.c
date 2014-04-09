@@ -342,12 +342,6 @@ static void thread_loop(void *arg)
     }
 }
 
-static int module_call(module_data_t *mod)
-{
-    __uarg(mod);
-    return 0;
-}
-
 static void module_init(module_data_t *mod)
 {
     module_option_string("addr", &mod->addr, NULL);

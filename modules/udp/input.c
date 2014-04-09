@@ -138,12 +138,6 @@ void timer_renew_callback(void *arg)
     asc_socket_multicast_renew(mod->sock);
 }
 
-static int module_call(module_data_t *mod)
-{
-    __uarg(mod);
-    return 0;
-}
-
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, NULL);

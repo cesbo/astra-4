@@ -44,12 +44,6 @@ static const char *filename = NULL;
 
 /* required */
 
-static int module_call(module_data_t *mod)
-{
-    __uarg(mod);
-    return 0;
-}
-
 static void module_init(module_data_t *mod)
 {
     __uarg(mod);

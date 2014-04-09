@@ -381,12 +381,6 @@ static void ffmpeg_log_callback(void *ptr, int level, const char *fmt, va_list v
     log_callback(MSG("%s"), buffer);
 }
 
-static int module_call(module_data_t *mod)
-{
-    __uarg(mod);
-    return 0;
-}
-
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, on_ts);

@@ -102,12 +102,6 @@ static void leave_pid(module_data_t *mod, uint16_t pid)
     set_pid(mod, pid, 0);
 }
 
-static int module_call(module_data_t *mod)
-{
-    __uarg(mod);
-    return 0;
-}
-
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, NULL);

@@ -693,12 +693,6 @@ static void __parse_map_item(module_data_t *mod, const char *item)
     asc_list_insert_tail(mod->map, map_item);
 }
 
-static int module_call(module_data_t *mod)
-{
-    __uarg(mod);
-    return 0;
-}
-
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, on_ts);

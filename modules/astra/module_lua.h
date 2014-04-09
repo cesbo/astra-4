@@ -54,11 +54,6 @@ typedef struct
         lua_pushstring(L, __module_name);                                                       \
         return 1;                                                                               \
     }                                                                                           \
-    static int __module_call(lua_State *L)                                                      \
-    {                                                                                           \
-        module_data_t *mod = lua_touserdata(L, lua_upvalueindex(1));                            \
-        return module_call(mod);                                                                \
-    }                                                                                           \
     static int __module_thunk(lua_State *L)                                                     \
     {                                                                                           \
         module_data_t *mod = lua_touserdata(L, lua_upvalueindex(1));                            \
@@ -79,7 +74,6 @@ typedef struct
         {                                                                                       \
             { "__gc", __module_delete },                                                        \
             { "__tostring", __module_tostring },                                                \
-            { "__call", __module_call },                                                        \
         };                                                                                      \
         module_data_t *mod = calloc(1, sizeof(module_data_t));                                  \
         lua_newtable(L);                                                                        \

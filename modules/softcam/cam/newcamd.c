@@ -709,12 +709,6 @@ static void newcamd_send_em(module_data_t *mod, module_decrypt_t *decrypt
     newcamd_send_msg(mod);
 }
 
-static int module_call(module_data_t *mod)
-{
-    __uarg(mod);
-    return 0;
-}
-
 static void module_init(module_data_t *mod)
 {
     module_option_string("name", &mod->name, NULL);

@@ -662,12 +662,6 @@ static void on_response(module_data_t *mod, const uint8_t *data, const char *err
  *
  */
 
-static int module_call(module_data_t *mod)
-{
-    __uarg(mod);
-    return 0;
-}
-
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, on_ts);
