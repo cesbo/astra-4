@@ -26,8 +26,6 @@ struct module_data_t
 {
     MODULE_CAS_DATA();
 
-    uint8_t parity;
-
     // autoselect chid
     struct
     {
@@ -57,7 +55,7 @@ inline static uint16_t irdeto_ecm_chid(const uint8_t *payload)
 static int irdeto_check_ecm(module_data_t *mod, const uint8_t *payload)
 {
     const uint8_t parity = payload[0];
-    if(parity == mod->parity)
+    if(parity == mod->__cas.parity)
         return 0;
 
     const uint16_t chid = irdeto_ecm_chid(payload);
@@ -65,7 +63,7 @@ static int irdeto_check_ecm(module_data_t *mod, const uint8_t *payload)
     {
         if(mod->chid != chid)
             return 0;
-        mod->parity = parity;
+        mod->__cas.parity = parity;
         return 1;
     }
 
@@ -137,7 +135,7 @@ static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
         /* cas->test_count always greater than 0,
            because increased in irdeto_check_ecm */
         mod->chid = mod->test.ecm_id[mod->test.current_id].chid;
-        mod->parity = keys[0];
+        mod->__cas.parity = keys[0];
         asc_log_info("[cas Irdeto PNR:%d] select chid:0x%04X", mod->__cas.decrypt->pnr, mod->chid);
     }
 

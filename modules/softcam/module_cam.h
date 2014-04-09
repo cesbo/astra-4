@@ -171,6 +171,8 @@ struct module_cas_t
     bool (*check_keys)(module_data_t *cas_data, const uint8_t *keys);
 
     module_data_t *self;
+
+    uint8_t parity;
 };
 
 #define MODULE_CAS_DATA() module_cas_t __cas

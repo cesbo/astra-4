@@ -27,7 +27,6 @@ struct module_data_t
     bool is_cas_data_error;
 
     uint8_t card;
-    uint8_t parity;
 
     int err_id;
     uint8_t pkeys[4]; // previous keys checksum
@@ -44,9 +43,9 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
         case 0x80:
         case 0x81:
         {
-            if(em_type != mod->parity)
+            if(em_type != mod->__cas.parity)
             {
-                mod->parity = em_type;
+                mod->__cas.parity = em_type;
                 return true;
             }
             break;

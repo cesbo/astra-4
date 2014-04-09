@@ -23,8 +23,6 @@
 struct module_data_t
 {
     MODULE_CAS_DATA();
-
-    uint8_t parity;
 };
 
 static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
@@ -36,9 +34,12 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
         case 0x80:
         case 0x81:
         {
-            if(em_type == mod->parity)
-                return false;
-            return true;
+            if(em_type != mod->__cas.parity)
+            {
+                mod->__cas.parity = em_type;
+                return true;
+            }
+            break;
         }
         // EMM
         default:
