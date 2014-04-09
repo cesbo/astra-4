@@ -45,49 +45,10 @@
  */
 
 #include <astra.h>
+#include "http.h"
 #include "parser.h"
 
 #define MSG(_msg) "[http_server %s:%d] " _msg, mod->addr, mod->port
-#define HTTP_BUFFER_SIZE (16 * 1024)
-
-/* WebSocket Frame */
-#define FRAME_HEADER_SIZE 2
-#define FRAME_KEY_SIZE 4
-#define FRAME_SIZE8_SIZE 0
-#define FRAME_SIZE16_SIZE 2
-#define FRAME_SIZE64_SIZE 8
-
-typedef struct
-{
-    const char *path;
-    int idx_callback;
-} route_t;
-
-typedef struct
-{
-    MODULE_STREAM_DATA();
-
-    module_data_t *mod;
-
-    int idx_data;
-
-    asc_socket_t *sock;
-
-    char buffer[HTTP_BUFFER_SIZE];
-    size_t buffer_skip;
-    size_t chunk_left;
-
-    // request
-    int status; // 1 - empty line is found, 2 - request ready, 3 - release
-    int idx_request;
-    int idx_callback;
-
-    bool is_content_length;
-    string_buffer_t *content;
-
-    // response
-    int idx_content;
-} http_client_t;
 
 struct module_data_t
 {
@@ -101,6 +62,17 @@ struct module_data_t
 
     asc_socket_t *sock;
     asc_list_t *clients;
+};
+
+typedef struct
+{
+    const char *path;
+    int idx_callback;
+} route_t;
+
+struct http_response_t
+{
+    int idx_content;
 };
 
 static const char __method[] = "method";
@@ -150,6 +122,13 @@ static void on_client_close(void *arg)
         callback(client);
     }
 
+    if(client->response)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, client->response->idx_content);
+        free(client->response);
+        client->response = NULL;
+    }
+
     if(client->idx_request)
     {
         luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
@@ -168,14 +147,13 @@ static void on_client_close(void *arg)
         client->content = NULL;
     }
 
-    if(client->idx_content)
-    {
-        luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_content);
-        client->idx_content = 0;
-    }
-
     asc_list_remove_item(mod->clients, client);
     free(client);
+}
+
+void http_client_close(http_client_t *client)
+{
+    on_client_close(client);
 }
 
 static void lua_string_to_lower(const char *str, size_t size)
@@ -530,7 +508,7 @@ static void on_ready_send_content(void *arg)
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_content);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, client->response->idx_content);
     const char *content = lua_tostring(lua, -1);
 
     if(client->chunk_left == 0)
@@ -584,7 +562,7 @@ static void on_ready_send_response(void *arg)
 
     if(client->chunk_left == 0)
     {
-        if(client->idx_content)
+        if(client->response)
             asc_socket_set_on_ready(client->sock, on_ready_send_content);
         else
             on_client_close(client);
@@ -655,7 +633,8 @@ static int method_send(module_data_t *mod)
                          , content_length);
 
         lua_pushvalue(lua, -1);
-        client->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
+        client->response = malloc(sizeof(http_response_t));
+        client->response->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
     }
     lua_pop(lua, 1); // content
 
@@ -804,6 +783,23 @@ static int method_close(module_data_t *mod)
     return 0;
 }
 
+static bool lua_is_call(int idx)
+{
+    bool is_call = false;
+
+    if(lua_isfunction(lua, idx))
+        is_call = true;
+    else if(lua_istable(lua, idx))
+    {
+        lua_getmetatable(lua, idx);
+        lua_getfield(lua, -1, "__call");
+        is_call = lua_isfunction(lua, -1);
+        lua_pop(lua, 2);
+    }
+
+    return is_call;
+}
+
 static void module_init(module_data_t *mod)
 {
     module_option_string("addr", &mod->addr, NULL);
@@ -834,7 +830,7 @@ static void module_init(module_data_t *mod)
                 break;
 
             lua_rawgeti(lua, item, 2); // callback
-            if(!lua_isfunction(lua, -1))
+            if(!lua_is_call(-1))
                 break;
 
             is_ok = true;
