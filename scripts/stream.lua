@@ -139,7 +139,7 @@ function on_analyze(channel_data, input_id, data)
             log.error(name .. "Unknown PSI: " .. data.psi)
         end
 
-    elseif data.analyze then
+    elseif data.analyze and input_id > 0 then
         local input_data = channel_data.input[input_id]
 
         if data.on_air ~= input_data.on_air then
