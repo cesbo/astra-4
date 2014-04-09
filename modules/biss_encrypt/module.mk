@@ -7,8 +7,6 @@ biss_encrypt.c"
 
 MODULES="biss_encrypt"
 
-SCRIPTS="biss_encrypt.lua"
-
 posix_memalign_test_c()
 {
     cat <<EOF
@@ -26,3 +24,4 @@ check_posix_memalign()
 if check_posix_memalign ; then
     CFLAGS="-DHAVE_POSIX_MEMALIGN=1"
 fi
+

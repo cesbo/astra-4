@@ -459,7 +459,10 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                     break;
                 }
                 default:
+                {
+                    custom_pid = map_custom_pid(mod, pid, "");
                     break;
+                }
             }
 
             if(custom_pid)

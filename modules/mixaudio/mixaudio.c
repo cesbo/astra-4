@@ -118,7 +118,7 @@ static void pack_es(module_data_t *mod, uint8_t *data, size_t size)
     if(mod->count == mod->max_count)
     {
         mpegts_pes_demux(mod->pes_o
-                         , (void (*)(void *, uint8_t *))__module_stream_send
+                         , (ts_callback_t)__module_stream_send
                          , &mod->__stream);
         mod->pes_o->buffer_size = 0;
         mod->count = 0;

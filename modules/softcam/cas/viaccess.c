@@ -33,7 +33,7 @@ struct module_data_t
     {
         uint8_t type; // last shared type
         size_t size;
-        uint8_t data[128]; // ???
+        uint8_t data[512]; // ???
     } shared;
 };
 
@@ -109,6 +109,13 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
             if(em_type != mod->shared.type)
             {
                 const size_t emm_size = __emm_size(em->buffer);
+                if(emm_size > sizeof(mod->shared.data))
+                {
+                    asc_log_warning("[softcam/viaccess pnr:%d] EMM packet size is to large"
+                                    , mod->__cas.decrypt->cas_pnr);
+                    mod->shared.size = 0;
+                    break;
+                }
                 mod->shared.size = emm_size;
                 memcpy(mod->shared.data, em->buffer, emm_size);
                 mod->shared.type = em_type;

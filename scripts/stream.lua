@@ -139,7 +139,7 @@ function on_analyze(channel_data, input_id, data)
             log.error(name .. "Unknown PSI: " .. data.psi)
         end
 
-    elseif data.analyze then
+    elseif data.analyze and input_id > 0 then
         local input_data = channel_data.input[input_id]
 
         if data.on_air ~= input_data.on_air then
@@ -479,7 +479,10 @@ input_list.dvb = function(channel_data, input_id)
     return { tail = input_conf._instance }
 end
 
-kill_input_list.dvb = function(input_conf, input_data)
+kill_input_list.dvb = function(channel_data, input_id)
+    local input_conf = channel_data.config.input[input_id]
+    local input_data = channel_data.input[input_id]
+
     if input_conf.dvbcam and input_conf.pnr then
         input_data.source.tail:ca_set_pnr(input_conf.pnr, false)
     end
@@ -515,7 +518,9 @@ input_list.udp = function(channel_data, input_id)
     return udp_instance
 end
 
-kill_input_list.udp = function(input_conf, input_data)
+kill_input_list.udp = function(channel_data, input_id)
+    local input_conf = channel_data.config.input[input_id]
+
     local addr = input_conf.addr .. ":" .. input_conf.port
     if input_conf.localaddr then addr = input_conf.localaddr .. "@" .. addr end
 
@@ -540,7 +545,7 @@ input_list.file = function(channel_data, input_id)
     return { tail = file_input(input_conf) }
 end
 
-kill_input_list.file = function(input_conf, input_data)
+kill_input_list.file = function(channel_data, input_id)
     --
 end
 
@@ -655,7 +660,9 @@ input_list.http = function(channel_data, input_id)
     return instance
 end
 
-kill_input_list.http = function(input_conf, input_data)
+kill_input_list.http = function(channel_data, input_id)
+    local input_data = channel_data.input[input_id]
+
     if input_data.source.timeout then
         input_data.source.timeout:close()
         input_data.source.timeout = nil
@@ -776,12 +783,14 @@ end
 function kill_input(channel_data, input_id)
     local input_conf = channel_data.config.input[input_id]
     local input_data = channel_data.input[input_id]
+
     if not input_data.source then return nil end
-    kill_input_list[input_conf.module_name](input_conf, input_data)
+
+    kill_input_list[input_conf.module_name](channel_data, input_id)
 
     for key,_ in pairs(input_conf) do
         if kill_input_module[key] then
-            kill_input_module[key](input_conf, input_data)
+            kill_input_module[key](channel_data, input_id)
         end
     end
 
@@ -812,7 +821,7 @@ output_list.udp = function(channel_data, output_id)
     return { tail = udp_output(output_conf) }
 end
 
-kill_output_list.udp = function(output_conf, output_data)
+kill_output_list.udp = function(channel_data, output_id)
     --
 end
 
@@ -828,7 +837,7 @@ output_list.file = function(channel_data, output_id)
     return { tail = file_output(output_conf) }
 end
 
-kill_output_list.file = function(output_conf, output_data)
+kill_output_list.file = function(channel_data, output_id)
     --
 end
 
@@ -922,7 +931,9 @@ output_list.http = function(channel_data, output_id)
     return http_instance
 end
 
-kill_output_list.http = function(output_conf, output_data)
+kill_output_list.http = function(channel_data, output_id)
+    local output_conf = channel_data.config.output[output_id]
+
     local addr = output_conf.host .. ":" .. output_conf.port
 
     local http_instance = http_instance_list[addr]
@@ -950,53 +961,74 @@ end
 output_module = {}
 kill_output_module = {}
 
-if tostring(mixaudio) == "mixaudio" then
-    output_module.mixaudio = function(output_conf, output_data)
-        local mixaudio_conf = { upstream = output_data.tail:stream() }
-        local b = output_conf.mixaudio:find("/")
-        if b then
-            mixaudio_conf.pid = tonumber(output_conf.mixaudio:sub(1, b - 1))
-            mixaudio_conf.direction = output_conf.mixaudio:sub(b + 1)
-        else
-            mixaudio_conf.pid = tonumber(output_conf.mixaudio)
-        end
+output_module.mixaudio = function(channel_data, output_id)
+    local output_conf = channel_data.config.output[output_id]
+    local output_data = channel_data.output[output_id]
 
-        output_data.mixaudio = mixaudio(mixaudio_conf)
-        output_data.tail = output_data.mixaudio
+    if mixaudio == nil then
+        log.error("[" .. channel_data.config.name .. " #" .. output_id .. "] " ..
+                  "mixaudio module is not found")
+        return
     end
 
-    kill_output_module.mixaudio = function(output_conf, output_data)
-        output_data.mixaudio = nil
+    local mixaudio_conf = { upstream = output_data.tail:stream() }
+    local b = output_conf.mixaudio:find("/")
+    if b then
+        mixaudio_conf.pid = tonumber(output_conf.mixaudio:sub(1, b - 1))
+        mixaudio_conf.direction = output_conf.mixaudio:sub(b + 1)
+    else
+        mixaudio_conf.pid = tonumber(output_conf.mixaudio)
     end
+
+    output_data.mixaudio = mixaudio(mixaudio_conf)
+    output_data.tail = output_data.mixaudio
+end
+
+kill_output_module.mixaudio = function(channel_data, output_id)
+    local output_data = channel_data.output[output_id]
+
+    output_data.mixaudio = nil
+end
+
+output_module.biss = function(channel_data, output_id)
+    local output_conf = channel_data.config.output[output_id]
+    local output_data = channel_data.output[output_id]
+
+    if biss_encrypt == nil then
+        log.error("[" .. channel_data.config.name .. " #" .. output_id .. "] " ..
+                  "biss_encrypt module is not found")
+        return
+    end
+
+    output_data.biss = biss_encrypt({
+        upstream = output_data.tail:stream(),
+        key = output_conf.biss
+    })
+    output_data.tail = output_data.biss
+end
+
+kill_output_module.biss = function(channel_data, output_id)
+    local output_data = channel_data.output[output_id]
+
+    output_data.biss = nil
 end
 
 function init_output(channel_data, output_id)
+    channel_data.output[output_id] = {}
+
     local output_conf = channel_data.config.output[output_id]
+    local output_data = channel_data.output[output_id]
 
-    if not output_conf.module_name then
-        log.error("[stream.lua] option 'module_name' is required for output")
-        astra.abort()
-    end
-
-    local init_output_type = output_list[output_conf.module_name]
-    if not init_output_type then
-        log.error("[" .. channel_data.config.name .. "] Unknown type of output " .. output_id)
-        astra.abort()
-    end
-
-    local output_data = {}
     output_data.tail = channel_data.tail
 
     for key,_ in pairs(output_conf) do
         if output_module[key] then
-            output_module[key](output_conf, output_data)
+            output_module[key](channel_data, output_id)
         end
     end
 
     output_conf.upstream = output_data.tail:stream()
-    output_data.instance = init_output_type(channel_data, output_id)
-
-    channel_data.output[output_id] = output_data
+    output_data.instance = output_list[output_conf.module_name](channel_data, output_id)
 end
 
 function kill_output(channel_data, output_id)
@@ -1005,11 +1037,11 @@ function kill_output(channel_data, output_id)
 
     for key,_ in pairs(output_conf) do
         if kill_output_module[key] then
-            kill_output_module[key](output_conf, output_data)
+            kill_output_module[key](channel_data, output_id)
         end
     end
 
-    kill_output_list[output_conf.module_name](output_conf, output_data)
+    kill_output_list[output_conf.module_name](channel_data, output_id)
     output_data.instance = nil
     output_data.tail = nil
     channel_data.output[output_id] = nil
