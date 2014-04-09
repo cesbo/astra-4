@@ -43,7 +43,6 @@
 
 struct module_data_t
 {
-    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
     const char *host;
@@ -120,12 +119,13 @@ static void on_close(void *);
 static void callback(module_data_t *mod)
 {
     const int response = lua_gettop(lua);
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
-    lua_getfield(lua, -1, "callback");
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+    lua_getfield(lua, -1, "__options");
+    lua_getfield(lua, -1, "callback");
+    lua_pushvalue(lua, -3);
     lua_pushvalue(lua, response);
     lua_call(lua, 2, 0);
-    lua_pop(lua, 2); // oref + response
+    lua_pop(lua, 3); // self + options + response
 }
 
 static void call_error(module_data_t *mod, const char *msg)
@@ -761,7 +761,9 @@ static void on_connect(void *arg)
     asc_timer_destroy(mod->timeout);
     mod->timeout = asc_timer_init(mod->timeout_ms, timeout_callback, mod);
 
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
+    lua_getfield(lua, -1, "__options");
+    lua_remove(lua, -2);
 
     ssize_t buffer_skip;
 
@@ -852,6 +854,12 @@ static void on_connect(void *arg)
 static int method_close(module_data_t *mod)
 {
     on_close(mod);
+    return 0;
+}
+
+static int module_call(module_data_t *mod)
+{
+    __uarg(mod);
     return 0;
 }
 

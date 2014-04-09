@@ -2,7 +2,7 @@
  * Astra Module: Timer
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,25 +31,29 @@
 
 struct module_data_t
 {
-    MODULE_LUA_DATA();
-
     int idx_self;
+    int idx_callback;
+
     asc_timer_t *timer;
 };
 
 static void timer_callback(void *arg)
 {
     module_data_t *mod = arg;
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
-    lua_getfield(lua, -1, "callback");
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
     lua_call(lua, 1, 0);
-    lua_pop(lua, 1); // options
 }
 
 static int method_close(module_data_t *mod)
 {
-    if(mod->idx_self > 0)
+    if(mod->idx_callback)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+        mod->idx_callback = 0;
+    }
+
+    if(mod->idx_self)
     {
         luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_self);
         mod->idx_self = 0;
@@ -64,22 +68,21 @@ static int method_close(module_data_t *mod)
     return 0;
 }
 
+static int module_call(module_data_t *mod)
+{
+    __uarg(mod);
+    return 0;
+}
+
 static void module_init(module_data_t *mod)
 {
     int interval = 0;
-    if(!module_option_number("interval", &interval) || interval <= 0)
-    {
-        asc_log_error("[timer] option 'interval' is required and must be greater than 0");
-        astra_abort();
-    }
+    module_option_number("interval", &interval);
+    asc_assert(interval > 0, "[timer] option 'interval' must be greater than 0");
 
-    lua_getfield(lua, 2, "callback");
-    if(lua_type(lua, -1) != LUA_TFUNCTION)
-    {
-        asc_log_error("[timer] option 'callback' must be a function");
-        astra_abort();
-    }
-    lua_pop(lua, 1);
+    lua_getfield(lua, MODULE_OPTIONS_IDX, "callback");
+    asc_assert(lua_isfunction(lua, -1), "[timer] option 'callback' is required");
+    mod->idx_callback = luaL_ref(lua, LUA_REGISTRYINDEX);
 
     // store self in registry
     lua_pushvalue(lua, 3);

@@ -2,7 +2,7 @@
  * Astra Module: File Output
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -53,7 +53,6 @@
 
 struct module_data_t
 {
-    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
     const char *filename;
@@ -224,6 +223,12 @@ static int method_status(module_data_t *mod)
 }
 
 /* required */
+
+static int module_call(module_data_t *mod)
+{
+    __uarg(mod);
+    return 0;
+}
 
 static void module_init(module_data_t *mod)
 {

@@ -38,7 +38,6 @@
 
 struct module_data_t
 {
-    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
     const char *filename;
@@ -453,6 +452,12 @@ static int method_position(module_data_t *mod)
 }
 
 /* required */
+
+static int module_call(module_data_t *mod)
+{
+    __uarg(mod);
+    return 0;
+}
 
 static void module_init(module_data_t *mod)
 {

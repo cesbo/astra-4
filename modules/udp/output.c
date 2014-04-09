@@ -44,7 +44,6 @@
 
 struct module_data_t
 {
-    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
     const char *addr;
@@ -341,6 +340,12 @@ static void thread_loop(void *arg)
             }
         }
     }
+}
+
+static int module_call(module_data_t *mod)
+{
+    __uarg(mod);
+    return 0;
 }
 
 static void module_init(module_data_t *mod)

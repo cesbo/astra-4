@@ -2,7 +2,7 @@
  * Astra Module: MPEG-TS (Transmit)
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,7 +30,6 @@
 
 struct module_data_t
 {
-    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 };
 
@@ -44,6 +43,12 @@ static int method_set_upstream(module_data_t *mod)
 static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
     module_stream_send(mod, ts);
+}
+
+static int module_call(module_data_t *mod)
+{
+    __uarg(mod);
+    return 0;
 }
 
 static void module_init(module_data_t *mod)

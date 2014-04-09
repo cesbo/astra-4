@@ -2,7 +2,7 @@
  * Astra Module: DigitalDevices standalone CI
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,7 +31,6 @@
 
 struct module_data_t
 {
-    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
     int adapter;
@@ -260,6 +259,12 @@ static int method_ca_set_pnr(module_data_t *mod)
     const uint16_t pnr = lua_tonumber(lua, 2);
     const bool is_set = lua_toboolean(lua, 3);
     ((is_set) ? ca_append_pnr : ca_remove_pnr)(mod->ca, pnr);
+    return 0;
+}
+
+static int module_call(module_data_t *mod)
+{
+    __uarg(mod);
     return 0;
 }
 

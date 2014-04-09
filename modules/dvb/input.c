@@ -33,7 +33,6 @@
 
 struct module_data_t
 {
-    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
     int adapter;
@@ -698,6 +697,12 @@ static void join_pid(module_data_t *mod, uint16_t pid)
 static void leave_pid(module_data_t *mod, uint16_t pid)
 {
     --mod->__stream.pid_list[pid];
+}
+
+static int module_call(module_data_t *mod)
+{
+    __uarg(mod);
+    return 0;
 }
 
 static void module_init(module_data_t *mod)

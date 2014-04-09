@@ -91,8 +91,6 @@ typedef struct
 
 struct module_data_t
 {
-    MODULE_LUA_DATA();
-
     int idx_self;
 
     const char *addr;
@@ -803,6 +801,12 @@ static int method_close(module_data_t *mod)
         on_client_close(client);
     }
 
+    return 0;
+}
+
+static int module_call(module_data_t *mod)
+{
+    __uarg(mod);
     return 0;
 }
 

@@ -2,7 +2,7 @@
  * Astra Module: UDP Input
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,7 +40,6 @@
 
 struct module_data_t
 {
-    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
     const char *addr;
@@ -137,6 +136,12 @@ void timer_renew_callback(void *arg)
 {
     module_data_t *mod = arg;
     asc_socket_multicast_renew(mod->sock);
+}
+
+static int module_call(module_data_t *mod)
+{
+    __uarg(mod);
+    return 0;
 }
 
 static void module_init(module_data_t *mod)

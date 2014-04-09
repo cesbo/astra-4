@@ -2,7 +2,7 @@
  * Astra Module: MPEG-TS (MPTS Demux)
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -47,7 +47,6 @@ typedef struct
 
 struct module_data_t
 {
-    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
     /* Options */
@@ -692,6 +691,12 @@ static void __parse_map_item(module_data_t *mod, const char *item)
     map_item->custom_pid = atoi(&item[i]);
 
     asc_list_insert_tail(mod->map, map_item);
+}
+
+static int module_call(module_data_t *mod)
+{
+    __uarg(mod);
+    return 0;
 }
 
 static void module_init(module_data_t *mod)
