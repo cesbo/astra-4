@@ -80,12 +80,11 @@ typedef struct
             { "__gc", __module_delete },                                                        \
             { "__tostring", __module_tostring },                                                \
             { "__call", __module_call },                                                        \
-            { NULL, NULL }                                                                      \
         };                                                                                      \
         module_data_t *mod = calloc(1, sizeof(module_data_t));                                  \
         lua_newtable(L);                                                                        \
         lua_newtable(L);                                                                        \
-        for(i = 0; __meta_methods[i].name; ++i)                                                 \
+        for(i = 0; i < ASC_ARRAY_SIZE(__meta_methods); ++i)                                     \
         {                                                                                       \
             const luaL_Reg *m = &__meta_methods[i];                                             \
             lua_pushlightuserdata(L, (void *)mod);                                              \
@@ -93,9 +92,10 @@ typedef struct
             lua_setfield(L, -2, m->name);                                                       \
         }                                                                                       \
         lua_setmetatable(L, -2);                                                                \
-        for(i = 0; __module_methods[i].name; ++i)                                               \
+        for(i = 0; i < ASC_ARRAY_SIZE(__module_methods); ++i)                                   \
         {                                                                                       \
             const module_method_t *m = &__module_methods[i];                                    \
+            if(!m->name) break;                                                                 \
             lua_pushlightuserdata(L, (void *)mod);                                              \
             lua_pushlightuserdata(L, (void *)m);                                                \
             lua_pushcclosure(L, __module_thunk, 2);                                             \
