@@ -82,6 +82,8 @@ static int module_call(module_data_t *mod)
     }
 
     client->response = calloc(1, sizeof(http_response_t));
+    client->on_send = NULL;
+    client->on_read = NULL;
     client->on_ready = on_ready_send_file;
 
     char *filename = malloc(PATH_MAX);

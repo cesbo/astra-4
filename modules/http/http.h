@@ -15,6 +15,7 @@ struct http_client_t
 
     module_data_t *mod;
 
+    int idx_server;
     int idx_data;
 
     asc_socket_t *sock;

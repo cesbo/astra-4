@@ -536,6 +536,7 @@ static void on_ready_send_content(void *arg)
         on_client_close(client);
 }
 
+/* Stack: 1 - server, 2 - client, 3 - response */
 static int method_send(module_data_t *mod)
 {
     asc_assert(lua_islightuserdata(lua, 2), MSG(":send() client instance required"));
@@ -574,6 +575,8 @@ static int method_send(module_data_t *mod)
         lua_pushvalue(lua, -1);
         client->response = malloc(sizeof(http_response_t));
         client->response->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
+        client->on_send = NULL;
+        client->on_read = NULL;
         client->on_ready = on_ready_send_content;
     }
     lua_pop(lua, 1); // content
@@ -843,6 +846,7 @@ static void on_server_accept(void *arg)
 
     http_client_t *client = calloc(1, sizeof(http_client_t));
     client->mod = mod;
+    client->idx_server = mod->idx_self;
 
     if(!asc_socket_accept(mod->sock, &client->sock, client))
     {
