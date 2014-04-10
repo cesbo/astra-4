@@ -73,7 +73,6 @@ function http_callback_root(server, client, request)
 end
 
 function http_callback_api(server, client, request)
-    print(request)
     local client_data = server:data(client)
     if request == "Start Timer" then
         client_data.counter = 0
