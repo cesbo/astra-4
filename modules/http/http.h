@@ -27,12 +27,20 @@ typedef struct
     int idx_request;
     int idx_callback;
 
+    const char *method;
+    const char *path;
+
     bool is_content_length;
     string_buffer_t *content;
 
     // response
+    socket_callback_t on_ready;
     http_response_t *response;
 } http_client_t;
+
+void http_response_code(http_client_t *client, int code, const char *message);
+void http_response_header(http_client_t *client, const char *header, ...);
+void http_response_send(http_client_t *client);
 
 void http_client_close(http_client_t *client);
 

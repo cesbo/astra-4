@@ -23,10 +23,11 @@
  *      http_server
  *
  * Module Options:
- *      addr        - string, server IP address
- *      port        - number, server port
- *      server_name - string, default value: "Astra"
- *      route       - list, format: { { "/path", callback }, ... }
+ *      addr         - string, server IP address
+ *      port         - number, server port
+ *      server_name  - string, default value: "Astra"
+ *      http_version - string, default value: "HTTP/1.1"
+ *      route        - list, format: { { "/path", callback }, ... }
  *
  * Module Methods:
  *      port()      - return number, server port
@@ -37,7 +38,6 @@
  *                  - response - table, possible values:
  *                    * code - number, response code. required
  *                    * message - string, response code description. default: see http_code()
- *                    * version - string, protocol version. default: "HTTP/1.1"
  *                    * headers - table (list of strings), response headers
  *                    * content - string, response body from the string
  *      data(client)
@@ -57,6 +57,7 @@ struct module_data_t
     const char *addr;
     int port;
     const char *server_name;
+    const char *http_version;
 
     asc_list_t *routes;
 
@@ -350,6 +351,7 @@ static void on_client_read(void *arg)
         const int request = lua_gettop(lua);
 
         lua_pushlstring(lua, &client->buffer[m[1].so], m[1].eo - m[1].so);
+        client->method = lua_tostring(lua, -1);
         lua_setfield(lua, request, __method);
 
         size_t path_skip = m[2].so;
@@ -357,17 +359,7 @@ static void on_client_read(void *arg)
             ++path_skip;
 
         lua_pushlstring(lua, &client->buffer[m[2].so], path_skip - m[2].so);
-        const char *path = lua_tostring(lua, -1);
-        client->idx_callback = 0;
-        asc_list_for(mod->routes)
-        {
-            route_t *route = asc_list_data(mod->routes);
-            if(routecmp(path, route->path))
-            {
-                client->idx_callback = route->idx_callback;
-                break;
-            }
-        }
+        client->path = lua_tostring(lua, -1);
         lua_setfield(lua, request, __path);
 
         if(path_skip < m[2].eo)
@@ -435,6 +427,17 @@ static void on_client_read(void *arg)
         lua_pop(lua, 1); // content-length
 
         lua_pop(lua, 2); // headers + request
+
+        client->idx_callback = 0;
+        asc_list_for(mod->routes)
+        {
+            route_t *route = asc_list_data(mod->routes);
+            if(routecmp(client->path, route->path))
+            {
+                client->idx_callback = route->idx_callback;
+                break;
+            }
+        }
 
         if(!client->idx_callback)
         {
@@ -562,10 +565,13 @@ static void on_ready_send_response(void *arg)
 
     if(client->chunk_left == 0)
     {
-        if(client->response)
-            asc_socket_set_on_ready(client->sock, on_ready_send_content);
-        else
-            on_client_close(client);
+        if(client->on_ready && strcmp(client->method, "HEAD") != 0)
+        {
+            asc_socket_set_on_ready(client->sock, client->on_ready);
+            return;
+        }
+
+        on_client_close(client);
     }
 }
 
@@ -575,7 +581,7 @@ static const char * http_code(int code)
     {
         case 101: return "Switching Protocols";
 
-        case 200: return "OK";
+        case 200: return "Ok";
 
         case 301: return "Moved Permanently";
         case 302: return "Found";
@@ -596,69 +602,90 @@ static const char * http_code(int code)
     }
 }
 
+void http_response_code(http_client_t *client, int code, const char *message)
+{
+    if(!message)
+        message = http_code(code);
+
+    client->chunk_left  = snprintf(client->buffer, HTTP_BUFFER_SIZE
+                                   , "%s %d %s\r\n"
+                                   , client->mod->http_version, code, message);
+
+    client->chunk_left += snprintf(&client->buffer[client->chunk_left]
+                                   , HTTP_BUFFER_SIZE - client->chunk_left
+                                   , "Server: %s\r\n"
+                                   , client->mod->server_name);
+}
+
+void http_response_header(http_client_t *client, const char *header, ...)
+{
+    va_list ap;
+    va_start(ap, header);
+
+    client->chunk_left += vsnprintf(&client->buffer[client->chunk_left]
+                                    , HTTP_BUFFER_SIZE - client->chunk_left
+                                    , header, ap);
+    client->buffer[client->chunk_left + 0] = '\r';
+    client->buffer[client->chunk_left + 1] = '\n';
+    client->chunk_left += 2;
+
+    va_end(ap);
+}
+
+void http_response_send(http_client_t *client)
+{
+    client->buffer[client->chunk_left + 0] = '\r';
+    client->buffer[client->chunk_left + 1] = '\n';
+    client->chunk_left += 2;
+
+    client->buffer_skip = 0;
+
+    asc_socket_set_on_read(client->sock, NULL);
+    asc_socket_set_on_ready(client->sock, on_ready_send_response);
+}
+
 static int method_send(module_data_t *mod)
 {
     asc_assert(lua_islightuserdata(lua, 2), MSG(":send() client instance required"));
     http_client_t *client = lua_touserdata(lua, 2);
 
-    const int response = 3;
+    const int idx_response = 3;
 
-    lua_getfield(lua, response, __version);
-    const char *version = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : "HTTP/1.1";
-    lua_pop(lua, 1); // version
-
-    lua_getfield(lua, response, __code);
+    lua_getfield(lua, idx_response, __code);
     const int code = lua_tonumber(lua, -1);
     lua_pop(lua, 1); // code
 
-    lua_getfield(lua, response, __message);
-    const char *message = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : http_code(code);
+    lua_getfield(lua, idx_response, __message);
+    const char *message = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : NULL;
     lua_pop(lua, 1); // message
 
-    size_t skip;
-    skip = snprintf(client->buffer, HTTP_BUFFER_SIZE, "%s %d %s\r\n", version, code, message);
+    http_response_code(client, code, message);
 
-    skip += snprintf(&client->buffer[skip]
-                     , HTTP_BUFFER_SIZE - skip
-                     , "Server: %s\r\n"
-                     , mod->server_name);
-
-    lua_getfield(lua, response, __content);
+    lua_getfield(lua, idx_response, __content);
     if(lua_isstring(lua, -1))
     {
         const int content_length = luaL_len(lua, -1);
-        skip += snprintf(  &client->buffer[skip]
-                         , HTTP_BUFFER_SIZE - skip
-                         , "Content-Length: %d\r\n"
-                         , content_length);
+        http_response_header(client, "Content-Length: %d", content_length);
 
         lua_pushvalue(lua, -1);
         client->response = malloc(sizeof(http_response_t));
         client->response->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
+        client->on_ready = on_ready_send_content;
     }
     lua_pop(lua, 1); // content
 
-    lua_getfield(lua, response, __headers);
+    lua_getfield(lua, idx_response, __headers);
     if(lua_istable(lua, -1))
     {
         lua_foreach(lua, -2)
         {
             const char *header = lua_tostring(lua, -1);
-            skip += snprintf(  &client->buffer[skip]
-                             , HTTP_BUFFER_SIZE - skip
-                             , "%s\r\n"
-                             , header);
+            http_response_header(client, "%s", header);
         }
     }
     lua_pop(lua, 1); // headers
 
-    skip += snprintf(&client->buffer[skip], HTTP_BUFFER_SIZE - skip, "\r\n");
-
-    client->buffer_skip = 0;
-    client->chunk_left = skip;
-
-    asc_socket_set_on_read(client->sock, NULL);
-    asc_socket_set_on_ready(client->sock, on_ready_send_response);
+    http_response_send(client);
 
     return 0;
 }
@@ -811,6 +838,9 @@ static void module_init(module_data_t *mod)
 
     mod->server_name = "Astra";
     module_option_string("server_name", &mod->server_name, NULL);
+
+    mod->http_version = "HTTP/1.1";
+    module_option_string("http_version", &mod->http_version, NULL);
 
     // store routes in registry
     mod->routes = asc_list_init();
