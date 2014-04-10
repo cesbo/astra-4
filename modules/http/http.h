@@ -7,8 +7,9 @@
 #define HTTP_BUFFER_SIZE (16 * 1024)
 
 typedef struct http_response_t http_response_t;
+typedef struct http_client_t http_client_t;
 
-typedef struct
+struct http_client_t
 {
     MODULE_STREAM_DATA();
 
@@ -34,9 +35,11 @@ typedef struct
     string_buffer_t *content;
 
     // response
-    socket_callback_t on_ready;
+    event_callback_t on_send;
+    event_callback_t on_read;
+    event_callback_t on_ready;
     http_response_t *response;
-} http_client_t;
+};
 
 void http_response_code(http_client_t *client, int code, const char *message);
 void http_response_header(http_client_t *client, const char *header, ...);

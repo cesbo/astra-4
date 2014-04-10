@@ -541,6 +541,12 @@ static int method_send(module_data_t *mod)
     asc_assert(lua_islightuserdata(lua, 2), MSG(":send() client instance required"));
     http_client_t *client = lua_touserdata(lua, 2);
 
+    if(client->on_send)
+    {
+        client->on_send(client);
+        return 0;
+    }
+
     if(client->response)
     {
         asc_log_error(MSG(":send() failed, instance is busy"));
@@ -621,10 +627,11 @@ static void on_ready_send_response(void *arg)
 
     if(client->chunk_left == 0)
     {
-        if(client->on_ready && strcmp(client->method, "HEAD") != 0)
+        if(client->response && strcmp(client->method, "HEAD") != 0)
         {
             client->buffer_skip = 0;
 
+            asc_socket_set_on_read(client->sock, client->on_read);
             asc_socket_set_on_ready(client->sock, client->on_ready);
             return;
         }
@@ -637,8 +644,6 @@ static const char * http_code(int code)
 {
     switch(code)
     {
-        case 101: return "Switching Protocols";
-
         case 200: return "Ok";
 
         case 301: return "Moved Permanently";
