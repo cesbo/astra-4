@@ -42,6 +42,10 @@ void http_response_code(http_client_t *client, int code, const char *message);
 void http_response_header(http_client_t *client, const char *header, ...);
 void http_response_send(http_client_t *client);
 
+void http_client_warning(http_client_t *client, const char *message, ...);
+void http_client_error(http_client_t *client, const char *message, ...);
 void http_client_close(http_client_t *client);
+
+void http_client_abort(http_client_t *client, int code, const char *text);
 
 #endif /* _HTTP_H_ */

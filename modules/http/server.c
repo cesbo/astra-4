@@ -152,11 +152,6 @@ static void on_client_close(void *arg)
     free(client);
 }
 
-void http_client_close(http_client_t *client)
-{
-    on_client_close(client);
-}
-
 static void lua_string_to_lower(const char *str, size_t size)
 {
     if(size == 0)
@@ -441,8 +436,8 @@ static void on_client_read(void *arg)
 
         if(!client->idx_callback)
         {
-            // TODO: send 404
-            on_client_close(client);
+            http_client_warning(client, "route not found %s", client->path);
+            http_client_abort(client, 404, NULL);
             return;
         }
 
@@ -541,6 +536,67 @@ static void on_ready_send_content(void *arg)
         on_client_close(client);
 }
 
+static int method_send(module_data_t *mod)
+{
+    asc_assert(lua_islightuserdata(lua, 2), MSG(":send() client instance required"));
+    http_client_t *client = lua_touserdata(lua, 2);
+
+    if(client->response)
+    {
+        asc_log_error(MSG(":send() failed, instance is busy"));
+        return 0;
+    }
+
+    const int idx_response = 3;
+
+    lua_getfield(lua, idx_response, __code);
+    const int code = lua_tonumber(lua, -1);
+    lua_pop(lua, 1); // code
+
+    lua_getfield(lua, idx_response, __message);
+    const char *message = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : NULL;
+    lua_pop(lua, 1); // message
+
+    http_response_code(client, code, message);
+
+    lua_getfield(lua, idx_response, __content);
+    if(lua_isstring(lua, -1))
+    {
+        const int content_length = luaL_len(lua, -1);
+        http_response_header(client, "Content-Length: %d", content_length);
+
+        lua_pushvalue(lua, -1);
+        client->response = malloc(sizeof(http_response_t));
+        client->response->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
+        client->on_ready = on_ready_send_content;
+    }
+    lua_pop(lua, 1); // content
+
+    lua_getfield(lua, idx_response, __headers);
+    if(lua_istable(lua, -1))
+    {
+        lua_foreach(lua, -2)
+        {
+            const char *header = lua_tostring(lua, -1);
+            http_response_header(client, "%s", header);
+        }
+    }
+    lua_pop(lua, 1); // headers
+
+    http_response_send(client);
+
+    return 0;
+}
+
+/*
+ *      o      oooooooooo   ooooo
+ *     888      888    888   888
+ *    8  88     888oooo88    888
+ *   8oooo88    888          888
+ * o88o  o888o o888o        o888o
+ *
+ */
+
 static void on_ready_send_response(void *arg)
 {
     http_client_t *client = arg;
@@ -567,6 +623,8 @@ static void on_ready_send_response(void *arg)
     {
         if(client->on_ready && strcmp(client->method, "HEAD") != 0)
         {
+            client->buffer_skip = 0;
+
             asc_socket_set_on_ready(client->sock, client->on_ready);
             return;
         }
@@ -644,50 +702,73 @@ void http_response_send(http_client_t *client)
     asc_socket_set_on_ready(client->sock, on_ready_send_response);
 }
 
-static int method_send(module_data_t *mod)
+void http_client_warning(http_client_t *client, const char *message, ...)
 {
-    asc_assert(lua_islightuserdata(lua, 2), MSG(":send() client instance required"));
-    http_client_t *client = lua_touserdata(lua, 2);
+    module_data_t *mod = client->mod;
 
-    const int idx_response = 3;
+    va_list ap;
+    va_start(ap, message);
 
-    lua_getfield(lua, idx_response, __code);
-    const int code = lua_tonumber(lua, -1);
-    lua_pop(lua, 1); // code
+    char buffer[2048];
+    vsnprintf(buffer, sizeof(buffer), message, ap);
+    asc_log_warning(MSG("%s"), buffer);
 
-    lua_getfield(lua, idx_response, __message);
-    const char *message = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : NULL;
-    lua_pop(lua, 1); // message
+    va_end(ap);
+}
+
+void http_client_error(http_client_t *client, const char *message, ...)
+{
+    module_data_t *mod = client->mod;
+
+    va_list ap;
+    va_start(ap, message);
+
+    char buffer[2048];
+    vsnprintf(buffer, sizeof(buffer), message, ap);
+    asc_log_error(MSG("%s"), buffer);
+
+    va_end(ap);
+}
+
+void http_client_close(http_client_t *client)
+{
+    on_client_close(client);
+}
+
+void http_client_abort(http_client_t *client, int code, const char *text)
+{
+    module_data_t *mod = client->mod;
+
+    if(client->response)
+    {
+        asc_log_error(MSG(":abort() failed, instance is busy"));
+        return;
+    }
+
+    const char *message = http_code(code);
+
+    static const char template[] =
+        "<html><head>"
+            "<title>%d %s</title>"
+        "</head><body>"
+            "<h1>%s</h1>"
+            "<p>%s</p>"
+            "<hr />"
+            "<i>%s</i>"
+        "</body></html>";
+    lua_pushfstring(  lua
+                    , template
+                    , code, message
+                    , message, (text) ? text : "&nbsp;"
+                    , mod->server_name);
+
+    client->response = malloc(sizeof(http_response_t));
+    client->response->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
+    client->on_ready = on_ready_send_content;
 
     http_response_code(client, code, message);
-
-    lua_getfield(lua, idx_response, __content);
-    if(lua_isstring(lua, -1))
-    {
-        const int content_length = luaL_len(lua, -1);
-        http_response_header(client, "Content-Length: %d", content_length);
-
-        lua_pushvalue(lua, -1);
-        client->response = malloc(sizeof(http_response_t));
-        client->response->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
-        client->on_ready = on_ready_send_content;
-    }
-    lua_pop(lua, 1); // content
-
-    lua_getfield(lua, idx_response, __headers);
-    if(lua_istable(lua, -1))
-    {
-        lua_foreach(lua, -2)
-        {
-            const char *header = lua_tostring(lua, -1);
-            http_response_header(client, "%s", header);
-        }
-    }
-    lua_pop(lua, 1); // headers
-
+    http_response_header(client, "Content-Type: text/html");
     http_response_send(client);
-
-    return 0;
 }
 
 /*
@@ -767,6 +848,11 @@ static void on_server_accept(void *arg)
 
     asc_list_insert_tail(mod->clients, client);
 
+    asc_log_debug(MSG("client connected %s:%d (%d clients)")
+                      , asc_socket_addr(client->sock)
+                      , asc_socket_port(client->sock)
+                      , asc_list_size(mod->clients));
+
     asc_socket_set_on_read(client->sock, on_client_read);
     asc_socket_set_on_close(client->sock, on_client_close);
 }
@@ -807,6 +893,17 @@ static int method_close(module_data_t *mod)
         on_client_close(client);
     }
 
+    return 0;
+}
+
+static int method_abort(module_data_t *mod)
+{
+    asc_assert(lua_islightuserdata(lua, 2), MSG(":abort() client instance required"));
+    asc_assert(lua_isnumber(lua, 3), MSG(":abort() code required"));
+    http_client_t *client = lua_touserdata(lua, 2);
+    const int code = lua_tonumber(lua, 3);
+    const char *text = lua_isstring(lua, 4) ? lua_tostring(lua, 4) : NULL;
+    http_client_abort(client, code, text);
     return 0;
 }
 
@@ -904,7 +1001,8 @@ MODULE_LUA_METHODS()
 {
     { "send", method_send },
     { "close", method_close },
-    { "data", method_data }
+    { "data", method_data },
+    { "abort", method_abort }
 };
 
 MODULE_LUA_REGISTER(http_server)
