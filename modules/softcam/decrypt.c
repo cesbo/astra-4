@@ -64,13 +64,8 @@ struct module_data_t
     uint8_t new_key[16];
 
     /* Base */
-    mpegts_psi_t *pat;
-    mpegts_psi_t *cat;
+    mpegts_psi_t *stream[MAX_PID];
     mpegts_psi_t *pmt;
-    mpegts_psi_t *custom_pmt;
-    mpegts_psi_t *em;
-
-    mpegts_packet_type_t stream[MAX_PID];
 };
 
 #define MSG(_msg) "[decrypt %s] " _msg, mod->name
@@ -96,14 +91,16 @@ static void module_decrypt_cas_destroy(module_data_t *mod)
 
 static void stream_reload(module_data_t *mod)
 {
-    memset(mod->stream, 0, sizeof(mod->stream));
+    mod->stream[0]->crc32 = 0;
 
-    mod->stream[0] = MPEGTS_PACKET_PAT;
-    mod->stream[1] = MPEGTS_PACKET_CAT;
-
-    mod->pat->crc32 = 0;
-    mod->cat->crc32 = 0;
-    mod->pmt->crc32 = 0;
+    for(int i = 1; i < MAX_PID; ++i)
+    {
+        if(mod->stream[i])
+        {
+            mpegts_psi_destroy(mod->stream[i]);
+            mod->stream[i] = NULL;
+        }
+    }
 
     module_decrypt_cas_destroy(mod);
 }
@@ -152,8 +149,10 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
             if(mod->__decrypt.cas_pnr == 0)
                 mod->__decrypt.cas_pnr = pnr;
             const uint16_t pmt_pid = PAT_ITEM_GET_PID(psi, pointer);
-            mod->stream[pmt_pid] = MPEGTS_PACKET_PMT;
-            mod->pmt->pid = pmt_pid;
+            if(!mod->stream[pmt_pid])
+                mod->stream[pmt_pid] = mpegts_psi_init(MPEGTS_PACKET_PMT, pmt_pid);
+            else
+                asc_log_warning(MSG("Skip PMT pid:%d"), pmt_pid);
             break;
         }
         PAT_ITEMS_NEXT(psi, pointer);
@@ -162,16 +161,8 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     if(mod->__decrypt.cam && mod->__decrypt.cam->is_ready)
     {
         mod->__decrypt.cas = module_decrypt_cas_init(mod);
-        asc_assert(mod->__decrypt.cas != NULL, "CAS with CAID:0x%04X not found", mod->caid);
-
-        mod->cat->crc32 = 0;
-        mod->pmt->crc32 = 0;
-
-        for(int i = 0; i < MAX_PID; ++i)
-        {
-            if(mod->stream[i] & MPEGTS_PACKET_CA)
-                mod->stream[i] = MPEGTS_PACKET_UNKNOWN;
-        }
+        asc_assert(mod->__decrypt.cas != NULL, MSG("CAS with CAID:0x%04X not found"), mod->caid);
+        mod->stream[1] = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
     }
 }
 
@@ -183,6 +174,37 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
  *  888oooo88 o88o  o888o o888o
  *
  */
+
+static bool __cat_check_desc(module_data_t *mod, const uint8_t *desc)
+{
+    const uint16_t pid = DESC_CA_PID(desc);
+
+    /* Skip BISS */
+    if(pid == NULL_TS_PID)
+        return false;
+
+    if(mod->stream[pid])
+    {
+        if(!(mod->stream[pid]->type & MPEGTS_PACKET_CA))
+        {
+            asc_log_warning(MSG("Skip EMM pid:%d"), pid);
+            return false;
+        }
+    }
+    else
+        mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_CA, pid);
+
+    if(   mod->__decrypt.cas
+       && DESC_CA_CAID(desc) == mod->caid
+       && module_cas_check_descriptor(mod->__decrypt.cas, desc))
+    {
+        mod->stream[pid]->type = MPEGTS_PACKET_EMM;
+        asc_log_info(MSG("Select EMM pid:%d"), pid);
+        return true;
+    }
+
+    return false;
+}
 
 static void on_cat(void *arg, mpegts_psi_t *psi)
 {
@@ -211,37 +233,19 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     psi->crc32 = crc32;
 
     bool is_emm_selected = false;
-    if(mod->__decrypt.cas)
-        is_emm_selected = mod->__decrypt.cam->disable_emm;
 
-    const uint8_t *desc_pointer = CAT_DESC_FIRST(psi);
-    while(!CAT_DESC_EOL(psi, desc_pointer))
+    const uint8_t *desc_pointer;
+    CAT_DESC_FOREACH(psi, desc_pointer)
     {
         if(desc_pointer[0] == 0x09)
         {
-            const uint16_t pid = DESC_CA_PID(desc_pointer);
-
-            if(mod->stream[pid] == MPEGTS_PACKET_CA)
-                mod->stream[pid] = MPEGTS_PACKET_UNKNOWN;
-
-            if(pid == NULL_TS_PID || mod->stream[pid] != MPEGTS_PACKET_UNKNOWN)
-                ; /* Skip */
-            else if(   mod->__decrypt.cas
-                    && !mod->__decrypt.cam->disable_emm
-                    && DESC_CA_CAID(desc_pointer) == mod->caid)
-            {
-                mod->stream[pid] = MPEGTS_PACKET_EMM;
-                asc_log_info(MSG("Select EMM pid:%d"), pid);
+            if(__cat_check_desc(mod, desc_pointer))
                 is_emm_selected = true;
-            }
-            else
-                mod->stream[pid] = MPEGTS_PACKET_CA;
         }
-        CAT_DESC_NEXT(psi, desc_pointer);
     }
 
-    if(mod->__decrypt.cas && !is_emm_selected)
-        asc_log_error(MSG("EMM is not found"));
+    if(!is_emm_selected)
+        asc_log_warning(MSG("EMM is not found"));
 }
 
 /*
@@ -252,6 +256,43 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
  * o888o      o88o  8  o88o    o888o
  *
  */
+
+static bool __pmt_check_desc(module_data_t *mod, const uint8_t *desc, bool is_ecm_selected)
+{
+    const uint16_t pid = DESC_CA_PID(desc);
+
+    /* Skip BISS */
+    if(pid == NULL_TS_PID)
+        return false;
+
+    if(mod->stream[pid])
+    {
+        if(!(mod->stream[pid]->type & MPEGTS_PACKET_CA))
+        {
+            asc_log_warning(MSG("Skip ECM pid:%d"), pid);
+            return false;
+        }
+    }
+    else
+        mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_CA, pid);
+
+    if(   mod->__decrypt.cas
+       && DESC_CA_CAID(desc) == mod->caid
+       && module_cas_check_descriptor(mod->__decrypt.cas, desc))
+    {
+        if(is_ecm_selected)
+        {
+            asc_log_warning(MSG("Skip ECM pid:%d"), pid);
+            return false;
+        }
+
+        mod->stream[pid]->type = MPEGTS_PACKET_ECM;
+        asc_log_info(MSG("Select ECM pid:%d"), pid);
+        return true;
+    }
+
+    return false;
+}
 
 static void on_pmt(void *arg, mpegts_psi_t *psi)
 {
@@ -269,7 +310,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     const uint32_t crc32 = PSI_GET_CRC32(psi);
     if(crc32 == psi->crc32)
     {
-        mpegts_psi_demux(mod->custom_pmt
+        mpegts_psi_demux(mod->pmt
                          , (void (*)(void *, const uint8_t *))__module_stream_send
                          , &mod->__stream);
         return;
@@ -293,130 +334,80 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     psi->crc32 = crc32;
 
     // Make custom PMT and set descriptors for CAS
-    mod->custom_pmt->pid = psi->pid;
+    mod->pmt->pid = psi->pid;
 
     bool is_ecm_selected = false;
 
     if(mod->ecm_pid) // skip descriptors checking
     {
-        mod->stream[mod->ecm_pid] = MPEGTS_PACKET_ECM;
+        mod->stream[mod->ecm_pid] = mpegts_psi_init(MPEGTS_PACKET_ECM, mod->ecm_pid);
         asc_log_info(MSG("Select ECM pid:%d"), mod->ecm_pid);
         is_ecm_selected = true;
     }
 
     uint16_t skip = 12;
-    memcpy(mod->custom_pmt->buffer, psi->buffer, 10);
+    memcpy(mod->pmt->buffer, psi->buffer, 10);
 
-    const uint8_t *desc_pointer = PMT_DESC_FIRST(psi);
-    while(!PMT_DESC_EOL(psi, desc_pointer))
+    const uint8_t *desc_pointer;
+    PMT_DESC_FOREACH(psi, desc_pointer)
     {
         if(desc_pointer[0] == 0x09)
         {
-            const uint16_t pid = DESC_CA_PID(desc_pointer);
-
-            if(mod->stream[pid] == MPEGTS_PACKET_CA)
-                mod->stream[pid] = MPEGTS_PACKET_UNKNOWN;
-
-            if(pid == NULL_TS_PID || mod->stream[pid] != MPEGTS_PACKET_UNKNOWN)
-                ; /* Skip */
-            else if(   mod->__decrypt.cas
-                    && DESC_CA_CAID(desc_pointer) == mod->caid
-                    && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
-            {
-                if(!is_ecm_selected)
-                {
-                    mod->stream[pid] = MPEGTS_PACKET_ECM;
-                    asc_log_info(MSG("Select ECM pid:%d"), pid);
-                    is_ecm_selected = true;
-                }
-                else
-                    asc_log_warning(MSG("Skip ECM pid:%d"), pid);
-            }
-            else
-                mod->stream[pid] = MPEGTS_PACKET_CA;
+            if(__pmt_check_desc(mod, desc_pointer, is_ecm_selected))
+                is_ecm_selected = true;
         }
         else
         {
             const uint8_t size = desc_pointer[1] + 2;
-            memcpy(&mod->custom_pmt->buffer[skip], desc_pointer, size);
+            memcpy(&mod->pmt->buffer[skip], desc_pointer, size);
             skip += size;
         }
-
-        PMT_DESC_NEXT(psi, desc_pointer);
     }
     const uint16_t size = skip - 12; // 12 - PMT header
-    mod->custom_pmt->buffer[10] = (mod->pmt->buffer[10] & 0xF0) | ((size >> 8) & 0x0F);
-    mod->custom_pmt->buffer[11] = size & 0xFF;
+    mod->pmt->buffer[10] = (psi->buffer[10] & 0xF0) | ((size >> 8) & 0x0F);
+    mod->pmt->buffer[11] = size & 0xFF;
 
-    const uint8_t *pointer = PMT_ITEMS_FIRST(psi);
-    while(!PMT_ITEMS_EOL(psi, pointer))
+    const uint8_t *pointer;
+    PMT_ITEMS_FOREACH(psi, pointer)
     {
-        memcpy(&mod->custom_pmt->buffer[skip], pointer, 5);
+        memcpy(&mod->pmt->buffer[skip], pointer, 5);
         skip += 5;
 
         const uint16_t skip_last = skip;
 
-        desc_pointer = PMT_ITEM_DESC_FIRST(pointer);
-        while(!PMT_ITEM_DESC_EOL(pointer, desc_pointer))
+        PMT_ITEM_DESC_FOREACH(pointer, desc_pointer)
         {
             if(desc_pointer[0] == 0x09)
             {
-                const uint16_t pid = DESC_CA_PID(desc_pointer);
-
-                if(mod->stream[pid] == MPEGTS_PACKET_CA)
-                    mod->stream[pid] = MPEGTS_PACKET_UNKNOWN;
-
-                if(pid == NULL_TS_PID || mod->stream[pid] != MPEGTS_PACKET_UNKNOWN)
-                    ; /* Skip */
-                else if(   mod->__decrypt.cas
-                        && DESC_CA_CAID(desc_pointer) == mod->caid
-                        && module_cas_check_descriptor(mod->__decrypt.cas, desc_pointer))
-                {
-                    if(mod->stream[pid] == MPEGTS_PACKET_UNKNOWN)
-                    {
-                        if(!is_ecm_selected)
-                        {
-                            mod->stream[pid] = MPEGTS_PACKET_ECM;
-                            asc_log_info(MSG("Select ECM pid:%d"), pid);
-                            is_ecm_selected = true;
-                        }
-                        else
-                            asc_log_warning(MSG("Skip ECM pid:%d"), pid);
-                    }
-                }
-                else
-                    mod->stream[pid] = MPEGTS_PACKET_CA;
+                if(__pmt_check_desc(mod, desc_pointer, is_ecm_selected))
+                    is_ecm_selected = true;
             }
             else
             {
                 const uint8_t size = desc_pointer[1] + 2;
-                memcpy(&mod->custom_pmt->buffer[skip], desc_pointer, size);
+                memcpy(&mod->pmt->buffer[skip], desc_pointer, size);
                 skip += size;
             }
-
-            PMT_ITEM_DESC_NEXT(pointer, desc_pointer);
         }
         const uint16_t size = skip - skip_last;
-        mod->custom_pmt->buffer[skip_last - 2] = (size << 8) & 0x0F;
-        mod->custom_pmt->buffer[skip_last - 1] = size & 0xFF;
-
-        PMT_ITEMS_NEXT(psi, pointer);
+        mod->pmt->buffer[skip_last - 2] = (size << 8) & 0x0F;
+        mod->pmt->buffer[skip_last - 1] = size & 0xFF;
     }
 
     if(!mod->__decrypt.cas || is_ecm_selected)
     {
-        mod->custom_pmt->buffer_size = skip + CRC32_SIZE;
-        PSI_SET_SIZE(mod->custom_pmt);
-        PSI_SET_CRC32(mod->custom_pmt);
+        mod->pmt->buffer_size = skip + CRC32_SIZE;
+        PSI_SET_SIZE(mod->pmt);
+        PSI_SET_CRC32(mod->pmt);
     }
     else
     {
         asc_log_error(MSG("ECM is not found"));
-        memcpy(mod->custom_pmt->buffer, psi->buffer, psi->buffer_size);
-        mod->custom_pmt->buffer_size = psi->buffer_size;
+        memcpy(mod->pmt->buffer, psi->buffer, psi->buffer_size);
+        mod->pmt->buffer_size = psi->buffer_size;
     }
 
-    mpegts_psi_demux(mod->custom_pmt
+    mpegts_psi_demux(mod->pmt
                      , (void (*)(void *, const uint8_t *))__module_stream_send
                      , &mod->__stream);
 }
@@ -479,25 +470,35 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
     const uint16_t pid = TS_PID(ts);
 
-    switch(mod->stream[pid])
+    if(pid == 0)
     {
-        case MPEGTS_PACKET_PAT:
-            mpegts_psi_mux(mod->pat, ts, on_pat, mod);
-            break;
-        case MPEGTS_PACKET_CAT:
-            mpegts_psi_mux(mod->cat, ts, on_cat, mod);
-            return;
-        case MPEGTS_PACKET_PMT:
-            mpegts_psi_mux(mod->pmt, ts, on_pmt, mod);
-            return;
-        case MPEGTS_PACKET_ECM:
-        case MPEGTS_PACKET_EMM:
-            if(mod->__decrypt.cas)
-                mpegts_psi_mux(mod->em, ts, on_em, mod);
-        case MPEGTS_PACKET_CA:
-            return;
-        default:
-            break;
+        mpegts_psi_mux(mod->stream[pid], ts, on_pat, mod);
+    }
+    else if(pid == 1)
+    {
+        if(mod->stream[pid])
+            mpegts_psi_mux(mod->stream[pid], ts, on_cat, mod);
+        return;
+    }
+    else if(pid == NULL_TS_PID)
+    {
+        return;
+    }
+    else if(mod->stream[pid])
+    {
+        switch(mod->stream[pid]->type)
+        {
+            case MPEGTS_PACKET_PMT:
+                mpegts_psi_mux(mod->stream[pid], ts, on_pmt, mod);
+                return;
+            case MPEGTS_PACKET_ECM:
+            case MPEGTS_PACKET_EMM:
+                mpegts_psi_mux(mod->stream[pid], ts, on_em, mod);
+            case MPEGTS_PACKET_CA:
+                return;
+            default:
+                break;
+        }
     }
 
     if(!mod->is_keys)
@@ -670,11 +671,8 @@ static void module_init(module_data_t *mod)
     module_option_string("name", &mod->name, NULL);
     asc_assert(mod->name != NULL, "[decrypt] option 'name' is required");
 
-    mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
-    mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
+    mod->stream[0] = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
     mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
-    mod->em = mpegts_psi_init(MPEGTS_PACKET_CA, MAX_PID);
-    mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
 
     mod->ffdecsa = get_key_struct();
     mod->cluster_size = get_suggested_cluster_size();
@@ -757,11 +755,12 @@ static void module_destroy(module_data_t *mod)
     free(mod->cluster);
     free(mod->buffer);
 
-    mpegts_psi_destroy(mod->pat);
-    mpegts_psi_destroy(mod->cat);
+    for(int i = 0; i < MAX_PID; ++i)
+    {
+        if(mod->stream[i])
+            mpegts_psi_destroy(mod->stream[i]);
+    }
     mpegts_psi_destroy(mod->pmt);
-    mpegts_psi_destroy(mod->em);
-    mpegts_psi_destroy(mod->custom_pmt);
 }
 
 MODULE_STREAM_METHODS()
