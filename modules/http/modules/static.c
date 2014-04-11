@@ -20,48 +20,111 @@
 
 #include <astra.h>
 #include <fcntl.h>
+
+#if defined(__linux) || defined(__APPLE__) || defined(__FreeBSD__)
+#   define ASC_SENDFILE (128 * 1024)
+#endif
+
+#ifdef ASC_SENDFILE
+#   include <sys/socket.h>
+#   ifdef __linux
+#       include <sys/sendfile.h>
+#   endif
+#endif
+
 #include "../http.h"
 
 struct module_data_t
 {
     const char *path;
-    int skip;
-    int buffer_size;
+    int path_skip;
+
+    size_t block_size;
 };
 
 struct http_response_t
 {
-    int fd;
+    module_data_t *mod;
 
-    size_t file_skip;
-    size_t file_size;
+    int file_fd;
+    int sock_fd;
+
+    off_t file_skip;
+    off_t file_size;
 };
+
+/*
+ * client->mod - http_server module
+ * client->response->mod - http_static module
+ */
 
 static void on_ready_send_file(void *arg)
 {
     http_client_t *client = arg;
+    ssize_t send_size;
 
-    const ssize_t len = pread(  client->response->fd
-                              , client->buffer, HTTP_BUFFER_SIZE
-                              , client->response->file_skip);
-    if(len <= 0)
+    if(!client->response->mod->block_size)
     {
-        http_client_error(client, "failed to read file [%s]", strerror(errno));
+        const ssize_t len = pread(  client->response->file_fd
+                                  , client->buffer, HTTP_BUFFER_SIZE
+                                  , client->response->file_skip);
+        if(len <= 0)
+            send_size = -1;
+        else
+            send_size = asc_socket_send(client->sock, client->buffer, len);
+    }
+    else
+    {
+#if defined(__linux)
+
+        send_size = sendfile(  client->response->sock_fd
+                             , client->response->file_fd
+                             , NULL, client->response->mod->block_size);
+
+#elif defined(__APPLE__)
+
+        off_t block_size = client->response->mod->block_size;
+        const int r = sendfile(  client->response->file_fd
+                               , client->response->sock_fd
+                               , client->response->file_skip
+                               , &block_size, NULL, 0);
+
+        if(r == 0 || (r == -1 && errno == EAGAIN && block_size > 0))
+            send_size = block_size;
+        else
+            send_size = -1;
+
+#elif defined(__FreeBSD__)
+
+        off_t block_size = 0;
+        const int r = sendfile(  client->response->file_fd
+                               , client->response->sock_fd
+                               , client->response->file_skip
+                               , client->response->mod->block_size, NULL
+                               , &block_size, 0);
+
+        if(r == 0 || (r == -1 && errno == EAGAIN && block_size > 0))
+            send_size = block_size;
+        else
+            send_size = -1;
+
+#else
+
+        send_size = -1;
+
+#endif
+    }
+
+    if(send_size == -1)
+    {
+        http_client_error(client, "failed to send file [%s]", asc_socket_error());
         http_client_close(client);
         return;
     }
 
-    const ssize_t send_size = asc_socket_send(client->sock, client->buffer, len);
-    if(send_size <= 0)
-    {
-        http_client_error(client, "failed to send file to client [%s]", asc_socket_error());
-        http_client_close(client);
-        return;
-    }
     client->response->file_skip += send_size;
-    client->response->file_size -= send_size;
 
-    if(client->response->file_size == 0)
+    if(client->response->file_skip >= client->response->file_size)
         http_client_close(client);
 }
 
@@ -74,7 +137,7 @@ static int module_call(module_data_t *mod)
     {
         if(client->response)
         {
-            close(client->response->fd);
+            close(client->response->file_fd);
             free(client->response);
             client->response = NULL;
         }
@@ -82,15 +145,16 @@ static int module_call(module_data_t *mod)
     }
 
     client->response = calloc(1, sizeof(http_response_t));
+    client->response->mod = mod;
     client->on_send = NULL;
     client->on_read = NULL;
     client->on_ready = on_ready_send_file;
 
     char *filename = malloc(PATH_MAX);
-    sprintf(filename, "%s%s", mod->path, &client->path[mod->skip]);
-    client->response->fd = open(filename, O_RDONLY);
+    sprintf(filename, "%s%s", mod->path, &client->path[mod->path_skip]);
+    client->response->file_fd = open(filename, O_RDONLY);
     free(filename);
-    if(client->response->fd == -1)
+    if(client->response->file_fd == -1)
     {
         http_client_warning(client, "file not found %s", client->path);
 
@@ -101,8 +165,10 @@ static int module_call(module_data_t *mod)
         return 0;
     }
 
+    client->response->sock_fd = asc_socket_fd(client->sock);
+
     struct stat sb;
-    fstat(client->response->fd, &sb);
+    fstat(client->response->file_fd, &sb);
     client->response->file_size = sb.st_size;
 
     http_response_code(client, 200, NULL);
@@ -137,8 +203,14 @@ static void module_init(module_data_t *mod)
 
     lua_getfield(lua, MODULE_OPTIONS_IDX, "skip");
     if(lua_isstring(lua, -1))
-        mod->skip = luaL_len(lua, -1);
+        mod->path_skip = luaL_len(lua, -1);
     lua_pop(lua, 1);
+
+#ifdef ASC_SENDFILE
+    int block_size = 0;
+    module_option_number("block_size", &block_size);
+    mod->block_size = (block_size > 0) ? (block_size * 1024) : ASC_SENDFILE;
+#endif
 
     struct stat s;
     asc_assert(stat(mod->path, &s) != -1, "[http_static] path is not found");
