@@ -116,6 +116,7 @@ static void on_websocket_read(void *arg)
     if(client->response->data_size == 0)
     {
         // TODO: check FIN, OPCODE
+        client->response->frame_key_i = 0;
         client->response->data_size = data[1] & 0x7F;
 
         if(client->response->data_size > 127)
@@ -170,8 +171,6 @@ static void on_websocket_read(void *arg)
     {
         if(client->response->data_size == 0)
         {
-            client->response->frame_key_i = 0;
-
             lua_rawgeti(lua, LUA_REGISTRYINDEX, client->response->mod->idx_callback);
             lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_server);
             lua_pushlightuserdata(lua, client);
@@ -190,8 +189,6 @@ static void on_websocket_read(void *arg)
 
         if(client->response->data_size == 0)
         {
-            client->response->frame_key_i = 0;
-
             lua_rawgeti(lua, LUA_REGISTRYINDEX, client->response->mod->idx_callback);
             lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_server);
             lua_pushlightuserdata(lua, client);
@@ -204,7 +201,6 @@ static void on_websocket_read(void *arg)
 
 static int module_call(module_data_t *mod)
 {
-    __uarg(mod);
     http_client_t *client = lua_touserdata(lua, 3);
 
     if(lua_isnil(lua, 4))
