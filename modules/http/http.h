@@ -11,11 +11,9 @@ typedef struct http_client_t http_client_t;
 
 struct http_client_t
 {
-    MODULE_STREAM_DATA();
+    module_data_t *mod; // http_server module
 
-    module_data_t *mod;
-
-    int idx_server;
+    int idx_server;     // http_server instance (mod->idx_self)
     int idx_data;
 
     asc_socket_t *sock;
@@ -25,9 +23,9 @@ struct http_client_t
     size_t chunk_left;
 
     // request
-    int status; // 1 - empty line is found, 2 - request ready, 3 - release
+    int status;         // 1 - empty line is found, 2 - request ready, 3 - release
     int idx_request;
-    int idx_callback;
+    int idx_callback;   // route callback
 
     const char *method;
     const char *path;

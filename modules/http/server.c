@@ -763,12 +763,15 @@ void http_client_abort(http_client_t *client, int code, const char *text)
             "<p>%s</p>"
             "<hr />"
             "<i>%s</i>"
-        "</body></html>";
+        "</body></html>\r\n";
+
     lua_pushfstring(  lua
                     , template
                     , code, message
                     , message, (text) ? text : "&nbsp;"
                     , mod->server_name);
+
+    const int content_length = luaL_len(lua, -1);
 
     client->response = malloc(sizeof(http_response_t));
     client->response->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
@@ -776,6 +779,8 @@ void http_client_abort(http_client_t *client, int code, const char *text)
 
     http_response_code(client, code, message);
     http_response_header(client, "Content-Type: text/html");
+    http_response_header(client, "Content-Length: %d", content_length);
+    http_response_header(client, "Connection: close");
     http_response_send(client);
 }
 
