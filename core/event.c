@@ -161,7 +161,7 @@ void asc_event_core_loop(void)
         asc_event_t *event = ed->udata;
         const bool is_rd = (ed->data > 0) && (ed->filter == EVFILT_READ);
         const bool is_wr = (ed->data > 0) && (ed->filter == EVFILT_WRITE);
-        const bool is_er = (!is_rd && !is_wr && (ed->flags & ~EV_ADD));
+        const bool is_er = (!is_rd && (ed->flags & ~EV_ADD));
 #else
         asc_event_t *event = ed->data.ptr;
         const bool is_rd = ed->events & EPOLLIN;
@@ -175,17 +175,17 @@ void asc_event_core_loop(void)
             if(event_observer.is_changed)
                 break;
         }
-        if(event->on_write && is_wr)
-        {
-            is_main_loop_idle = false;
-            event->on_write(event->arg);
-            if(event_observer.is_changed)
-                break;
-        }
         if(event->on_error && is_er)
         {
             is_main_loop_idle = false;
             event->on_error(event->arg);
+            if(event_observer.is_changed)
+                break;
+        }
+        if(event->on_write && is_wr)
+        {
+            is_main_loop_idle = false;
+            event->on_write(event->arg);
             if(event_observer.is_changed)
                 break;
         }
@@ -367,17 +367,17 @@ void asc_event_core_loop(void)
             if(event_observer.is_changed)
                 break;
         }
-        if(event->on_write && (revents & POLLOUT))
-        {
-            is_main_loop_idle = false;
-            event->on_write(event->arg);
-            if(event_observer.is_changed)
-                break;
-        }
         if(event->on_error && (revents & (POLLERR | POLLHUP | POLLNVAL)))
         {
             is_main_loop_idle = false;
             event->on_error(event->arg);
+            if(event_observer.is_changed)
+                break;
+        }
+        if(event->on_write && (revents & POLLOUT))
+        {
+            is_main_loop_idle = false;
+            event->on_write(event->arg);
             if(event_observer.is_changed)
                 break;
         }
@@ -533,17 +533,17 @@ void asc_event_core_loop(void)
                 if(event_observer.is_changed)
                     break;
             }
-            if(event->on_write && FD_ISSET(event->fd, &wset))
-            {
-                is_main_loop_idle = false;
-                event->on_write(event->arg);
-                if(event_observer.is_changed)
-                    break;
-            }
             if(event->on_error && FD_ISSET(event->fd, &eset))
             {
                 is_main_loop_idle = false;
                 event->on_error(event->arg);
+                if(event_observer.is_changed)
+                    break;
+            }
+            if(event->on_write && FD_ISSET(event->fd, &wset))
+            {
+                is_main_loop_idle = false;
+                event->on_write(event->arg);
                 if(event_observer.is_changed)
                     break;
             }
