@@ -21,9 +21,15 @@
 #include <astra.h>
 #include "../http.h"
 
+#define DEFAULT_BUFFER_SIZE (512 * 1024)
+#define DEFAULT_BUFFER_FILL (128 * 1024)
+
 struct module_data_t
 {
     int idx_callback;
+
+    size_t buffer_size;
+    size_t buffer_fill;
 };
 
 struct http_response_t
@@ -31,6 +37,11 @@ struct http_response_t
     MODULE_STREAM_DATA();
 
     module_data_t *mod;
+
+    uint8_t *buffer;
+    size_t buffer_count;
+    size_t buffer_read;
+    size_t buffer_write;
 
     bool is_socket_busy;
 };
@@ -43,17 +54,19 @@ struct http_response_t
 static void on_ready_send_ts(void *arg)
 {
     http_client_t *client = arg;
+    http_response_t *response = client->response;
+
+    size_t block_size = (response->buffer_read < response->buffer_write)
+                      ? (response->buffer_write - response->buffer_read)
+                      : (response->mod->buffer_size - response->buffer_read);
+
+    if(block_size > response->buffer_count)
+        block_size = response->buffer_count;
 
     const ssize_t send_size = asc_socket_send(  client->sock
-                                              , client->buffer
-                                              , client->buffer_skip);
-    if(send_size > 0)
-    {
-        client->buffer_skip -= send_size;
-        if(client->buffer_skip > 0)
-            memmove(client->buffer, &client->buffer[send_size], client->buffer_skip);
-    }
-    else if(send_size == -1)
+                                              , &response->buffer[response->buffer_read]
+                                              , block_size);
+    if(send_size == -1)
     {
         http_client_error(client, "failed to send ts (%d bytes) [%s]"
                           , client->buffer_skip, asc_socket_error());
@@ -61,45 +74,57 @@ static void on_ready_send_ts(void *arg)
         return;
     }
 
-    if(client->buffer_skip == 0)
+    response->buffer_count -= block_size;
+    response->buffer_read += block_size;
+    if(response->buffer_read >= response->mod->buffer_size)
+        response->buffer_read = 0;
+
+    if(   response->is_socket_busy == true
+       && response->buffer_count == 0)
     {
-        if(client->response->is_socket_busy)
-        {
-            asc_socket_set_on_ready(client->sock, NULL);
-            client->response->is_socket_busy = false;
-        }
-    }
-    else
-    {
-        if(!client->response->is_socket_busy)
-        {
-            asc_socket_set_on_ready(client->sock, on_ready_send_ts);
-            client->response->is_socket_busy = true;
-        }
+        asc_socket_set_on_ready(client->sock, NULL);
+        client->response->is_socket_busy = false;
     }
 }
 
 static void on_ts(void *arg, const uint8_t *ts)
 {
     http_client_t *client = arg;
+    http_response_t *response = client->response;
 
-    if(client->buffer_skip > HTTP_BUFFER_SIZE - TS_PACKET_SIZE)
+    if(response->buffer_count + TS_PACKET_SIZE >= response->mod->buffer_size)
     {
         // overflow
-        client->buffer_skip = 0;
-        if(client->response->is_socket_busy)
+        response->buffer_count = 0;
+        if(response->is_socket_busy)
         {
             asc_socket_set_on_ready(client->sock, NULL);
-            client->response->is_socket_busy = false;
+            response->is_socket_busy = false;
         }
         return;
     }
 
-    memcpy(&client->buffer[client->buffer_skip], ts, TS_PACKET_SIZE);
-    client->buffer_skip += TS_PACKET_SIZE;
+    const size_t buffer_write = response->buffer_write + TS_PACKET_SIZE;
+    if(buffer_write > response->mod->buffer_size)
+    {
+        const size_t ts_head = response->mod->buffer_size - response->buffer_write;
+        memcpy(&response->buffer[response->buffer_write], ts, ts_head);
+        response->buffer_write = TS_PACKET_SIZE - ts_head;
+        memcpy(response->buffer, &ts[ts_head], response->buffer_write);
+    }
+    else
+    {
+        memcpy(&response->buffer[response->buffer_write], ts, TS_PACKET_SIZE);
+        response->buffer_write += TS_PACKET_SIZE;
+    }
+    response->buffer_count += TS_PACKET_SIZE;
 
-    if(!client->response->is_socket_busy && client->buffer_skip >= HTTP_BUFFER_SIZE / 2)
-        on_ready_send_ts(client);
+    if(   client->response->is_socket_busy == false
+       && response->buffer_count >= response->mod->buffer_fill)
+    {
+        asc_socket_set_on_ready(client->sock, on_ready_send_ts);
+        client->response->is_socket_busy = true;
+    }
 }
 
 static void on_upstream_send(void *arg)
@@ -155,6 +180,8 @@ static int module_call(module_data_t *mod)
     client->response = calloc(1, sizeof(http_response_t));
     client->response->mod = mod;
 
+    client->response->buffer = malloc(mod->buffer_size);
+
     client->on_send = on_upstream_send;
 
     lua_rawgeti(lua, LUA_REGISTRYINDEX, client->response->mod->idx_callback);
@@ -177,6 +204,16 @@ static void module_init(module_data_t *mod)
     lua_getfield(lua, MODULE_OPTIONS_IDX, "callback");
     asc_assert(lua_isfunction(lua, -1), "[http_upstream] option 'callback' is required");
     mod->idx_callback = luaL_ref(lua, LUA_REGISTRYINDEX);
+
+    int value;
+
+    value = 0;
+    module_option_number("buffer_size", &value);
+    mod->buffer_size = (value > 0) ? (value * 1024) : DEFAULT_BUFFER_SIZE;
+
+    value = 0;
+    module_option_number("buffer_fill", &value);
+    mod->buffer_fill = (value > 0) ? (value * 1024) : DEFAULT_BUFFER_FILL;
 
     // Set callback for http route
     lua_getmetatable(lua, 3);
