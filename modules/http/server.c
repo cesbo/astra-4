@@ -334,13 +334,13 @@ static void on_client_read(void *arg)
             return;
         }
 
+        lua_newtable(lua);
+        const int request = lua_gettop(lua);
+
+        lua_pushvalue(lua, -1);
         if(client->idx_request)
             luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_request);
-
-        lua_newtable(lua);
-        lua_pushvalue(lua, -1);
         client->idx_request = luaL_ref(lua, LUA_REGISTRYINDEX);
-        const int request = lua_gettop(lua);
 
         lua_pushstring(lua, asc_socket_addr(client->sock));
         lua_setfield(lua, request, "addr");
@@ -576,13 +576,16 @@ static int method_send(module_data_t *mod)
         const int content_length = luaL_len(lua, -1);
         http_response_header(client, "Content-Length: %d", content_length);
 
-        lua_pushvalue(lua, -1);
+        if(client->idx_content)
+            luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_content);
         client->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
+
         client->on_send = NULL;
         client->on_read = NULL;
         client->on_ready = on_ready_send_content;
     }
-    lua_pop(lua, 1); // content
+    else
+        lua_pop(lua, 1); // content
 
     lua_getfield(lua, idx_response, __headers);
     if(lua_istable(lua, -1))
@@ -771,7 +774,10 @@ void http_client_abort(http_client_t *client, int code, const char *text)
 
     const int content_length = luaL_len(lua, -1);
 
+    if(client->idx_content)
+        luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_content);
     client->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
+
     client->on_read = NULL;
     client->on_ready = on_ready_send_content;
 
