@@ -38,6 +38,8 @@ struct http_client_t
     event_callback_t on_read;
     event_callback_t on_ready;
     http_response_t *response;
+
+    int idx_content;
 };
 
 void http_response_code(http_client_t *client, int code, const char *message);

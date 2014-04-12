@@ -71,11 +71,6 @@ typedef struct
     int idx_callback;
 } route_t;
 
-struct http_response_t
-{
-    int idx_content;
-};
-
 static const char __method[] = "method";
 static const char __version[] = "version";
 static const char __path[] = "path";
@@ -124,10 +119,12 @@ static void on_client_close(void *arg)
     }
 
     if(client->response)
+        asc_log_error(MSG("client instance is not released"));
+
+    if(client->idx_content)
     {
-        luaL_unref(lua, LUA_REGISTRYINDEX, client->response->idx_content);
-        free(client->response);
-        client->response = NULL;
+        luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_content);
+        client->idx_content = 0;
     }
 
     if(client->idx_request)
@@ -511,7 +508,7 @@ static void on_ready_send_content(void *arg)
     http_client_t *client = arg;
     module_data_t *mod = client->mod;
 
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, client->response->idx_content);
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_content);
     const char *content = lua_tostring(lua, -1);
 
     if(client->chunk_left == 0)
@@ -578,8 +575,7 @@ static int method_send(module_data_t *mod)
         http_response_header(client, "Content-Length: %d", content_length);
 
         lua_pushvalue(lua, -1);
-        client->response = malloc(sizeof(http_response_t));
-        client->response->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
+        client->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
         client->on_send = NULL;
         client->on_read = NULL;
         client->on_ready = on_ready_send_content;
@@ -752,12 +748,6 @@ void http_client_abort(http_client_t *client, int code, const char *text)
 {
     module_data_t *mod = client->mod;
 
-    if(client->response)
-    {
-        asc_log_error(MSG(":abort() failed, instance is busy"));
-        return;
-    }
-
     const char *message = http_code(code);
 
     static const char template[] =
@@ -778,8 +768,7 @@ void http_client_abort(http_client_t *client, int code, const char *text)
 
     const int content_length = luaL_len(lua, -1);
 
-    client->response = malloc(sizeof(http_response_t));
-    client->response->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
+    client->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
     client->on_ready = on_ready_send_content;
 
     http_response_code(client, code, message);
