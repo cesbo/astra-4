@@ -40,6 +40,8 @@ struct module_data_t
     int path_skip;
 
     size_t block_size;
+
+    const char *default_mime;
 };
 
 struct http_response_t
@@ -132,9 +134,9 @@ static void on_ready_send_file(void *arg)
         http_client_close(client);
 }
 
-static const char * lua_get_mime(const char *path)
+static const char * lua_get_mime(http_client_t *client, const char *path)
 {
-    const char *mime = "application/octet-stream";
+    const char *mime = client->response->mod->default_mime;
     size_t dot = 0;
     for(size_t i = 0; true; ++i)
     {
@@ -146,21 +148,18 @@ static const char * lua_get_mime(const char *path)
         else if(c == '.')
             dot = i;
     }
-    const char *extension = (dot == 0) ? "*" : &path[dot + 1];
+
+    if(dot == 0)
+        return mime;
+    const char *extension = &path[dot + 1];
+
     lua_getglobal(lua, "mime");
     if(lua_istable(lua, -1))
     {
         lua_getfield(lua, -1, extension);
         if(lua_isstring(lua, -1))
             mime = lua_tostring(lua, -1);
-        else
-        {
-            lua_pop(lua, 1);
-            lua_getfield(lua, -1, "*");
-            if(lua_isstring(lua, -1))
-                mime = lua_tostring(lua, -1);
-        }
-        lua_pop(lua, 1);
+        lua_pop(lua, 1); // extension
     }
     lua_pop(lua, 1); // mime
     return mime;
@@ -228,7 +227,7 @@ static int module_call(module_data_t *mod)
 
     http_response_code(client, 200, NULL);
     http_response_header(client, "Content-Length: %lu", client->response->file_size);
-    http_response_header(client, "Content-Type: %s", lua_get_mime(path));
+    http_response_header(client, "Content-Type: %s", lua_get_mime(client, path));
     http_response_send(client);
 
     return 0;
@@ -265,6 +264,9 @@ static void module_init(module_data_t *mod)
     module_option_number("block_size", &block_size);
     mod->block_size = (block_size > 0) ? (block_size * 1024) : ASC_SENDFILE;
 #endif
+
+    mod->default_mime = "application/octet-stream";
+    module_option_string("default_mime", &mod->default_mime, NULL);
 
     struct stat s;
     asc_assert(stat(mod->path, &s) != -1, "[http_static] path is not found");
