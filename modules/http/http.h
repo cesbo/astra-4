@@ -27,9 +27,7 @@ struct http_client_t
     int idx_request;
     int idx_callback;   // route callback
 
-    const char *method;
-    const char *path;
-
+    bool is_head;
     bool is_content_length;
     string_buffer_t *content;
 

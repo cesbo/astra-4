@@ -53,6 +53,8 @@ struct http_response_t
     off_t file_size;
 };
 
+static const char __path[] = "path";
+
 /*
  * client->mod - http_server module
  * client->response->mod - http_static module
@@ -187,13 +189,18 @@ static int module_call(module_data_t *mod)
     client->on_ready = on_ready_send_file;
     client->response->sock_fd = asc_socket_fd(client->sock);
 
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_request);
+    lua_getfield(lua, -1, __path);
+    const char *path = lua_tostring(lua, -1);
+    lua_pop(lua, 2); // request + path
+
     char *filename = malloc(PATH_MAX);
-    sprintf(filename, "%s%s", mod->path, &client->path[mod->path_skip]);
+    sprintf(filename, "%s%s", mod->path, &path[mod->path_skip]);
     client->response->file_fd = open(filename, O_RDONLY);
     free(filename);
     if(client->response->file_fd == -1)
     {
-        http_client_warning(client, "file not found %s", client->path);
+        http_client_warning(client, "file not found %s", path);
 
         free(client->response);
         client->response = NULL;
@@ -207,7 +214,7 @@ static int module_call(module_data_t *mod)
 
     if(!S_ISREG(sb.st_mode))
     {
-        http_client_warning(client, "wrong file type %s", client->path);
+        http_client_warning(client, "wrong file type %s", path);
 
         close(client->response->file_fd);
         free(client->response);
@@ -221,7 +228,7 @@ static int module_call(module_data_t *mod)
 
     http_response_code(client, 200, NULL);
     http_response_header(client, "Content-Length: %lu", client->response->file_size);
-    http_response_header(client, "Content-Type: %s", lua_get_mime(client->path));
+    http_response_header(client, "Content-Type: %s", lua_get_mime(path));
     http_response_send(client);
 
     return 0;
@@ -235,7 +242,6 @@ static int __module_call(lua_State *L)
 
 static void module_init(module_data_t *mod)
 {
-    static const char __path[] = "path";
     lua_getfield(lua, MODULE_OPTIONS_IDX, __path);
     asc_assert(lua_isstring(lua, -1), "[http_static] option 'path' is required");
     mod->path = lua_tostring(lua, -1);

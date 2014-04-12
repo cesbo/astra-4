@@ -348,15 +348,17 @@ static void on_client_read(void *arg)
         lua_setfield(lua, request, "port");
 
         lua_pushlstring(lua, &client->buffer[m[1].so], m[1].eo - m[1].so);
-        client->method = lua_tostring(lua, -1);
+        const char *method = lua_tostring(lua, -1);
         lua_setfield(lua, request, __method);
+
+        client->is_head = (strcmp(method, "HEAD") == 0);
 
         size_t path_skip = m[2].so;
         while(path_skip < m[2].eo && client->buffer[path_skip] != '?')
             ++path_skip;
 
         lua_pushlstring(lua, &client->buffer[m[2].so], path_skip - m[2].so);
-        client->path = lua_tostring(lua, -1);
+        const char *path = lua_tostring(lua, -1);
         lua_setfield(lua, request, __path);
 
         if(path_skip < m[2].eo)
@@ -429,7 +431,7 @@ static void on_client_read(void *arg)
         asc_list_for(mod->routes)
         {
             route_t *route = asc_list_data(mod->routes);
-            if(routecmp(client->path, route->path))
+            if(routecmp(path, route->path))
             {
                 client->idx_callback = route->idx_callback;
                 break;
@@ -438,7 +440,7 @@ static void on_client_read(void *arg)
 
         if(!client->idx_callback)
         {
-            http_client_warning(client, "route not found %s", client->path);
+            http_client_warning(client, "route not found %s", path);
             http_client_abort(client, 404, NULL);
             return;
         }
@@ -632,7 +634,7 @@ static void on_ready_send_response(void *arg)
     if(client->chunk_left == 0)
     {
         if(   (client->idx_content || client->response)
-           && (strcmp(client->method, "HEAD") != 0))
+           && (client->is_head == false))
         {
             client->buffer_skip = 0;
 
