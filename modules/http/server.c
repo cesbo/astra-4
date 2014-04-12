@@ -631,7 +631,8 @@ static void on_ready_send_response(void *arg)
 
     if(client->chunk_left == 0)
     {
-        if(client->response && strcmp(client->method, "HEAD") != 0)
+        if(   (client->idx_content || client->response)
+           && (strcmp(client->method, "HEAD") != 0))
         {
             client->buffer_skip = 0;
 
@@ -769,6 +770,7 @@ void http_client_abort(http_client_t *client, int code, const char *text)
     const int content_length = luaL_len(lua, -1);
 
     client->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
+    client->on_read = NULL;
     client->on_ready = on_ready_send_content;
 
     http_response_code(client, code, message);
