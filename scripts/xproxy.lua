@@ -1,39 +1,5 @@
 #!/usr/bin/env astra
 
--- log.set({ debug = true })
-
-function split(s,d)
-    local p = 1
-    local t = {}
-    while true do
-        b = s:find(d,p)
-        if not b then table.insert(t, s:sub(p)) return t end
-        table.insert(t, s:sub(p,b - 1))
-        p = b + 1
-    end
-end
-
-server_header = "Server: xproxy"
-
-function send_404(server, client)
-    local content = "<html>" ..
-                    "<center><h1>Not Found</h1></center>" ..
-                    "<hr />" ..
-                    "<small>Astra</small>" ..
-                    "</html>"
-    server:send(client, {
-        code = 404,
-        message = "Not Found",
-        headers = {
-            server_header,
-            "Content-Type: text/html; charset=utf-8",
-            "Content-Length: " .. #content,
-            "Connection: close",
-        },
-        content = content
-    })
-end
-
 client_list = {}
 localaddr = nil -- for -l option
 
@@ -45,7 +11,7 @@ function render_stat_html()
                         "<td>" .. i .. "</td>" ..
                         "<td>" .. client_stat.addr .. "</td>" ..
                         "<td>" .. client_stat.port .. "</td>" ..
-                        "<td>" .. client_stat.url .. "</td>" ..
+                        "<td>" .. client_stat.path .. "</td>" ..
                         "</tr>"
         i = i + 1
     end
@@ -82,69 +48,60 @@ table {
 ]]
 end
 
-function on_http_read(self, client, data)
-    local client_data = self:data(client)
+function on_http_stat(server, client, request)
+    if not request then return nil end
 
-    if type(data) == 'table' then
-        -- connected
-        if data.message then
-            log.error("[xproxy.lua] " .. data.message)
-            self:close(client)
-            return
+    server:send(client, {
+        code = 200,
+        headers = {
+            "Content-Type: text/html; charset=utf-8",
+            "Connection: close",
+        },
+        content = render_stat_html(),
+    })
+end
+
+function on_http_udp(server, client, request)
+    local client_data = server:data(client)
+
+    if not request then -- on_close
+        if client_data.input then
+            client_list[client_data] = nil
+            client_data.input = nil
+            collectgarbage()
         end
-
-        local u = split(data.uri, "/") --> { "", "udp", "239.255.1.1:1234" }
-
-        if u[2] == 'stat' then
-            content = render_stat_html()
-            self:send(client, {
-                code = 200,
-                message = "OK",
-                headers = {
-                    server_header,
-                    "Content-Type: text/html; charset=utf-8",
-                    "Content-Length: " .. #content,
-                    "Connection: close"
-                },
-                content = content
-            })
-            return
-        end
-
-        if #u < 3 or u[2] ~= 'udp' then
-            send_404(self, client)
-            return
-        end
-
-        local o = split(u[3], "?")
-        local a = split(o[1], ":") --> { "239.255.1.1", "1234" }
-        local udp_input_conf = { addr = a[1], port = 1234, socket_size = 0x80000 }
-        if #a == 2 then udp_input_conf.port = tonumber(a[2]) end
-        if localaddr then udp_input_conf.localaddr = localaddr end
-
-        client_list[client_data] = {
-            addr = data['addr'],
-            port = data['port'],
-            url = data.uri:sub(6), -- skip /udp/
-        }
-
-        client_data.input = udp_input(udp_input_conf)
-        self:send(client, {
-            code = 200,
-            message = "OK",
-            headers = {
-                server_header,
-                "Content-Type: application/octet-stream",
-            },
-            upstream = client_data.input:stream()
-        })
-    elseif type(data) == 'nil' then
-        -- close connection
-        client_list[client_data] = nil
-
-        client_data.input = nil
-        collectgarbage()
+        return
     end
+
+    local path = request.path:sub(6) -- skip '/udp/'
+
+    client_list[client_data] = {
+        addr = request['addr'],
+        port = request['port'],
+        path = path,
+    }
+
+    local udp_input_conf = { socket_size = 0x80000 }
+
+    local b = path:find("?")
+    if b then
+        path = path:sub(1, b - 1)
+    end
+
+    local b = path:find(":")
+    if b then
+        udp_input_conf.port = tonumber(path:sub(b + 1))
+        udp_input_conf.addr = path:sub(1, b - 1)
+    else
+        udp_input_conf.port = 1234
+        udp_input_conf.addr = path
+    end
+
+    if localaddr then udp_input_conf.localaddr = localaddr end
+
+    client_data.input = udp_input(udp_input_conf)
+
+    server:send(client, client_data.input:stream())
 end
 
 function usage()
@@ -182,5 +139,11 @@ end
 http_server({
     addr = http_addr,
     port = http_port,
-    callback = on_http_read
+    server_name = "xProxy",
+    route = {
+        { "/stat/", on_http_stat },
+        { "/udp/*", http_upstream({ callback = on_http_udp }) },
+    }
 })
+
+log.info("xProxy started on " .. http_addr .. ":" .. http_port)
