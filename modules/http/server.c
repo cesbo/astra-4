@@ -345,6 +345,11 @@ static void on_client_read(void *arg)
         client->idx_request = luaL_ref(lua, LUA_REGISTRYINDEX);
         const int request = lua_gettop(lua);
 
+        lua_pushstring(lua, asc_socket_addr(client->sock));
+        lua_setfield(lua, request, "addr");
+        lua_pushnumber(lua, asc_socket_port(client->sock));
+        lua_setfield(lua, request, "port");
+
         lua_pushlstring(lua, &client->buffer[m[1].so], m[1].eo - m[1].so);
         client->method = lua_tostring(lua, -1);
         lua_setfield(lua, request, __method);
