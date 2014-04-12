@@ -83,7 +83,7 @@ static void on_ready_send_ts(void *arg)
        && response->buffer_count == 0)
     {
         asc_socket_set_on_ready(client->sock, NULL);
-        client->response->is_socket_busy = false;
+        response->is_socket_busy = false;
     }
 }
 
@@ -119,11 +119,11 @@ static void on_ts(void *arg, const uint8_t *ts)
     }
     response->buffer_count += TS_PACKET_SIZE;
 
-    if(   client->response->is_socket_busy == false
+    if(   response->is_socket_busy == false
        && response->buffer_count >= response->mod->buffer_fill)
     {
         asc_socket_set_on_ready(client->sock, on_ready_send_ts);
-        client->response->is_socket_busy = true;
+        response->is_socket_busy = true;
     }
 }
 

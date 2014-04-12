@@ -61,13 +61,15 @@ struct http_response_t
 static void on_ready_send_file(void *arg)
 {
     http_client_t *client = arg;
+    http_response_t *response = client->response;
+
     ssize_t send_size;
 
-    if(!client->response->mod->block_size)
+    if(!response->mod->block_size)
     {
-        const ssize_t len = pread(  client->response->file_fd
+        const ssize_t len = pread(  response->file_fd
                                   , client->buffer, HTTP_BUFFER_SIZE
-                                  , client->response->file_skip);
+                                  , response->file_skip);
         if(len <= 0)
             send_size = -1;
         else
@@ -77,16 +79,16 @@ static void on_ready_send_file(void *arg)
     {
 #if defined(__linux)
 
-        send_size = sendfile(  client->response->sock_fd
-                             , client->response->file_fd
-                             , NULL, client->response->mod->block_size);
+        send_size = sendfile(  response->sock_fd
+                             , response->file_fd
+                             , NULL, response->mod->block_size);
 
 #elif defined(__APPLE__)
 
-        off_t block_size = client->response->mod->block_size;
-        const int r = sendfile(  client->response->file_fd
-                               , client->response->sock_fd
-                               , client->response->file_skip
+        off_t block_size = response->mod->block_size;
+        const int r = sendfile(  response->file_fd
+                               , response->sock_fd
+                               , response->file_skip
                                , &block_size, NULL, 0);
 
         if(r == 0 || (r == -1 && errno == EAGAIN && block_size > 0))
@@ -97,10 +99,10 @@ static void on_ready_send_file(void *arg)
 #elif defined(__FreeBSD__)
 
         off_t block_size = 0;
-        const int r = sendfile(  client->response->file_fd
-                               , client->response->sock_fd
-                               , client->response->file_skip
-                               , client->response->mod->block_size, NULL
+        const int r = sendfile(  response->file_fd
+                               , response->sock_fd
+                               , response->file_skip
+                               , response->mod->block_size, NULL
                                , &block_size, 0);
 
         if(r == 0 || (r == -1 && errno == EAGAIN && block_size > 0))
@@ -122,9 +124,9 @@ static void on_ready_send_file(void *arg)
         return;
     }
 
-    client->response->file_skip += send_size;
+    response->file_skip += send_size;
 
-    if(client->response->file_skip >= client->response->file_size)
+    if(response->file_skip >= response->file_size)
         http_client_close(client);
 }
 

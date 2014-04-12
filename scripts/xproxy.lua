@@ -21,7 +21,7 @@ function render_stat_html()
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <title>XProxy: stat</title>
+    <title>xProxy: stat</title>
     <style type="text/css">
 table {
     width: 600px;

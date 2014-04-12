@@ -102,6 +102,7 @@ static void on_websocket_send(void *arg)
 static void on_websocket_read(void *arg)
 {
     http_client_t *client = arg;
+    http_response_t *response = client->response;
 
     ssize_t size = asc_socket_recv(client->sock, client->buffer, HTTP_BUFFER_SIZE);
     if(size <= 0)
@@ -113,43 +114,43 @@ static void on_websocket_read(void *arg)
     size_t skip = 0;
     uint8_t *data = (uint8_t *)client->buffer;
 
-    if(client->response->data_size == 0)
+    if(response->data_size == 0)
     {
         // TODO: check FIN, OPCODE
-        client->response->frame_key_i = 0;
-        client->response->data_size = data[1] & 0x7F;
+        response->frame_key_i = 0;
+        response->data_size = data[1] & 0x7F;
 
-        if(client->response->data_size > 127)
+        if(response->data_size > 127)
         {
             http_client_warning(client, "wrong websocket frame format");
-            client->response->data_size = 0;
+            response->data_size = 0;
         }
-        else if(client->response->data_size < 126)
+        else if(response->data_size < 126)
         {
             skip = FRAME_HEADER_SIZE + FRAME_SIZE8_SIZE;
         }
-        else if(client->response->data_size == 126)
+        else if(response->data_size == 126)
         {
-            client->response->data_size = (data[2] << 8) | data[3];
+            response->data_size = (data[2] << 8) | data[3];
 
             skip = FRAME_HEADER_SIZE + FRAME_SIZE16_SIZE;
         }
-        else if(client->response->data_size == 127)
+        else if(response->data_size == 127)
         {
-            client->response->data_size = (  ((uint64_t)data[2] << 56)
-                                           | ((uint64_t)data[3] << 48)
-                                           | ((uint64_t)data[4] << 40)
-                                           | ((uint64_t)data[5] << 32)
-                                           | ((uint64_t)data[6] << 24)
-                                           | ((uint64_t)data[7] << 16)
-                                           | ((uint64_t)data[8] << 8 )
-                                           | ((uint64_t)data[9]      ));
+            response->data_size = (  ((uint64_t)data[2] << 56)
+                                   | ((uint64_t)data[3] << 48)
+                                   | ((uint64_t)data[4] << 40)
+                                   | ((uint64_t)data[5] << 32)
+                                   | ((uint64_t)data[6] << 24)
+                                   | ((uint64_t)data[7] << 16)
+                                   | ((uint64_t)data[8] << 8 )
+                                   | ((uint64_t)data[9]      ));
 
             skip = FRAME_HEADER_SIZE + FRAME_SIZE64_SIZE;
         }
 
-        client->response->frame_key_i = 0;
-        memcpy(client->response->frame_key, &data[skip], FRAME_KEY_SIZE);
+        response->frame_key_i = 0;
+        memcpy(response->frame_key, &data[skip], FRAME_KEY_SIZE);
 
         skip += FRAME_KEY_SIZE;
     }
@@ -161,17 +162,17 @@ static void on_websocket_read(void *arg)
     // TODO: SSE
     while(skip < data_size)
     {
-        data[skip] ^= client->response->frame_key[client->response->frame_key_i];
+        data[skip] ^= response->frame_key[response->frame_key_i];
         ++skip;
-        client->response->frame_key_i = (client->response->frame_key_i + 1) % 4;
+        response->frame_key_i = (response->frame_key_i + 1) % 4;
     }
-    client->response->data_size -= skip;
+    response->data_size -= skip;
 
     if(!client->content)
     {
-        if(client->response->data_size == 0)
+        if(response->data_size == 0)
         {
-            lua_rawgeti(lua, LUA_REGISTRYINDEX, client->response->mod->idx_callback);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, response->mod->idx_callback);
             lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_server);
             lua_pushlightuserdata(lua, client);
             lua_pushlstring(lua, (const char *)data, skip);
@@ -187,9 +188,9 @@ static void on_websocket_read(void *arg)
     {
         string_buffer_addlstring(client->content, (const char *)data, skip);
 
-        if(client->response->data_size == 0)
+        if(response->data_size == 0)
         {
-            lua_rawgeti(lua, LUA_REGISTRYINDEX, client->response->mod->idx_callback);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, response->mod->idx_callback);
             lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_server);
             lua_pushlightuserdata(lua, client);
             string_buffer_push(lua, client->content);
