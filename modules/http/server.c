@@ -936,6 +936,16 @@ static int method_close(module_data_t *mod)
     return 0;
 }
 
+static int method_redirect(module_data_t *mod)
+{
+    asc_assert(lua_islightuserdata(lua, 2), MSG(":redirect() client instance required"));
+    asc_assert(lua_isstring(lua, 3), MSG(":redirect() location required"));
+    http_client_t *client = lua_touserdata(lua, 2);
+    const char *location = lua_tostring(lua, 3);
+    http_client_redirect(client, location);
+    return 0;
+}
+
 static int method_abort(module_data_t *mod)
 {
     asc_assert(lua_islightuserdata(lua, 2), MSG(":abort() client instance required"));
@@ -1042,6 +1052,7 @@ MODULE_LUA_METHODS()
     { "send", method_send },
     { "close", method_close },
     { "data", method_data },
+    { "redirect", method_redirect },
     { "abort", method_abort }
 };
 
