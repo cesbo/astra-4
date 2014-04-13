@@ -136,10 +136,13 @@ function on_http_udp(server, client, request)
         end
     end
 
+    local client_addr = request.headers['x-real-ip']
+    if not client_addr then client_addr = request.addr end
+
     local client_id = make_client_id()
     client_list[client_id] = {
         client = client,
-        addr = request.addr,
+        addr = client_addr,
         port = request.port,
         path = fpath,
         st   = os.time(),
@@ -240,11 +243,14 @@ function on_http_http(server, client, request)
 
     local path = request.path:sub(7) -- skip '/http/'
 
+    local client_addr = request.headers['x-real-ip']
+    if not client_addr then client_addr = request.addr end
+
     local client_id = make_client_id()
     client_list[client_id] = {
         client = client,
-        addr = request['addr'],
-        port = request['port'],
+        addr = client_addr,
+        port = request.port,
         path = path,
         st   = os.time(),
     }
