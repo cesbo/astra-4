@@ -171,6 +171,7 @@ static int module_call(module_data_t *mod)
 
             module_stream_destroy(client->response);
 
+            free(client->response->buffer);
             free(client->response);
             client->response = NULL;
         }
