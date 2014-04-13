@@ -3,7 +3,7 @@
 client_list = {}
 localaddr = nil -- for -l option
 
-udp_input_list = {}
+instance_list = {}
 
 st = os.time()
 
@@ -88,11 +88,11 @@ function on_http_udp(server, client, request)
 
     if not request then -- on_close
         if client_data.client_id then
-            local udp_instance = udp_input_list[client_data.input_id]
+            local udp_instance = instance_list[client_data.input_id]
             udp_instance.clients = udp_instance.clients - 1
             if udp_instance.clients == 0 then
                 udp_instance.instance = nil
-                udp_input_list[udp_instance_id] = nil
+                instance_list[client_data.input_id] = nil
             end
             client_list[client_data.client_id] = nil
             collectgarbage()
@@ -149,16 +149,16 @@ function on_http_udp(server, client, request)
 
     if localaddr then udp_input_conf.localaddr = localaddr end
 
-    local udp_instance_id = udp_input_conf.addr .. ":" .. udp_input_conf.port
-    local udp_instance = udp_input_list[udp_instance_id]
+    local instance_id = udp_input_conf.addr .. ":" .. udp_input_conf.port
+    local udp_instance = instance_list[instance_id]
     if not udp_instance then
         udp_instance = {}
-        udp_instance.clients = 1
+        udp_instance.clients = 0
         udp_instance.instance = udp_input(udp_input_conf)
-        udp_input_list[udp_instance_id] = udp_instance
+        instance_list[instance_id] = udp_instance
     end
 
-    client_data.input_id = udp_instance_id
+    client_data.input_id = instance_id
 
     udp_instance.clients = udp_instance.clients + 1
     server:send(client, udp_instance.instance:stream())
