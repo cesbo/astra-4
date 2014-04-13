@@ -1127,12 +1127,4 @@ end
 
 function main()
     log.info("Starting Astra " .. astra.version)
-
-    if #argv > 0 then
-        if argv[1] == '-' then
-            dofile()
-        elseif utils.stat(argv[1]).type == 'file' then
-            dofile(argv[1])
-        end
-    end
 end

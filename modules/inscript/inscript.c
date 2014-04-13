@@ -36,6 +36,22 @@ static int fn_inscript_callback(lua_State *L)
     luaL_checktype(lua, -1, LUA_TFUNCTION);
     lua_call(lua, 0, 0);
 
+    const char *script = NULL;
+    lua_getglobal(lua, "argv");
+    const int argc = luaL_len(lua, -1);
+    if(argc >= 1)
+    {
+        lua_rawgeti(lua, -1, 1);
+        script = lua_tostring(lua, -1);
+        lua_pop(lua, 1);
+
+        if(script[0] == '-' && script[1] == 0)
+            luaL_dofile(lua, NULL);
+        else if(!access(script, R_OK))
+            luaL_dofile(lua, script);
+    }
+    lua_pop(lua, 1); // argv
+
     return 0;
 }
 
