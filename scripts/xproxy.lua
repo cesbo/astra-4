@@ -5,6 +5,12 @@ localaddr = nil -- for -l option
 
 instance_list = {}
 
+--  oooooooo8 ooooooooooo   o   ooooooooooo
+-- 888        88  888  88  888  88  888  88
+--  888oooooo     888     8  88     888
+--         888    888    8oooo88    888
+-- o88oooo888    o888o o88o  o888o o888o
+
 st = os.time()
 
 function render_stat_html()
@@ -82,6 +88,12 @@ function on_http_stat(server, client, request)
         content = render_stat_html(),
     })
 end
+
+-- ooooo  oooo ooooooooo  oooooooooo
+--  888    88   888    88o 888    888
+--  888    88   888    888 888oooo88
+--  888    88   888    888 888
+--   888oo88   o888ooo88  o888o
 
 function on_http_udp(server, client, request)
     local client_data = server:data(client)
@@ -161,8 +173,148 @@ function on_http_udp(server, client, request)
     client_data.input_id = instance_id
 
     udp_instance.clients = udp_instance.clients + 1
+
     server:send(client, udp_instance.instance:stream())
 end
+
+-- ooooo ooooo ooooooooooo ooooooooooo oooooooooo
+--  888   888  88  888  88 88  888  88  888    888
+--  888ooo888      888         888      888oooo88
+--  888   888      888         888      888
+-- o888o o888o    o888o       o888o    o888o
+
+function on_http_http_callback(self, response)
+    local instance_id = self.__options.host .. ":" .. self.__options.port .. self.__options.path
+    local http_instance = instance_list[instance_id]
+
+    if not response then
+        if http_instance.timeout then
+            http_instance.timeout:close()
+            http_instance.timeout = nil
+        end
+
+        http_instance.instance = http_request(self.__options)
+        http_instance.timeout = timer(http_instance.timer_conf)
+
+    elseif response.code == 200 then
+        if http_instance.timeout then
+            http_instance.timeout:close()
+            http_instance.timeout = nil
+        end
+
+        for _,v in pairs(http_instance.client_list) do
+            local server = v[1]
+            local client = v[2]
+            local client_data = server:data(client)
+            client_data.transmit:set_upstream(http_instance.instance:stream())
+        end
+
+    else
+        log.error("[xProxy] " .. "HTTP Error " .. response.code .. ":" .. response.message)
+
+    end
+end
+
+function on_http_http(server, client, request)
+    local client_data = server:data(client)
+
+    if not request then -- on_close
+        if client_data.client_id then
+            local http_instance = instance_list[client_data.input_id]
+            http_instance.client_list[client_data.client_id] = nil
+            http_instance.clients = http_instance.clients - 1
+            if http_instance.clients == 0 then
+                http_instance.instance:close()
+                http_instance.instance = nil
+                instance_list[client_data.input_id] = nil
+            end
+            client_list[client_data.client_id] = nil
+            collectgarbage()
+        end
+        return
+    end
+
+    local client_id
+    repeat
+        client_id = math.random(10000000, 99000000)
+    until not client_list[client_id]
+    client_data.client_id = client_id
+
+    local path = request.path:sub(7) -- skip '/http/'
+
+    client_list[client_id] = {
+        client = client,
+        addr = request['addr'],
+        port = request['port'],
+        path = path,
+        st   = os.time(),
+    }
+
+    local http_input_conf = {}
+
+    local b = path:find("/")
+    if b then
+        http_input_conf.path = path:sub(b)
+        path = path:sub(1, b - 1)
+    else
+        http_input_conf.path = "/"
+    end
+
+    local b = path:find(":")
+    if b then
+        http_input_conf.port = tonumber(path:sub(b + 1))
+        http_input_conf.host = path:sub(1, b - 1)
+    else
+        http_input_conf.port = 80
+        http_input_conf.host = path
+    end
+
+    local instance_id = http_input_conf.host .. ":" .. http_input_conf.port .. http_input_conf.path
+    local http_instance = instance_list[instance_id]
+    if not http_instance then
+        http_input_conf.headers =
+        {
+            "User-Agent: xProxy",
+            "Host: " .. http_input_conf.host .. ":" .. http_input_conf.port,
+            "Connection: close",
+        }
+        http_input_conf.stream = true
+        http_input_conf.callback = on_http_http_callback
+
+        http_instance = {}
+
+        http_instance.timer_conf = {
+            interval = 5,
+            callback = function(self)
+                    http_instance.instance:close()
+                    http_instance.instance = http_request(http_input_conf)
+                    collectgarbage()
+                end
+        }
+
+        http_instance.clients = 0
+        http_instance.client_list = {}
+
+        http_instance.instance = http_request(http_input_conf)
+        http_instance.timeout = timer(http_instance.timer_conf)
+
+        instance_list[instance_id] = http_instance
+    end
+
+    client_data.transmit = transmit()
+    client_data.input_id = instance_id
+
+    http_instance.clients = http_instance.clients + 1
+    http_instance.client_list[client_id] = { server, client }
+
+    server:send(client, client_data.transmit:stream())
+end
+
+-- oooo     oooo      o      ooooo oooo   oooo
+--  8888o   888      888      888   8888o  88
+--  88 888o8 88     8  88     888   88 888o88
+--  88  888  88    8oooo88    888   88   8888
+-- o88o  8  o88o o88o  o888o o888o o88o    88
 
 function usage()
     print("Usage: astra xproxy.lua [OPTIONS]\n" ..
@@ -204,6 +356,7 @@ http_server({
         { "/stat/", on_http_stat },
         { "/stat", http_redirect({ location = "/stat/" }) },
         { "/udp/*", http_upstream({ callback = on_http_udp }) },
+        { "/http/*", http_upstream({ callback = on_http_http }) },
     }
 })
 
