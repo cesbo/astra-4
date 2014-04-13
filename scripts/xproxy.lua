@@ -3,6 +3,8 @@
 client_list = {}
 localaddr = nil -- for -l option
 
+udp_input_list = {}
+
 st = os.time()
 
 function render_stat_html()
@@ -86,7 +88,12 @@ function on_http_udp(server, client, request)
 
     if not request then -- on_close
         if client_data.client_id then
-            client_data.input = nil
+            local udp_instance = udp_input_list[client_data.input_id]
+            udp_instance.clients = udp_instance.clients - 1
+            if udp_instance.clients == 0 then
+                udp_instance.instance = nil
+                udp_input_list[udp_instance_id] = nil
+            end
             client_list[client_data.client_id] = nil
             collectgarbage()
         end
@@ -97,6 +104,7 @@ function on_http_udp(server, client, request)
     repeat
         client_id = math.random(10000000, 99000000)
     until not client_list[client_id]
+    client_data.client_id = client_id
 
     local path = request.path:sub(6) -- skip '/udp/'
 
@@ -141,10 +149,19 @@ function on_http_udp(server, client, request)
 
     if localaddr then udp_input_conf.localaddr = localaddr end
 
-    client_data.client_id = client_id
-    client_data.input = udp_input(udp_input_conf)
+    local udp_instance_id = udp_input_conf.addr .. ":" .. udp_input_conf.port
+    local udp_instance = udp_input_list[udp_instance_id]
+    if not udp_instance then
+        udp_instance = {}
+        udp_instance.clients = 1
+        udp_instance.instance = udp_input(udp_input_conf)
+        udp_input_list[udp_instance_id] = udp_instance
+    end
 
-    server:send(client, client_data.input:stream())
+    client_data.input_id = udp_instance_id
+
+    udp_instance.clients = udp_instance.clients + 1
+    server:send(client, udp_instance.instance:stream())
 end
 
 function usage()
