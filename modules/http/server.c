@@ -80,6 +80,9 @@ static const char __content[] = "content";
 static const char __code[] = "code";
 static const char __message[] = "message";
 
+static const char __content_length[] = "Content-Length: ";
+static const char __connection_close[] = "Connection: close";
+
 /*
  *   oooooooo8 ooooo       ooooo ooooooooooo oooo   oooo ooooooooooo
  * o888     88  888         888   888    88   8888o  88  88  888  88
@@ -574,7 +577,7 @@ static int method_send(module_data_t *mod)
     if(lua_isstring(lua, -1))
     {
         const int content_length = luaL_len(lua, -1);
-        http_response_header(client, "Content-Length: %d", content_length);
+        http_response_header(client, "%s%d", __content_length, content_length);
 
         if(client->idx_content)
             luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_content);
@@ -783,8 +786,27 @@ void http_client_abort(http_client_t *client, int code, const char *text)
 
     http_response_code(client, code, message);
     http_response_header(client, "Content-Type: text/html");
-    http_response_header(client, "Content-Length: %d", content_length);
-    http_response_header(client, "Connection: close");
+    http_response_header(client, "%s%d", __content_length, content_length);
+    http_response_header(client, __connection_close);
+    http_response_send(client);
+}
+
+void http_client_redirect(http_client_t *client, const char *location)
+{
+    if(client->idx_content)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_content);
+        client->idx_content = 0;
+    }
+
+    client->on_read = NULL;
+    client->on_ready = NULL;
+
+    client->is_head = true; // hack to close connection after response
+
+    http_response_code(client, 302, NULL);
+    http_response_header(client, "Location: %s", location);
+    http_response_header(client, __connection_close);
     http_response_send(client);
 }
 
