@@ -5,6 +5,14 @@ localaddr = nil -- for -l option
 
 instance_list = {}
 
+function make_client_id()
+    local client_id
+    repeat
+        client_id = math.random(10000000, 99000000)
+    until not client_list[client_id]
+    return client_id
+end
+
 --  oooooooo8 ooooooooooo   o   ooooooooooo
 -- 888        88  888  88  888  88  888  88
 --  888oooooo     888     8  88     888
@@ -112,12 +120,6 @@ function on_http_udp(server, client, request)
         return
     end
 
-    local client_id
-    repeat
-        client_id = math.random(10000000, 99000000)
-    until not client_list[client_id]
-    client_data.client_id = client_id
-
     local path = request.path:sub(6) -- skip '/udp/'
 
     -- full path
@@ -134,10 +136,11 @@ function on_http_udp(server, client, request)
         end
     end
 
+    local client_id = make_client_id()
     client_list[client_id] = {
         client = client,
-        addr = request['addr'],
-        port = request['port'],
+        addr = request.addr,
+        port = request.port,
         path = fpath,
         st   = os.time(),
     }
@@ -170,6 +173,7 @@ function on_http_udp(server, client, request)
         instance_list[instance_id] = udp_instance
     end
 
+    client_data.client_id = client_id
     client_data.input_id = instance_id
 
     udp_instance.clients = udp_instance.clients + 1
@@ -234,14 +238,9 @@ function on_http_http(server, client, request)
         return
     end
 
-    local client_id
-    repeat
-        client_id = math.random(10000000, 99000000)
-    until not client_list[client_id]
-    client_data.client_id = client_id
-
     local path = request.path:sub(7) -- skip '/http/'
 
+    local client_id = make_client_id()
     client_list[client_id] = {
         client = client,
         addr = request['addr'],
@@ -302,12 +301,58 @@ function on_http_http(server, client, request)
     end
 
     client_data.transmit = transmit()
+    client_data.client_id = client_id
     client_data.input_id = instance_id
 
     http_instance.clients = http_instance.clients + 1
     http_instance.client_list[client_id] = { server, client }
 
     server:send(client, client_data.transmit:stream())
+end
+
+--  oo    oo
+--   88oo88
+-- o88888888o
+--   oo88oo
+--  o88  88o
+
+function on_http_channels(server, client, request)
+    local client_data = server:data(client)
+
+    if not request then -- on_close
+        return
+    end
+
+    if not channels then
+        server:abort(client, 404)
+        return
+    end
+
+    local path = request.path:sub(2) -- skip '/'
+    local channel = channels[path]
+
+    if not channel then
+        server:abort(client, 404)
+        return
+    end
+
+    local b = channel:find("://")
+    if not b then
+        server:abort(client, 500)
+        return
+    end
+
+    local proto = channel:sub(1, b - 1)
+    local url = channel:sub(b + 3)
+
+    request.path = "/" .. proto .. "/" .. url
+    if proto == "udp" then
+        server.__options.route[3][2](server, client, request)
+    elseif proto == "http" then
+        server.__options.route[4][2](server, client, request)
+    else
+        server:abort(client, 404)
+    end
 end
 
 -- oooo     oooo      o      ooooo oooo   oooo
@@ -336,6 +381,7 @@ options = {
     ["-a"] = function(i) http_addr = argv[i + 1] return i + 2 end,
     ["-p"] = function(i) http_port = tonumber(argv[i + 1]) return i + 2 end,
     ["-l"] = function(i) localaddr = argv[i + 1] return i + 2 end,
+    ["--channels"] = function(i) dofile(argv[i + 1]) return i + 2 end,
     ["--debug"] = function (i) log.set({ debug = true }) return i + 1 end,
 }
 
@@ -357,6 +403,7 @@ http_server({
         { "/stat", http_redirect({ location = "/stat/" }) },
         { "/udp/*", http_upstream({ callback = on_http_udp }) },
         { "/http/*", http_upstream({ callback = on_http_http }) },
+        { "/*", http_upstream({ callback = on_http_channels }) },
     }
 })
 
