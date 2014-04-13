@@ -3,16 +3,23 @@
 client_list = {}
 localaddr = nil -- for -l option
 
+st = os.time()
+
 function render_stat_html()
     local table_content = ""
     local i = 1
-    for _, client_stat in pairs(client_list) do
+    local ct = os.time()
+    for client_id, client_stat in pairs(client_list) do
+        local dt = ct - client_stat.st
+        local uptime = string.format("%02d:%02d", (dt / 3600), (dt / 60) % 60)
         table_content = table_content .. "<tr>" ..
                         "<td>" .. i .. "</td>" ..
                         "<td>" .. client_stat.addr .. "</td>" ..
                         "<td>" .. client_stat.port .. "</td>" ..
                         "<td>" .. client_stat.path .. "</td>" ..
-                        "</tr>"
+                        "<td>" .. uptime .. "</td>" ..
+                        "<td><a href=\"/stat/?close=" .. client_id .. "\">Disconnect</a></td>" ..
+                        "</tr>\r\n"
         i = i + 1
     end
 
@@ -36,7 +43,9 @@ table {
                 <th>#</th>
                 <th>IP</th>
                 <th>Port</th>
-                <th>Addr</th>
+                <th>Path</th>
+                <th>Uptime</th>
+                <th></th>
             </tr>
         </thead>
         <tbody>
@@ -50,6 +59,17 @@ end
 
 function on_http_stat(server, client, request)
     if not request then return nil end
+
+    if request.query then
+        if request.query.close then
+            local client_id = tonumber(request.query.close)
+            if client_list[client_id] then
+                server:close(client_list[client_id].client)
+            end
+            server:redirect(client, "/stat/")
+            return
+        end
+    end
 
     server:send(client, {
         code = 200,
@@ -65,25 +85,47 @@ function on_http_udp(server, client, request)
     local client_data = server:data(client)
 
     if not request then -- on_close
-        if client_data.input then
-            client_list[client_data] = nil
+        if client_data.client_id then
             client_data.input = nil
+            client_list[client_data.client_id] = nil
             collectgarbage()
         end
         return
     end
 
+    local client_id
+    repeat
+        client_id = math.random(10000000, 99000000)
+    until not client_list[client_id]
+
     local path = request.path:sub(6) -- skip '/udp/'
 
-    client_list[client_data] = {
+    -- full path
+    local fpath = path
+    if request.query then
+        local i = 0
+        for k,v in pairs(request.query) do
+            if i == 0 then
+                fpath = fpath .. "?" .. k .. "=" .. v
+            else
+                fpath = fpath .. "&" .. k .. "=" .. v
+            end
+            i = i + 1
+        end
+    end
+
+    client_list[client_id] = {
+        client = client,
         addr = request['addr'],
         port = request['port'],
-        path = path,
+        path = fpath,
+        st   = os.time(),
     }
 
     local udp_input_conf = { socket_size = 0x80000 }
 
-    local b = path:find("?")
+    -- trim trailing slash
+    local b = path:find("/")
     if b then
         path = path:sub(1, b - 1)
     end
@@ -99,6 +141,7 @@ function on_http_udp(server, client, request)
 
     if localaddr then udp_input_conf.localaddr = localaddr end
 
+    client_data.client_id = client_id
     client_data.input = udp_input(udp_input_conf)
 
     server:send(client, client_data.input:stream())
@@ -142,6 +185,7 @@ http_server({
     server_name = "xProxy",
     route = {
         { "/stat/", on_http_stat },
+        { "/stat", http_redirect({ location = "/stat/" }) },
         { "/udp/*", http_upstream({ callback = on_http_udp }) },
     }
 })
