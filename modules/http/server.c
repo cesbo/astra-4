@@ -791,8 +791,11 @@ void http_client_abort(http_client_t *client, int code, const char *text)
     http_response_send(client);
 }
 
-void http_client_redirect(http_client_t *client, const char *location)
+void http_client_redirect(http_client_t *client, int code, const char *location)
 {
+    if(!code)
+        code = 302;
+
     if(client->idx_content)
     {
         luaL_unref(lua, LUA_REGISTRYINDEX, client->idx_content);
@@ -804,7 +807,7 @@ void http_client_redirect(http_client_t *client, const char *location)
 
     client->is_head = true; // hack to close connection after response
 
-    http_response_code(client, 302, NULL);
+    http_response_code(client, code, NULL);
     http_response_header(client, "Location: %s", location);
     http_response_header(client, __connection_close);
     http_response_send(client);
@@ -942,7 +945,7 @@ static int method_redirect(module_data_t *mod)
     asc_assert(lua_isstring(lua, 3), MSG(":redirect() location required"));
     http_client_t *client = lua_touserdata(lua, 2);
     const char *location = lua_tostring(lua, 3);
-    http_client_redirect(client, location);
+    http_client_redirect(client, 302, location);
     return 0;
 }
 
