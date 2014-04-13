@@ -226,7 +226,11 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    __uarg(mod);
+    if(mod->idx_callback)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+        mod->idx_callback = 0;
+    }
 }
 
 MODULE_LUA_METHODS()
