@@ -144,7 +144,7 @@ function on_http_udp(server, client, request)
         client = client,
         addr = client_addr,
         port = request.port,
-        path = "udp/" .. fpath,
+        path = "udp://" .. fpath,
         st   = os.time(),
     }
 
@@ -251,7 +251,7 @@ function on_http_http(server, client, request)
         client = client,
         addr = client_addr,
         port = request.port,
-        path = "http/" .. path,
+        path = "http://" .. path,
         st   = os.time(),
     }
 
