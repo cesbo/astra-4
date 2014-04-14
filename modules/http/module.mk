@@ -1,4 +1,4 @@
-SOURCES="parser.c server.c request.c \
+SOURCES="parser.c utils.c server.c request.c \
 modules/redirect.c \
 modules/static.c \
 modules/websocket.c \

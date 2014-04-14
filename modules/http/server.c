@@ -44,9 +44,7 @@
  *                  - return table, client data
  */
 
-#include <astra.h>
 #include "http.h"
-#include "parser.h"
 
 #define MSG(_msg) "[http_server %s:%d] " _msg, mod->addr, mod->port
 
@@ -150,88 +148,6 @@ static void on_client_close(void *arg)
 
     asc_list_remove_item(mod->clients, client);
     free(client);
-}
-
-static void lua_string_to_lower(const char *str, size_t size)
-{
-    if(size == 0)
-    {
-        lua_pushstring(lua, "");
-        return;
-    }
-
-    size_t skip = 0;
-    string_buffer_t *buffer = string_buffer_alloc();
-    while(skip < size)
-    {
-        const char c = str[skip];
-        if(c >= 'A' && c <= 'Z')
-            string_buffer_addchar(buffer, c + ('a' - 'A'));
-        else
-            string_buffer_addchar(buffer, c);
-
-        skip += 1;
-    }
-    string_buffer_push(lua, buffer);
-}
-
-static void lua_url_decode(const char *str, size_t size)
-{
-    if(size == 0)
-    {
-        lua_pushstring(lua, "");
-        return;
-    }
-
-    size_t skip = 0;
-    string_buffer_t *buffer = string_buffer_alloc();
-    while(skip < size)
-    {
-        const char c = str[skip];
-        if(c == '%')
-        {
-            char c = ' ';
-            str_to_hex(&str[skip + 1] , (uint8_t *)&c, 1);
-            string_buffer_addchar(buffer, c);
-            skip += 3;
-        }
-        else if(c == '+')
-        {
-            string_buffer_addchar(buffer, ' ');
-            skip += 1;
-        }
-        else
-        {
-            string_buffer_addchar(buffer, c);
-            skip += 1;
-        }
-    }
-    string_buffer_push(lua, buffer);
-}
-
-static bool lua_parse_query(const char *str, size_t size)
-{
-    size_t skip = 0;
-    parse_match_t m[3];
-
-    lua_newtable(lua);
-    while(skip < size && http_parse_query(&str[skip], m))
-    {
-        if(m[1].eo > m[1].so)
-        {
-            lua_url_decode(&str[skip + m[1].so], m[1].eo - m[1].so); // key
-            lua_url_decode(&str[skip + m[2].so], m[2].eo - m[2].so); // value
-
-            lua_settable(lua, -3);
-        }
-
-        skip += m[0].eo;
-
-        if(skip < size)
-            ++skip; // skip &
-    }
-
-    return (skip == size);
 }
 
 static bool routecmp(const char *path, const char *route)
@@ -422,6 +338,8 @@ static void on_client_read(void *arg)
         lua_getfield(lua, headers, "content-length");
         if(lua_isnumber(lua, -1))
         {
+            if(client->content)
+                string_buffer_free(client->content);
             client->content = string_buffer_alloc();
             client->is_content_length = true;
             client->chunk_left = lua_tonumber(lua, -1);
@@ -456,7 +374,10 @@ static void on_client_read(void *arg)
         }
 
         if(skip >= client->buffer_skip)
+        {
+            client->buffer_skip = 0;
             return;
+        }
     }
 
 /*
@@ -471,18 +392,18 @@ static void on_client_read(void *arg)
     // Content-Length: *
     if(client->is_content_length)
     {
-        const size_t tail = size - skip;
+        const size_t tail = client->buffer_skip - skip;
 
         if(client->chunk_left > tail)
         {
-            string_buffer_addlstring(client->content
+            string_buffer_addlstring(  client->content
                                      , &client->buffer[skip]
-                                     , tail);
+                                     , client->buffer_skip);
             client->chunk_left -= tail;
         }
         else
         {
-            string_buffer_addlstring(client->content
+            string_buffer_addlstring(  client->content
                                      , &client->buffer[skip]
                                      , client->chunk_left);
             client->chunk_left = 0;
@@ -496,6 +417,9 @@ static void on_client_read(void *arg)
             client->status = 3;
             callback(client);
         }
+
+        client->buffer_skip = 0;
+        return;
     }
 }
 
@@ -529,10 +453,9 @@ static void on_ready_send_content(void *arg)
     const ssize_t send_size = asc_socket_send(  client->sock
                                               , (void *)&content[client->buffer_skip]
                                               , content_send);
-    if(send_size <= 0)
+    if(send_size == -1)
     {
-        asc_log_error(MSG("failed to send content to client:%d [%s]")
-                      , asc_socket_fd(client->sock), asc_socket_error());
+        asc_log_error(MSG("failed to send content [%s]"), asc_socket_error());
         on_client_close(client);
         return;
     }
@@ -627,10 +550,9 @@ static void on_ready_send_response(void *arg)
     const ssize_t send_size = asc_socket_send(  client->sock
                                               , &client->buffer[client->buffer_skip]
                                               , content_send);
-    if(send_size <= 0)
+    if(send_size == -1)
     {
-        asc_log_error(MSG("failed to send response to client:%d [%s]")
-                      , asc_socket_fd(client->sock), asc_socket_error());
+        asc_log_error(MSG("failed to send response [%s]"), asc_socket_error());
         on_client_close(client);
         return;
     }

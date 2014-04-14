@@ -18,8 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdio.h>
-#include "parser.h"
+#include "http.h"
 
 /* RFC: 2616 (HTTP/1.1), 3986 (URI) */
 
