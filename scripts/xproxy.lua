@@ -1,4 +1,4 @@
-#!/usr/bin/env astra
+#!/usr/bin/astra
 
 client_list = {}
 localaddr = nil -- for -l option

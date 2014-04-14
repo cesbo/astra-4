@@ -478,8 +478,8 @@ LD          = $APP_C
 LDFLAGS     = $APP_LDFLAGS
 STRIP       = $APP_STRIP
 VERSION     = $VERSION
-V_APP       = /usr/bin/\$(APP)-\$(VERSION)
-V_SCRIPTS   = /etc/astra/scripts-\$(VERSION)
+APATH       = /usr/bin/\$(APP)
+SPATH       = /etc/astra/scripts
 
 \$(APP): $APP_OBJS \$(CORE_OBJS) \$(MODS_OBJS)
 	@echo "BUILD: \$@"
@@ -487,35 +487,35 @@ V_SCRIPTS   = /etc/astra/scripts-\$(VERSION)
 	@\$(STRIP) \$@
 
 install: \$(APP)
-	@echo "INSTALL: \$(V_APP)"
-	@rm -f \$(V_APP)
-	@cp \$(APP) \$(V_APP)
-	@mkdir -p \$(V_SCRIPTS)
+	@echo "INSTALL: \$(APATH)"
+	@rm -f \$(APATH)
+	@cp \$(APP) \$(APATH)
+	@mkdir -p \$(SPATH)
 EOF
 
 for S in $APP_SCRIPTS ; do
     SCRIPT_NAME=`basename $S`
     cat >&5 <<EOF
-	@echo "INSTALL: \$(V_SCRIPTS)/$SCRIPT_NAME"
-	@cp $S \$(V_SCRIPTS)/$SCRIPT_NAME
+	@echo "INSTALL: \$(SPATH)/$SCRIPT_NAME"
+	@cp $S \$(SPATH)/$SCRIPT_NAME
 EOF
 done
 
 cat >&5 <<EOF
-	@echo "INSTALL: \$(V_SCRIPTS)/analyze.lua"
-	@sed '1 s/\$\$/-\$(VERSION)/g' $SRCDIR/scripts/analyze.lua >\$(V_SCRIPTS)/analyze.lua
-	@chmod +x \$(V_SCRIPTS)/analyze.lua
-	@echo "INSTALL: \$(V_SCRIPTS)/dvbls.lua"
-	@sed '1 s/\$\$/-\$(VERSION)/g' $SRCDIR/scripts/dvbls.lua >\$(V_SCRIPTS)/dvbls.lua
-	@chmod +x \$(V_SCRIPTS)/dvbls.lua
-	@echo "INSTALL: \$(V_SCRIPTS)/xproxy.lua"
-	@sed '1 s/\$\$/-\$(VERSION)/g' $SRCDIR/scripts/xproxy.lua >\$(V_SCRIPTS)/xproxy.lua
-	@chmod +x \$(V_SCRIPTS)/xproxy.lua
+	@echo "INSTALL: \$(SPATH)/analyze.lua"
+	@cp $SRCDIR/scripts/analyze.lua \$(SPATH)/analyze.lua
+	@chmod +x \$(SPATH)/analyze.lua
+	@echo "INSTALL: \$(SPATH)/dvbls.lua"
+	@cp $SRCDIR/scripts/dvbls.lua \$(SPATH)/dvbls.lua
+	@chmod +x \$(SPATH)/dvbls.lua
+	@echo "INSTALL: \$(SPATH)/xproxy.lua"
+	@cp $SRCDIR/scripts/xproxy.lua \$(SPATH)/xproxy.lua
+	@chmod +x \$(SPATH)/xproxy.lua
 
-link:
-	@rm -f /usr/bin/astra
-	@ln -nfsv \$(V_APP) /usr/bin/astra
-	@ln -nfsv \$(V_SCRIPTS)/analyze.lua /usr/bin/astra-analyze
+uninstall:
+	@echo "UNINSTALL: \$(APP)"
+	@rm -f \$(APATH)
+	@rm -rf \$(SPATH)
 
 \$(APP)-clean:
 	@echo "CLEAN: \$(APP)"

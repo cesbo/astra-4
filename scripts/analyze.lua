@@ -1,4 +1,4 @@
-#!/usr/bin/env astra
+#!/usr/bin/astra
 
 -- Astra MPEG-TS Analyzer
 -- http://cesbo.com/astra

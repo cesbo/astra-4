@@ -1,4 +1,4 @@
-#!/usr/bin/env astra
+#!/usr/bin/astra
 
 local dvb_list = dvbls()
 
