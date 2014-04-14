@@ -132,7 +132,7 @@ static void on_upstream_read(void *arg)
     http_client_t *client = arg;
 
     ssize_t size = asc_socket_recv(client->sock, client->buffer, HTTP_BUFFER_SIZE);
-    if(size == -1)
+    if(size <= 0)
         http_client_close(client);
 }
 

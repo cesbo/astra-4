@@ -45,10 +45,10 @@ extern bool is_main_loop_idle;
 #   define EV_TYPE_EPOLL
 #   include <sys/epoll.h>
 #   define EV_OTYPE struct epoll_event
-#   if !defined(EPOLLRDHUP) && !defined(WITHOUT_EPOLLRDHUP)
-#       define EV_FLAGS (EPOLLERR | EPOLLHUP)
-#   else
+#   ifdef EPOLLRDHUP
 #       define EV_FLAGS (EPOLLERR | EPOLLRDHUP)
+#   else
+#       define EV_FLAGS (EPOLLERR | EPOLLHUP)
 #   endif
 #   define MSG(_msg) "[core/event epoll] " _msg
 #endif
@@ -166,7 +166,7 @@ void asc_event_core_loop(void)
         asc_event_t *event = ed->data.ptr;
         const bool is_rd = ed->events & EPOLLIN;
         const bool is_wr = ed->events & EPOLLOUT;
-        const bool is_er = ed->events & EPOLLERR;
+        const bool is_er = ed->events & EV_FLAGS;
 #endif
         if(event->on_read && is_rd)
         {
