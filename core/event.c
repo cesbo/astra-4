@@ -46,9 +46,9 @@ extern bool is_main_loop_idle;
 #   include <sys/epoll.h>
 #   define EV_OTYPE struct epoll_event
 #   ifdef EPOLLRDHUP
-#       define EV_FLAGS (EPOLLERR | EPOLLRDHUP)
+#       define EPOLLCLOSE (EPOLLERR | EPOLLRDHUP)
 #   else
-#       define EV_FLAGS (EPOLLERR | EPOLLHUP)
+#       define EPOLLCLOSE (EPOLLERR | EPOLLHUP)
 #   endif
 #   define MSG(_msg) "[core/event epoll] " _msg
 #endif
@@ -166,7 +166,7 @@ void asc_event_core_loop(void)
         asc_event_t *event = ed->data.ptr;
         const bool is_rd = ed->events & EPOLLIN;
         const bool is_wr = ed->events & EPOLLOUT;
-        const bool is_er = ed->events & EV_FLAGS;
+        const bool is_er = ed->events & EPOLLCLOSE;
 #endif
         if(event->on_read && is_rd)
         {
@@ -232,7 +232,7 @@ static void asc_event_subscribe(asc_event_t *event)
 #else /* EV_TYPE_EPOLL */
 
     ed.data.ptr = event;
-    ed.events = EV_FLAGS;
+    ed.events = EPOLLCLOSE;
     if(event->on_read)
         ed.events |= EPOLLIN;
     if(event->on_write)
@@ -252,7 +252,7 @@ asc_event_t * asc_event_init(int fd, void *arg)
 #if defined(EV_TYPE_EPOLL)
     EV_OTYPE ed;
     ed.data.ptr = event;
-    ed.events = EV_FLAGS;
+    ed.events = EPOLLCLOSE;
     const int ret = epoll_ctl(event_observer.fd, EPOLL_CTL_ADD, event->fd, &ed);
     asc_assert(ret != -1, MSG("failed to attach fd=%d [%s]"), event->fd, strerror(errno));
 #endif
