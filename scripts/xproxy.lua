@@ -1,5 +1,23 @@
 #!/usr/bin/astra
 
+-- xProxy
+-- https://cesbo.com/solutions/xproxy/
+--
+-- Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+--
+-- This program is free software: you can redistribute it and/or modify
+-- it under the terms of the GNU General Public License as published by
+-- the Free Software Foundation, either version 3 of the License, or
+-- (at your option) any later version.
+--
+-- This program is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-- GNU General Public License for more details.
+--
+-- You should have received a copy of the GNU General Public License
+-- along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 client_list = {}
 localaddr = nil -- for -l option
 
@@ -373,6 +391,7 @@ function usage()
           "    -a ADDR             local addres to listen\n" ..
           "    -p PORT             local port to listen\n" ..
           "    -l ADDR             source interface address\n" ..
+          "    --channels FILE     file with the channel names\n" ..
           "    --debug             print debug messages"
           )
     astra.exit()
@@ -382,13 +401,13 @@ http_addr = "0.0.0.0"
 http_port = 8000
 
 options = {
-    ["-h"] = function(i) usage() return i + 1 end,
-    ["--help"] = function(i) usage() return i + 1 end,
-    ["-a"] = function(i) http_addr = argv[i + 1] return i + 2 end,
-    ["-p"] = function(i) http_port = tonumber(argv[i + 1]) return i + 2 end,
-    ["-l"] = function(i) localaddr = argv[i + 1] return i + 2 end,
-    ["--channels"] = function(i) dofile(argv[i + 1]) return i + 2 end,
-    ["--debug"] = function (i) log.set({ debug = true }) return i + 1 end,
+    ["-h"] = function() usage() return 1 end,
+    ["--help"] = function() usage() return 1 end,
+    ["-a"] = function(i) http_addr = argv[i + 1] return 2 end,
+    ["-p"] = function(i) http_port = tonumber(argv[i + 1]) return 2 end,
+    ["-l"] = function(i) localaddr = argv[i + 1] return 2 end,
+    ["--channels"] = function(i) dofile(argv[i + 1]) return 2 end,
+    ["--debug"] = function () log.set({ debug = true }) return 1 end,
 }
 
 i = 2
@@ -397,7 +416,7 @@ while i <= #argv do
         print("unknown option: " .. argv[i])
         usage()
     end
-    i = options[argv[i]](i)
+    i = i + options[argv[i]](i)
 end
 
 http_server({
