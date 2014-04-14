@@ -51,7 +51,7 @@ struct http_response_t
  * client->response->mod - http_upstream module
  */
 
-static void on_ready_send_ts(void *arg)
+static void on_upstream_ready(void *arg)
 {
     http_client_t *client = arg;
     http_response_t *response = client->response;
@@ -69,7 +69,7 @@ static void on_ready_send_ts(void *arg)
     if(send_size == -1)
     {
         http_client_error(client, "failed to send ts (%d bytes) [%s]"
-                          , client->buffer_skip, asc_socket_error());
+                          , block_size, asc_socket_error());
         http_client_close(client);
         return;
     }
@@ -122,9 +122,18 @@ static void on_ts(void *arg, const uint8_t *ts)
     if(   response->is_socket_busy == false
        && response->buffer_count >= response->mod->buffer_fill)
     {
-        asc_socket_set_on_ready(client->sock, on_ready_send_ts);
+        asc_socket_set_on_ready(client->sock, on_upstream_ready);
         response->is_socket_busy = true;
     }
+}
+
+static void on_upstream_read(void *arg)
+{
+    http_client_t *client = arg;
+
+    ssize_t size = asc_socket_recv(client->sock, client->buffer, HTTP_BUFFER_SIZE);
+    if(size == -1)
+        http_client_close(client);
 }
 
 static void on_upstream_send(void *arg)
@@ -144,7 +153,7 @@ static void on_upstream_send(void *arg)
     __module_stream_init(&client->response->__stream);
     __module_stream_attach(upstream, &client->response->__stream);
 
-    client->on_read = NULL;
+    client->on_read = on_upstream_read;
     client->on_ready = NULL;
 
     http_response_code(client, 200, NULL);
