@@ -23,11 +23,22 @@ localaddr = nil -- for -l option
 
 instance_list = {}
 
-function make_client_id()
+function make_client_id(server, client, request, path)
     local client_id
     repeat
         client_id = math.random(10000000, 99000000)
     until not client_list[client_id]
+
+    local client_addr = request.headers['x-real-ip']
+    if not client_addr then client_addr = request.addr end
+
+    client_list[client_id] = {
+        client = client,
+        addr = client_addr,
+        path = path,
+        st   = os.time(),
+    }
+
     return client_id
 end
 
@@ -49,7 +60,6 @@ function render_stat_html()
         table_content = table_content .. "<tr>" ..
                         "<td>" .. i .. "</td>" ..
                         "<td>" .. client_stat.addr .. "</td>" ..
-                        "<td>" .. client_stat.port .. "</td>" ..
                         "<td>" .. client_stat.path .. "</td>" ..
                         "<td>" .. uptime .. "</td>" ..
                         "<td><a href=\"/stat/?close=" .. client_id .. "\">Disconnect</a></td>" ..
@@ -76,8 +86,7 @@ table {
             <tr>
                 <th>#</th>
                 <th>IP</th>
-                <th>Port</th>
-                <th>Path</th>
+                <th>Request</th>
                 <th>Uptime</th>
                 <th></th>
             </tr>
@@ -154,17 +163,7 @@ function on_http_udp(server, client, request)
         end
     end
 
-    local client_addr = request.headers['x-real-ip']
-    if not client_addr then client_addr = request.addr end
-
-    local client_id = make_client_id()
-    client_list[client_id] = {
-        client = client,
-        addr = client_addr,
-        port = request.port,
-        path = "udp://" .. fpath,
-        st   = os.time(),
-    }
+    local client_id = make_client_id(server, client, request, "udp://" .. fpath)
 
     local udp_input_conf = { socket_size = 0x80000 }
 
@@ -273,17 +272,7 @@ function on_http_http(server, client, request)
 
     local path = request.path:sub(7) -- skip '/http/'
 
-    local client_addr = request.headers['x-real-ip']
-    if not client_addr then client_addr = request.addr end
-
-    local client_id = make_client_id()
-    client_list[client_id] = {
-        client = client,
-        addr = client_addr,
-        port = request.port,
-        path = "http://" .. path,
-        st   = os.time(),
-    }
+    local client_id = make_client_id(server, client, request, "http://" .. path)
 
     local http_input_conf = {}
 
