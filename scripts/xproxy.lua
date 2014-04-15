@@ -177,6 +177,10 @@ function on_http_udp(server, client, request)
     local b = path:find(":")
     if b then
         udp_input_conf.port = tonumber(path:sub(b + 1))
+        if not udp_input_conf.port then
+            server:abort(client, 400)
+            return
+        end
         udp_input_conf.addr = path:sub(1, b - 1)
     else
         udp_input_conf.port = 1234
@@ -286,6 +290,10 @@ function on_http_http(server, client, request)
     local b = path:find(":")
     if b then
         http_input_conf.port = tonumber(path:sub(b + 1))
+        if not http_input_conf.port then
+            server:abort(client, 400)
+            return
+        end
         http_input_conf.host = path:sub(1, b - 1)
     else
         http_input_conf.port = 80
