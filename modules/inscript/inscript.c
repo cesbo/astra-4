@@ -67,74 +67,8 @@ LUA_API int luaopen_inscript(lua_State *L)
 
 #else
 
-#include <stdio.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
+#include <astra.h>
 #include <fcntl.h>
-#include <unistd.h>
-
-#define MAX_BUFFER_SIZE 4096
-
-typedef struct string_buffer_t string_buffer_t;
-
-struct string_buffer_t
-{
-    char buffer[MAX_BUFFER_SIZE];
-    int size;
-
-    string_buffer_t *last;
-    string_buffer_t *next;
-};
-
-static void string_buffer_addchar(string_buffer_t *buffer, char c)
-{
-    string_buffer_t *last = buffer->last;
-    if(last->size + 1 > MAX_BUFFER_SIZE)
-    {
-        last->next = malloc(sizeof(string_buffer_t));
-        last = last->next;
-        last->size = 0;
-        last->last = NULL;
-        last->next = NULL;
-        buffer->last = last;
-    }
-
-    last->buffer[last->size] = c;
-    ++last->size;
-}
-
-#if 0
-static void string_buffer_addlstring(string_buffer_t *buffer, const char *str, int size)
-{
-    string_buffer_t *last = buffer->last;
-
-    if(last->size + size > MAX_BUFFER_SIZE)
-    {
-        const int cap = MAX_BUFFER_SIZE - last->size;
-        if(cap > 0)
-        {
-            memcpy(&last->buffer[last->size], str, cap);
-            last->size += cap;
-        }
-
-        last->next = malloc(sizeof(string_buffer_t));
-        last = last->next;
-        last->size = 0;
-        last->last = NULL;
-        last->next = NULL;
-        buffer->last = last;
-        string_buffer_addlstring(buffer, &str[cap], size - cap);
-        return;
-    }
-    else
-    {
-        memcpy(&last->buffer[last->size], str, size);
-        last->size += size;
-    }
-}
-#endif
 
 static const char * skip_sp(const char *source)
 {
@@ -268,10 +202,7 @@ static const char * parse_string(const char *source, string_buffer_t *buffer)
 
 static string_buffer_t * parse(const char *source)
 {
-    string_buffer_t *buffer = malloc(sizeof(string_buffer_t));
-    buffer->size = 0;
-    buffer->last = buffer;
-    buffer->next = NULL;
+    string_buffer_t *buffer = string_buffer_alloc();
 
     bool is_new_line = true;
 
@@ -342,29 +273,13 @@ int main(int argc, char const *argv[])
 
     // first clean
     buffer = parse(script);
-    skip = 0;
-    for(string_buffer_t *next = buffer
-        ; next && (next_next = next->next, 1)
-        ; next = next_next)
-    {
-        memcpy(&script[skip], next->buffer, next->size);
-        skip += next->size;
-        free(next);
-    }
-    script[skip] = 0;
+    free(script);
+    script = string_buffer_release(buffer, &skip);
 
     // second clean
     buffer = parse(script);
-    skip = 0;
-    for(string_buffer_t *next = buffer
-        ; next && (next_next = next->next, 1)
-        ; next = next_next)
-    {
-        memcpy(&script[skip], next->buffer, next->size);
-        skip += next->size;
-        free(next);
-    }
-    script[skip] = 0;
+    free(script);
+    script = string_buffer_release(buffer, &skip);
 
     printf("static unsigned char %s[] = {\n", argv[1]);
     const size_t tail = skip % 8;
