@@ -174,6 +174,16 @@ function on_http_udp(server, client, request)
         path = path:sub(1, b - 1)
     end
 
+    local b = path:find("@")
+    if b then
+        udp_input_conf.localaddr = path:sub(1, b - 1)
+        path = path:sub(b + 1)
+    else
+        if localaddr then
+            udp_input_conf.localaddr = localaddr
+        end
+    end
+
     local b = path:find(":")
     if b then
         udp_input_conf.port = tonumber(path:sub(b + 1))
@@ -186,8 +196,6 @@ function on_http_udp(server, client, request)
         udp_input_conf.port = 1234
         udp_input_conf.addr = path
     end
-
-    if localaddr then udp_input_conf.localaddr = localaddr end
 
     local instance_id = udp_input_conf.addr .. ":" .. udp_input_conf.port
     local udp_instance = instance_list[instance_id]
