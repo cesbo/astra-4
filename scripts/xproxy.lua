@@ -86,7 +86,7 @@ table {
             <tr>
                 <th>#</th>
                 <th>IP</th>
-                <th>Request</th>
+                <th>Source</th>
                 <th>Uptime</th>
                 <th></th>
             </tr>
