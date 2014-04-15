@@ -439,12 +439,12 @@ static void on_ready_send_content(void *arg)
 
     lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_content);
     const char *content = lua_tostring(lua, -1);
-
     if(client->chunk_left == 0)
     {
         client->buffer_skip = 0;
         client->chunk_left = luaL_len(lua, -1);
     }
+    lua_pop(lua, 1); // content
 
     const size_t content_send = (client->chunk_left > HTTP_BUFFER_SIZE)
                               ? HTTP_BUFFER_SIZE
