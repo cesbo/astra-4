@@ -45,10 +45,14 @@ static int fn_inscript_callback(lua_State *L)
         script = lua_tostring(lua, -1);
         lua_pop(lua, 1);
 
+        int start = 0;
         if(script[0] == '-' && script[1] == 0)
-            luaL_dofile(lua, NULL);
+            start = luaL_dofile(lua, NULL);
         else if(!access(script, R_OK))
-            luaL_dofile(lua, script);
+            start = luaL_dofile(lua, script);
+
+        if(start != 0)
+            luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
     }
     lua_pop(lua, 1); // argv
 
