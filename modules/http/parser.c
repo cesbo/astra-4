@@ -74,6 +74,7 @@
 
 bool http_parse_response(const char *str, parse_match_t *match)
 {
+    char c;
     size_t skip = 0;
     match[0].so = 0;
 
@@ -81,7 +82,7 @@ bool http_parse_response(const char *str, parse_match_t *match)
     match[1].so = skip;
     while(1)
     {
-        const char c = str[skip];
+        c = str[skip];
         if(IS_UPPER_ALPHA(c))
             ++skip;
         else if(c == '/')
@@ -94,7 +95,7 @@ bool http_parse_response(const char *str, parse_match_t *match)
     }
     while(1)
     {
-        const char c = str[skip];
+        c = str[skip];
         if(IS_DIGIT(c) || (c == '.'))
             ++skip;
         else if(c == ' ')
@@ -111,7 +112,7 @@ bool http_parse_response(const char *str, parse_match_t *match)
     match[2].so = skip;
     while(1)
     {
-        const char c = str[skip];
+        c = str[skip];
         if(IS_DIGIT(c))
             ++skip;
         else if(c == ' ')
@@ -131,9 +132,15 @@ bool http_parse_response(const char *str, parse_match_t *match)
     match[3].so = skip;
     while(1)
     {
-        const char c = str[skip];
+        c = str[skip];
         if((c >= 0x20 && c < 0x7F) || (c == '\t'))
             ++skip;
+        else if(c == '\n')
+        {
+            match[3].eo = skip;
+            skip += 1;
+            break;
+        }
         else if(c == '\r' && str[skip + 1] == '\n')
         {
             match[3].eo = skip;
@@ -159,6 +166,7 @@ bool http_parse_response(const char *str, parse_match_t *match)
 
 bool http_parse_request(const char *str, parse_match_t *match)
 {
+    char c;
     size_t skip = 0;
     match[0].so = 0;
 
@@ -166,12 +174,10 @@ bool http_parse_request(const char *str, parse_match_t *match)
     match[1].so = 0;
     while(1)
     {
-        const char c = str[skip];
+        c = str[skip];
 
         if(IS_TOKEN(c))
-        {
-            skip += 1;
-        }
+            ++skip;
         else if(c == ' ')
         {
             match[1].eo = skip;
@@ -190,7 +196,7 @@ bool http_parse_request(const char *str, parse_match_t *match)
     match[2].so = skip;
     while(1)
     {
-        const char c = str[skip];
+        c = str[skip];
 
         if(c == ' ')
         {
@@ -227,7 +233,7 @@ bool http_parse_request(const char *str, parse_match_t *match)
     match[3].so = skip;
     while(1)
     {
-        const char c = str[skip];
+        c = str[skip];
         if(IS_UPPER_ALPHA(c))
             ++skip;
         else if(c == '/')
@@ -240,9 +246,15 @@ bool http_parse_request(const char *str, parse_match_t *match)
     }
     while(1)
     {
-        const char c = str[skip];
+        c = str[skip];
         if(IS_DIGIT(c) || (c == '.'))
             ++skip;
+        else if(c == '\n')
+        {
+            match[3].eo = skip;
+            skip += 1;
+            break;
+        }
         else if(c == '\r' && str[skip + 1] == '\n')
         {
             match[3].eo = skip;
@@ -268,6 +280,7 @@ bool http_parse_request(const char *str, parse_match_t *match)
 
 bool http_parse_header(const char *str, parse_match_t *match)
 {
+    char c;
     size_t skip = 0;
     match[0].so = 0;
 
@@ -286,12 +299,10 @@ bool http_parse_header(const char *str, parse_match_t *match)
     match[1].so = 0;
     while(1)
     {
-        const char c = str[skip];
+        c = str[skip];
 
         if(IS_TOKEN(c))
-        {
             skip += 1;
-        }
         else if(c == ':')
         {
             match[1].eo = skip;
@@ -307,7 +318,18 @@ bool http_parse_header(const char *str, parse_match_t *match)
 
     ++skip; // skip ':'
 
-    if(str[skip] == '\r' && str[skip + 1] == '\n')
+    c = str[skip];
+
+    if(c == ' ')
+        ++skip; // skip ' '
+    else if(c == '\n')
+    {
+        match[2].so = skip;
+        match[2].eo = skip;
+        match[0].eo = skip + 1;
+        return true;
+    }
+    else if(c == '\r' && str[skip + 1] == '\n')
     {
         match[2].so = skip;
         match[2].eo = skip;
@@ -315,18 +337,20 @@ bool http_parse_header(const char *str, parse_match_t *match)
         return true;
     }
 
-    if(str[skip] != ' ')
-        return false;
-    ++skip; // skip ' '
-
     // parse value
     match[2].so = skip;
     while(1)
     {
-        const char c = str[skip];
+        c = str[skip];
 
         if(c >= 0x20 && c < 0x7F)
             ++skip;
+        else if(c == '\n')
+        {
+            match[2].eo = skip;
+            skip += 1;
+            break;
+        }
         else if(c == '\r' && str[skip + 1] == '\n')
         {
             match[2].eo = skip;
@@ -352,6 +376,7 @@ bool http_parse_header(const char *str, parse_match_t *match)
 
 bool http_parse_chunk(const char *str, parse_match_t *match)
 {
+    char c;
     size_t skip = 0;
     match[0].so = 0;
 
@@ -359,7 +384,7 @@ bool http_parse_chunk(const char *str, parse_match_t *match)
     match[1].so = 0;
     while(1)
     {
-        const char c = str[skip];
+        c = str[skip];
         if(IS_HEXDIGIT(c))
             ++skip;
         else
@@ -386,9 +411,14 @@ bool http_parse_chunk(const char *str, parse_match_t *match)
     ++skip; // skip ';'
     while(1)
     {
-        const char c = str[skip];
+        c = str[skip];
         if(IS_TOKEN(c))
             ++skip;
+        else if(c == '\n')
+        {
+            match[0].eo = skip + 1;
+            return true;
+        }
         else if(c == '\r' && str[skip + 1] == '\n')
         {
             match[0].eo = skip + 2;
@@ -412,6 +442,7 @@ bool http_parse_chunk(const char *str, parse_match_t *match)
 
 bool http_parse_query(const char *str, parse_match_t *match)
 {
+    char c;
     size_t skip = 0;
     match[0].so = 0;
 
@@ -419,7 +450,7 @@ bool http_parse_query(const char *str, parse_match_t *match)
     match[1].so = 0;
     while(1)
     {
-        const char c = str[skip];
+        c = str[skip];
 
         if(IS_UNRESERVED(c) || c == '+')
         {
@@ -466,7 +497,7 @@ bool http_parse_query(const char *str, parse_match_t *match)
     match[2].so = skip;
     while(1)
     {
-        const char c = str[skip];
+        c = str[skip];
 
         if(IS_UNRESERVED(c) || c == '+' || c == '=')
         {
