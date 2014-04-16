@@ -101,10 +101,11 @@ void string_buffer_addlstring(string_buffer_t *buffer, const char *str, size_t s
     while(1)
     {
         const size_t cap = MAX_BUFFER_SIZE - last->size;
-        if(cap >= size - skip)
+        const size_t rem = size - skip;
+        if(cap >= rem)
         {
-            memcpy(&last->buffer[last->size], &str[skip], size);
-            last->size += size;
+            memcpy(&last->buffer[last->size], &str[skip], rem);
+            last->size += rem;
             return;
         }
         else
@@ -232,6 +233,7 @@ void strung_buffer_addvastring(string_buffer_t *buffer, const char *str, va_list
 
                 radix = 10;
                 is_sign = true;
+                hexadd = 0;
 
                 goto __string_buffer_addfstring_write_number;
             }
@@ -241,6 +243,7 @@ void strung_buffer_addvastring(string_buffer_t *buffer, const char *str, va_list
 
                 radix = 10;
                 is_sign = false;
+                hexadd = 0;
 
                 goto __string_buffer_addfstring_write_number;
             }
