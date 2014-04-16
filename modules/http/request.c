@@ -52,21 +52,33 @@ struct module_data_t
 
     int idx_self;
 
-    bool is_connection_close;
-    bool is_connection_keep_alive;
-
     asc_socket_t *sock;
     asc_timer_t *timeout;
-    bool is_connected;
 
     char buffer[HTTP_BUFFER_SIZE];
     size_t buffer_skip;
     size_t chunk_left;
 
-    int status;         // 1 - empty line is found, 2 - request ready, 3 - release
-    int idx_response;
+    // request
+    struct
+    {
+        int status; // 1 - connected, 2 - request done
 
+        const char *buffer;
+        size_t skip;
+        size_t size;
+
+        int idx_body;
+    } request;
+
+    bool is_connection_close;
+    bool is_connection_keep_alive;
+
+    // response
+    int idx_response;
     int status_code;
+
+    int status;         // 1 - empty line is found, 2 - request ready, 3 - release
 
     int idx_content;
     bool is_head;
@@ -74,6 +86,7 @@ struct module_data_t
     bool is_content_length;
     string_buffer_t *content;
 
+    // stream
     bool is_stream_error;
     bool is_thread_started;
     asc_thread_t *thread;
@@ -140,7 +153,7 @@ void timeout_callback(void *arg)
     asc_timer_destroy(mod->timeout);
     mod->timeout = NULL;
 
-    if(!mod->is_connected)
+    if(mod->request.status == 0)
         call_error(mod, "connection timeout");
     else
         call_error(mod, "response timeout");
@@ -153,6 +166,19 @@ static void on_thread_close(void *arg);
 static void on_close(void *arg)
 {
     module_data_t *mod = arg;
+
+    if(mod->request.buffer)
+    {
+        if(mod->request.status == 1)
+            free((void *)mod->request.buffer);
+        mod->request.buffer = NULL;
+    }
+
+    if(mod->request.idx_body)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->request.idx_body);
+        mod->request.idx_body = 0;
+    }
 
     if(mod->timeout)
     {
@@ -823,41 +849,31 @@ static void on_ready_send_content(void *arg)
 {
     module_data_t *mod = arg;
 
-    asc_assert(mod->idx_content != 0, MSG("invalid content index"));
+    asc_assert(mod->request.size > 0, MSG("invalid content size"));
 
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_content);
-    const char *content = lua_tostring(lua, -1);
-
-    if(mod->chunk_left == 0)
-    {
-        mod->buffer_skip = 0;
-        mod->chunk_left = luaL_len(lua, -1);
-    }
-
-    const size_t content_send = (mod->chunk_left > HTTP_BUFFER_SIZE)
-                              ? HTTP_BUFFER_SIZE
-                              : mod->chunk_left;
+    const size_t rem = mod->request.size - mod->request.skip;
+    const size_t cap = (rem > HTTP_BUFFER_SIZE) ? HTTP_BUFFER_SIZE : rem;
 
     const ssize_t send_size = asc_socket_send(  mod->sock
-                                              , (void *)&content[mod->buffer_skip]
-                                              , content_send);
+                                              , &mod->request.buffer[mod->request.skip]
+                                              , cap);
     if(send_size == -1)
     {
         asc_log_error(MSG("failed to send content [%s]"), asc_socket_error());
         on_close(mod);
         return;
     }
-    mod->buffer_skip += send_size;
-    mod->chunk_left -= send_size;
+    mod->request.skip += send_size;
 
-    if(mod->chunk_left == 0)
+    if(mod->request.skip >= mod->request.size)
     {
-        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_content);
-        mod->idx_content = 0;
+        mod->request.buffer = NULL;
 
-        mod->buffer_skip = 0;
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->request.idx_body);
+        mod->request.idx_body = 0;
 
-        asc_socket_set_on_read(mod->sock, on_read);
+        mod->request.status = 3;
+
         asc_socket_set_on_ready(mod->sock, NULL);
     }
 }
@@ -866,35 +882,43 @@ static void on_ready_send_request(void *arg)
 {
     module_data_t *mod = arg;
 
-    asc_assert(mod->chunk_left > 0, MSG("invalid request size"));
+    asc_assert(mod->request.size > 0, MSG("invalid request size"));
 
-    const size_t content_send = (mod->chunk_left > HTTP_BUFFER_SIZE)
-                              ? HTTP_BUFFER_SIZE
-                              : mod->chunk_left;
+    const size_t rem = mod->request.size - mod->request.skip;
+    const size_t cap = (rem > HTTP_BUFFER_SIZE) ? HTTP_BUFFER_SIZE : rem;
 
     const ssize_t send_size = asc_socket_send(  mod->sock
-                                              , &mod->buffer[mod->buffer_skip]
-                                              , content_send);
+                                              , &mod->request.buffer[mod->request.skip]
+                                              , cap);
     if(send_size == -1)
     {
         asc_log_error(MSG("failed to send response [%s]"), asc_socket_error());
         on_close(mod);
         return;
     }
-    mod->buffer_skip += send_size;
-    mod->chunk_left -= send_size;
+    mod->request.skip += send_size;
 
-    if(mod->chunk_left == 0)
+    if(mod->request.skip >= mod->request.size)
     {
-        mod->buffer_skip = 0;
+        free((void *)mod->request.buffer);
+        mod->request.buffer = NULL;
 
-        if(mod->idx_content)
+        if(mod->request.idx_body)
         {
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->request.idx_body);
+            mod->request.buffer = lua_tostring(lua, -1);
+            mod->request.size = luaL_len(lua, -1);
+            mod->request.skip = 0;
+            lua_pop(lua, 1);
+
+            mod->request.status = 2;
+
             asc_socket_set_on_ready(mod->sock, on_ready_send_content);
         }
         else
         {
-            asc_socket_set_on_read(mod->sock, on_read);
+            mod->request.status = 3;
+
             asc_socket_set_on_ready(mod->sock, NULL);
         }
     }
@@ -908,7 +932,7 @@ static void lua_make_request(module_data_t *mod)
     const char *method = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : __default_method;
     lua_pop(lua, 1);
 
-    mod->is_head = (strcasecmp(method, "HEAD") == 0);
+    mod->is_head = (strcmp(method, "HEAD") == 0);
 
     lua_getfield(lua, -1, __path);
     mod->path = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : __default_path;
@@ -918,9 +942,9 @@ static void lua_make_request(module_data_t *mod)
     const char *version = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : __default_version;
     lua_pop(lua, 1);
 
-    mod->chunk_left = snprintf(  mod->buffer, HTTP_BUFFER_SIZE
-                               , "%s %s %s\r\n"
-                               , method, mod->path, version);
+    string_buffer_t *buffer = string_buffer_alloc();
+
+    string_buffer_addfstring(buffer, "%s %s %s\r\n", method, mod->path, version);
 
     lua_getfield(lua, -1, __headers);
     if(lua_istable(lua, -1))
@@ -928,7 +952,6 @@ static void lua_make_request(module_data_t *mod)
         for(lua_pushnil(lua); lua_next(lua, -2); lua_pop(lua, 1))
         {
             const char *h = lua_tostring(lua, -1);
-            const size_t hs = luaL_len(lua, -1);
 
             if(!strncasecmp(h, __connection, sizeof(__connection) - 1))
             {
@@ -939,46 +962,45 @@ static void lua_make_request(module_data_t *mod)
                     mod->is_connection_keep_alive = true;
             }
 
-            // TODO: check overflow
-
-            memcpy(&mod->buffer[mod->chunk_left], h, hs);
-            mod->chunk_left += hs;
-            mod->buffer[mod->chunk_left + 0] = '\r';
-            mod->buffer[mod->chunk_left + 1] = '\n';
-            mod->chunk_left += 2;
+            string_buffer_addfstring(buffer, "%s\r\n", h);
         }
     }
     lua_pop(lua, 1); // headers
 
-    mod->buffer[mod->chunk_left + 0] = '\r';
-    mod->buffer[mod->chunk_left + 1] = '\n';
-    mod->chunk_left += 2;
+    string_buffer_addlstring(buffer, "\r\n", 2);
+
+    mod->request.buffer = string_buffer_release(buffer, &mod->request.size);
+    mod->request.skip = 0;
+
+    if(mod->request.idx_body)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->request.idx_body);
+        mod->request.idx_body = 0;
+    }
 
     lua_getfield(lua, -1, __content);
     if(lua_isstring(lua, -1))
-        mod->idx_content = luaL_ref(lua, LUA_REGISTRYINDEX);
+        mod->request.idx_body = luaL_ref(lua, LUA_REGISTRYINDEX);
     else
         lua_pop(lua, 1);
-
-    mod->buffer_skip = 0;
 }
 
 static void on_connect(void *arg)
 {
     module_data_t *mod = arg;
 
-    mod->is_connected = true;
+    mod->request.status = 1;
 
     asc_timer_destroy(mod->timeout);
     mod->timeout = asc_timer_init(mod->timeout_ms, timeout_callback, mod);
-
-    asc_socket_set_on_read(mod->sock, NULL);
-    asc_socket_set_on_ready(mod->sock, on_ready_send_request);
 
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
     lua_getfield(lua, -1, "__options");
     lua_make_request(mod);
     lua_pop(lua, 2); // self + __options
+
+    asc_socket_set_on_read(mod->sock, on_read);
+    asc_socket_set_on_ready(mod->sock, on_ready_send_request);
 
     on_ready_send_request(mod);
 }
