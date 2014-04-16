@@ -5,6 +5,12 @@ usage()
     cat <<EOF
 Usage: $0 [OPTIONS]
     --help
+
+    --bin=PATH                  - path to install binary file.
+                                  default value is /usr/bin/astra
+    --scripts=PATH              - path to install scripts.
+                                  default value is /etc/astra/scripts
+
     --with-modules=PATH[:PATH]  - list of modules (by default: *)
                                   * - include all modules from ./modules dir.
                                   For example, to append custom module, use:
@@ -14,10 +20,10 @@ Usage: $0 [OPTIONS]
     --build-static              - build static binary
     --arch=ARCH                 - CPU architecture type. (by default: native)
 
-    --debug                     - build debug version
+    --debug                     - build version for debug
 
-    CFLAGS="..."                - custom compiler flags
-    LDFLAGS="..."               - custom linker flags
+    --cflags="..."              - custom compiler flags
+    --ldflags="..."             - custom linker flags
 EOF
     exit 0
 }
@@ -32,6 +38,8 @@ APP_C="gcc"
 APP_STRIP="strip"
 
 ARG_CC=0
+ARG_BPATH="/usr/bin/$APP"
+ARG_SPATH="/etc/astra/scripts"
 ARG_MODULES="*"
 ARG_BUILD_STATIC=0
 ARG_ARCH="native"
@@ -54,6 +62,12 @@ while [ $# -ne 0 ] ; do
         "--help")
             usage
             ;;
+        "--bin="*)
+            ARG_BPATH=`echo $OPT | sed -e 's/^[a-z-]*=//'`
+            ;;
+        "--scripts="*)
+            ARG_SPATH=`echo $OPT | sed -e 's/^[a-z-]*=//' -e 's/\/$//'`
+            ;;
         "--with-modules="*)
             ARG_MODULES=`echo $OPT | sed -e 's/^[a-z-]*=//'`
             ;;
@@ -66,14 +80,20 @@ while [ $# -ne 0 ] ; do
         "--arch="*)
             ARG_ARCH=`echo $OPT | sed -e 's/^[a-z-]*=//'`
             ;;
+        "--cflags="*)
+            ARG_CFLAGS=`echo $OPT | sed -e 's/^[a-z-]*=//'`
+            ;;
+        "--ldflags="*)
+            ARG_LDFLAGS=`echo $OPT | sed -e 's/^[a-z-]*=//'`
+            ;;
+        "--debug")
+            ARG_DEBUG=1
+            ;;
         "CFLAGS="*)
             ARG_CFLAGS=`echo $OPT | sed -e 's/^[A-Z]*=//'`
             ;;
         "LDFLAGS="*)
             ARG_LDFLAGS=`echo $OPT | sed -e 's/^[A-Z]*=//'`
-            ;;
-        "--debug")
-            ARG_DEBUG=1
             ;;
         *)
             echo "Unknown option: $OPT"
@@ -272,7 +292,7 @@ __check_main_app()
     fi
     cat <<EOF
 	@echo "   CC: \$@"
-	@\$(CC) \$(CFLAGS) -o \$@ -c \$<
+	@\$(CC) \$(CFLAGS) -DASC_SPATH=\"$ARG_SPATH\" -o \$@ -c \$<
 EOF
 
     return 0
@@ -468,6 +488,10 @@ Linker Flags:
  VERSION: $VERSION
      OUT: $APP
  LDFLAGS: $APP_LDFLAGS
+
+Install Path:
+  BINARY: $ARG_BPATH
+ SCRIPTS: $ARG_SPATH
 EOF
 
 cat >&5 <<EOF
@@ -475,8 +499,8 @@ LD          = $APP_C
 LDFLAGS     = $APP_LDFLAGS
 STRIP       = $APP_STRIP
 VERSION     = $VERSION
-APATH       = /usr/bin/\$(APP)
-SPATH       = /etc/astra/scripts
+BPATH       = $ARG_BPATH
+SPATH       = $ARG_SPATH
 
 \$(APP): $APP_OBJS \$(CORE_OBJS) \$(MODS_OBJS)
 	@echo "BUILD: \$@"
@@ -484,9 +508,9 @@ SPATH       = /etc/astra/scripts
 	@\$(STRIP) \$@
 
 install: \$(APP)
-	@echo "INSTALL: \$(APATH)"
-	@rm -f \$(APATH)
-	@cp \$(APP) \$(APATH)
+	@echo "INSTALL: \$(BPATH)"
+	@rm -f \$(BPATH)
+	@cp \$(APP) \$(BPATH)
 	@mkdir -p \$(SPATH)
 EOF
 
@@ -511,7 +535,7 @@ cat >&5 <<EOF
 
 uninstall:
 	@echo "UNINSTALL: \$(APP)"
-	@rm -f \$(APATH)
+	@rm -f \$(BPATH)
 	@rm -rf \$(SPATH)
 
 \$(APP)-clean:

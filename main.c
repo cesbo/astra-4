@@ -110,11 +110,20 @@ astra_reload_entry:
 
     /* change package.path */
     lua_getglobal(lua, "package");
+
 #ifndef _WIN32
-    lua_pushfstring(lua, "./?.lua;/etc/astra/scripts/?.lua");
+#   define ASC_PATH_SEP "/"
 #else
-    lua_pushstring(lua, ".\\?.lua");
+#   define ASC_PATH_SEP "\\"
 #endif
+
+#if !defined(_WIN32) && defined(ASC_SPATH)
+    static const char *asc_spath = ";" ASC_SPATH ASC_PATH_SEP "?.lua";
+#else
+    static const char *asc_spath = "";
+#endif
+
+    lua_pushfstring(lua, "." ASC_PATH_SEP "?.lua%s", asc_spath);
     lua_setfield(lua, -2, "path");
     lua_pushstring(lua, "");
     lua_setfield(lua, -2, "cpath");
