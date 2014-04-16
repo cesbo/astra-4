@@ -529,23 +529,16 @@ static int json_save(lua_State *L)
         return 0;
     }
 
-    string_buffer_t *buffer = malloc(sizeof(string_buffer_t));
-    buffer->size = 0;
-    buffer->last = buffer;
-    buffer->next = NULL;
+    string_buffer_t *buffer = string_buffer_alloc();
 
     walk_table(L, buffer);
 
-    string_buffer_t *next_next;
-    for(string_buffer_t *next = buffer
-        ; next && (next_next = next->next, 1)
-        ; next = next_next)
-    {
-        const int w = write(fd, next->buffer, next->size);
-        if(w != next->size)
-            asc_log_error("[json] json.save(%s) failed to write [%s]", filename, strerror(errno));
-        free(next);
-    }
+    size_t json_size = 0;
+    char *json = string_buffer_release(buffer, &json_size);
+    const ssize_t w = write(fd, json, json_size);
+    if(w != (ssize_t)json_size)
+        asc_log_error("[json] json.save(%s) failed to write [%s]", filename, strerror(errno));
+    free(json);
 
     close(fd);
 

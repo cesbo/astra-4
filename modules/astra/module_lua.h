@@ -2,7 +2,7 @@
  * Astra Module: Lua API
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,105 +34,89 @@ extern lua_State *lua; // in module_lua.c
 
 #define lua_foreach(_lua, _idx) for(lua_pushnil(_lua); lua_next(_lua, _idx); lua_pop(_lua, 1))
 
+typedef int (*module_callback_t)(module_data_t *);
+
 typedef struct
 {
     const char *name;
-    int (*method)(module_data_t *mod);
-} module_lua_method_t;
+    module_callback_t method;
+} module_method_t;
 
 #define MODULE_OPTIONS_IDX 2
 
-typedef struct
-{
-    int oref;
-} module_lua_t;
+#define MODULE_LUA_METHODS()                                                                    \
+    static const module_method_t __module_methods[] =
 
-#define MODULE_LUA_DATA() module_lua_t __lua
-
-#define MODULE_LUA_METHODS()                                                \
-    static const module_lua_method_t __module_lua_methods[] =
-
-#define MODULE_LUA_REGISTER(_name)                                          \
-    static const char __module_name[] = #_name;                             \
-    static int __module_new(lua_State *L)                                   \
-    {                                                                       \
-        module_data_t *mod = lua_newuserdata(L, sizeof(module_data_t));     \
-        memset(mod, 0, sizeof(module_data_t));                              \
-        lua_getmetatable(L, 1);                                             \
-        lua_setmetatable(L, -2);                                            \
-        if(lua_gettop(L) >= 3)                                              \
-        {                                                                   \
-            lua_pushvalue(L, 2);                                            \
-            mod->__lua.oref = luaL_ref(L, LUA_REGISTRYINDEX);               \
-        }                                                                   \
-        module_init(mod);                                                   \
-        return 1;                                                           \
-    }                                                                       \
-    static int __module_delete(lua_State *L)                                \
-    {                                                                       \
-        module_data_t *mod = luaL_checkudata(L, 1, __module_name);          \
-        module_destroy(mod);                                                \
-        if(mod->__lua.oref)                                                 \
-        {                                                                   \
-            luaL_unref(L, LUA_REGISTRYINDEX, mod->__lua.oref);              \
-            mod->__lua.oref = 0;                                            \
-        }                                                                   \
-        return 0;                                                           \
-    }                                                                       \
-    static int __module_thunk(lua_State *L)                                 \
-    {                                                                       \
-        module_data_t *mod = luaL_checkudata(L, 1, __module_name);          \
-        module_lua_method_t *m = lua_touserdata(L, lua_upvalueindex(1));    \
-        return m->method(mod);                                              \
-    }                                                                       \
-    static int __module_tostring(lua_State *L)                              \
-    {                                                                       \
-        lua_pushstring(L, __module_name);                                   \
-        return 1;                                                           \
-    }                                                                       \
-    static int __module_config(lua_State *L)                                \
-    {                                                                       \
-        module_data_t *mod = luaL_checkudata(L, 1, __module_name);          \
-        if(mod->__lua.oref)                                                 \
-            lua_rawgeti(L, LUA_REGISTRYINDEX, mod->__lua.oref);             \
-        else                                                                \
-            lua_pushnil(L);                                                 \
-        return 1;                                                           \
-    }                                                                       \
-    LUA_API int luaopen_##_name(lua_State *L)                               \
-    {                                                                       \
-        static const luaL_Reg meta_methods[] =                              \
-        {                                                                   \
-            { "__gc", __module_delete },                                    \
-            { "__tostring", __module_tostring },                            \
-            { "__call", __module_new },                                     \
-            { NULL, NULL }                                                  \
-        };                                                                  \
-        lua_newtable(L);                                                    \
-        const int module_table = lua_gettop(L);                             \
-        luaL_newmetatable(L, __module_name);                                \
-        const int meta_table = lua_gettop(L);                               \
-        luaL_setfuncs(L, meta_methods, 0);                                  \
-        lua_pushvalue(L, module_table);                                     \
-        lua_setfield(L, meta_table, "__index");                             \
-        luaL_newlib(L, meta_methods);                                       \
-        lua_setfield(L, meta_table, "__metatable");                         \
-        lua_setmetatable(L, module_table);                                  \
-        if(__module_lua_methods[0].name)                                    \
-        {                                                                   \
-            for(size_t i = 0; i < ASC_ARRAY_SIZE(__module_lua_methods); ++i)\
-            {                                                               \
-                const module_lua_method_t *m = &__module_lua_methods[i];    \
-                lua_pushstring(L, m->name);                                 \
-                lua_pushlightuserdata(L, (void*)m);                         \
-                lua_pushcclosure(L, __module_thunk, 1);                     \
-                lua_settable(L, module_table);                              \
-            }                                                               \
-        }                                                                   \
-        lua_pushcclosure(L, __module_config, 0);                            \
-        lua_setfield(L, module_table, "config");                            \
-        lua_setglobal(L, __module_name);                                    \
-        return 1;                                                           \
+#define MODULE_LUA_REGISTER(_name)                                                              \
+    static const char __module_name[] = #_name;                                                 \
+    static int __module_tostring(lua_State *L)                                                  \
+    {                                                                                           \
+        lua_pushstring(L, __module_name);                                                       \
+        return 1;                                                                               \
+    }                                                                                           \
+    static int __module_thunk(lua_State *L)                                                     \
+    {                                                                                           \
+        module_data_t *mod = lua_touserdata(L, lua_upvalueindex(1));                            \
+        module_method_t *m = lua_touserdata(L, lua_upvalueindex(2));                            \
+        return m->method(mod);                                                                  \
+    }                                                                                           \
+    static int __module_delete(lua_State *L)                                                    \
+    {                                                                                           \
+        module_data_t *mod = lua_touserdata(L, lua_upvalueindex(1));                            \
+        module_destroy(mod);                                                                    \
+        free(mod);                                                                              \
+        return 0;                                                                               \
+    }                                                                                           \
+    static int __module_new(lua_State *L)                                                       \
+    {                                                                                           \
+        size_t i;                                                                               \
+        static const luaL_Reg __meta_methods[] =                                                \
+        {                                                                                       \
+            { "__gc", __module_delete },                                                        \
+            { "__tostring", __module_tostring },                                                \
+        };                                                                                      \
+        module_data_t *mod = calloc(1, sizeof(module_data_t));                                  \
+        lua_newtable(L);                                                                        \
+        lua_newtable(L);                                                                        \
+        for(i = 0; i < ASC_ARRAY_SIZE(__meta_methods); ++i)                                     \
+        {                                                                                       \
+            const luaL_Reg *m = &__meta_methods[i];                                             \
+            lua_pushlightuserdata(L, (void *)mod);                                              \
+            lua_pushcclosure(L, m->func, 1);                                                    \
+            lua_setfield(L, -2, m->name);                                                       \
+        }                                                                                       \
+        lua_setmetatable(L, -2);                                                                \
+        for(i = 0; i < ASC_ARRAY_SIZE(__module_methods); ++i)                                   \
+        {                                                                                       \
+            const module_method_t *m = &__module_methods[i];                                    \
+            if(!m->name) break;                                                                 \
+            lua_pushlightuserdata(L, (void *)mod);                                              \
+            lua_pushlightuserdata(L, (void *)m);                                                \
+            lua_pushcclosure(L, __module_thunk, 2);                                             \
+            lua_setfield(L, -2, m->name);                                                       \
+        }                                                                                       \
+        if(lua_gettop(L) == 3)                                                                  \
+        {                                                                                       \
+            lua_pushvalue(L, MODULE_OPTIONS_IDX);                                               \
+            lua_setfield(L, 3, "__options");                                                    \
+        }                                                                                       \
+        module_init(mod);                                                                       \
+        return 1;                                                                               \
+    }                                                                                           \
+    LUA_API int luaopen_##_name(lua_State *L)                                                   \
+    {                                                                                           \
+        static const luaL_Reg meta_methods[] =                                                  \
+        {                                                                                       \
+            { "__tostring", __module_tostring },                                                \
+            { "__call", __module_new },                                                         \
+            { NULL, NULL }                                                                      \
+        };                                                                                      \
+        lua_newtable(L);                                                                        \
+        lua_newtable(L);                                                                        \
+        luaL_setfuncs(L, meta_methods, 0);                                                      \
+        lua_setmetatable(L, -2);                                                                \
+        lua_setglobal(L, __module_name);                                                        \
+        return 1;                                                                               \
     }
 
 bool module_option_number(const char *name, int *number);

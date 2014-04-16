@@ -24,8 +24,8 @@ EOF
 
 SRCDIR=`dirname $0`
 
-MAKEFILE=$SRCDIR/Makefile
-CONFFILE=$SRCDIR/config.h
+MAKEFILE="Makefile"
+CONFFILE="config.h"
 
 APP="astra"
 APP_C="gcc"
@@ -258,24 +258,22 @@ echo "Check modules:" >&2
 
 # main app
 
-APP_SOURCES="$SRCDIR/main.c"
+APP_SOURCE="$SRCDIR/main.c"
 APP_OBJS=""
 APP_SCRIPTS=""
 
 __check_main_app()
 {
-    for S in $APP_SOURCES ; do
-        O=`echo $S | sed -e 's/.c$/.o/' -e 's/.cpp$/.o/'`
-        APP_OBJS="$APP_OBJS $O"
-        $APP_C $APP_CFLAGS -MT $O -MM $S 2>$TMP_MODULE_MK
-        if [ $? -ne 0 ] ; then
-            return 1
-        fi
-        cat <<EOF
+    O="main.o"
+    APP_OBJS="$APP_OBJS $O"
+    $APP_C $APP_CFLAGS -MT $O -MM $APP_SOURCE 2>$TMP_MODULE_MK
+    if [ $? -ne 0 ] ; then
+        return 1
+    fi
+    cat <<EOF
 	@echo "   CC: \$@"
 	@\$(CC) \$(CFLAGS) -o \$@ -c \$<
 EOF
-    done
 
     return 0
 }
@@ -283,7 +281,7 @@ EOF
 touch $CONFFILE
 __check_main_app >&5
 if [ $? -ne 0 ] ; then
-    echo "  ERROR: $APP_SOURCES" >&2
+    echo "  ERROR: $APP_SOURCE" >&2
     if [ -f $TMP_MODULE_MK ] ; then
         cat $TMP_MODULE_MK >&2
         rm -f $TMP_MODULE_MK
@@ -294,7 +292,7 @@ if [ $? -ne 0 ] ; then
     rm -f $CONFFILE
     exit 1
 else
-    echo "     OK: $APP_SOURCES"
+    echo "     OK: $APP_SOURCE"
 fi
 echo "" >&5
 
@@ -365,7 +363,7 @@ __check_module()
     echo ""
 
     for S in $SOURCES ; do
-        O=`echo $S | sed -e 's/.c$/.o/' -e 's/.cpp$/.o/'`
+        O=`echo $S | sed -e 's/.c$/.o/'`
         OBJECTS="$OBJECTS $MODULE/$O"
         $APP_C $APP_CFLAGS $CFLAGS -MT $MODULE/$O -MM $MODULE/$S 2>$TMP_MODULE_MK
         if [ $? -ne 0 ] ; then
@@ -414,9 +412,8 @@ check_module()
 
 # CORE
 
-for M in $SRCDIR/core $SRCDIR/lua ; do
-    check_module $M "CORE_OBJS"
-done
+check_module $SRCDIR/core "CORE_OBJS"
+check_module $SRCDIR/lua "CORE_OBJS"
 
 # MODULES
 
@@ -478,8 +475,8 @@ LD          = $APP_C
 LDFLAGS     = $APP_LDFLAGS
 STRIP       = $APP_STRIP
 VERSION     = $VERSION
-V_APP       = /usr/bin/\$(APP)-\$(VERSION)
-V_SCRIPTS   = /etc/astra/scripts-\$(VERSION)
+APATH       = /usr/bin/\$(APP)
+SPATH       = /etc/astra/scripts
 
 \$(APP): $APP_OBJS \$(CORE_OBJS) \$(MODS_OBJS)
 	@echo "BUILD: \$@"
@@ -487,35 +484,35 @@ V_SCRIPTS   = /etc/astra/scripts-\$(VERSION)
 	@\$(STRIP) \$@
 
 install: \$(APP)
-	@echo "INSTALL: \$(V_APP)"
-	@rm -f \$(V_APP)
-	@cp \$(APP) \$(V_APP)
-	@mkdir -p \$(V_SCRIPTS)
+	@echo "INSTALL: \$(APATH)"
+	@rm -f \$(APATH)
+	@cp \$(APP) \$(APATH)
+	@mkdir -p \$(SPATH)
 EOF
 
 for S in $APP_SCRIPTS ; do
     SCRIPT_NAME=`basename $S`
     cat >&5 <<EOF
-	@echo "INSTALL: \$(V_SCRIPTS)/$SCRIPT_NAME"
-	@cp $S \$(V_SCRIPTS)/$SCRIPT_NAME
+	@echo "INSTALL: \$(SPATH)/$SCRIPT_NAME"
+	@cp $S \$(SPATH)/$SCRIPT_NAME
 EOF
 done
 
 cat >&5 <<EOF
-	@echo "INSTALL: \$(V_SCRIPTS)/analyze.lua"
-	@sed '1 s/\$\$/-\$(VERSION)/g' $SRCDIR/scripts/analyze.lua >\$(V_SCRIPTS)/analyze.lua
-	@chmod +x \$(V_SCRIPTS)/analyze.lua
-	@echo "INSTALL: \$(V_SCRIPTS)/dvbls.lua"
-	@sed '1 s/\$\$/-\$(VERSION)/g' $SRCDIR/scripts/dvbls.lua >\$(V_SCRIPTS)/dvbls.lua
-	@chmod +x \$(V_SCRIPTS)/dvbls.lua
-	@echo "INSTALL: \$(V_SCRIPTS)/xproxy.lua"
-	@sed '1 s/\$\$/-\$(VERSION)/g' $SRCDIR/scripts/xproxy.lua >\$(V_SCRIPTS)/xproxy.lua
-	@chmod +x \$(V_SCRIPTS)/xproxy.lua
+	@echo "INSTALL: \$(SPATH)/analyze.lua"
+	@cp $SRCDIR/scripts/analyze.lua \$(SPATH)/analyze.lua
+	@chmod +x \$(SPATH)/analyze.lua
+	@echo "INSTALL: \$(SPATH)/dvbls.lua"
+	@cp $SRCDIR/scripts/dvbls.lua \$(SPATH)/dvbls.lua
+	@chmod +x \$(SPATH)/dvbls.lua
+	@echo "INSTALL: \$(SPATH)/xproxy.lua"
+	@cp $SRCDIR/scripts/xproxy.lua \$(SPATH)/xproxy.lua
+	@chmod +x \$(SPATH)/xproxy.lua
 
-link:
-	@rm -f /usr/bin/astra
-	@ln -nfsv \$(V_APP) /usr/bin/astra
-	@ln -nfsv \$(V_SCRIPTS)/analyze.lua /usr/bin/astra-analyze
+uninstall:
+	@echo "UNINSTALL: \$(APP)"
+	@rm -f \$(APATH)
+	@rm -rf \$(SPATH)
 
 \$(APP)-clean:
 	@echo "CLEAN: \$(APP)"

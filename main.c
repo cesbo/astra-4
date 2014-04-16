@@ -111,9 +111,7 @@ astra_reload_entry:
     /* change package.path */
     lua_getglobal(lua, "package");
 #ifndef _WIN32
-    lua_pushfstring(lua, "./?.lua;/etc/astra/scripts-%d.%d/?.lua;/usr/lib/astra/%d.%d/?.lua"
-                    , ASTRA_VERSION_MAJOR, ASTRA_VERSION_MINOR
-                    , ASTRA_VERSION_MAJOR, ASTRA_VERSION_MINOR);
+    lua_pushfstring(lua, "./?.lua;/etc/astra/scripts/?.lua");
 #else
     lua_pushstring(lua, ".\\?.lua");
 #endif

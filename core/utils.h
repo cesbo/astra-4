@@ -26,22 +26,16 @@
 
 uint64_t asc_utime(void);
 
-#define MAX_BUFFER_SIZE 4096
+// string_buffer
 
 typedef struct string_buffer_t string_buffer_t;
 
-struct string_buffer_t
-{
-    char buffer[4096];
-    int size;
-
-    string_buffer_t *last;
-    string_buffer_t *next;
-};
-
 string_buffer_t * string_buffer_alloc(void);
 void string_buffer_addchar(string_buffer_t *buffer, char c);
-void string_buffer_addlstring(string_buffer_t *buffer, const char *str, int size);
+void string_buffer_addlstring(string_buffer_t *buffer, const char *str, size_t size);
+void strung_buffer_addvastring(string_buffer_t *buffer, const char *str, va_list ap);
+void string_buffer_addfstring(string_buffer_t *buffer, const char *str, ...);
+char * string_buffer_release(string_buffer_t *buffer, size_t *size);
 void string_buffer_push(lua_State *L, string_buffer_t *buffer);
 void string_buffer_free(string_buffer_t *buffer);
 

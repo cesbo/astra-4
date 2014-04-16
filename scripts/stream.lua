@@ -848,50 +848,20 @@ end
 --   88ooo88            o888o o888o    o888o       o888o    o888o
 
 local http_instance_list = {}
-local http_server_header = "Server: Astra"
 
-function send_error(server, client, code)
-    local error_message_list =
-    {
-        [404] = "Not Found",
-        [405] = "Method Not Allowed",
-        [500] = "Internal Server Error",
-    }
+function on_http_request(server, client, request)
+    if not request then
+        return
+    end
 
-    if not error_message_list[code] then code = 500 end
-    local error_message = error_message_list[code]
+    local http_upstream = server.__options.path_list[request.path]
 
-    local content = "<html>" ..
-                    "<center><h1>" .. code .. " " .. error_message .. "</h1></center>" ..
-                    "<hr />" ..
-                    "<small>Astra</small>" ..
-                    "</html>"
+    if not http_upstream then
+        server:abort(client, 404)
+        return
+    end
 
-    server:send(client, {
-        code = code,
-        message = error_message,
-        headers = {
-            http_server_header,
-            "Content-Type: text/html; charset=utf-8",
-            "Content-Length: " .. #content,
-            "Connection: close"
-        },
-        content = content
-    })
-
-    server:close(client)
-end
-
-function http_server_send_200(server, client, upstream)
-    server:send(client, {
-        code = 200,
-        message = "OK",
-        headers = {
-            http_server_header,
-            "Content-Type:application/octet-stream",
-        },
-        upstream = upstream
-    })
+    server:send(client, http_upstream)
 end
 
 output_list.http = function(channel_data, output_id)
@@ -914,17 +884,10 @@ output_list.http = function(channel_data, output_id)
         port = output_conf.port,
         buffer_size = output_conf.buffer_size,
         buffer_fill = output_conf.buffer_fill,
-        buffer_prefill = output_conf.buffer_prefill,
-        callback = function(self, client, data)
-                if type(data) == 'table' then
-                    local http_upstream = http_instance.path_list[data.uri]
-                    if http_upstream then
-                        http_server_send_200(self, client, http_upstream)
-                    else
-                        send_error(self, client, 404)
-                    end
-                end
-            end
+        path_list = http_instance.path_list,
+        route = {
+            { "*", http_upstream({ callback = on_http_request }) },
+        },
     })
 
     http_instance_list[addr] = http_instance
@@ -1164,12 +1127,4 @@ end
 
 function main()
     log.info("Starting Astra " .. astra.version)
-
-    if #argv > 0 then
-        if argv[1] == '-' then
-            dofile()
-        elseif utils.stat(argv[1]).type == 'file' then
-            dofile(argv[1])
-        end
-    end
 end

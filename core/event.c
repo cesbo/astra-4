@@ -45,10 +45,10 @@ extern bool is_main_loop_idle;
 #   define EV_TYPE_EPOLL
 #   include <sys/epoll.h>
 #   define EV_OTYPE struct epoll_event
-#   if !defined(EPOLLRDHUP) && !defined(WITHOUT_EPOLLRDHUP)
-#       define EV_FLAGS (EPOLLERR | EPOLLHUP)
+#   ifdef EPOLLRDHUP
+#       define EPOLLCLOSE (EPOLLERR | EPOLLRDHUP)
 #   else
-#       define EV_FLAGS (EPOLLERR | EPOLLRDHUP)
+#       define EPOLLCLOSE (EPOLLERR | EPOLLHUP)
 #   endif
 #   define MSG(_msg) "[core/event epoll] " _msg
 #endif
@@ -161,12 +161,12 @@ void asc_event_core_loop(void)
         asc_event_t *event = ed->udata;
         const bool is_rd = (ed->data > 0) && (ed->filter == EVFILT_READ);
         const bool is_wr = (ed->data > 0) && (ed->filter == EVFILT_WRITE);
-        const bool is_er = (!is_rd && !is_wr && (ed->flags & ~EV_ADD));
+        const bool is_er = (ed->flags & ~EV_ADD);
 #else
         asc_event_t *event = ed->data.ptr;
         const bool is_rd = ed->events & EPOLLIN;
         const bool is_wr = ed->events & EPOLLOUT;
-        const bool is_er = ed->events & EPOLLERR;
+        const bool is_er = ed->events & EPOLLCLOSE;
 #endif
         if(event->on_read && is_rd)
         {
@@ -175,17 +175,17 @@ void asc_event_core_loop(void)
             if(event_observer.is_changed)
                 break;
         }
-        if(event->on_write && is_wr)
-        {
-            is_main_loop_idle = false;
-            event->on_write(event->arg);
-            if(event_observer.is_changed)
-                break;
-        }
         if(event->on_error && is_er)
         {
             is_main_loop_idle = false;
             event->on_error(event->arg);
+            if(event_observer.is_changed)
+                break;
+        }
+        if(event->on_write && is_wr)
+        {
+            is_main_loop_idle = false;
+            event->on_write(event->arg);
             if(event_observer.is_changed)
                 break;
         }
@@ -232,7 +232,7 @@ static void asc_event_subscribe(asc_event_t *event)
 #else /* EV_TYPE_EPOLL */
 
     ed.data.ptr = event;
-    ed.events = EV_FLAGS;
+    ed.events = EPOLLCLOSE;
     if(event->on_read)
         ed.events |= EPOLLIN;
     if(event->on_write)
@@ -252,7 +252,7 @@ asc_event_t * asc_event_init(int fd, void *arg)
 #if defined(EV_TYPE_EPOLL)
     EV_OTYPE ed;
     ed.data.ptr = event;
-    ed.events = EV_FLAGS;
+    ed.events = EPOLLCLOSE;
     const int ret = epoll_ctl(event_observer.fd, EPOLL_CTL_ADD, event->fd, &ed);
     asc_assert(ret != -1, MSG("failed to attach fd=%d [%s]"), event->fd, strerror(errno));
 #endif
@@ -340,7 +340,6 @@ void asc_event_core_destroy(void)
 
 void asc_event_core_loop(void)
 {
-    static struct timespec tv = { 0, 10000000 };
     if(!event_observer.fd_count)
         return;
 
@@ -367,17 +366,17 @@ void asc_event_core_loop(void)
             if(event_observer.is_changed)
                 break;
         }
-        if(event->on_write && (revents & POLLOUT))
-        {
-            is_main_loop_idle = false;
-            event->on_write(event->arg);
-            if(event_observer.is_changed)
-                break;
-        }
         if(event->on_error && (revents & (POLLERR | POLLHUP | POLLNVAL)))
         {
             is_main_loop_idle = false;
             event->on_error(event->arg);
+            if(event_observer.is_changed)
+                break;
+        }
+        if(event->on_write && (revents & POLLOUT))
+        {
+            is_main_loop_idle = false;
+            event->on_write(event->arg);
             if(event_observer.is_changed)
                 break;
         }
@@ -508,7 +507,7 @@ void asc_event_core_loop(void)
     memcpy(&wset, &event_observer.wmaster, sizeof(wset));
     memcpy(&eset, &event_observer.emaster, sizeof(eset));
 
-    static const struct timeval timeout = { .tv_sec = 0, .tv_usec = 0 };
+    static struct timeval timeout = { .tv_sec = 0, .tv_usec = 0 };
     const int ret = select(event_observer.max_fd + 1, &rset, &wset, &eset, &timeout);
     if(ret == -1)
     {
@@ -533,17 +532,17 @@ void asc_event_core_loop(void)
                 if(event_observer.is_changed)
                     break;
             }
-            if(event->on_write && FD_ISSET(event->fd, &wset))
-            {
-                is_main_loop_idle = false;
-                event->on_write(event->arg);
-                if(event_observer.is_changed)
-                    break;
-            }
             if(event->on_error && FD_ISSET(event->fd, &eset))
             {
                 is_main_loop_idle = false;
                 event->on_error(event->arg);
+                if(event_observer.is_changed)
+                    break;
+            }
+            if(event->on_write && FD_ISSET(event->fd, &wset))
+            {
+                is_main_loop_idle = false;
+                event->on_write(event->arg);
                 if(event_observer.is_changed)
                     break;
             }

@@ -2,7 +2,7 @@
  * Astra Module: MPEG-TS (Analyze)
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -58,13 +58,14 @@ typedef struct
 
 struct module_data_t
 {
-    MODULE_LUA_DATA();
     MODULE_STREAM_DATA();
 
     const char *name;
     int rate_stat;
     int cc_limit;
     bool cc_check; // to skip initial cc errors
+
+    int idx_callback;
 
     uint16_t tsid;
 
@@ -104,10 +105,7 @@ static void do_callback(module_data_t *mod)
 {
     asc_assert((lua_type(lua, -1) == LUA_TTABLE), "table required");
 
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->__lua.oref);
-    lua_getfield(lua, -1, __callback);
-    lua_remove(lua, -2);
-
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
     lua_pushvalue(lua, -2);
     lua_call(lua, 1, 0);
 }
@@ -712,9 +710,9 @@ static void module_init(module_data_t *mod)
     module_option_string("name", &mod->name, NULL);
     asc_assert(mod->name != NULL, "[analyze] option 'name' is required");
 
-    lua_getfield(lua, 2, __callback);
-    asc_assert(lua_type(lua, -1) == LUA_TFUNCTION, MSG("option 'callback' is required"));
-    lua_pop(lua, 1);
+    lua_getfield(lua, MODULE_OPTIONS_IDX, __callback);
+    asc_assert(lua_isfunction(lua, -1), MSG("option 'callback' is required"));
+    mod->idx_callback = luaL_ref(lua, LUA_REGISTRYINDEX);
 
     module_option_number("rate_stat", &mod->rate_stat);
     module_option_number("cc_limit", &mod->cc_limit);
@@ -743,6 +741,12 @@ static void module_init(module_data_t *mod)
 static void module_destroy(module_data_t *mod)
 {
     module_stream_destroy(mod);
+
+    if(mod->idx_callback)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+        mod->idx_callback = 0;
+    }
 
     mpegts_psi_destroy(mod->pat);
     mpegts_psi_destroy(mod->cat);

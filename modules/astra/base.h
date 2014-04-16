@@ -54,8 +54,8 @@ void sha1_final(sha1_ctx_t *context, uint8_t digest[SHA1_DIGEST_SIZE]);
 
 /* base64.c */
 
-char * base64_encode(const char *in, size_t size, size_t *key_size);
-char * base64_decode(const char *in, size_t *data_size);
+char * base64_encode(const void *in, size_t in_size, size_t *out_size);
+void * base64_decode(const char *in, size_t in_size, size_t *out_size);
 
 /* md5.c */
 
