@@ -55,10 +55,6 @@ struct module_data_t
     asc_socket_t *sock;
     asc_timer_t *timeout;
 
-    char buffer[HTTP_BUFFER_SIZE];
-    size_t buffer_skip;
-    size_t chunk_left;
-
     // request
     struct
     {
@@ -71,17 +67,21 @@ struct module_data_t
         int idx_body;
     } request;
 
+    bool is_head;
     bool is_connection_close;
     bool is_connection_keep_alive;
 
     // response
+    char buffer[HTTP_BUFFER_SIZE];
+    size_t buffer_skip;
+    size_t chunk_left;
+
     int idx_response;
     int status_code;
 
     int status;         // 1 - empty line is found, 2 - request ready, 3 - release
 
     int idx_content;
-    bool is_head;
     bool is_chunked;
     bool is_content_length;
     string_buffer_t *content;
@@ -535,7 +535,9 @@ static void on_read(void *arg)
         mod->timeout = NULL;
     }
 
-    ssize_t size = asc_socket_recv(mod->sock, mod->buffer, sizeof(mod->buffer));
+    ssize_t size = asc_socket_recv(  mod->sock
+                                   , &mod->buffer[mod->buffer_skip]
+                                   , HTTP_BUFFER_SIZE - mod->buffer_skip);
     if(size <= 0)
     {
         on_close(mod);

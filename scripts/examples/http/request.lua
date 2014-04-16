@@ -3,7 +3,9 @@ function on_read(self, response)
     print("Status: " .. response.code .. " " .. response.message)
     if response.headers then
         print("Headers:")
-        for _, h in ipairs(response.headers) do print(h) end
+        for k,v in pairs(response.headers) do
+            print("    \"" .. k .. "\" = " .. v)
+        end
     end
 
     if response.content then
