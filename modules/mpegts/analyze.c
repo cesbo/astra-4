@@ -538,7 +538,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         }
     }
 
-    const uint16_t pid = TS_PID(ts);
+    const uint16_t pid = (ts[0] == 0x47) ? TS_PID(ts) : NULL_TS_PID;
 
     analyze_item_t *item = &mod->stream[pid];
     const mpegts_packet_type_t type = item->type;
