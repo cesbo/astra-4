@@ -267,6 +267,8 @@ static bool seek_pcr(  module_data_t *mod
     uint8_t *ptr, ts[TS_PACKET_SIZE];
 
     size_t next_skip, skip = mod->sync.buffer_read + TS_PACKET_SIZE;
+    if(skip >= mod->sync.buffer_size)
+        skip -= mod->sync.buffer_size;
 
     for(  count = TS_PACKET_SIZE
         ; count < mod->sync.buffer_count
