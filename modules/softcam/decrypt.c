@@ -683,15 +683,11 @@ static void module_init(module_data_t *mod)
 
     uint8_t first_key[8] = { 0 };
     const char *string_value = NULL;
-    int biss_length = 0;
+    size_t biss_length = 0;
     module_option_string("biss", &string_value, &biss_length);
     if(string_value)
     {
-        if(biss_length != 16)
-        {
-            asc_log_error(MSG("biss key must be 16 chars length"));
-            astra_abort();
-        }
+        asc_assert(biss_length == 16, MSG("biss key must be 16 char length"));
         str_to_hex(string_value, first_key, sizeof(first_key));
         first_key[3] = (first_key[0] + first_key[1] + first_key[2]) & 0xFF;
         first_key[7] = (first_key[4] + first_key[5] + first_key[6]) & 0xFF;

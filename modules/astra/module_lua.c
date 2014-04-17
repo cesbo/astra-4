@@ -52,7 +52,7 @@ bool module_option_number(const char *name, int *number)
     return result;
 }
 
-bool module_option_string(const char *name, const char **string, int *length)
+bool module_option_string(const char *name, const char **string, size_t *length)
 {
     if(lua_type(lua, MODULE_OPTIONS_IDX) != LUA_TTABLE)
         return false;

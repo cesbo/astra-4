@@ -68,7 +68,7 @@ static void on_upstream_ready(void *arg)
                                               , block_size);
     if(send_size == -1)
     {
-        http_client_error(client, "failed to send ts (%d bytes) [%s]"
+        http_client_error(  client, "failed to send ts (%d bytes) [%s]"
                           , block_size, asc_socket_error());
         http_client_close(client);
         return;

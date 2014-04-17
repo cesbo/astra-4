@@ -172,7 +172,7 @@ static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, on_ts);
 
-    int biss_length = 0;
+    size_t biss_length = 0;
     const char *key_value = NULL;
     module_option_string("key", &key_value, &biss_length);
     asc_assert(key_value != NULL, "[biss_encrypt] option 'key' is required");
