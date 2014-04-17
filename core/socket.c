@@ -2,7 +2,7 @@
  * Astra Core
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -54,9 +54,9 @@ struct asc_socket_t
 
     /* Callbacks */
     void *arg;
-    socket_callback_t on_read;      /* data read */
-    socket_callback_t on_close;     /* error occured (connection closed) */
-    socket_callback_t on_ready;     /* data send is possible now */
+    event_callback_t on_read;      /* data read */
+    event_callback_t on_close;     /* error occured (connection closed) */
+    event_callback_t on_ready;     /* data send is possible now */
 };
 
 /*
@@ -206,8 +206,10 @@ static void __asc_socket_on_connect(void *arg)
 {
     asc_socket_t *sock = arg;
     asc_event_set_on_write(sock->event, NULL);
+    event_callback_t __on_ready = sock->on_ready;
     sock->on_ready(sock->arg);
-    sock->on_ready = NULL;
+    if(__on_ready == sock->on_ready)
+        sock->on_ready = NULL;
 }
 
 static void __asc_socket_on_accept(void *arg)
@@ -253,7 +255,7 @@ static bool __asc_socket_check_event(asc_socket_t *sock)
     return (sock->event != NULL);
 }
 
-void asc_socket_set_on_read(asc_socket_t *sock, socket_callback_t on_read)
+void asc_socket_set_on_read(asc_socket_t *sock, event_callback_t on_read)
 {
     if(sock->on_read == on_read)
         return;
@@ -268,7 +270,7 @@ void asc_socket_set_on_read(asc_socket_t *sock, socket_callback_t on_read)
     }
 }
 
-void asc_socket_set_on_ready(asc_socket_t * sock, socket_callback_t on_ready)
+void asc_socket_set_on_ready(asc_socket_t * sock, event_callback_t on_ready)
 {
     if(sock->on_ready == on_ready)
         return;
@@ -283,7 +285,7 @@ void asc_socket_set_on_ready(asc_socket_t * sock, socket_callback_t on_ready)
     }
 }
 
-void asc_socket_set_on_close(asc_socket_t *sock, socket_callback_t on_close)
+void asc_socket_set_on_close(asc_socket_t *sock, event_callback_t on_close)
 {
     if(sock->on_close == on_close)
         return;
@@ -343,7 +345,8 @@ bool asc_socket_bind(asc_socket_t *sock, const char *addr, int port)
  *
  */
 
-void asc_socket_listen(asc_socket_t *sock, socket_callback_t on_accept, socket_callback_t on_error)
+void asc_socket_listen(  asc_socket_t *sock
+                       , event_callback_t on_accept, event_callback_t on_error)
 {
     asc_assert(on_accept && on_error, MSG("listen() - on_ok/on_err not specified"));
     if(listen(sock->fd, SOMAXCONN) == -1)
@@ -401,8 +404,8 @@ bool asc_socket_accept(asc_socket_t *sock, asc_socket_t **client_ptr, void * arg
  *
  */
 
-void asc_socket_connect(asc_socket_t *sock, const char *addr, int port
-                        , socket_callback_t on_connect, socket_callback_t on_error)
+void asc_socket_connect(  asc_socket_t *sock, const char *addr, int port
+                        , event_callback_t on_connect, event_callback_t on_error)
 {
     asc_assert(on_connect && on_error, MSG("connect() - on_ok/on_err not specified"));
     memset(&sock->addr, 0, sizeof(sock->addr));

@@ -1003,8 +1003,6 @@ static void on_connect(void *arg)
 
     asc_socket_set_on_read(mod->sock, on_read);
     asc_socket_set_on_ready(mod->sock, on_ready_send_request);
-
-    on_ready_send_request(mod);
 }
 
 /*
