@@ -96,10 +96,10 @@ struct module_data_t
     struct
     {
         uint8_t *buffer;
-        uint32_t buffer_size;
-        uint32_t buffer_count;
-        uint32_t buffer_read;
-        uint32_t buffer_write;
+        size_t buffer_size;
+        size_t buffer_count;
+        size_t buffer_read;
+        size_t buffer_write;
     } sync;
 
     uint64_t pcr;
@@ -236,23 +236,51 @@ static void on_close(void *arg)
  *
  */
 
-static int seek_pcr(module_data_t *mod, uint32_t *block_size)
+static bool seek_pcr(module_data_t *mod, size_t *block_size, size_t *next_block)
 {
-    uint32_t count;
+    size_t count;
+
+    while(1)
+    {
+        if(mod->sync.buffer_count < 2 * TS_PACKET_SIZE)
+            return false;
+
+        count = mod->sync.buffer_read + TS_PACKET_SIZE;
+        if(count >= mod->sync.buffer_size)
+            count -= mod->sync.buffer_size;
+
+        if(   mod->sync.buffer[mod->sync.buffer_read] == 0x47
+           && mod->sync.buffer[count] == 0x47)
+        {
+            break;
+        }
+
+        ++mod->sync.buffer_read;
+        if(mod->sync.buffer_read >= mod->sync.buffer_size)
+            mod->sync.buffer_read = 0;
+
+        --mod->sync.buffer_count;
+    }
+
     for(count = TS_PACKET_SIZE; count < mod->sync.buffer_count; count += TS_PACKET_SIZE)
     {
-        uint32_t pos = mod->sync.buffer_read + count;
-        if(pos >= mod->sync.buffer_size)
-            pos -= mod->sync.buffer_size;
+        size_t skip = mod->sync.buffer_read + count;
+        if(skip >= mod->sync.buffer_size)
+            skip -= mod->sync.buffer_size;
 
-        if(mpegts_pcr_check(&mod->sync.buffer[pos]))
+        if(mod->sync.buffer[skip] != 0x47)
+            return false;
+
+        if(mpegts_pcr_check(&mod->sync.buffer[skip]))
         {
             *block_size = count;
-            return 1;
+            *next_block = skip;
+
+            return true;
         }
     }
 
-    return 0;
+    return false;
 }
 
 static void on_thread_close(void *arg)
@@ -298,6 +326,8 @@ static void thread_loop(void *arg)
 {
     module_data_t *mod = arg;
 
+    uint8_t ts[TS_PACKET_SIZE];
+
     mod->is_thread_started = true;
 
     while(mod->is_thread_started)
@@ -305,7 +335,7 @@ static void thread_loop(void *arg)
         uint64_t time_sync_b, time_sync_bb;
 
         double block_time_total, total_sync_diff;
-        uint32_t next_block, block_size = 0;
+        size_t next_block, next_packet, block_size = 0;
 
         struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
         static const struct timespec data_wait = { .tv_sec = 0, .tv_nsec = 100000 };
@@ -321,55 +351,19 @@ static void thread_loop(void *arg)
         uint64_t check_timeout = asc_utime();
 
         while(   mod->is_thread_started
-              && mod->sync.buffer_count < mod->sync.buffer_size)
+              && mod->sync.buffer_write < mod->sync.buffer_size)
         {
             time_sync_b = asc_utime();
 
-            ssize_t len;
-            if(mod->sync.buffer_count == 0)
+            const ssize_t size = asc_socket_recv(  mod->sock
+                                                 , &mod->sync.buffer[mod->sync.buffer_write]
+                                                 , mod->sync.buffer_size - mod->sync.buffer_write);
+            if(size > 0)
             {
-                len = asc_socket_recv(mod->sock
-                                      , &mod->buffer[block_size]
-                                      , 2 * TS_PACKET_SIZE - block_size);
-                if(len > 0)
-                {
-                    check_timeout = time_sync_b;
-
-                    block_size += len;
-                    if(block_size < 2 * TS_PACKET_SIZE)
-                        continue;
-                    for(uint32_t i = 0; i < block_size; ++i)
-                    {
-                        if(   mod->buffer[i] == 0x47
-                           && mod->buffer[i + TS_PACKET_SIZE] == 0x47)
-                        {
-                            mod->sync.buffer_count = block_size - i;
-                            memcpy(mod->sync.buffer, &mod->buffer[i], mod->sync.buffer_count);
-                            break;
-                        }
-                    }
-                    if(mod->sync.buffer_count == 0)
-                    {
-                        mod->is_stream_error = true;
-                        asc_log_error(MSG("wrong stream format"));
-                        return;
-                    }
-                }
+                check_timeout = time_sync_b;
+                mod->sync.buffer_write += size;
             }
             else
-            {
-                len = asc_socket_recv(mod->sock
-                                      , &mod->sync.buffer[mod->sync.buffer_count]
-                                      , mod->sync.buffer_size - mod->sync.buffer_count);
-                if(len > 0)
-                {
-                    check_timeout = time_sync_b;
-
-                    mod->sync.buffer_count += len;
-                }
-            }
-
-            if(len <= 0)
             {
                 if(time_sync_b - check_timeout >= (uint32_t)mod->timeout_ms * 1000)
                 {
@@ -380,21 +374,20 @@ static void thread_loop(void *arg)
                 nanosleep(&data_wait, NULL);
             }
         }
-        mod->sync.buffer_write = mod->sync.buffer_count;
+        mod->sync.buffer_count = mod->sync.buffer_write;
         if(mod->sync.buffer_write == mod->sync.buffer_size)
             mod->sync.buffer_write = 0;
 
-        if(!seek_pcr(mod, &block_size))
+        if(!seek_pcr(mod, &block_size, &next_block))
         {
-            asc_log_error(MSG("first PCR is not found"));
-            continue;
+            mod->is_stream_error = true;
+            asc_log_error(MSG("wrong stream format"));
+            return;
         }
+
         mod->sync.buffer_count -= block_size;
-        next_block = mod->sync.buffer_read + block_size;
-        if(next_block >= mod->sync.buffer_size)
-            next_block -= mod->sync.buffer_size;
-        mod->pcr = mpegts_pcr(&mod->sync.buffer[next_block]);
         mod->sync.buffer_read = next_block;
+        mod->pcr = mpegts_pcr(&mod->sync.buffer[mod->sync.buffer_read]);
 
         time_sync_b = asc_utime();
         block_time_total = 0.0;
@@ -405,9 +398,9 @@ static void thread_loop(void *arg)
             if(   mod->is_thread_started
                && mod->sync.buffer_count < mod->sync.buffer_size)
             {
-                const uint32_t tail = (mod->sync.buffer_read < mod->sync.buffer_write)
-                                    ? (mod->sync.buffer_size - mod->sync.buffer_write)
-                                    : (mod->sync.buffer_read - mod->sync.buffer_write);
+                const size_t tail = (mod->sync.buffer_read > mod->sync.buffer_write)
+                                  ? (mod->sync.buffer_read - mod->sync.buffer_write)
+                                  : (mod->sync.buffer_size - mod->sync.buffer_write);
 
                 const ssize_t l = asc_socket_recv(  mod->sock
                                                   , &mod->sync.buffer[mod->sync.buffer_write]
@@ -421,16 +414,11 @@ static void thread_loop(void *arg)
                 }
             }
 
-            if(!seek_pcr(mod, &block_size))
+            if(!seek_pcr(mod, &block_size, &next_block))
             {
                 asc_log_error(MSG("next PCR is not found"));
                 break;
             }
-
-            next_block = mod->sync.buffer_read + block_size;
-            if(next_block >= mod->sync.buffer_size)
-                next_block -= mod->sync.buffer_size;
-            mod->sync.buffer_count -= block_size;
 
             // get PCR
             const uint64_t pcr = mpegts_pcr(&mod->sync.buffer[next_block]);
@@ -465,16 +453,32 @@ static void thread_loop(void *arg)
                   && mod->sync.buffer_read != next_block)
             {
                 // sending
-                const uint8_t *ptr = &mod->sync.buffer[mod->sync.buffer_read];
-                const ssize_t r = asc_thread_buffer_write(mod->thread_output, ptr, TS_PACKET_SIZE);
-                if(r != TS_PACKET_SIZE)
+                uint8_t *ptr = &mod->sync.buffer[mod->sync.buffer_read];
+                next_packet = mod->sync.buffer_read + TS_PACKET_SIZE;
+                if(next_packet < mod->sync.buffer_size)
+                {
+                    mod->sync.buffer_read = next_packet;
+                }
+                else if(next_packet > mod->sync.buffer_size)
+                {
+                    const size_t packet_head = mod->sync.buffer_size - mod->sync.buffer_read;
+                    memcpy(ts, ptr, packet_head);
+                    mod->sync.buffer_read = next_packet - mod->sync.buffer_size;
+                    memcpy(&ts[packet_head], mod->sync.buffer, mod->sync.buffer_read);
+                    ptr = ts;
+                }
+                else /* next_packet == mod->sync.buffer_size */
+                {
+                    mod->sync.buffer_read = 0;
+                }
+
+                const ssize_t write_size = asc_thread_buffer_write(  mod->thread_output
+                                                                   , ptr
+                                                                   , TS_PACKET_SIZE);
+                if(write_size != TS_PACKET_SIZE)
                 {
                     // overflow
                 }
-
-                mod->sync.buffer_read += TS_PACKET_SIZE;
-                if(mod->sync.buffer_read >= mod->sync.buffer_size)
-                    mod->sync.buffer_read = 0;
 
                 // sync block
                 if(ts_sync.tv_nsec > 0)
@@ -487,6 +491,7 @@ static void thread_loop(void *arg)
                 const uint64_t real_block_time_ns = (time_sync_be - time_sync_bb) * 1000;
                 ts_sync.tv_nsec = (real_block_time_ns > calc_block_time_ns) ? 0 : ts_sync_nsec;
             }
+            mod->sync.buffer_count -= block_size;
 
             // stream syncing
             const uint64_t time_sync_e = asc_utime();
@@ -1100,8 +1105,7 @@ static void module_init(module_data_t *mod)
         int buffer_size = 1;
         module_option_number("buffer_size", &buffer_size);
 
-        mod->sync.buffer_size = (buffer_size * 1024 * 1024);
-        mod->sync.buffer_size = (mod->sync.buffer_size / TS_PACKET_SIZE) * TS_PACKET_SIZE;
+        mod->sync.buffer_size = buffer_size * 1024 * 1024;
     }
 
     mod->timeout_ms = 10;
