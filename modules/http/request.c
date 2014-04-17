@@ -236,7 +236,9 @@ static void on_close(void *arg)
  *
  */
 
-static bool seek_pcr(module_data_t *mod, size_t *block_size, size_t *next_block)
+static bool seek_pcr(  module_data_t *mod
+                     , size_t *block_size, size_t *next_block
+                     , uint64_t *pcr)
 {
     size_t count;
 
@@ -262,22 +264,36 @@ static bool seek_pcr(module_data_t *mod, size_t *block_size, size_t *next_block)
         --mod->sync.buffer_count;
     }
 
-    for(count = TS_PACKET_SIZE; count < mod->sync.buffer_count; count += TS_PACKET_SIZE)
+    uint8_t *ptr, ts[TS_PACKET_SIZE];
+
+    size_t next_skip, skip = mod->sync.buffer_read + TS_PACKET_SIZE;
+
+    for(  count = TS_PACKET_SIZE
+        ; count < mod->sync.buffer_count
+        ; count += TS_PACKET_SIZE)
     {
-        size_t skip = mod->sync.buffer_read + count;
-        if(skip >= mod->sync.buffer_size)
-            skip -= mod->sync.buffer_size;
+        ptr = &mod->sync.buffer[skip];
 
-        if(mod->sync.buffer[skip] != 0x47)
-            return false;
+        next_skip = skip + TS_PACKET_SIZE;
+        if(next_skip > mod->sync.buffer_size)
+        {
+            const size_t packet_head = mod->sync.buffer_size - skip;
+            memcpy(ts, ptr, packet_head);
+            next_skip -= mod->sync.buffer_size;
+            memcpy(&ts[packet_head], mod->sync.buffer, next_skip);
+            ptr = ts;
+        }
 
-        if(mpegts_pcr_check(&mod->sync.buffer[skip]))
+        if(mpegts_pcr_check(ptr))
         {
             *block_size = count;
             *next_block = skip;
+            *pcr = mpegts_pcr(ptr);
 
             return true;
         }
+
+        skip = (next_skip == mod->sync.buffer_size) ? 0 : next_skip;
     }
 
     return false;
@@ -326,7 +342,7 @@ static void thread_loop(void *arg)
 {
     module_data_t *mod = arg;
 
-    uint8_t ts[TS_PACKET_SIZE];
+    uint8_t *ptr, ts[TS_PACKET_SIZE];
 
     mod->is_thread_started = true;
 
@@ -378,7 +394,7 @@ static void thread_loop(void *arg)
         if(mod->sync.buffer_write == mod->sync.buffer_size)
             mod->sync.buffer_write = 0;
 
-        if(!seek_pcr(mod, &block_size, &next_block))
+        if(!seek_pcr(mod, &block_size, &next_block, &mod->pcr))
         {
             mod->is_stream_error = true;
             asc_log_error(MSG("wrong stream format"));
@@ -387,7 +403,6 @@ static void thread_loop(void *arg)
 
         mod->sync.buffer_count -= block_size;
         mod->sync.buffer_read = next_block;
-        mod->pcr = mpegts_pcr(&mod->sync.buffer[mod->sync.buffer_read]);
 
         time_sync_b = asc_utime();
         block_time_total = 0.0;
@@ -414,14 +429,13 @@ static void thread_loop(void *arg)
                 }
             }
 
-            if(!seek_pcr(mod, &block_size, &next_block))
+            // get PCR
+            uint64_t pcr;
+            if(!seek_pcr(mod, &block_size, &next_block, &pcr))
             {
                 asc_log_error(MSG("next PCR is not found"));
                 break;
             }
-
-            // get PCR
-            const uint64_t pcr = mpegts_pcr(&mod->sync.buffer[next_block]);
             const double block_time = mpegts_pcr_block_ms(mod->pcr, pcr);
             mod->pcr = pcr;
             if(block_time < 0 || block_time > 250)
@@ -453,7 +467,7 @@ static void thread_loop(void *arg)
                   && mod->sync.buffer_read != next_block)
             {
                 // sending
-                uint8_t *ptr = &mod->sync.buffer[mod->sync.buffer_read];
+                ptr = &mod->sync.buffer[mod->sync.buffer_read];
                 next_packet = mod->sync.buffer_read + TS_PACKET_SIZE;
                 if(next_packet < mod->sync.buffer_size)
                 {
