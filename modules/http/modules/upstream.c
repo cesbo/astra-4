@@ -66,18 +66,20 @@ static void on_upstream_ready(void *arg)
     const ssize_t send_size = asc_socket_send(  client->sock
                                               , &response->buffer[response->buffer_read]
                                               , block_size);
-    if(send_size == -1)
+    if(send_size > 0)
+    {
+        response->buffer_count -= send_size;
+        response->buffer_read += send_size;
+        if(response->buffer_read >= response->mod->buffer_size)
+            response->buffer_read = 0;
+    }
+    else if(send_size == -1)
     {
         http_client_error(  client, "failed to send ts (%d bytes) [%s]"
                           , block_size, asc_socket_error());
         http_client_close(client);
         return;
     }
-
-    response->buffer_count -= block_size;
-    response->buffer_read += block_size;
-    if(response->buffer_read >= response->mod->buffer_size)
-        response->buffer_read = 0;
 
     if(   response->is_socket_busy == true
        && response->buffer_count == 0)
@@ -105,7 +107,12 @@ static void on_ts(void *arg, const uint8_t *ts)
     }
 
     const size_t buffer_write = response->buffer_write + TS_PACKET_SIZE;
-    if(buffer_write > response->mod->buffer_size)
+    if(buffer_write < response->mod->buffer_size)
+    {
+        memcpy(&response->buffer[response->buffer_write], ts, TS_PACKET_SIZE);
+        response->buffer_write += TS_PACKET_SIZE;
+    }
+    else if(buffer_write > response->mod->buffer_size)
     {
         const size_t ts_head = response->mod->buffer_size - response->buffer_write;
         memcpy(&response->buffer[response->buffer_write], ts, ts_head);
@@ -115,7 +122,7 @@ static void on_ts(void *arg, const uint8_t *ts)
     else
     {
         memcpy(&response->buffer[response->buffer_write], ts, TS_PACKET_SIZE);
-        response->buffer_write += TS_PACKET_SIZE;
+        response->buffer_write = 0;
     }
     response->buffer_count += TS_PACKET_SIZE;
 
