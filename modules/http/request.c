@@ -46,6 +46,7 @@ struct module_data_t
     const char *host;
     int port;
     const char *path;
+    bool no_sync;
 
     int timeout_ms;
     bool is_stream;
@@ -516,6 +517,49 @@ static void thread_loop(void *arg)
     }
 }
 
+static void on_ts_read(void *arg)
+{
+    module_data_t *mod = arg;
+
+    ssize_t size = asc_socket_recv(  mod->sock
+                                   , &mod->sync.buffer[mod->sync.buffer_write]
+                                   , mod->sync.buffer_size - mod->sync.buffer_write);
+    if(size <= 0)
+    {
+        on_close(mod);
+        return;
+    }
+
+    mod->sync.buffer_write += size;
+    mod->sync.buffer_read = 0;
+
+    while(1)
+    {
+        while(mod->sync.buffer[mod->sync.buffer_read] != 0x47)
+        {
+            ++mod->sync.buffer_read;
+            if(mod->sync.buffer_read >= mod->sync.buffer_write)
+            {
+                mod->sync.buffer_write = 0;
+                return;
+            }
+        }
+
+        const size_t next = mod->sync.buffer_read + TS_PACKET_SIZE;
+        if(next > mod->sync.buffer_write)
+        {
+            const size_t tail = mod->sync.buffer_write - mod->sync.buffer_read;
+            if(tail > 0)
+                memmove(mod->sync.buffer, &mod->sync.buffer[mod->sync.buffer_read], tail);
+            mod->sync.buffer_write = tail;
+            return;
+        }
+
+        module_stream_send(mod, &mod->sync.buffer[mod->sync.buffer_read]);
+        mod->sync.buffer_read += TS_PACKET_SIZE;
+    }
+}
+
 /*
  * oooooooooo  ooooooooooo      o      ooooooooo
  *  888    888  888    88      888      888    88o
@@ -705,10 +749,6 @@ static void on_read(void *arg)
 
     if(mod->is_stream && mod->status_code == 200)
     {
-        asc_socket_set_on_read(mod->sock, NULL);
-        asc_socket_set_on_ready(mod->sock, NULL);
-        asc_socket_set_on_close(mod->sock, NULL);
-
         lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_response);
         lua_pushboolean(lua, mod->is_stream);
         lua_setfield(lua, -2, __stream);
@@ -716,6 +756,17 @@ static void on_read(void *arg)
         callback(mod);
 
         mod->sync.buffer = malloc(mod->sync.buffer_size);
+
+        if(mod->no_sync)
+        {
+            asc_socket_set_on_read(mod->sock, on_ts_read);
+            asc_socket_set_on_ready(mod->sock, NULL);
+            return;
+        }
+
+        asc_socket_set_on_read(mod->sock, NULL);
+        asc_socket_set_on_ready(mod->sock, NULL);
+        asc_socket_set_on_close(mod->sock, NULL);
 
         mod->thread = asc_thread_init(mod);
         mod->thread_output = asc_thread_buffer_init(mod->sync.buffer_size);
@@ -1030,6 +1081,8 @@ static void module_init(module_data_t *mod)
 
     mod->path = __default_path;
     module_option_string("path", &mod->path, NULL);
+
+    module_option_boolean("no_sync", &mod->no_sync);
 
     lua_getfield(lua, 2, __callback);
     asc_assert(lua_isfunction(lua, -1), MSG("option 'callback' is required"));

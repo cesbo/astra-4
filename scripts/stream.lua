@@ -589,16 +589,20 @@ input_list.http = function(channel_data, input_id)
     http_conf.host = input_conf.host
     http_conf.port = input_conf.port
     http_conf.path = input_conf.path
+
     http_conf.headers =
     {
         "User-Agent: Astra",
         "Host: " .. input_conf.host .. ":" .. input_conf.port,
         "Connection: close",
     }
-    http_conf.stream = true
-
     if input_conf.auth then
         table.insert(http_conf.headers, "Authorization: Basic " .. input_conf.auth)
+    end
+
+    http_conf.stream = true
+    if input_conf.no_sync == true then
+        http_conf.no_sync = true
     end
 
     if input_conf.buffer_size then http_conf.buffer_size = input_conf.buffer_size end
