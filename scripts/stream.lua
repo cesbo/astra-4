@@ -756,7 +756,7 @@ function init_input(channel_data, input_id)
 
     for key,_ in pairs(input_conf) do
         if input_module[key] then
-            input_module[key](input_conf, input_data)
+            input_module[key](channel_data, input_id)
         end
     end
 

@@ -21,7 +21,7 @@
 #include <astra.h>
 #include "../http.h"
 
-#define DEFAULT_BUFFER_SIZE (512 * 1024)
+#define DEFAULT_BUFFER_SIZE (1024 * 1024)
 #define DEFAULT_BUFFER_FILL (128 * 1024)
 
 struct module_data_t
