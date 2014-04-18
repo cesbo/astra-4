@@ -138,9 +138,9 @@ int main()
                           , "=d" (edx)
                           : "a"  (1));
 
-    if(ecx & (0x00080000 /* 4.1 */ | 0x00100000 /* 4.2 */ )) printf("-msse2 -msse4");
-    else if(ecx & 0x00000001) printf("-msse2");
-    else if(edx & 0x04000000) printf("-msse2");
+    if(ecx & (0x00080000 /* 4.1 */ | 0x00100000 /* 4.2 */ )) printf("-msse -msse2 -msse4");
+    else if(ecx & 0x00000001) printf("-msse -msse2");
+    else if(edx & 0x04000000) printf("-msse -msse2");
     else if(edx & 0x02000000) printf("-msse");
     else if(edx & 0x00800000) printf("-mmmx");
 #endif
