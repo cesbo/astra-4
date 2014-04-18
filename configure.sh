@@ -239,13 +239,21 @@ EOF
 
 check_libdvbcsa()
 {
-    libdvbcsa_test_c | $APP_C -Werror $1 -o /dev/null -x c - >/dev/null 2>&1
+    O="check_libdvbcsa.o"
+    R=1
+    libdvbcsa_test_c | $APP_C -Werror $1 -c -o $O -x c - >/dev/null 2>&1
+    if [ $? -eq 0 ] ; then
+        $APP_C $O -o /dev/null $2 >/dev/null 2>&1
+        R=$?
+        rm $O
+    fi
+    return $R
 }
 
 check_libdvbcsa_all()
 {
     LIBDVBCSA_LDFLAGS="-ldvbcsa"
-    if check_libdvbcsa "$LIBDVBCSA_LDFLAGS" ; then
+    if check_libdvbcsa "" "$LIBDVBCSA_LDFLAGS" ; then
         LIBDVBCSA=1
         LDFLAGS="$LDFLAGS $LIBDVBCSA_LDFLAGS"
         return 0
@@ -253,12 +261,14 @@ check_libdvbcsa_all()
 
     LIBDVBCSA_CFLAGS="-I$SRCDIR/contrib/build/libdvbcsa/src"
     LIBDVBCSA_LDFLAGS="$SRCDIR/contrib/build/libdvbcsa/libdvbcsa.a"
-    if check_libdvbcsa "$LIBDVBCSA_CFLAGS $LIBDVBCSA_LDFLAGS" ; then
+    if check_libdvbcsa "$LIBDVBCSA_CFLAGS" "$LIBDVBCSA_LDFLAGS" ; then
         LIBDVBCSA=1
         CFLAGS="$CFLAGS $LIBDVBCSA_CFLAGS"
         LDFLAGS="$LDFLAGS $LIBDVBCSA_LDFLAGS"
         return 0
     fi
+
+    return 1
 }
 
 check_libdvbcsa_all
