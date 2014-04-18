@@ -56,33 +56,36 @@ static void on_upstream_ready(void *arg)
     http_client_t *client = arg;
     http_response_t *response = client->response;
 
-    size_t block_size = (response->buffer_read < response->buffer_write)
-                      ? (response->buffer_write - response->buffer_read)
-                      : (response->mod->buffer_size - response->buffer_read);
-
-    if(block_size > response->buffer_count)
-        block_size = response->buffer_count;
-
-    const ssize_t send_size = asc_socket_send(  client->sock
-                                              , &response->buffer[response->buffer_read]
-                                              , block_size);
-    if(send_size > 0)
+    if(response->buffer_count > 0)
     {
-        response->buffer_count -= send_size;
-        response->buffer_read += send_size;
-        if(response->buffer_read >= response->mod->buffer_size)
-            response->buffer_read = 0;
-    }
-    else if(send_size == -1)
-    {
-        http_client_error(  client, "failed to send ts (%d bytes) [%s]"
-                          , block_size, asc_socket_error());
-        http_client_close(client);
-        return;
+        size_t block_size = (response->buffer_write > response->buffer_read)
+                          ? (response->buffer_write - response->buffer_read)
+                          : (response->mod->buffer_size - response->buffer_read);
+
+        if(block_size > response->buffer_count)
+            block_size = response->buffer_count;
+
+        const ssize_t send_size = asc_socket_send(  client->sock
+                                                  , &response->buffer[response->buffer_read]
+                                                  , block_size);
+
+        if(send_size > 0)
+        {
+            response->buffer_count -= send_size;
+            response->buffer_read += send_size;
+            if(response->buffer_read >= response->mod->buffer_size)
+                response->buffer_read = 0;
+        }
+        else if(send_size == -1)
+        {
+            http_client_error(  client, "failed to send ts (%d bytes) [%s]"
+                              , block_size, asc_socket_error());
+            http_client_close(client);
+            return;
+        }
     }
 
-    if(   response->is_socket_busy == true
-       && response->buffer_count == 0)
+    if(response->buffer_count == 0)
     {
         asc_socket_set_on_ready(client->sock, NULL);
         response->is_socket_busy = false;
