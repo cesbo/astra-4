@@ -395,7 +395,6 @@ APP_MODULES_LIST=`select_modules`
 # modules checking
 
 APP_MODULES_CONF=""
-APP_MODULES_A=""
 
 __check_module()
 {
@@ -423,13 +422,6 @@ __check_module()
     fi
 
     if [ -z "$SOURCES" ] ; then
-        if [ -f "$MODULE/module.a" ] ; then
-            APP_MODULES_A="$APP_MODULES_A $MODULE/module.a"
-            if [ -n "MODULES" ] ; then
-                APP_MODULES_CONF="$APP_MODULES_CONF $MODULES"
-            fi
-            return 0
-        fi
         echo "$MODULE: SOURCES is not defined" >$TMP_MODULE_MK
         return 1
     fi
@@ -559,7 +551,7 @@ SPATH       = $ARG_SPATH
 
 \$(APP): $APP_OBJS \$(CORE_OBJS) \$(MODS_OBJS)
 	@echo "BUILD: \$@"
-	@\$(LD) \$^$APP_MODULES_A -o \$@ \$(LDFLAGS)
+	@\$(LD) \$^ -o \$@ \$(LDFLAGS)
 	@\$(STRIP) \$@
 
 install: \$(APP)
