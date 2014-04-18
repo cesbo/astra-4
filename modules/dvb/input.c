@@ -605,6 +605,9 @@ static void thread_loop(void *arg)
     {
         const int ret = poll(fds, nfds, 100);
 
+        if(!mod->is_thread_started)
+            break;
+
         if(ret < 0)
         {
             asc_log_error(MSG("poll() failed [%s]"), strerror(errno));
