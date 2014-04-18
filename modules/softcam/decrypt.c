@@ -191,7 +191,11 @@ static bool __cat_check_desc(module_data_t *mod, const uint8_t *desc)
         }
     }
     else
+    {
         mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_CA, pid);
+       if(mod->__decrypt.cam->disable_emm)
+           return false;
+    }
 
     if(   mod->__decrypt.cas
        && DESC_CA_CAID(desc) == mod->caid
@@ -231,7 +235,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
 
     psi->crc32 = crc32;
 
-    bool is_emm_selected = false;
+    bool is_emm_selected = mod->__decrypt.cam->disable_emm;
 
     const uint8_t *desc_pointer;
     CAT_DESC_FOREACH(psi, desc_pointer)
