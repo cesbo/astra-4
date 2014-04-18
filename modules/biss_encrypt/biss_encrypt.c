@@ -19,7 +19,7 @@
  */
 
 #include <astra.h>
-#include "dvbcsa/dvbcsa.h"
+#include <dvbcsa/dvbcsa.h>
 
 struct module_data_t
 {

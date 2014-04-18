@@ -220,6 +220,51 @@ if [ -n "$ARG_LDFLAGS" ] ; then
     LDFLAGS="$LDFLAGS $ARG_LDFLAGS"
 fi
 
+# libdvbcsa
+
+LIBDVBCSA=0
+
+libdvbcsa_test_c()
+{
+    cat <<EOF
+#include <stdio.h>
+#include <dvbcsa/dvbcsa.h>
+int main(void) {
+    struct dvbcsa_key_s *key = dvbcsa_key_alloc();
+    dvbcsa_key_free(key);
+    return 0;
+}
+EOF
+}
+
+check_libdvbcsa()
+{
+    libdvbcsa_test_c | $APP_C -Werror $1 -o /dev/null -x c - >/dev/null 2>&1
+}
+
+check_libdvbcsa_all()
+{
+    LIBDVBCSA_LDFLAGS="-ldvbcsa"
+    if check_libdvbcsa "$LIBDVBCSA_LDFLAGS" ; then
+        LIBDVBCSA=1
+        LDFLAGS="$LDFLAGS $LIBDVBCSA_LDFLAGS"
+        return 0
+    fi
+
+    LIBDVBCSA_CFLAGS="-I$SRCDIR/contrib/build/libdvbcsa/src"
+    LIBDVBCSA_LDFLAGS="$SRCDIR/contrib/build/libdvbcsa/libdvbcsa.a"
+    if check_libdvbcsa "$LIBDVBCSA_CFLAGS $LIBDVBCSA_LDFLAGS" ; then
+        LIBDVBCSA=1
+        CFLAGS="$CFLAGS $LIBDVBCSA_CFLAGS"
+        LDFLAGS="$LDFLAGS $LIBDVBCSA_LDFLAGS"
+        return 0
+    fi
+}
+
+check_libdvbcsa_all
+
+# APP flags
+
 APP_CFLAGS="$CFLAGS -Wstrict-prototypes -std=iso9899:1999 -D_GNU_SOURCE"
 APP_LDFLAGS="$LDFLAGS"
 
