@@ -167,6 +167,18 @@ static void on_close(void *arg)
 {
     module_data_t *mod = arg;
 
+    if(!mod->sock)
+        return;
+
+    asc_socket_close(mod->sock);
+    mod->sock = NULL;
+
+    if(mod->timeout)
+    {
+        asc_timer_destroy(mod->timeout);
+        mod->timeout = NULL;
+    }
+
     if(mod->request.buffer)
     {
         if(mod->request.status == 1)
@@ -180,18 +192,20 @@ static void on_close(void *arg)
         mod->request.idx_body = 0;
     }
 
-    if(mod->timeout)
-    {
-        asc_timer_destroy(mod->timeout);
-        mod->timeout = NULL;
-    }
-
     if(mod->thread)
         on_thread_close(mod);
 
-    if(mod->is_stream && mod->request.status == 3)
+    if(mod->status == 2)
+    {
+        mod->status = 3;
+
+        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_response);
+        callback(mod);
+    }
+
+    if(mod->is_stream && mod->status == 3)
     { /* stream on_close */
-        mod->request.status = 0;
+        mod->status = 0;
 
         lua_pushnil(lua);
         callback(mod);
@@ -201,12 +215,6 @@ static void on_close(void *arg)
     {
         free(mod->sync.buffer);
         mod->sync.buffer = NULL;
-    }
-
-    if(mod->sock)
-    {
-        asc_socket_close(mod->sock);
-        mod->sock = NULL;
     }
 
     if(mod->idx_response)
