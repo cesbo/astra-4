@@ -190,6 +190,12 @@ static void on_close(void *arg)
     if(mod->thread)
         on_thread_close(mod);
 
+    if(mod->is_stream && mod->no_sync && mod->request.status == 3)
+    { /* no_sync stream */
+        lua_pushnil(lua);
+        callback(mod);
+    }
+
     if(mod->sync.buffer)
     {
         free(mod->sync.buffer);
