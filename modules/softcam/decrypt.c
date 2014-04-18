@@ -36,6 +36,18 @@
 #include "cas/cas_list.h"
 #include <dvbcsa/dvbcsa.h>
 
+typedef struct
+{
+    uint16_t ecm_pid;
+
+    uint8_t parity;
+    struct dvbcsa_bs_key_s *even_key;
+    struct dvbcsa_bs_key_s *odd_key;
+
+    struct dvbcsa_bs_batch_s *batch;
+    size_t batch_skip;
+} ca_stream_t;
+
 struct module_data_t
 {
     MODULE_STREAM_DATA();
@@ -49,17 +61,13 @@ struct module_data_t
     /* dvbcsa */
     bool is_keys;
 
-    uint8_t parity;
-    struct dvbcsa_bs_key_s *even_key;
-    struct dvbcsa_bs_key_s *odd_key;
+    ca_stream_t ca_stream;
 
     size_t storage_size;
     size_t storage_skip;
 
-    int batch_skip;
     uint8_t *batch_storage_recv;
     uint8_t *batch_storage_send;
-    struct dvbcsa_bs_batch_s *batch;
 
     int new_key_id; // 0 - not, 1 - first key, 2 - second key
     uint8_t new_key[16];
@@ -537,13 +545,13 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 
         if(hdr_size)
         {
-            if(mod->parity == 0x00)
-                mod->parity = sc;
+            if(mod->ca_stream.parity == 0x00)
+                mod->ca_stream.parity = sc;
 
             dst[3] &= ~0xC0;
-            mod->batch[mod->batch_skip].data = &dst[hdr_size];
-            mod->batch[mod->batch_skip].len = TS_PACKET_SIZE - hdr_size;
-            ++mod->batch_skip;
+            mod->ca_stream.batch[mod->ca_stream.batch_skip].data = &dst[hdr_size];
+            mod->ca_stream.batch[mod->ca_stream.batch_skip].len = TS_PACKET_SIZE - hdr_size;
+            ++mod->ca_stream.batch_skip;
         }
     }
 
@@ -553,30 +561,31 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 
     if(mod->storage_skip >= mod->storage_size)
     {
-        mod->batch[mod->batch_skip].data = NULL;
+        mod->ca_stream.batch[mod->ca_stream.batch_skip].data = NULL;
 
-        if(mod->parity == 0x80)
-            dvbcsa_bs_decrypt(mod->even_key, mod->batch, 184);
+        if(mod->ca_stream.parity == 0x80)
+            dvbcsa_bs_decrypt(mod->ca_stream.even_key, mod->ca_stream.batch, TS_BODY_SIZE);
         else
-            dvbcsa_bs_decrypt(mod->odd_key, mod->batch, 184);
+            dvbcsa_bs_decrypt(mod->ca_stream.odd_key, mod->ca_stream.batch, TS_BODY_SIZE);
+
+        mod->ca_stream.batch_skip = 0;
+        mod->ca_stream.parity = 0x00;
 
         uint8_t *storage_tmp = mod->batch_storage_send;
         mod->batch_storage_send = mod->batch_storage_recv;
         if(!storage_tmp)
             storage_tmp = malloc(mod->storage_size);
         mod->batch_storage_recv = storage_tmp;
-        mod->batch_skip = 0;
         mod->storage_skip = 0;
-        mod->parity = 0x00;
     }
 
     // check new key
     if(mod->new_key_id)
     {
         if(mod->new_key_id == 1)
-            dvbcsa_bs_key_set(&mod->new_key[0], mod->even_key);
+            dvbcsa_bs_key_set(&mod->new_key[0], mod->ca_stream.even_key);
         else if(mod->new_key_id == 2)
-            dvbcsa_bs_key_set(&mod->new_key[8], mod->odd_key);
+            dvbcsa_bs_key_set(&mod->new_key[8], mod->ca_stream.odd_key);
 
         mod->new_key_id = 0;
     }
@@ -663,8 +672,8 @@ static void on_response(module_data_t *mod, const uint8_t *data, const char *err
         else
         {
             mod->new_key_id = 0;
-            dvbcsa_bs_key_set(&data[3], mod->even_key);
-            dvbcsa_bs_key_set(&data[11], mod->odd_key);
+            dvbcsa_bs_key_set(&data[3], mod->ca_stream.even_key);
+            dvbcsa_bs_key_set(&data[11], mod->ca_stream.odd_key);
 
             memcpy(mod->new_key, &data[3], 16);
             if(mod->is_keys)
@@ -707,12 +716,12 @@ static void module_init(module_data_t *mod)
     mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
 
     const int batch_size = dvbcsa_bs_batch_size();
-    mod->batch = calloc(batch_size + 1, sizeof(struct dvbcsa_bs_batch_s));
+    mod->ca_stream.batch = calloc(batch_size + 1, sizeof(struct dvbcsa_bs_batch_s));
+    mod->ca_stream.even_key = dvbcsa_bs_key_alloc();
+    mod->ca_stream.odd_key = dvbcsa_bs_key_alloc();
+
     mod->storage_size = batch_size * TS_PACKET_SIZE;
     mod->batch_storage_recv = malloc(mod->storage_size);
-
-    mod->even_key = dvbcsa_bs_key_alloc();
-    mod->odd_key = dvbcsa_bs_key_alloc();
 
     uint8_t first_key[8] = { 0 };
     const char *string_value = NULL;
@@ -727,8 +736,8 @@ static void module_init(module_data_t *mod)
         mod->is_keys = true;
         mod->caid = 0x2600;
     }
-    dvbcsa_bs_key_set(first_key, mod->even_key);
-    dvbcsa_bs_key_set(first_key, mod->odd_key);
+    dvbcsa_bs_key_set(first_key, mod->ca_stream.even_key);
+    dvbcsa_bs_key_set(first_key, mod->ca_stream.odd_key);
 
     mod->__decrypt.self = mod;
     mod->__decrypt.on_cam_ready = on_cam_ready;
@@ -780,11 +789,11 @@ static void module_destroy(module_data_t *mod)
         module_decrypt_cas_destroy(mod);
     }
 
-    dvbcsa_bs_key_free(mod->even_key);
-    dvbcsa_bs_key_free(mod->odd_key);
-    free(mod->batch);
-    if(mod->batch_storage_recv)
-        free(mod->batch_storage_recv);
+    dvbcsa_bs_key_free(mod->ca_stream.even_key);
+    dvbcsa_bs_key_free(mod->ca_stream.odd_key);
+    free(mod->ca_stream.batch);
+
+    free(mod->batch_storage_recv);
     if(mod->batch_storage_send)
         free(mod->batch_storage_send);
 
