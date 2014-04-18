@@ -88,7 +88,6 @@ struct module_data_t
     string_buffer_t *content;
 
     // stream
-    bool is_stream_error;
     bool is_thread_started;
     asc_thread_t *thread;
     asc_thread_buffer_t *thread_output;
@@ -190,8 +189,10 @@ static void on_close(void *arg)
     if(mod->thread)
         on_thread_close(mod);
 
-    if(mod->is_stream && mod->no_sync && mod->request.status == 3)
-    { /* no_sync stream */
+    if(mod->is_stream && mod->request.status == 3)
+    { /* stream on_close */
+        mod->request.status = 0;
+
         lua_pushnil(lua);
         callback(mod);
     }
@@ -325,14 +326,6 @@ static void on_thread_close(void *arg)
         mod->thread_output = NULL;
     }
 
-    if(mod->is_stream_error)
-    {
-        mod->is_stream_error = false;
-
-        lua_pushnil(lua);
-        callback(mod);
-    }
-
     on_close(mod);
 }
 
@@ -391,7 +384,6 @@ static void thread_loop(void *arg)
             {
                 if(time_sync_b - check_timeout >= (uint32_t)mod->timeout_ms * 1000)
                 {
-                    mod->is_stream_error = true;
                     asc_log_error(MSG("receiving timeout"));
                     return;
                 }
@@ -404,7 +396,6 @@ static void thread_loop(void *arg)
 
         if(!seek_pcr(mod, &block_size, &next_block, &mod->pcr))
         {
-            mod->is_stream_error = true;
             asc_log_error(MSG("wrong stream format"));
             return;
         }
