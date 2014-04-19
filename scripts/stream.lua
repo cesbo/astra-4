@@ -608,23 +608,23 @@ input_list.http = function(channel_data, input_id)
     {
         interval = 5,
         callback = function(self)
-                instance.request:close()
+                instance.timeout:close()
+                instance.timeout = nil
+
+                if instance.request then instance.request:close() end
                 instance.request = http_request(http_conf)
+
                 collectgarbage()
             end
     }
 
-    http_conf.callback = function(self, data)
-            if not data then
-                if instance.timeout then
-                    instance.timeout:close()
-                    instance.timeout = nil
-                end
-
-                instance.request = http_request(http_conf)
+    http_conf.callback = function(self, response)
+            if not response then
+                instance.request:close()
+                instance.request = nil
                 instance.timeout = timer(timer_conf)
 
-            elseif data.code == 200 then
+            elseif response.code == 200 then
                 if instance.timeout then
                     instance.timeout:close()
                     instance.timeout = nil
@@ -632,13 +632,16 @@ input_list.http = function(channel_data, input_id)
 
                 instance.tail:set_upstream(self:stream())
 
-            elseif data.code == 301 or data.code == 302 then
+            elseif response.code == 301 or response.code == 302 then
                 if instance.timeout then
                     instance.timeout:close()
                     instance.timeout = nil
                 end
 
-                local host, port, path = http_parse_location(data.headers)
+                instance.request:close()
+                instance.request = nil
+
+                local host, port, path = http_parse_location(response.headers)
                 if host then
                     http_conf.host = host
                     http_conf.port = port
@@ -646,18 +649,20 @@ input_list.http = function(channel_data, input_id)
                     http_conf.headers[2] = "Host: " .. host .. ":" .. port
 
                     instance.request = http_request(http_conf)
-                    instance.timeout = timer(timer_conf)
                 end
 
             else
                 log.error("[" .. channel_data.config.name .. " #" .. input_id .. "] " ..
-                          "HTTP Error " .. data.code .. ":" .. data.message)
+                          "HTTP Error " .. response.code .. ":" .. response.message)
+
+                instance.request:close()
+                instance.request = nil
+                instance.timeout = timer(timer_conf)
             end
         end
 
     instance.tail = transmit({})
     instance.request = http_request(http_conf)
-    instance.timeout = timer(timer_conf)
 
     return instance
 end

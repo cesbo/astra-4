@@ -154,7 +154,10 @@ void timeout_callback(void *arg)
     mod->timeout = NULL;
 
     if(mod->request.status == 0)
+    {
+        mod->request.status = -1;
         call_error(mod, "connection timeout");
+    }
     else
         call_error(mod, "response timeout");
 
@@ -195,6 +198,12 @@ static void on_close(void *arg)
     if(mod->thread)
         on_thread_close(mod);
 
+    if(mod->request.status == 0)
+    {
+        mod->request.status = -1;
+        call_error(mod, "connection failed");
+    }
+
     if(mod->status == 2)
     {
         mod->status = 3;
@@ -204,8 +213,9 @@ static void on_close(void *arg)
     }
 
     if(mod->is_stream && mod->status == 3)
-    { /* stream on_close */
-        mod->status = 0;
+    {
+        /* stream on_close */
+        mod->status = -1;
 
         lua_pushnil(lua);
         callback(mod);
@@ -1093,7 +1103,7 @@ static void on_connect(void *arg)
 
 static int method_close(module_data_t *mod)
 {
-    mod->status = 0;
+    mod->status = -1;
     on_close(mod);
     return 0;
 }
@@ -1144,7 +1154,7 @@ static void module_destroy(module_data_t *mod)
     if(mod->is_stream)
         module_stream_destroy(mod);
 
-    mod->status = 0;
+    mod->status = -1;
     on_close(mod);
 }
 
