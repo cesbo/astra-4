@@ -601,13 +601,11 @@ input_list.http = function(channel_data, input_id)
     end
 
     http_conf.stream = true
-    if input_conf.no_sync == true then
-        http_conf.no_sync = true
-    end
-
+    if input_conf.no_sync == true then http_conf.no_sync = true end
     if input_conf.buffer_size then http_conf.buffer_size = input_conf.buffer_size end
 
-    timer_conf = {
+    local timer_conf =
+    {
         interval = 5,
         callback = function(self)
                 instance.request:close()
@@ -671,6 +669,7 @@ kill_input_list.http = function(channel_data, input_id)
         input_data.source.timeout:close()
         input_data.source.timeout = nil
     end
+
     input_data.source.request:close()
     input_data.source.request = nil
 end

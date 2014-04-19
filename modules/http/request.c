@@ -1093,6 +1093,7 @@ static void on_connect(void *arg)
 
 static int method_close(module_data_t *mod)
 {
+    mod->status = 0;
     on_close(mod);
     return 0;
 }
@@ -1143,9 +1144,7 @@ static void module_destroy(module_data_t *mod)
     if(mod->is_stream)
         module_stream_destroy(mod);
 
-    if(mod->idx_self == 0)
-        return;
-
+    mod->status = 0;
     on_close(mod);
 }
 
