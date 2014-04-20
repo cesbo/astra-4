@@ -750,6 +750,13 @@ static void on_read(void *arg)
         }
         lua_pop(lua, 1); // transfer-encoding
 
+        if(mod->is_content_length || mod->is_chunked)
+        {
+            if(mod->content)
+                free(mod->content);
+            mod->content = string_buffer_alloc();
+        }
+
         lua_pop(lua, 2); // headers + response
 
         if(   (mod->is_head)
@@ -764,12 +771,6 @@ static void on_read(void *arg)
             if(mod->is_connection_close)
                 on_close(mod);
 
-            return;
-        }
-
-        if(skip >= mod->buffer_skip)
-        {
-            mod->buffer_skip = 0;
             return;
         }
     }
@@ -813,9 +814,6 @@ static void on_read(void *arg)
 
         return;
     }
-
-    if(!mod->content)
-        mod->content = string_buffer_alloc();
 
     // Transfer-Encoding: chunked
     if(mod->is_chunked)
@@ -882,9 +880,6 @@ static void on_read(void *arg)
                 break;
             }
         }
-
-        mod->buffer_skip = 0;
-        return;
     }
 
     // Content-Length: *
@@ -919,10 +914,9 @@ static void on_read(void *arg)
                 return;
             }
         }
-
-        mod->buffer_skip = 0;
-        return;
     }
+
+    mod->buffer_skip = 0;
 }
 
 /*
