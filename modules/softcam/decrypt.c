@@ -69,7 +69,6 @@ struct module_data_t
     /* Config */
     const char *name;
     int caid;
-    int ecm_pid;
 
     /* dvbcsa */
     asc_list_t *el_list;
@@ -336,20 +335,20 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
  *
  */
 
-static uint16_t __pmt_check_desc(module_data_t *mod, const uint8_t *desc, bool is_ecm_selected)
+static bool __pmt_check_desc(module_data_t *mod, const uint8_t *desc, bool is_ecm_selected)
 {
     const uint16_t pid = DESC_CA_PID(desc);
 
     /* Skip BISS */
     if(pid == NULL_TS_PID)
-        return 0;
+        return false;
 
     if(mod->stream[pid])
     {
         if(!(mod->stream[pid]->type & MPEGTS_PACKET_CA))
         {
             asc_log_warning(MSG("Skip ECM pid:%d"), pid);
-            return 0;
+            return false;
         }
     }
     else
@@ -365,12 +364,20 @@ static uint16_t __pmt_check_desc(module_data_t *mod, const uint8_t *desc, bool i
             return 0;
         }
 
+        asc_list_for(mod->ca_list)
+        {
+            ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
+            if(ca_stream->ecm_pid == pid)
+                return true;
+        }
+
+        ca_stream_init(mod, pid);
         mod->stream[pid]->type = MPEGTS_PACKET_ECM;
         asc_log_info(MSG("Select ECM pid:%d"), pid);
-        return pid;
+        return true;
     }
 
-    return 0;
+    return false;
 }
 
 static void on_pmt(void *arg, mpegts_psi_t *psi)
@@ -415,18 +422,12 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     // Make custom PMT and set descriptors for CAS
     mod->pmt->pid = psi->pid;
 
-    bool is_ecm_selected = false;
-
-    if(mod->ecm_pid) // skip descriptors checking
-    {
-        mod->stream[mod->ecm_pid] = mpegts_psi_init(MPEGTS_PACKET_ECM, mod->ecm_pid);
-        asc_log_info(MSG("Select ECM pid:%d"), mod->ecm_pid);
-        is_ecm_selected = true;
-    }
+    bool is_ecm_selected;
 
     uint16_t skip = 12;
     memcpy(mod->pmt->buffer, psi->buffer, 10);
 
+    is_ecm_selected = false;
     const uint8_t *desc_pointer;
     PMT_DESC_FOREACH(psi, desc_pointer)
     {
@@ -454,6 +455,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
         const uint16_t skip_last = skip;
 
+        is_ecm_selected = false;
         PMT_ITEM_DESC_FOREACH(pointer, desc_pointer)
         {
             if(desc_pointer[0] == 0x09)
@@ -473,18 +475,9 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         mod->pmt->buffer[skip_last - 1] = size & 0xFF;
     }
 
-    if(!mod->__decrypt.cas || is_ecm_selected)
-    {
-        mod->pmt->buffer_size = skip + CRC32_SIZE;
-        PSI_SET_SIZE(mod->pmt);
-        PSI_SET_CRC32(mod->pmt);
-    }
-    else
-    {
-        asc_log_error(MSG("ECM is not found"));
-        memcpy(mod->pmt->buffer, psi->buffer, psi->buffer_size);
-        mod->pmt->buffer_size = psi->buffer_size;
-    }
+    mod->pmt->buffer_size = skip + CRC32_SIZE;
+    PSI_SET_SIZE(mod->pmt);
+    PSI_SET_CRC32(mod->pmt);
 
     mpegts_psi_demux(mod->pmt
                      , (void (*)(void *, const uint8_t *))__module_stream_send
@@ -778,15 +771,15 @@ void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data, const c
     if(is_keys_ok)
     {
         // Set keys
-        if(ca_stream->new_key[3] == data[6] && ca_stream->new_key[7] == data[10])
+        if(ca_stream->new_key[11] == data[14] && ca_stream->new_key[15] == data[18])
+        {
+            ca_stream->new_key_id = 1;
+            memcpy(&ca_stream->new_key[0], &data[3], 8);
+        }
+        else if(ca_stream->new_key[3] == data[6] && ca_stream->new_key[7] == data[10])
         {
             ca_stream->new_key_id = 2;
             memcpy(&ca_stream->new_key[8], &data[11], 8);
-        }
-        else if(ca_stream->new_key[11] == data[14] && ca_stream->new_key[15] == data[18])
-        {
-            ca_stream->new_key_id = 1;
-            memcpy(ca_stream->new_key, &data[3], 8);
         }
         else
         {
@@ -875,8 +868,6 @@ static void module_init(module_data_t *mod)
             mod->__decrypt.is_cas_data = true;
             str_to_hex(cas_data, mod->__decrypt.cas_data, sizeof(mod->__decrypt.cas_data));
         }
-
-        module_option_number("ecm_pid", &mod->ecm_pid);
 
         module_cam_attach_decrypt(mod->__decrypt.cam, &mod->__decrypt);
     }
