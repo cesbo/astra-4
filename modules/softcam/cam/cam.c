@@ -20,7 +20,7 @@
 
 #include "../module_cam.h"
 
-em_packet_t * __module_cam_queue_pop(module_cam_t *cam)
+em_packet_t * module_cam_queue_pop(module_cam_t *cam)
 {
     asc_list_first(cam->packet_queue);
     if(asc_list_eol(cam->packet_queue))
@@ -46,7 +46,7 @@ void module_cam_queue_flush(module_cam_t *cam, module_decrypt_t *decrypt)
     }
 }
 
-void __module_cam_ready(module_cam_t *cam)
+void module_cam_ready(module_cam_t *cam)
 {
     cam->is_ready = true;
 
@@ -55,22 +55,22 @@ void __module_cam_ready(module_cam_t *cam)
         ; asc_list_next(cam->decrypt_list))
     {
         module_decrypt_t *__decrypt = asc_list_data(cam->decrypt_list);
-        __decrypt->on_cam_ready(__decrypt->self);
+        on_cam_ready(__decrypt->self);
     }
 }
 
-void __module_cam_reset(module_cam_t *cam)
+void module_cam_reset(module_cam_t *cam)
 {
     cam->is_ready = false;
 
-    for(asc_list_first(cam->decrypt_list)
+    for(  asc_list_first(cam->decrypt_list)
         ; !asc_list_eol(cam->decrypt_list)
         ; asc_list_next(cam->decrypt_list))
     {
         module_decrypt_t *__decrypt = asc_list_data(cam->decrypt_list);
-        __decrypt->on_cam_error(__decrypt->self);
+        on_cam_error(__decrypt->self);
     }
-    for(asc_list_first(cam->prov_list)
+    for(  asc_list_first(cam->prov_list)
         ; !asc_list_eol(cam->prov_list)
         ; asc_list_first(cam->prov_list))
     {
@@ -79,17 +79,18 @@ void __module_cam_reset(module_cam_t *cam)
     module_cam_queue_flush(cam, NULL);
 }
 
-void __module_cam_destroy(module_cam_t *cam)
+void module_cam_attach_decrypt(module_cam_t *cam, module_decrypt_t *decrypt)
 {
-    __module_cam_reset(cam);
-    for(asc_list_first(cam->decrypt_list)
-        ; !asc_list_eol(cam->decrypt_list)
-        ; asc_list_first(cam->decrypt_list))
-    {
-        asc_list_remove_current(cam->decrypt_list);
-    }
-    asc_list_destroy(cam->decrypt_list);
-    asc_list_destroy(cam->prov_list);
-    module_cam_queue_flush(cam, NULL);
-    asc_list_destroy(cam->packet_queue);
+    cam->connect(cam->self);
+    asc_list_insert_tail(cam->decrypt_list, decrypt);
+    if(cam->is_ready)
+        on_cam_ready(decrypt->self);
+}
+
+void module_cam_detach_decrypt(module_cam_t *cam, module_decrypt_t *decrypt)
+{
+    module_cam_queue_flush(cam, decrypt);
+    asc_list_remove_item(cam->decrypt_list, decrypt);
+    if(asc_list_size(cam->decrypt_list) == 0)
+        cam->disconnect(cam->self);
 }

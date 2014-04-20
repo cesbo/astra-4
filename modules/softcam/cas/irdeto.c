@@ -52,31 +52,24 @@ inline static uint16_t irdeto_ecm_chid(const uint8_t *payload)
     return (payload[6] << 8) | payload[7];
 }
 
-static int irdeto_check_ecm(module_data_t *mod, const uint8_t *payload)
+static bool irdeto_check_ecm(module_data_t *mod, const uint8_t *payload)
 {
     const uint8_t parity = payload[0];
-    if(parity == mod->__cas.parity)
-        return 0;
 
     const uint16_t chid = irdeto_ecm_chid(payload);
     if(mod->is_chid)
-    {
-        if(mod->chid != chid)
-            return 0;
-        mod->__cas.parity = parity;
-        return 1;
-    }
+        return (mod->chid == chid);
 
     /* autoselect ecm chid */
     if(mod->test.is_checking)
-        return 0;
+        return false;
 
     const uint8_t ecm_id = payload[4];
     if(ecm_id >= ECM_MAX_ID)
-        return 0;
+        return false;
 
     if(mod->test.ecm_id[ecm_id].parity == parity)
-        return 0;
+        return false;
 
     mod->test.is_checking = true;
     mod->test.current_id = ecm_id;
@@ -135,7 +128,6 @@ static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
         /* cas->test_count always greater than 0,
            because increased in irdeto_check_ecm */
         mod->chid = mod->test.ecm_id[mod->test.current_id].chid;
-        mod->__cas.parity = keys[0];
         asc_log_info("[cas Irdeto PNR:%d] select chid:0x%04X", mod->__cas.decrypt->pnr, mod->chid);
     }
 

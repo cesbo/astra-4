@@ -46,6 +46,7 @@ struct em_packet_t
     uint16_t buffer_size;
 
     module_decrypt_t *decrypt;
+    void *arg;
 };
 
 /*
@@ -59,6 +60,8 @@ struct em_packet_t
 
 struct module_cam_t
 {
+    module_data_t *self;
+
     bool is_ready;
 
     uint16_t caid;
@@ -71,44 +74,21 @@ struct module_cam_t
 
     void (*connect)(module_data_t *mod);
     void (*disconnect)(module_data_t *mod);
-    void (*send_em)(module_data_t *mod, module_decrypt_t *decrypt, uint8_t *buffer, uint16_t size);
-
-    module_data_t *self;
+    void (*send_em)(  module_data_t *mod
+                    , module_decrypt_t *decrypt, void *arg
+                    , uint8_t *buffer, uint16_t size);
 };
 
 #define MODULE_CAM_DATA() module_cam_t __cam
 
-em_packet_t * __module_cam_queue_pop(module_cam_t *cam);
-#define module_cam_queue_pop(_mod) __module_cam_queue_pop(&_mod->__cam)
+void module_cam_attach_decrypt(module_cam_t *cam, module_decrypt_t *decrypt);
+void module_cam_detach_decrypt(module_cam_t *cam, module_decrypt_t *decrypt);
 
+void module_cam_ready(module_cam_t *cam);
+void module_cam_reset(module_cam_t *cam);
+
+em_packet_t * module_cam_queue_pop(module_cam_t *cam);
 void module_cam_queue_flush(module_cam_t *cam, module_decrypt_t *decrypt);
-
-#define module_cam_set_provider(_mod, _provider)                                                \
-    asc_list_insert_tail(_mod->__cam.prov_list, _provider)
-
-void __module_cam_ready(module_cam_t *cam);
-#define module_cam_ready(_mod) __module_cam_ready(&_mod->__cam)
-
-void __module_cam_reset(module_cam_t *cam);
-#define module_cam_reset(_mod)                                                                  \
-    {                                                                                           \
-        if(_mod->__cam.is_ready)                                                                \
-            __module_cam_reset(&_mod->__cam);                                                   \
-        if(mod->packet)                                                                         \
-        {                                                                                       \
-            free(mod->packet);                                                                  \
-            mod->packet = NULL;                                                                 \
-        }                                                                                       \
-    }
-
-#define module_cam_response(_mod, _errmsg)                                                      \
-    {                                                                                           \
-        _mod->packet->decrypt->on_response(_mod->packet->decrypt->self                          \
-                                           , _mod->packet->buffer                               \
-                                           , _errmsg);                                          \
-        free(mod->packet);                                                                      \
-        mod->packet = NULL;                                                                     \
-    }
 
 #define module_cam_init(_mod, _connect, _disconnect, _send_em)                                  \
     {                                                                                           \
@@ -121,26 +101,18 @@ void __module_cam_reset(module_cam_t *cam);
         _mod->__cam.send_em = _send_em;                                                         \
     }
 
-void __module_cam_destroy(module_cam_t *cam);
-#define module_cam_destroy(_mod) __module_cam_destroy(&_mod->__cam)
-
-#define module_cam_attach_decrypt(_cam, _decrypt)                                               \
+#define module_cam_destroy(_mod)                                                                \
     {                                                                                           \
-        asc_list_first(_cam->decrypt_list);                                                     \
-        if(asc_list_eol(_cam->decrypt_list))                                                    \
-            _cam->connect(_cam->self);                                                          \
-        asc_list_insert_tail(_cam->decrypt_list, _decrypt);                                     \
-        if(_cam->is_ready)                                                                      \
-            (_decrypt)->on_cam_ready((_decrypt)->self);                                         \
-    }
-
-#define module_cam_detach_decrypt(_cam, _decrypt)                                               \
-    {                                                                                           \
-        module_cam_queue_flush(_cam, _decrypt);                                                 \
-        asc_list_remove_item(_cam->decrypt_list, _decrypt);                                     \
-        asc_list_first(_cam->decrypt_list);                                                     \
-        if(asc_list_eol(_cam->decrypt_list))                                                    \
-            _cam->disconnect(_cam->self);                                                       \
+        module_cam_reset(&_mod->__cam);                                                         \
+        for(  asc_list_first(_mod->__cam.decrypt_list)                                          \
+            ; !asc_list_eol(_mod->__cam.decrypt_list)                                           \
+            ; asc_list_first(_mod->__cam.decrypt_list))                                         \
+        {                                                                                       \
+            asc_list_remove_current(_mod->__cam.decrypt_list);                                  \
+        }                                                                                       \
+        asc_list_destroy(_mod->__cam.decrypt_list);                                             \
+        asc_list_destroy(_mod->__cam.prov_list);                                                \
+        asc_list_destroy(_mod->__cam.packet_queue);                                             \
     }
 
 #define MODULE_CAM_METHODS()                                                                    \
@@ -164,15 +136,12 @@ void __module_cam_destroy(module_cam_t *cam);
 
 struct module_cas_t
 {
+    module_data_t *self;
     module_decrypt_t *decrypt;
 
     bool (*check_descriptor)(module_data_t *cas_data, const uint8_t *desc);
     bool (*check_em)(module_data_t *cas_data, mpegts_psi_t *em);
     bool (*check_keys)(module_data_t *cas_data, const uint8_t *keys);
-
-    module_data_t *self;
-
-    uint8_t parity;
 };
 
 #define MODULE_CAS_DATA() module_cas_t __cas
@@ -205,6 +174,8 @@ struct module_cas_t
 
 struct module_decrypt_t
 {
+    module_data_t *self;
+
     uint16_t pnr;
     uint16_t cas_pnr;
     bool is_cas_data;
@@ -212,14 +183,12 @@ struct module_decrypt_t
 
     module_cam_t *cam;
     module_cas_t *cas;
-
-    void (*on_cam_ready)(module_data_t *mod);
-    void (*on_cam_error)(module_data_t *mod);
-    void (*on_response)(module_data_t *mod, const uint8_t *data, const char *message);
-
-    module_data_t *self;
 };
 
 #define MODULE_DECRYPT_DATA() module_decrypt_t __decrypt
+
+void on_cam_ready(module_data_t *mod);
+void on_cam_error(module_data_t *mod);
+void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data, const char *errmsg);
 
 #endif /* _MODULE_CAM_H_ */

@@ -180,7 +180,7 @@ static void timeout_timer_callback(void *arg)
                 if(asc_list_eol(mod->__cam.decrypt_list))
                 {
                     /* the decrypt module was detached */
-                    mod->packet = module_cam_queue_pop(mod);
+                    mod->packet = module_cam_queue_pop(&mod->__cam);
                     if(mod->packet)
                         newcamd_send_msg(mod);
                     return;
@@ -190,8 +190,10 @@ static void timeout_timer_callback(void *arg)
                 mod->packet->buffer[1] = 0x00;
                 mod->packet->buffer[2] = 0x00;
                 mod->packet->buffer_size = 3;
-                module_cam_response(mod, errmsg);
-                mod->packet = module_cam_queue_pop(mod);
+                on_cam_response(  mod->packet->decrypt->self, mod->packet->arg
+                                , mod->packet->buffer
+                                , errmsg);
+                mod->packet = module_cam_queue_pop(&mod->__cam);
                 if(mod->packet)
                     newcamd_send_msg(mod);
             }
@@ -491,13 +493,14 @@ static int newcamd_login_3(module_data_t *mod)
         uint8_t *p = &mod->prov_buffer[i * info_size];
         memcpy(&p[0], &buffer[15 + (11 * i)], 3);
         memcpy(&p[3], &buffer[18 + (11 * i)], 8);
-        module_cam_set_provider(mod, p);
+        asc_list_insert_tail(mod->__cam.prov_list, p);
         asc_log_info(MSG("Prov:%d ID:%s SA:%s"), i
                      , hex_to_str(hex_str, &p[0], 3)
                      , hex_to_str(&hex_str[8], &p[3], 8));
     }
 
-    module_cam_ready(mod);
+
+    module_cam_ready(&mod->__cam);
     mod->status = NEWCAMD_READY;
     return 1;
 }
@@ -525,7 +528,7 @@ static int newcamd_response(module_data_t *mod)
     if(asc_list_eol(mod->__cam.decrypt_list))
     {
         /* the decrypt module was detached */
-        mod->packet = module_cam_queue_pop(mod);
+        mod->packet = module_cam_queue_pop(&mod->__cam);
         if(mod->packet)
             newcamd_send_msg(mod);
         return len;
@@ -576,8 +579,10 @@ static int newcamd_response(module_data_t *mod)
         mod->packet->buffer_size = 3;
     }
 
-    module_cam_response(mod, errmsg);
-    mod->packet = module_cam_queue_pop(mod);
+    on_cam_response(  mod->packet->decrypt->self, mod->packet->arg
+                    , mod->packet->buffer
+                    , errmsg);
+    mod->packet = module_cam_queue_pop(&mod->__cam);
     if(mod->packet)
         newcamd_send_msg(mod);
 
@@ -659,6 +664,9 @@ static void on_connect(void *arg)
 
 static void newcamd_connect(module_data_t *mod)
 {
+    if(mod->sock)
+        return;
+
     mod->sock = asc_socket_open_tcp4(mod);
     asc_socket_connect(mod->sock, mod->host, mod->port, on_connect, on_connect_error);
     newcamd_timeout_set(mod);
@@ -675,16 +683,23 @@ static void newcamd_disconnect(module_data_t *mod)
     }
     mod->status = NEWCAMD_UNKNOWN;
 
-    module_cam_reset(mod);
+    module_cam_reset(&mod->__cam);
+    if(mod->packet)
+    {
+        free(mod->packet);
+        mod->packet = NULL;
+    }
 }
 
-static void newcamd_send_em(module_data_t *mod, module_decrypt_t *decrypt
+static void newcamd_send_em(  module_data_t *mod
+                            , module_decrypt_t *decrypt, void *arg
                             , uint8_t *buffer, uint16_t size)
 {
     em_packet_t *packet = malloc(sizeof(em_packet_t));
     memcpy(packet->buffer, buffer, size);
     packet->buffer_size = size;
     packet->decrypt = decrypt;
+    packet->arg = arg;
 
     if((packet->buffer[0] & ~0x01) == 0x80)
     {
@@ -705,7 +720,7 @@ static void newcamd_send_em(module_data_t *mod, module_decrypt_t *decrypt
     asc_list_insert_tail(mod->__cam.packet_queue, packet);
     if(mod->packet) // newcamd is busy
         return;
-    mod->packet = module_cam_queue_pop(mod);
+    mod->packet = module_cam_queue_pop(&mod->__cam);
     newcamd_send_msg(mod);
 }
 
