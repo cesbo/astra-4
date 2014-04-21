@@ -706,7 +706,9 @@ static void newcamd_send_em(  module_data_t *mod
         asc_list_for(mod->__cam.packet_queue)
         {
             em_packet_t *queue_item = asc_list_data(mod->__cam.packet_queue);
-            if(queue_item->decrypt == decrypt && ((queue_item->buffer[0] & ~0x01) == 0x80))
+            if(   queue_item->decrypt == decrypt
+               && queue_item->arg == arg
+               && ((queue_item->buffer[0] & ~0x01) == 0x80))
             {
                 asc_log_warning(MSG("drop old packet (pnr:%d drop:0x%02X set:0x%02X)")
                                 , decrypt->pnr, queue_item->buffer[0], packet->buffer[0]);
@@ -717,7 +719,7 @@ static void newcamd_send_em(  module_data_t *mod
         }
     }
 
-    asc_list_insert_tail(mod->__cam.packet_queue, packet);
+    module_cam_queue_push(&mod->__cam, packet);
     if(mod->packet) // newcamd is busy
         return;
     mod->packet = module_cam_queue_pop(&mod->__cam);

@@ -94,41 +94,6 @@ struct module_data_t
 
 #define MSG(_msg) "[decrypt %s] " _msg, mod->name
 
-static module_cas_t * module_decrypt_cas_init(module_data_t *mod)
-{
-    for(int i = 0; cas_init_list[i]; ++i)
-    {
-        module_cas_t *cas = cas_init_list[i](&mod->__decrypt);
-        if(cas)
-            return cas;
-    }
-    return NULL;
-}
-
-static void module_decrypt_cas_destroy(module_data_t *mod)
-{
-    if(!mod->__decrypt.cas)
-        return;
-    free(mod->__decrypt.cas->self);
-    mod->__decrypt.cas = NULL;
-}
-
-static void stream_reload(module_data_t *mod)
-{
-    mod->stream[0]->crc32 = 0;
-
-    for(int i = 1; i < MAX_PID; ++i)
-    {
-        if(mod->stream[i])
-        {
-            mpegts_psi_destroy(mod->stream[i]);
-            mod->stream[i] = NULL;
-        }
-    }
-
-    module_decrypt_cas_destroy(mod);
-}
-
 ca_stream_t * ca_stream_init(module_data_t *mod, uint16_t ecm_pid)
 {
     ca_stream_t *ca_stream;
@@ -184,6 +149,58 @@ ca_stream_t * ca_stream_get(module_data_t *mod, uint16_t es_pid)
     asc_list_first(mod->el_list);
     el_stream_t *el_stream = asc_list_data(mod->el_list);
     return el_stream->ca_stream;
+}
+
+static module_cas_t * module_decrypt_cas_init(module_data_t *mod)
+{
+    for(int i = 0; cas_init_list[i]; ++i)
+    {
+        module_cas_t *cas = cas_init_list[i](&mod->__decrypt);
+        if(cas)
+            return cas;
+    }
+    return NULL;
+}
+
+static void module_decrypt_cas_destroy(module_data_t *mod)
+{
+    if(mod->__decrypt.cas)
+    {
+        free(mod->__decrypt.cas->self);
+        mod->__decrypt.cas = NULL;
+    }
+
+    for(  asc_list_first(mod->ca_list)
+        ; !asc_list_eol(mod->ca_list)
+        ; asc_list_remove_current(mod->ca_list))
+    {
+        ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
+        ca_stream_destroy(ca_stream);
+    }
+
+    for(  asc_list_first(mod->el_list)
+        ; !asc_list_eol(mod->el_list)
+        ; asc_list_remove_current(mod->el_list))
+    {
+        el_stream_t *el_stream = asc_list_data(mod->el_list);
+        free(el_stream);
+    }
+}
+
+static void stream_reload(module_data_t *mod)
+{
+    mod->stream[0]->crc32 = 0;
+
+    for(int i = 1; i < MAX_PID; ++i)
+    {
+        if(mod->stream[i])
+        {
+            mpegts_psi_destroy(mod->stream[i]);
+            mod->stream[i] = NULL;
+        }
+    }
+
+    module_decrypt_cas_destroy(mod);
 }
 
 /*
@@ -342,20 +359,22 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
  *
  */
 
-static bool __pmt_check_desc(module_data_t *mod, const uint8_t *desc, bool is_ecm_selected)
+static ca_stream_t * __pmt_check_desc(  module_data_t *mod
+                                      , const uint8_t *desc
+                                      , bool is_ecm_selected)
 {
     const uint16_t pid = DESC_CA_PID(desc);
 
     /* Skip BISS */
     if(pid == NULL_TS_PID)
-        return false;
+        return NULL;
 
     if(mod->stream[pid])
     {
         if(!(mod->stream[pid]->type & MPEGTS_PACKET_CA))
         {
             asc_log_warning(MSG("Skip ECM pid:%d"), pid);
-            return false;
+            return NULL;
         }
     }
     else
@@ -368,23 +387,22 @@ static bool __pmt_check_desc(module_data_t *mod, const uint8_t *desc, bool is_ec
         if(is_ecm_selected)
         {
             asc_log_warning(MSG("Skip ECM pid:%d"), pid);
-            return 0;
+            return NULL;
         }
 
         asc_list_for(mod->ca_list)
         {
             ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
             if(ca_stream->ecm_pid == pid)
-                return true;
+                return ca_stream;
         }
 
-        ca_stream_init(mod, pid);
         mod->stream[pid]->type = MPEGTS_PACKET_ECM;
         asc_log_info(MSG("Select ECM pid:%d"), pid);
-        return true;
+        return ca_stream_init(mod, pid);
     }
 
-    return false;
+    return NULL;
 }
 
 static void on_pmt(void *arg, mpegts_psi_t *psi)
@@ -429,6 +447,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     // Make custom PMT and set descriptors for CAS
     mod->pmt->pid = psi->pid;
 
+    ca_stream_t *ca_stream_g = NULL;
     bool is_ecm_selected;
 
     uint16_t skip = 12;
@@ -440,8 +459,12 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     {
         if(desc_pointer[0] == 0x09)
         {
-            if(__pmt_check_desc(mod, desc_pointer, is_ecm_selected))
+            ca_stream_t *__ca_stream = __pmt_check_desc(mod, desc_pointer, is_ecm_selected);
+            if(__ca_stream)
+            {
+                ca_stream_g = __ca_stream;
                 is_ecm_selected = true;
+            }
         }
         else
         {
@@ -462,13 +485,18 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
         const uint16_t skip_last = skip;
 
-        is_ecm_selected = false;
+        ca_stream_t *ca_stream_e = ca_stream_g;
+        is_ecm_selected = (ca_stream_g != NULL);
         PMT_ITEM_DESC_FOREACH(pointer, desc_pointer)
         {
             if(desc_pointer[0] == 0x09)
             {
-                if(__pmt_check_desc(mod, desc_pointer, is_ecm_selected))
+                ca_stream_t *__ca_stream = __pmt_check_desc(mod, desc_pointer, is_ecm_selected);
+                if(__ca_stream)
+                {
+                    ca_stream_e = __ca_stream;
                     is_ecm_selected = true;
+                }
             }
             else
             {
@@ -477,6 +505,15 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                 skip += size;
             }
         }
+
+        if(ca_stream_e)
+        {
+            el_stream_t *el_stream = malloc(sizeof(el_stream_t));
+            el_stream->es_pid = PMT_ITEM_GET_PID(psi, pointer);
+            el_stream->ca_stream = ca_stream_e;
+            asc_list_insert_tail(mod->el_list, el_stream);
+        }
+
         const uint16_t size = skip - skip_last;
         mod->pmt->buffer[skip_last - 2] = (size << 8) & 0x0F;
         mod->pmt->buffer[skip_last - 1] = size & 0xFF;
@@ -573,15 +610,36 @@ static void decrypt(module_data_t *mod)
 {
     asc_list_for(mod->ca_list)
     {
-        ca_stream_t *i = asc_list_data(mod->ca_list);
-        i->batch[i->batch_skip].data = NULL;
+        ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
+        ca_stream->batch[ca_stream->batch_skip].data = NULL;
 
-        if(i->parity == 0x80)
-            dvbcsa_bs_decrypt(i->even_key, i->batch, TS_BODY_SIZE);
-        else if(i->parity == 0xC0)
-            dvbcsa_bs_decrypt(i->odd_key, i->batch, TS_BODY_SIZE);
+        if(ca_stream->parity == 0x80)
+            dvbcsa_bs_decrypt(ca_stream->even_key, ca_stream->batch, TS_BODY_SIZE);
+        else if(ca_stream->parity == 0xC0)
+            dvbcsa_bs_decrypt(ca_stream->odd_key, ca_stream->batch, TS_BODY_SIZE);
 
-        i->batch_skip = 0;
+        ca_stream->batch_skip = 0;
+
+        // check new key
+        switch(ca_stream->new_key_id)
+        {
+            case 0:
+                break;
+            case 1:
+                ca_stream_set_keys(ca_stream, &ca_stream->new_key[0], NULL);
+                ca_stream->new_key_id = 0;
+                break;
+            case 2:
+                ca_stream_set_keys(ca_stream, NULL, &ca_stream->new_key[8]);
+                ca_stream->new_key_id = 0;
+                break;
+            case 3:
+                ca_stream_set_keys(  ca_stream
+                                   , &ca_stream->new_key[0]
+                                   , &ca_stream->new_key[8]);
+                ca_stream->new_key_id = 0;
+                break;
+        }
     }
 
     mod->storage.dsc_count = mod->storage.count;
@@ -636,11 +694,11 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         mod->storage.write = 0;
     mod->storage.count += TS_PACKET_SIZE;
 
-    uint8_t hdr_size = 0;
     const uint8_t sc = TS_SC(dst);
-
     if(sc)
     {
+        int hdr_size = 0;
+
         switch(TS_AF(ts))
         {
             case 0x10:
@@ -649,8 +707,9 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             case 0x30:
             {
                 hdr_size = 4 + dst[4] + 1;
-                if(hdr_size < TS_PACKET_SIZE)
-                    break;
+                if(hdr_size >= TS_PACKET_SIZE)
+                    hdr_size = 0;
+                break;
             }
             default:
                 break;
@@ -688,27 +747,6 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 
             if(ca_stream->batch_skip >= mod->batch_size)
                 decrypt(mod);
-
-            // check new key
-            switch(ca_stream->new_key_id)
-            {
-                case 0:
-                    break;
-                case 1:
-                    ca_stream_set_keys(ca_stream, &ca_stream->new_key[0], NULL);
-                    ca_stream->new_key_id = 0;
-                    break;
-                case 2:
-                    ca_stream_set_keys(ca_stream, NULL, &ca_stream->new_key[8]);
-                    ca_stream->new_key_id = 0;
-                    break;
-                case 3:
-                    ca_stream_set_keys(  ca_stream
-                                       , &ca_stream->new_key[0]
-                                       , &ca_stream->new_key[8]);
-                    ca_stream->new_key_id = 0;
-                    break;
-            }
         }
     }
 
@@ -917,27 +955,11 @@ static void module_destroy(module_data_t *mod)
     module_stream_destroy(mod);
 
     if(mod->__decrypt.cam)
-    {
         module_cam_detach_decrypt(mod->__decrypt.cam, &mod->__decrypt);
-        module_decrypt_cas_destroy(mod);
-    }
 
-    for(  asc_list_first(mod->ca_list)
-        ; !asc_list_eol(mod->ca_list)
-        ; asc_list_remove_current(mod->ca_list))
-    {
-        ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
-        ca_stream_destroy(ca_stream);
-    }
+    module_decrypt_cas_destroy(mod);
+
     asc_list_destroy(mod->ca_list);
-
-    for(  asc_list_first(mod->el_list)
-        ; !asc_list_eol(mod->el_list)
-        ; asc_list_remove_current(mod->el_list))
-    {
-        el_stream_t *el_stream = asc_list_data(mod->el_list);
-        free(el_stream);
-    }
     asc_list_destroy(mod->el_list);
 
     free(mod->storage.buffer);
