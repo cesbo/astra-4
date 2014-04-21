@@ -46,6 +46,7 @@ typedef struct
     uint8_t parity;
     struct dvbcsa_bs_key_s *even_key;
     struct dvbcsa_bs_key_s *odd_key;
+    bool is_keys;
 
     int new_key_id;  // 0 - not, 1 - first key, 2 - second key, 3 - both keys
     uint8_t new_key[16];
@@ -75,11 +76,16 @@ struct module_data_t
     asc_list_t *ca_list;
 
     size_t batch_size;
-    size_t storage_size;
-    size_t storage_skip;
 
-    uint8_t *batch_storage_recv;
-    uint8_t *batch_storage_send;
+    struct
+    {
+        uint8_t *buffer;
+        size_t size;
+        size_t count;
+        size_t dsc_count;
+        size_t read;
+        size_t write;
+    } storage;
 
     /* Base */
     mpegts_psi_t *stream[MAX_PID];
@@ -140,6 +146,7 @@ ca_stream_t * ca_stream_init(module_data_t *mod, uint16_t ecm_pid)
     ca_stream->parity = 0x00;
     ca_stream->even_key = dvbcsa_bs_key_alloc();
     ca_stream->odd_key = dvbcsa_bs_key_alloc();
+    ca_stream->is_keys = false;
 
     ca_stream->batch = calloc(mod->batch_size + 1, sizeof(struct dvbcsa_bs_batch_s));
     ca_stream->batch_skip = 0;
@@ -562,6 +569,24 @@ static void on_em(void *arg, mpegts_psi_t *psi)
  *
  */
 
+static void decrypt(module_data_t *mod)
+{
+    asc_list_for(mod->ca_list)
+    {
+        ca_stream_t *i = asc_list_data(mod->ca_list);
+        i->batch[i->batch_skip].data = NULL;
+
+        if(i->parity == 0x80)
+            dvbcsa_bs_decrypt(i->even_key, i->batch, TS_BODY_SIZE);
+        else if(i->parity == 0xC0)
+            dvbcsa_bs_decrypt(i->odd_key, i->batch, TS_BODY_SIZE);
+
+        i->batch_skip = 0;
+    }
+
+    mod->storage.dsc_count = mod->storage.count;
+}
+
 static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
     const uint16_t pid = TS_PID(ts);
@@ -603,8 +628,13 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         return;
     }
 
-    uint8_t *dst = &mod->batch_storage_recv[mod->storage_skip];
+    uint8_t *dst = &mod->storage.buffer[mod->storage.write];
     memcpy(dst, ts, TS_PACKET_SIZE);
+
+    mod->storage.write += TS_PACKET_SIZE;
+    if(mod->storage.write == mod->storage.size)
+        mod->storage.write = 0;
+    mod->storage.count += TS_PACKET_SIZE;
 
     uint8_t hdr_size = 0;
     const uint8_t sc = TS_SC(dst);
@@ -644,52 +674,55 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
                 ca_stream = asc_list_data(mod->ca_list);
             }
 
-            if(ca_stream->parity == 0x00)
+            if(ca_stream->parity != sc)
+            {
+                if(ca_stream->parity != 0x00)
+                    decrypt(mod);
                 ca_stream->parity = sc;
+            }
 
             dst[3] &= ~0xC0;
             ca_stream->batch[ca_stream->batch_skip].data = &dst[hdr_size];
             ca_stream->batch[ca_stream->batch_skip].len = TS_PACKET_SIZE - hdr_size;
             ++ca_stream->batch_skip;
+
+            if(ca_stream->batch_skip >= mod->batch_size)
+                decrypt(mod);
+
+            // check new key
+            switch(ca_stream->new_key_id)
+            {
+                case 0:
+                    break;
+                case 1:
+                    ca_stream_set_keys(ca_stream, &ca_stream->new_key[0], NULL);
+                    ca_stream->new_key_id = 0;
+                    break;
+                case 2:
+                    ca_stream_set_keys(ca_stream, NULL, &ca_stream->new_key[8]);
+                    ca_stream->new_key_id = 0;
+                    break;
+                case 3:
+                    ca_stream_set_keys(  ca_stream
+                                       , &ca_stream->new_key[0]
+                                       , &ca_stream->new_key[8]);
+                    ca_stream->new_key_id = 0;
+                    break;
+            }
         }
     }
 
-    if(mod->batch_storage_send)
-        module_stream_send(mod, &mod->batch_storage_send[mod->storage_skip]);
-    mod->storage_skip += TS_PACKET_SIZE;
+    if(mod->storage.count >= mod->storage.size)
+        decrypt(mod);
 
-    if(mod->storage_skip >= mod->storage_size)
+    if(mod->storage.dsc_count > 0)
     {
-        asc_list_for(mod->ca_list)
-        {
-            ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
-            ca_stream->batch[ca_stream->batch_skip].data = NULL;
-
-            if(ca_stream->parity == 0x80)
-                dvbcsa_bs_decrypt(ca_stream->even_key, ca_stream->batch, TS_BODY_SIZE);
-            else if(ca_stream->parity == 0xC0)
-                dvbcsa_bs_decrypt(ca_stream->odd_key, ca_stream->batch, TS_BODY_SIZE);
-
-            ca_stream->batch_skip = 0;
-            ca_stream->parity = 0x00;
-
-            // check new key
-            if(ca_stream->new_key_id == 1)
-                ca_stream_set_keys(ca_stream, &ca_stream->new_key[0], NULL);
-            else if(ca_stream->new_key_id == 2)
-                ca_stream_set_keys(ca_stream, NULL, &ca_stream->new_key[8]);
-            else if(ca_stream->new_key_id == 3)
-                ca_stream_set_keys(ca_stream, &ca_stream->new_key[0], &ca_stream->new_key[8]);
-
-            ca_stream->new_key_id = 0;
-        }
-
-        uint8_t *storage_tmp = mod->batch_storage_send;
-        mod->batch_storage_send = mod->batch_storage_recv;
-        if(!storage_tmp)
-            storage_tmp = malloc(mod->storage_size);
-        mod->batch_storage_recv = storage_tmp;
-        mod->storage_skip = 0;
+        module_stream_send(mod, &mod->storage.buffer[mod->storage.read]);
+        mod->storage.read += TS_PACKET_SIZE;
+        if(mod->storage.read == mod->storage.size)
+            mod->storage.read = 0;
+        mod->storage.dsc_count -= TS_PACKET_SIZE;
+        mod->storage.count -= TS_PACKET_SIZE;
     }
 }
 
@@ -785,7 +818,10 @@ void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data, const c
         {
             ca_stream->new_key_id = 3;
             memcpy(ca_stream->new_key, &data[3], 16);
-            asc_log_warning(MSG("Both keys changed"));
+            if(ca_stream->is_keys)
+                asc_log_warning(MSG("Both keys changed"));
+            else
+                ca_stream->is_keys = true;
         }
 
 #if CAS_ECM_DUMP
@@ -829,8 +865,8 @@ static void module_init(module_data_t *mod)
 
     mod->batch_size = dvbcsa_bs_batch_size();
 
-    mod->storage_size = mod->batch_size * TS_PACKET_SIZE;
-    mod->batch_storage_recv = malloc(mod->storage_size);
+    mod->storage.size = mod->batch_size * 4 * TS_PACKET_SIZE;
+    mod->storage.buffer = malloc(mod->storage.size);
 
     const char *biss_key = NULL;
     size_t biss_length = 0;
@@ -904,9 +940,7 @@ static void module_destroy(module_data_t *mod)
     }
     asc_list_destroy(mod->el_list);
 
-    free(mod->batch_storage_recv);
-    if(mod->batch_storage_send)
-        free(mod->batch_storage_send);
+    free(mod->storage.buffer);
 
     for(int i = 0; i < MAX_PID; ++i)
     {
