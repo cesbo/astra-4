@@ -102,7 +102,7 @@ EOF
 cpucheck()
 {
     CPUCHECK="./cpucheck"
-    cpucheck_c | $GCC -Werror $CFLAGS -o $CPUCHECK -x c - >/dev/null 2>&1
+    cpucheck_c | $GCC -Werror -O2 -fno-pic -o $CPUCHECK -x c - >/dev/null 2>&1
     if [ $? -eq 0 ] ; then
         $CPUCHECK
         rm $CPUCHECK
