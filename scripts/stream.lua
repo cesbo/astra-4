@@ -555,33 +555,47 @@ end
 --  888           888   888      888         888      888
 -- o888o         o888o o888o    o888o       o888o    o888o
 
-function http_parse_location(headers)
-    for _, header in pairs(headers) do
-        local _,_,location = header:find("^Location: http://(.*)")
-        if location then
-            local port, path
-            local p,_ = location:find("/")
-            if p then
-                path = location:sub(p)
-                location = location:sub(1, p - 1)
-            else
-                path = "/"
-            end
-            local p,_ = location:find(":")
-            if p then
-                port = tonumber(location:sub(p + 1))
-                location = location:sub(1, p - 1)
-            else
-                port = 80
-            end
-            return location, port, path
+function http_parse_location(self, response)
+    if not response.headers then return nil end
+    local location = response.headers['location']
+    if not location then return nil end
+
+    local host = self.__options.host
+    local port = self.__options.port
+    local path
+
+    local b = location:find("://")
+    if b then
+        local p = location:sub(1, b - 1)
+        if p ~= "http" then
+            return nil
         end
+        location = location:sub(b + 3)
+        b = location:find("/")
+        if b then
+            path = location:sub(b)
+            location = location:sub(1, b - 1)
+        else
+            path = "/"
+        end
+        b = location:find(":")
+        if b then
+            port = tonumber(location:sub(b + 1))
+            host = location:sub(1, b - 1)
+        else
+            port = 80
+            host = location
+        end
+    else
+        path = location
     end
-    return nil
+
+    return host, port, path
 end
 
 input_list.http = function(channel_data, input_id)
     local input_conf = channel_data.config.input[input_id]
+    local input_data = channel_data.input[input_id]
 
     local instance = {}
     local http_conf = {}
@@ -641,18 +655,23 @@ input_list.http = function(channel_data, input_id)
                 instance.request:close()
                 instance.request = nil
 
-                local host, port, path = http_parse_location(response.headers)
+                local host, port, path = http_parse_location(self, response)
                 if host then
                     http_conf.host = host
                     http_conf.port = port
                     http_conf.path = path
                     http_conf.headers[2] = "Host: " .. host .. ":" .. port
 
+                    log.info("[" .. input_data.name .. "] Redirect to " ..
+                             "http://" .. host .. ":" .. port .. path)
                     instance.request = http_request(http_conf)
+                else
+                    log.error("[" .. input_data.name .. "] Redirect failed")
+                    instance.timeout = timer(timer_conf)
                 end
 
             else
-                log.error("[" .. channel_data.config.name .. " #" .. input_id .. "] " ..
+                log.error("[" .. input_data.name .. "] " ..
                           "HTTP Error " .. response.code .. ":" .. response.message)
 
                 instance.request:close()
@@ -670,13 +689,17 @@ end
 kill_input_list.http = function(channel_data, input_id)
     local input_data = channel_data.input[input_id]
 
-    if input_data.source.timeout then
-        input_data.source.timeout:close()
-        input_data.source.timeout = nil
+    local instance = input_data.source
+
+    if instance.timeout then
+        instance.timeout:close()
+        instance.timeout = nil
     end
 
-    input_data.source.request:close()
-    input_data.source.request = nil
+    if instance.request then
+        instance.request:close()
+        instance.request = nil
+    end
 end
 
 -- ooooo oooo   oooo oooooooooo ooooo  oooo ooooooooooo
