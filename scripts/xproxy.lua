@@ -219,35 +219,114 @@ end
 --  888   888      888         888      888
 -- o888o o888o    o888o       o888o    o888o
 
+function http_parse_url(url)
+    local host, port , path
+    local b = url:find("://")
+    local p = url:sub(1, b - 1)
+    if p ~= "http" then
+        return nil
+    end
+    url = url:sub(b + 3)
+    b = url:find("/")
+    if b then
+        path = url:sub(b)
+        url = url:sub(1, b - 1)
+    else
+        path = "/"
+    end
+    b = url:find(":")
+    if b then
+        port = tonumber(url:sub(b + 1))
+        host = url:sub(1, b - 1)
+    else
+        port = 80
+        host = url
+    end
+    return host, port, path
+end
+
+function http_parse_location(self, response)
+    if not response.headers then return nil end
+    local location = response.headers['location']
+    if not location then return nil end
+
+    local host = self.__options.host
+    local port = self.__options.port
+    local path
+
+    if location:find("://") then
+        host, port, path = http_parse_url(location)
+    else
+        path = location
+    end
+
+    return host, port, path
+end
+
 function on_http_http_callback(self, response)
-    local instance_id = self.__options.host .. ":" .. self.__options.port .. self.__options.path
-    local http_instance = instance_list[instance_id]
+    local instance = self.__options.instance
+    local http_conf = self.__options
+
+    local timer_conf = {
+        interval = 5,
+        callback = function(self)
+                instance.timeout:close()
+                instance.timeout = nil
+
+                if instance.request then instance.request:close() end
+                instance.request = http_request(http_conf)
+
+                collectgarbage()
+            end
+    }
 
     if not response then
-        if http_instance.timeout then
-            http_instance.timeout:close()
-            http_instance.timeout = nil
-        end
-
-        http_instance.instance = http_request(self.__options)
-        http_instance.timeout = timer(http_instance.timer_conf)
+        instance.request:close()
+        instance.request = nil
+        instance.timeout = timer(timer_conf)
 
     elseif response.code == 200 then
-        if http_instance.timeout then
-            http_instance.timeout:close()
-            http_instance.timeout = nil
+        if instance.timeout then
+            instance.timeout:close()
+            instance.timeout = nil
         end
 
-        for _,v in pairs(http_instance.client_list) do
+        for _,v in pairs(instance.client_list) do
             local server = v[1]
             local client = v[2]
             local client_data = server:data(client)
-            client_data.transmit:set_upstream(http_instance.instance:stream())
+            client_data.transmit:set_upstream(instance.request:stream())
+        end
+
+    elseif response.code == 301 or response.code == 302 then
+        if instance.timeout then
+            instance.timeout:close()
+            instance.timeout = nil
+        end
+
+        instance.request:close()
+        instance.request = nil
+
+        local host, port, path = http_parse_location(self, response)
+        if host then
+            http_conf.host = host
+            http_conf.port = port
+            http_conf.path = path
+            http_conf.headers[2] = "Host: " .. host .. ":" .. port
+
+            log.info("[xProxy] Redirect to http://" .. host .. ":" .. port .. path)
+            instance.request = http_request(http_conf)
+        else
+            log.error("[xProxy] Redirect failed")
+            instance.timeout = timer(timer_conf)
         end
 
     else
-        log.error("[xProxy] " .. "HTTP Error " .. response.code .. ":" .. response.message)
+        log.error("[xProxy] HTTP Error " .. response.code .. ":" .. response.message)
 
+        instance.request:close()
+        instance.request = nil
+        instance.timeout = timer(timer_conf)
     end
 end
 
@@ -256,12 +335,12 @@ function on_http_http(server, client, request)
 
     if not request then -- on_close
         if client_data.client_id then
-            local http_instance = instance_list[client_data.input_id]
-            http_instance.client_list[client_data.client_id] = nil
-            http_instance.clients = http_instance.clients - 1
-            if http_instance.clients == 0 then
-                http_instance.instance:close()
-                http_instance.instance = nil
+            local instance = instance_list[client_data.input_id]
+            instance.client_list[client_data.client_id] = nil
+            instance.clients = instance.clients - 1
+            if instance.clients == 0 then
+                instance.request:close()
+                instance.request = nil
                 instance_list[client_data.input_id] = nil
             end
             client_list[client_data.client_id] = nil
@@ -270,71 +349,49 @@ function on_http_http(server, client, request)
         return
     end
 
-    local path = request.path:sub(7) -- skip '/http/'
+    local url = "http://" .. request.path:sub(7)
 
-    local client_id = make_client_id(server, client, request, "http://" .. path)
+    local client_id = make_client_id(server, client, request, url)
 
     local http_input_conf = {}
+    local host, port, path = http_parse_url(url)
 
-    local b = path:find("/")
-    if b then
-        http_input_conf.path = path:sub(b)
-        path = path:sub(1, b - 1)
-    else
-        http_input_conf.path = "/"
+    if not port then
+        server:abort(client, 400)
+        return
     end
+    http_input_conf.host = host
+    http_input_conf.port = port
+    http_input_conf.path = path
 
-    local b = path:find(":")
-    if b then
-        http_input_conf.port = tonumber(path:sub(b + 1))
-        if not http_input_conf.port then
-            server:abort(client, 400)
-            return
-        end
-        http_input_conf.host = path:sub(1, b - 1)
-    else
-        http_input_conf.port = 80
-        http_input_conf.host = path
-    end
-
-    local instance_id = http_input_conf.host .. ":" .. http_input_conf.port .. http_input_conf.path
-    local http_instance = instance_list[instance_id]
-    if not http_instance then
+    local instance_id = host .. ":" .. port .. path
+    local instance = instance_list[instance_id]
+    if not instance then
         http_input_conf.headers =
         {
             "User-Agent: xProxy",
-            "Host: " .. http_input_conf.host .. ":" .. http_input_conf.port,
+            "Host: " .. host .. ":" .. port,
             "Connection: close",
         }
         http_input_conf.stream = true
         http_input_conf.callback = on_http_http_callback
 
-        http_instance = {}
+        instance = {}
+        http_input_conf.instance = instance
 
-        http_instance.timer_conf = {
-            interval = 5,
-            callback = function(self)
-                    http_instance.instance:close()
-                    http_instance.instance = http_request(http_input_conf)
-                    collectgarbage()
-                end
-        }
+        instance.clients = 0
+        instance.client_list = {}
+        instance.request = http_request(http_input_conf)
 
-        http_instance.clients = 0
-        http_instance.client_list = {}
-
-        http_instance.instance = http_request(http_input_conf)
-        http_instance.timeout = timer(http_instance.timer_conf)
-
-        instance_list[instance_id] = http_instance
+        instance_list[instance_id] = instance
     end
 
     client_data.transmit = transmit()
     client_data.client_id = client_id
     client_data.input_id = instance_id
 
-    http_instance.clients = http_instance.clients + 1
-    http_instance.client_list[client_id] = { server, client }
+    instance.clients = instance.clients + 1
+    instance.client_list[client_id] = { server, client }
 
     server:send(client, client_data.transmit:stream())
 end
