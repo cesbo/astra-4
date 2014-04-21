@@ -120,8 +120,7 @@ if [ $ARG_DEBUG -ne 0 ] ; then
     APP_STRIP=":"
 fi
 
-CFLAGS="$CFLAGS_DEBUG -I$SRCDIR -Wall -Wextra -pedantic \
--fno-builtin -funit-at-a-time -ffast-math"
+CFLAGS="$CFLAGS_DEBUG -I$SRCDIR -Wall -Wextra -pedantic -fno-builtin -funit-at-a-time"
 
 cpucheck_c()
 {

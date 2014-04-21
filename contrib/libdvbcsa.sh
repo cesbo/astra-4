@@ -14,40 +14,8 @@ fi
 cd build
 
 SYSTEM="$1"
-GCC="gcc"
-if [ -n "$2" ] ; then
-    GCC="$2"
-fi
-AR=`echo $GCC | sed 's/gcc$/ar/'`
-
-CFLAGS="-O3 -fPIC -I."
-if [ -n "$3" ] ; then
-    CFLAGS="$CFLAGS $3"
-fi
-
-case "$SYSTEM" in
-"UINT32")
-    TRANSPOSE="32"
-    ;;
-"UINT64")
-    TRANSPOSE="64"
-    ;;
-"MMX")
-    TRANSPOSE="64"
-    CFLAGS="$CFLAGS -mmmx"
-    ;;
-"SSE")
-    TRANSPOSE="128"
-    CFLAGS="$CFLAGS -msse -msse2"
-    ;;
-"ALTIVEC")
-    TRANSPOSE="128"
-    ;;
-*)
-    echo "wrong SYSTEM option"
-    exit 1
-    ;;
-esac
+ARG_GCC="$2"
+ARG_CFLAGS="$3"
 
 VER="1.1.0"
 ARC="libdvbcsa-$VER.tar.gz"
@@ -93,6 +61,83 @@ download()
 
 download
 cd libdvbcsa
+
+GCC="gcc"
+if [ -n "$ARG_GCC" ] ; then
+    GCC="$ARG_GCC"
+fi
+AR=`echo $GCC | sed 's/gcc$/ar/'`
+
+CFLAGS="-O3 -fPIC -I. -funroll-loops --param max-unrolled-insns=500"
+if [ -n "$ARG_CFLAGS" ] ; then
+    CFLAGS="$CFLAGS $ARG_CFLAGS"
+fi
+
+cpucheck_c()
+{
+    cat <<EOF
+#include <stdio.h>
+int main()
+{
+#if defined(__i386__) || defined(__x86_64__)
+    unsigned int eax, ebx, ecx, edx;
+    __asm__ __volatile__ (  "cpuid"
+                          : "=a" (eax)
+                          , "=b" (ebx)
+                          , "=c" (ecx)
+                          , "=d" (edx)
+                          : "a"  (1));
+
+    if(ecx & (0x00080000 /* 4.1 */ | 0x00100000 /* 4.2 */ )) printf("-msse -msse2 -msse4");
+    else if(ecx & 0x00000001) printf("-msse -msse2");
+    else if(edx & 0x04000000) printf("-msse -msse2");
+    else if(edx & 0x02000000) printf("-msse");
+    else if(edx & 0x00800000) printf("-mmmx");
+#endif
+    return 0;
+}
+EOF
+}
+
+cpucheck()
+{
+    CPUCHECK="./cpucheck"
+    cpucheck_c | $GCC -Werror $CFLAGS -o $CPUCHECK -x c - >/dev/null 2>&1
+    if [ $? -eq 0 ] ; then
+        $CPUCHECK
+        rm $CPUCHECK
+    fi
+}
+
+case "$SYSTEM" in
+"UINT32")
+    TRANSPOSE="32"
+    ;;
+"UINT64")
+    TRANSPOSE="64"
+    ;;
+"MMX")
+    TRANSPOSE="64"
+    CFLAGS="$CFLAGS -mmmx"
+    ;;
+"SSE")
+    TRANSPOSE="128"
+    CPUFLAGS=`cpucheck`
+    if [ -n "$CPUFLAGS" ] ; then
+        $GCC $CFLAGS $CPUFLAGS -E -x c /dev/null >/dev/null 2>&1
+        if [ $? -eq 0 ] ; then
+            CFLAGS="$CFLAGS $CPUFLAGS"
+        fi
+    fi
+    ;;
+"ALTIVEC")
+    TRANSPOSE="128"
+    ;;
+*)
+    echo "wrong SYSTEM option"
+    exit 1
+    ;;
+esac
 
 posix_memalign_test_c()
 {
