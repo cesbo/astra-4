@@ -33,7 +33,7 @@ struct module_data_t
         uint8_t current_id;
         struct
         {
-            uint8_t parity;
+            int check;
             uint16_t chid;
         } ecm_id[ECM_MAX_ID];
     } test;
@@ -54,8 +54,6 @@ inline static uint16_t irdeto_ecm_chid(const uint8_t *payload)
 
 static bool irdeto_check_ecm(module_data_t *mod, const uint8_t *payload)
 {
-    const uint8_t parity = payload[0];
-
     const uint16_t chid = irdeto_ecm_chid(payload);
     if(mod->is_chid)
         return (mod->chid == chid);
@@ -68,15 +66,29 @@ static bool irdeto_check_ecm(module_data_t *mod, const uint8_t *payload)
     if(ecm_id >= ECM_MAX_ID)
         return false;
 
-    if(mod->test.ecm_id[ecm_id].parity == parity)
+    int max_check = 0;
+    int min_check = 0;
+    for(int i = 0; i < ECM_MAX_ID; ++i)
+    {
+        const int ecm_check = mod->test.ecm_id[i].check;
+        if(ecm_check > max_check)
+            max_check = ecm_check;
+        if(ecm_check < min_check)
+            min_check = ecm_check;
+    }
+
+    if(max_check == min_check)
+        memset(&mod->test.ecm_id, 0, sizeof(mod->test.ecm_id));
+
+    if(max_check != min_check && mod->test.ecm_id[ecm_id].check >= max_check)
         return false;
 
     mod->test.is_checking = true;
     mod->test.current_id = ecm_id;
-    mod->test.ecm_id[ecm_id].parity = parity;
+    ++mod->test.ecm_id[ecm_id].check;
     mod->test.ecm_id[ecm_id].chid = chid;
 
-    return 1;
+    return true;
 }
 
 static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
