@@ -122,6 +122,12 @@ fi
 
 CFLAGS="$CFLAGS_DEBUG -I$SRCDIR -Wall -Wextra -pedantic -fno-builtin"
 
+MACHINE=`$APP_C -dumpmachine`
+ARCH=`echo $MACHINE | sed "s|-.*\$||"`
+
+echo $ARCH | grep -q "i[3-6]86\|x86_64"
+ISx86=$?
+
 cpucheck_c()
 {
     cat <<EOF
@@ -150,7 +156,7 @@ EOF
 
 cpucheck()
 {
-    CPUCHECK="$SRCDIR/$RANDOM.cpucheck"
+    CPUCHECK="./cpucheck"
     cpucheck_c | $APP_C -Werror -O2 -fno-pic -o $CPUCHECK -x c - >/dev/null 2>&1
     if [ $? -eq 0 ] ; then
         $CPUCHECK
@@ -166,6 +172,19 @@ if [ $ARG_CC -eq 0 ]; then
             CFLAGS="$CFLAGS $CPUFLAGS"
         fi
     fi
+elif [ $ISx86 -eq 0 ]; then
+    $APP_C $CFLAGS -msse -E -x c /dev/null >/dev/null 2>&1
+    if [ $? -eq 0 ] ; then
+        CFLAGS="$CFLAGS -msse"
+        $APP_C $CFLAGS -msse2 -E -x c /dev/null >/dev/null 2>&1
+        if [ $? -eq 0 ] ; then
+            CFLAGS="$CFLAGS -msse2"
+            $APP_C $CFLAGS -msse4 -E -x c /dev/null >/dev/null 2>&1
+            if [ $? -eq 0 ] ; then
+                CFLAGS="$CFLAGS -msse4"
+            fi
+        fi
+    fi
 fi
 
 $APP_C $CFLAGS -march=$ARG_ARCH -E -x c /dev/null >/dev/null 2>&1
@@ -175,8 +194,7 @@ else
     echo "Error: gcc does not support -march=$ARG_ARCH" >&2
 fi
 
-CCSYSTEM=`$APP_C -dumpmachine`
-case "$CCSYSTEM" in
+case "$MACHINE" in
 *"linux"*)
     OS="linux"
     CFLAGS="$CFLAGS -pthread"
@@ -196,13 +214,13 @@ case "$CCSYSTEM" in
     LDFLAGS=""
     ;;
 *"mingw"*)
-    APP="$APP.exe"
     OS="mingw"
+    APP="$APP.exe"
     WS32=`$APP_C -print-file-name=libws2_32.a`
     LDFLAGS="$WS32"
     ;;
 *)
-    echo "Unknown OS type \"$CCSYSTEM\""
+    echo "Unknown machine type \"$MACHINE\""
     exit 1
     ;;
 esac
@@ -271,6 +289,20 @@ check_libdvbcsa_all()
 }
 
 check_libdvbcsa_all
+
+if [ $LIBDVBCSA -eq 0 ] ; then
+    echo "$CFLAGS" | grep -q "\-msse"
+    if [ $? -eq 0 ] ; then
+        echo "Build libdvbcsa with SSE"
+        $SRCDIR/contrib/libdvbcsa.sh SSE $APP_C
+        echo ""
+    else
+        echo "Build libdvbcsa with UINT64"
+        $SRCDIR/contrib/libdvbcsa.sh UINT64 $APP_C
+        echo ""
+    fi
+    check_libdvbcsa_all
+fi
 
 # APP flags
 

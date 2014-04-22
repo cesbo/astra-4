@@ -19,7 +19,7 @@ ARG_CFLAGS="$3"
 
 VER="1.1.0"
 ARC="libdvbcsa-$VER.tar.gz"
-URL="http://download.videolan.org/pub/videolan/libdvbcsa/$VER/$ARC"
+URL="http://cesbo.com/download/astra/contrib/$ARC"
 
 err()
 {
