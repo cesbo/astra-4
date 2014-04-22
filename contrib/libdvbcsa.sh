@@ -68,7 +68,7 @@ if [ -n "$ARG_GCC" ] ; then
 fi
 AR=`echo $GCC | sed 's/gcc$/ar/'`
 
-CFLAGS="-O3 -I. -fomit-frame-pointer"
+CFLAGS="-O3 -I. -fomit-frame-pointer -fPIC"
 if [ -n "$ARG_CFLAGS" ] ; then
     CFLAGS="$CFLAGS $ARG_CFLAGS"
 fi
