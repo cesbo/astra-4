@@ -68,7 +68,7 @@ if [ -n "$ARG_GCC" ] ; then
 fi
 AR=`echo $GCC | sed 's/gcc$/ar/'`
 
-CFLAGS="-O3 -fPIC -I. -funroll-loops --param max-unrolled-insns=500"
+CFLAGS="-O3 -I. -fomit-frame-pointer"
 if [ -n "$ARG_CFLAGS" ] ; then
     CFLAGS="$CFLAGS $ARG_CFLAGS"
 fi
@@ -139,6 +139,17 @@ case "$SYSTEM" in
     ;;
 esac
 
+cat >config.h <<EOF
+#define STDC_HEADERS 1
+
+#define DVBCSA_USE_$SYSTEM 1
+
+#define HAVE_STDLIB_H 1
+#define HAVE_STRING_H 1
+#define HAVE_STDINT_H 1
+
+EOF
+
 posix_memalign_test_c()
 {
     cat <<EOF
@@ -153,23 +164,26 @@ check_posix_memalign()
     posix_memalign_test_c | $GCC -Werror -o /dev/null -x c - >/dev/null 2>&1
 }
 
-HAVE_POSIX_MEMALIGN=""
-
 if check_posix_memalign ; then
-    HAVE_POSIX_MEMALIGN="#define HAVE_POSIX_MEMALIGN 1"
+    echo "#define HAVE_POSIX_MEMALIGN 1" >>config.h
 fi
 
-cat >config.h <<EOF
-#define STDC_HEADERS 1
-
-#define DVBCSA_USE_$SYSTEM 1
-
-#define HAVE_STDLIB_H 1
-#define HAVE_STRING_H 1
-#define HAVE_STDINT_H 1
-
-$HAVE_POSIX_MEMALIGN
+mm_malloc_test_c()
+{
+    cat <<EOF
+#include <mm_malloc.h>
+int main(void) { void *p = _mm_malloc(8,8); _mm_free(p); return 0; }
 EOF
+}
+
+check_mm_malloc()
+{
+    mm_malloc_test_c | $GCC -Werror -o /dev/null -x c - >/dev/null 2>&1
+}
+
+if check_mm_malloc ; then
+    echo "#define HAVE_MM_MALLOC 1" >>config.h
+fi
 
 OUT=""
 LNK=""

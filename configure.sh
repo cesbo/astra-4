@@ -114,13 +114,13 @@ if test -f $MAKEFILE ; then
     echo >&2
 fi
 
-CFLAGS_DEBUG="-O2"
+CFLAGS_DEBUG="-O2 -fomit-frame-pointer"
 if [ $ARG_DEBUG -ne 0 ] ; then
     CFLAGS_DEBUG="-g -O0"
     APP_STRIP=":"
 fi
 
-CFLAGS="$CFLAGS_DEBUG -I$SRCDIR -Wall -Wextra -pedantic -fno-builtin -funit-at-a-time"
+CFLAGS="$CFLAGS_DEBUG -I$SRCDIR -Wall -Wextra -pedantic -fno-builtin"
 
 cpucheck_c()
 {
@@ -179,7 +179,7 @@ CCSYSTEM=`$APP_C -dumpmachine`
 case "$CCSYSTEM" in
 *"linux"*)
     OS="linux"
-    CFLAGS="$CFLAGS -fPIC -pthread"
+    CFLAGS="$CFLAGS -pthread"
     if $APP_C $CFLAGS -dM -E -xc /dev/null | grep -q "__i386__" ; then
         CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
     fi
@@ -187,12 +187,12 @@ case "$CCSYSTEM" in
     ;;
 *"freebsd"*)
     OS="freebsd"
-    CFLAGS="$CFLAGS -fPIC -pthread"
+    CFLAGS="$CFLAGS -pthread"
     LDFLAGS="-lm -lpthread"
     ;;
 *"darwin"*)
     OS="darwin"
-    CFLAGS="$CFLAGS -fPIC -pthread"
+    CFLAGS="$CFLAGS -pthread"
     LDFLAGS=""
     ;;
 *"mingw"*)
