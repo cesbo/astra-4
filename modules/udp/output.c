@@ -39,8 +39,6 @@
 #define MSG(_msg) "[udp_output %s:%d] " _msg, mod->addr, mod->port
 
 #define UDP_BUFFER_SIZE 1460
-#define UDP_BUFFER_CAPACITY ((UDP_BUFFER_SIZE / TS_PACKET_SIZE) * TS_PACKET_SIZE)
-#define SYNC_BUFFER_SIZE 188 * 4096
 
 struct module_data_t
 {
@@ -103,7 +101,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     memcpy(&mod->packet.buffer[mod->packet.skip], ts, TS_PACKET_SIZE);
     mod->packet.skip += TS_PACKET_SIZE;
 
-    if(mod->packet.skip >= UDP_BUFFER_CAPACITY)
+    if(mod->packet.skip > UDP_BUFFER_SIZE - TS_PACKET_SIZE)
     {
         if(asc_socket_sendto(mod->sock, &mod->packet.buffer, mod->packet.skip) == -1)
             asc_log_warning(MSG("error on send [%s]"), asc_socket_error());
@@ -129,34 +127,32 @@ static void thread_input_push(module_data_t *mod, const uint8_t *ts)
     }
 }
 
-static inline uint64_t calc_pcr(const uint8_t *ts)
+static bool seek_pcr(  module_data_t *mod
+                     , size_t *block_size, size_t *next_block
+                     , uint64_t *pcr)
 {
-    const uint64_t pcr_base = (ts[6] << 25)
-                            | (ts[7] << 17)
-                            | (ts[8] << 9 )
-                            | (ts[9] << 1 )
-                            | (ts[10] >> 7);
-    const uint64_t pcr_ext = ((ts[10] & 1) << 8) | (ts[11]);
-    return (pcr_base * 300 + pcr_ext);
-}
+    size_t count;
+    uint8_t *ptr;
 
-static int seek_pcr(module_data_t *mod, uint32_t *block_size)
-{
-    uint32_t count;
     for(count = TS_PACKET_SIZE; count < mod->sync.buffer_count; count += TS_PACKET_SIZE)
     {
-        uint32_t pos = mod->sync.buffer_read + count;
-        if(pos >= mod->sync.buffer_size)
-            pos -= mod->sync.buffer_size;
+        size_t skip = mod->sync.buffer_read + count;
+        if(skip >= mod->sync.buffer_size)
+            skip -= mod->sync.buffer_size;
 
-        if(mpegts_pcr_check(&mod->sync.buffer[pos]))
+        ptr = &mod->sync.buffer[skip];
+
+        if(mpegts_pcr_check(ptr))
         {
             *block_size = count;
-            return 1;
+            *next_block = skip;
+            *pcr = mpegts_pcr(ptr);
+
+            return true;
         }
     }
 
-    return 0;
+    return false;
 }
 
 static void on_thread_close(void *arg)
@@ -189,42 +185,42 @@ static void thread_loop(void *arg)
         uint64_t time_sync_b, time_sync_bb;
 
         double block_time_total, total_sync_diff;
-        uint32_t next_block, block_size = 0;
+        size_t next_block, block_size = 0;
 
         struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
-        static const struct timespec data_wait = { .tv_sec = 0, .tv_nsec = 100000 };
+        static const struct timespec data_wait = { .tv_sec = 0, .tv_nsec = 1000000 };
 
         asc_log_info(MSG("buffering..."));
 
+        // flush
+        asc_thread_buffer_flush(mod->thread_input);
         mod->sync.buffer_count = 0;
         mod->sync.buffer_write = 0;
         mod->sync.buffer_read = 0;
 
         while(   mod->is_thread_started
-              && mod->sync.buffer_count < mod->sync.buffer_size)
+              && mod->sync.buffer_write < mod->sync.buffer_size)
         {
-            const ssize_t r = asc_thread_buffer_read(mod->thread_input
-                                                     , &mod->sync.buffer[mod->sync.buffer_count]
-                                                     , TS_PACKET_SIZE);
-            if(r == TS_PACKET_SIZE)
-                mod->sync.buffer_count += TS_PACKET_SIZE;
+            const ssize_t r = asc_thread_buffer_read(  mod->thread_input
+                                                     , &mod->sync.buffer[mod->sync.buffer_write]
+                                                     ,   mod->sync.buffer_size
+                                                       - mod->sync.buffer_write);
+            if(r > 0)
+                mod->sync.buffer_write += r;
             else
                 nanosleep(&data_wait, NULL);
         }
-        mod->sync.buffer_write = mod->sync.buffer_count;
+        mod->sync.buffer_count = mod->sync.buffer_write;
         if(mod->sync.buffer_write == mod->sync.buffer_size)
             mod->sync.buffer_write = 0;
 
-        if(!seek_pcr(mod, &block_size))
+        if(!seek_pcr(mod, &block_size, &next_block, &mod->pcr))
         {
             asc_log_error(MSG("first PCR is not found"));
             continue;
         }
+
         mod->sync.buffer_count -= block_size;
-        next_block = mod->sync.buffer_read + block_size;
-        if(next_block >= mod->sync.buffer_size)
-            next_block -= mod->sync.buffer_size;
-        mod->pcr = calc_pcr(&mod->sync.buffer[next_block]);
         mod->sync.buffer_read = next_block;
 
         time_sync_b = asc_utime();
@@ -233,37 +229,33 @@ static void thread_loop(void *arg)
 
         while(mod->is_thread_started)
         {
-            while(   mod->is_thread_started
-                  && mod->sync.buffer_count < mod->sync.buffer_size)
+            if(   mod->is_thread_started
+               && mod->sync.buffer_count < mod->sync.buffer_size)
             {
+                const size_t tail = (mod->sync.buffer_read > mod->sync.buffer_write)
+                                  ? (mod->sync.buffer_read - mod->sync.buffer_write)
+                                  : (mod->sync.buffer_size - mod->sync.buffer_write);
+
                 uint8_t *const pointer = &mod->sync.buffer[mod->sync.buffer_write];
-                const ssize_t r = asc_thread_buffer_read(mod->thread_input
+                const ssize_t r = asc_thread_buffer_read(  mod->thread_input
                                                          , pointer
-                                                         , TS_PACKET_SIZE);
-                if(r == TS_PACKET_SIZE)
+                                                         , tail);
+                if(r > 0)
                 {
-                    mod->sync.buffer_write += TS_PACKET_SIZE;
+                    mod->sync.buffer_write += r;
                     if(mod->sync.buffer_write >= mod->sync.buffer_size)
                         mod->sync.buffer_write = 0;
-                    mod->sync.buffer_count += TS_PACKET_SIZE;
+                    mod->sync.buffer_count += r;
                 }
-                else
-                    break;
             }
 
-            if(!seek_pcr(mod, &block_size))
+            // get PCR
+            uint64_t pcr;
+            if(!seek_pcr(mod, &block_size, &next_block, &pcr))
             {
                 asc_log_error(MSG("next PCR is not found"));
                 break;
             }
-
-            next_block = mod->sync.buffer_read + block_size;
-            if(next_block >= mod->sync.buffer_size)
-                next_block -= mod->sync.buffer_size;
-            mod->sync.buffer_count -= block_size;
-
-            // get PCR
-            const uint64_t pcr = calc_pcr(&mod->sync.buffer[next_block]);
             const double block_time = mpegts_pcr_block_ms(mod->pcr, pcr);
             mod->pcr = pcr;
             if(block_time < 0 || block_time > 250)
@@ -312,6 +304,7 @@ static void thread_loop(void *arg)
                 const uint64_t real_block_time_ns = (time_sync_be - time_sync_bb) * 1000;
                 ts_sync.tv_nsec = (real_block_time_ns > calc_block_time_ns) ? 0 : ts_sync_nsec;
             }
+            mod->sync.buffer_count -= block_size;
 
             // stream syncing
             const uint64_t time_sync_e = asc_utime();
@@ -387,15 +380,17 @@ static void module_init(module_data_t *mod)
     asc_socket_multicast_join(mod->sock, mod->addr, NULL);
     asc_socket_set_sockaddr(mod->sock, mod->addr, mod->port);
 
+    value = 0;
     if(module_option_number("sync", &value) && value > 0)
     {
         module_stream_init(mod, thread_input_push);
 
-        mod->sync.buffer_size = SYNC_BUFFER_SIZE;
+        mod->sync.buffer_size = value * 1024 * 1024;
+        mod->sync.buffer_size -= mod->sync.buffer_size % TS_PACKET_SIZE;
         mod->sync.buffer = malloc(mod->sync.buffer_size);
 
         mod->thread = asc_thread_init(mod);
-        mod->thread_input = asc_thread_buffer_init((value * 1000 * 1000) / 8);
+        mod->thread_input = asc_thread_buffer_init(mod->sync.buffer_size * 2);
         asc_thread_start(  mod->thread
                          , thread_loop
                          , NULL, NULL

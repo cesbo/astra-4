@@ -260,29 +260,35 @@ void asc_thread_buffer_flush(asc_thread_buffer_t *buffer)
 
 ssize_t asc_thread_buffer_read(asc_thread_buffer_t *buffer, void *data, size_t size)
 {
-    if(!size)
-        return 0;
-
     asc_thread_mutex_lock(buffer->mutex);
-    if(buffer->count < size)
+    if(size > buffer->count)
+        size = buffer->count;
+
+    if(!size)
     {
         asc_thread_mutex_unlock(buffer->mutex);
         return 0;
     }
 
-    if(buffer->read + size >= buffer->size)
-    {
-        const size_t tail = buffer->size - buffer->read;
-        memcpy(data, &buffer->buffer[buffer->read], tail);
-        buffer->read = size - tail;
-        if(buffer->read > 0)
-            memcpy(&((uint8_t *)data)[tail], buffer->buffer, buffer->read);
-    }
-    else
+    const size_t next_read = buffer->read + size;
+    if(next_read < buffer->size)
     {
         memcpy(data, &buffer->buffer[buffer->read], size);
         buffer->read += size;
     }
+    else if(next_read > buffer->size)
+    {
+        const size_t tail = buffer->size - buffer->read;
+        memcpy(data, &buffer->buffer[buffer->read], tail);
+        buffer->read = size - tail;
+        memcpy(&((uint8_t *)data)[tail], buffer->buffer, buffer->read);
+    }
+    else
+    {
+        memcpy(data, &buffer->buffer[buffer->read], size);
+        buffer->read = 0;
+    }
+
     buffer->count -= size;
     asc_thread_mutex_unlock(buffer->mutex);
 

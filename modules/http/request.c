@@ -373,7 +373,7 @@ static void thread_loop(void *arg)
         size_t next_block, next_packet, block_size = 0;
 
         struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
-        static const struct timespec data_wait = { .tv_sec = 0, .tv_nsec = 100000 };
+        static const struct timespec data_wait = { .tv_sec = 0, .tv_nsec = 1000000 };
 
         asc_log_info(MSG("buffering..."));
 
