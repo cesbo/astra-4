@@ -269,6 +269,11 @@ check_libdvbcsa()
 
 check_libdvbcsa_all()
 {
+    if check_libdvbcsa "$CFLAGS" "$LDFLAGS" ; then
+        LIBDVBCSA=1
+        return 0
+    fi
+
     LIBDVBCSA_LDFLAGS="-ldvbcsa"
     if check_libdvbcsa "" "$LIBDVBCSA_LDFLAGS" ; then
         LIBDVBCSA=1
