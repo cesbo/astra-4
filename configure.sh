@@ -17,8 +17,8 @@ Usage: $0 [OPTIONS]
                                   --with-modules=*:path/to/custom/module
 
     --cc=GCC                    - custom C compiler (cross-compile)
-    --build-static              - build static binary
-    --arch=ARCH                 - CPU architecture type. (by default: native)
+    --static                    - build static binary
+    --arch=ARCH                 - CPU architecture type (by default: native)
 
     --debug                     - build version for debug
 
@@ -73,6 +73,9 @@ while [ $# -ne 0 ] ; do
             ;;
         "--cc="*)
             set_cc `echo $OPT | sed 's/^--cc=//'`
+            ;;
+        "--static")
+            ARG_BUILD_STATIC=1
             ;;
         "--build-static")
             ARG_BUILD_STATIC=1
@@ -332,7 +335,7 @@ rm -f $TMP_MODULE_MK
 
 cat >&2 <<EOF
 Compiler Flags:
-  TARGET: $CCSYSTEM
+  TARGET: $MACHINE
       CC: $APP_C
   CFLAGS: $APP_CFLAGS
 
