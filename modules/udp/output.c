@@ -61,7 +61,6 @@ struct module_data_t
     bool is_thread_started;
     asc_thread_t *thread;
     asc_thread_buffer_t *thread_input;
-    uint32_t overflow;
 
     struct
     {
@@ -114,16 +113,8 @@ static void thread_input_push(module_data_t *mod, const uint8_t *ts)
     const ssize_t r = asc_thread_buffer_write(mod->thread_input, ts, TS_PACKET_SIZE);
     if(r != TS_PACKET_SIZE)
     {
-        ++mod->overflow;
-    }
-    else
-    {
-        if(mod->overflow > 0)
-        {
-            asc_log_warning(MSG("sync buffer overflow. dropped %d packets")
-                            , mod->overflow);
-            mod->overflow = 0;
-        }
+        asc_log_warning(MSG("sync buffer overflow"));
+        asc_thread_buffer_flush(mod->thread_input);
     }
 }
 
