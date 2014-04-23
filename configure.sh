@@ -480,7 +480,8 @@ exec 6>&-
 
 VERSION_MAJOR=`sed -n 's/.*ASTRA_VERSION_MAJOR \([0-9]*\).*/\1/p' version.h`
 VERSION_MINOR=`sed -n 's/.*ASTRA_VERSION_MINOR \([0-9]*\).*/\1/p' version.h`
-VERSION="$VERSION_MAJOR.$VERSION_MINOR"
+VERSION_PATCH=`sed -n 's/.*ASTRA_VERSION_PATCH \([0-9]*\).*/\1/p' version.h`
+VERSION="$VERSION_MAJOR.$VERSION_MINOR.$VERSION_PATCH"
 
 cat >&2 <<EOF
 
