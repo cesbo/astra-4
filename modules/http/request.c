@@ -37,16 +37,22 @@
 
 #include "http.h"
 
-#define MSG(_msg) "[http_request %s:%d%s] " _msg, mod->host, mod->port, mod->path
+#define MSG(_msg)                                       \
+    "[http_request %s:%d%s] " _msg, mod->config.host    \
+                                  , mod->config.port    \
+                                  , mod->config.path
 
 struct module_data_t
 {
     MODULE_STREAM_DATA();
 
-    const char *host;
-    int port;
-    const char *path;
-    bool no_sync;
+    struct
+    {
+        const char *host;
+        int port;
+        const char *path;
+        bool sync;
+    } config;
 
     int timeout_ms;
     bool is_stream;
@@ -803,7 +809,7 @@ static void on_read(void *arg)
 
         mod->sync.buffer = malloc(mod->sync.buffer_size);
 
-        if(mod->no_sync)
+        if(!mod->config.sync)
         {
             asc_socket_set_on_read(mod->sock, on_ts_read);
             asc_socket_set_on_ready(mod->sock, NULL);
@@ -1027,7 +1033,7 @@ static void lua_make_request(module_data_t *mod)
     mod->is_head = (strcmp(method, "HEAD") == 0);
 
     lua_getfield(lua, -1, __path);
-    mod->path = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : __default_path;
+    mod->config.path = lua_isstring(lua, -1) ? lua_tostring(lua, -1) : __default_path;
     lua_pop(lua, 1);
 
     lua_getfield(lua, -1, __version);
@@ -1036,7 +1042,7 @@ static void lua_make_request(module_data_t *mod)
 
     string_buffer_t *buffer = string_buffer_alloc();
 
-    string_buffer_addfstring(buffer, "%s %s %s\r\n", method, mod->path, version);
+    string_buffer_addfstring(buffer, "%s %s %s\r\n", method, mod->config.path, version);
 
     lua_getfield(lua, -1, __headers);
     if(lua_istable(lua, -1))
@@ -1113,16 +1119,14 @@ static int method_close(module_data_t *mod)
 
 static void module_init(module_data_t *mod)
 {
-    module_option_string("host", &mod->host, NULL);
-    asc_assert(mod->host != NULL, MSG("option 'host' is required"));
+    module_option_string("host", &mod->config.host, NULL);
+    asc_assert(mod->config.host != NULL, MSG("option 'host' is required"));
 
-    mod->port = 80;
-    module_option_number("port", &mod->port);
+    mod->config.port = 80;
+    module_option_number("port", &mod->config.port);
 
-    mod->path = __default_path;
-    module_option_string("path", &mod->path, NULL);
-
-    module_option_boolean("no_sync", &mod->no_sync);
+    mod->config.path = __default_path;
+    module_option_string("path", &mod->config.path, NULL);
 
     lua_getfield(lua, 2, __callback);
     asc_assert(lua_isfunction(lua, -1), MSG("option 'callback' is required"));
@@ -1137,10 +1141,11 @@ static void module_init(module_data_t *mod)
     {
         module_stream_init(mod, NULL);
 
-        int buffer_size = 1;
-        module_option_number("buffer_size", &buffer_size);
+        int value = 1;
+        if(module_option_number("sync", &value))
+            mod->config.sync = true;
 
-        mod->sync.buffer_size = buffer_size * 1024 * 1024;
+        mod->sync.buffer_size = value * 1024 * 1024;
     }
 
     mod->timeout_ms = 10;
@@ -1149,7 +1154,7 @@ static void module_init(module_data_t *mod)
     mod->timeout = asc_timer_init(mod->timeout_ms, timeout_callback, mod);
 
     mod->sock = asc_socket_open_tcp4(mod);
-    asc_socket_connect(mod->sock, mod->host, mod->port, on_connect, on_close);
+    asc_socket_connect(mod->sock, mod->config.host, mod->config.port, on_connect, on_close);
 }
 
 static void module_destroy(module_data_t *mod)
