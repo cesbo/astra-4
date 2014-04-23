@@ -135,11 +135,13 @@ function on_http_udp(server, client, request)
 
     if not request then -- on_close
         if client_data.client_id then
-            local udp_instance = instance_list[client_data.input_id]
-            udp_instance.clients = udp_instance.clients - 1
-            if udp_instance.clients == 0 then
-                udp_instance.instance = nil
-                instance_list[client_data.input_id] = nil
+            if client_data.input_id then
+                local udp_instance = instance_list[client_data.input_id]
+                udp_instance.clients = udp_instance.clients - 1
+                if udp_instance.clients == 0 then
+                    udp_instance.instance = nil
+                    instance_list[client_data.input_id] = nil
+                end
             end
             client_list[client_data.client_id] = nil
             collectgarbage()
@@ -164,6 +166,7 @@ function on_http_udp(server, client, request)
     end
 
     local client_id = make_client_id(server, client, request, "udp://" .. fpath)
+    client_data.client_id = client_id
 
     local udp_input_conf = { socket_size = 0x80000 }
 
@@ -205,7 +208,6 @@ function on_http_udp(server, client, request)
         instance_list[instance_id] = udp_instance
     end
 
-    client_data.client_id = client_id
     client_data.input_id = instance_id
 
     udp_instance.clients = udp_instance.clients + 1
@@ -335,13 +337,15 @@ function on_http_http(server, client, request)
 
     if not request then -- on_close
         if client_data.client_id then
-            local instance = instance_list[client_data.input_id]
-            instance.client_list[client_data.client_id] = nil
-            instance.clients = instance.clients - 1
-            if instance.clients == 0 then
-                instance.request:close()
-                instance.request = nil
-                instance_list[client_data.input_id] = nil
+            if client_data.input_id then
+                local instance = instance_list[client_data.input_id]
+                instance.client_list[client_data.client_id] = nil
+                instance.clients = instance.clients - 1
+                if instance.clients == 0 then
+                    instance.request:close()
+                    instance.request = nil
+                    instance_list[client_data.input_id] = nil
+                end
             end
             client_list[client_data.client_id] = nil
             collectgarbage()
@@ -352,6 +356,7 @@ function on_http_http(server, client, request)
     local url = "http://" .. request.path:sub(7)
 
     local client_id = make_client_id(server, client, request, url)
+    client_data.client_id = client_id
 
     local http_input_conf = {}
     local host, port, path = http_parse_url(url)
@@ -387,7 +392,6 @@ function on_http_http(server, client, request)
     end
 
     client_data.transmit = transmit()
-    client_data.client_id = client_id
     client_data.input_id = instance_id
 
     instance.clients = instance.clients + 1
