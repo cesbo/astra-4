@@ -351,8 +351,9 @@ void asc_socket_listen(  asc_socket_t *sock
     if(listen(sock->fd, SOMAXCONN) == -1)
     {
         asc_log_error(MSG("listen() on socket failed [%s]"), asc_socket_error());
-        on_error(sock->arg);
-        return;
+
+        close(sock->fd);
+        sock->fd = 0;
     }
 
     sock->on_read = on_accept;
@@ -360,9 +361,18 @@ void asc_socket_listen(  asc_socket_t *sock
     sock->on_close = on_error;
     if(sock->event == NULL)
         sock->event = asc_event_init(sock->fd, sock);
-    asc_event_set_on_read(sock->event, __asc_socket_on_accept);
-    asc_event_set_on_write(sock->event, NULL);
-    asc_event_set_on_error(sock->event, __asc_socket_on_close);
+    if(sock->fd != 0)
+    {
+        asc_event_set_on_read(sock->event, __asc_socket_on_accept);
+        asc_event_set_on_write(sock->event, NULL);
+        asc_event_set_on_error(sock->event, __asc_socket_on_close);
+    }
+    else
+    {
+        asc_event_set_on_read(sock->event, __asc_socket_on_close);
+        asc_event_set_on_write(sock->event, __asc_socket_on_close);
+        asc_event_set_on_error(sock->event, __asc_socket_on_close);
+    }
 }
 
 /*
@@ -417,18 +427,24 @@ void asc_socket_connect(  asc_socket_t *sock, const char *addr, int port
     hints.ai_socktype = sock->type;
     hints.ai_family = sock->family;
     int err = getaddrinfo(addr, NULL, &hints, &res);
-    if(err != 0)
+    if(err == 0)
+    {
+        memcpy(&sock->addr.sin_addr
+               , &((struct sockaddr_in *)res->ai_addr)->sin_addr
+               , sizeof(sock->addr.sin_addr));
+    }
+    else
     {
         asc_log_error(MSG("getaddrinfo() failed '%s' [%s])"), addr, gai_strerror(err));
-        on_error(sock->arg);
-        return;
+
+        close(sock->fd);
+        sock->fd = 0;
     }
-    memcpy(&sock->addr.sin_addr
-           , &((struct sockaddr_in *)res->ai_addr)->sin_addr
-           , sizeof(sock->addr.sin_addr));
     freeaddrinfo(res);
 
-    if(connect(sock->fd, (struct sockaddr *)&sock->addr, sizeof(sock->addr)) == -1)
+    if(sock->fd == 0)
+        ;
+    else if(connect(sock->fd, (struct sockaddr *)&sock->addr, sizeof(sock->addr)) == -1)
     {
 #ifdef _WIN32
         const int err = WSAGetLastError();
@@ -439,14 +455,10 @@ void asc_socket_connect(  asc_socket_t *sock, const char *addr, int port
         if(!is_error)
         {
             asc_log_error(MSG("connect() to %s:%d failed [%s]"), addr, port, asc_socket_error());
-            on_error(sock->arg);
-            return;
+
+            close(sock->fd);
+            sock->fd = 0;
         }
-    }
-    else
-    {
-        on_connect(sock->arg);
-        return;
     }
 
     sock->on_read = NULL;
@@ -454,9 +466,19 @@ void asc_socket_connect(  asc_socket_t *sock, const char *addr, int port
     sock->on_close = on_error;
     if(sock->event == NULL)
         sock->event = asc_event_init(sock->fd, sock);
-    asc_event_set_on_read(sock->event, NULL);
-    asc_event_set_on_write(sock->event, __asc_socket_on_connect);
-    asc_event_set_on_error(sock->event, __asc_socket_on_close);
+
+    if(sock->fd != 0)
+    {
+        asc_event_set_on_read(sock->event, NULL);
+        asc_event_set_on_write(sock->event, __asc_socket_on_connect);
+        asc_event_set_on_error(sock->event, __asc_socket_on_close);
+    }
+    else
+    {
+        asc_event_set_on_read(sock->event, __asc_socket_on_close);
+        asc_event_set_on_write(sock->event, __asc_socket_on_close);
+        asc_event_set_on_error(sock->event, __asc_socket_on_close);
+    }
 }
 
 /*
