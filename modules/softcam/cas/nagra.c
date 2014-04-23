@@ -34,12 +34,7 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
         case 0x80:
         case 0x81:
         {
-            if(em_type != mod->__cas.parity)
-            {
-                mod->__cas.parity = em_type;
-                return true;
-            }
-            break;
+            return true;
         }
         // EMM ( ret = MPEGTS_PACKET_EMM )
         case 0x83:

@@ -1,1 +1,2 @@
-ffmpeg.sh - build static libraries of ffmpeg-0.11.1 to static linking with astra
+ffmpeg.sh - build ffmpeg, static library
+libdvbcsa.sh - build libdvbcsa, static and shared libraries

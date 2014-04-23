@@ -17,8 +17,8 @@ Usage: $0 [OPTIONS]
                                   --with-modules=*:path/to/custom/module
 
     --cc=GCC                    - custom C compiler (cross-compile)
-    --build-static              - build static binary
-    --arch=ARCH                 - CPU architecture type. (by default: native)
+    --static                    - build static binary
+    --arch=ARCH                 - CPU architecture type (by default: native)
 
     --debug                     - build version for debug
 
@@ -74,6 +74,9 @@ while [ $# -ne 0 ] ; do
         "--cc="*)
             set_cc `echo $OPT | sed 's/^--cc=//'`
             ;;
+        "--static")
+            ARG_BUILD_STATIC=1
+            ;;
         "--build-static")
             ARG_BUILD_STATIC=1
             ;;
@@ -114,14 +117,19 @@ if test -f $MAKEFILE ; then
     echo >&2
 fi
 
-CFLAGS_DEBUG="-O2"
+CFLAGS_DEBUG="-O2 -fomit-frame-pointer"
 if [ $ARG_DEBUG -ne 0 ] ; then
     CFLAGS_DEBUG="-g -O0"
     APP_STRIP=":"
 fi
 
-CFLAGS="$CFLAGS_DEBUG -I$SRCDIR -Wall -Wextra -pedantic \
--fno-builtin -funit-at-a-time -ffast-math"
+CFLAGS="$CFLAGS_DEBUG -I$SRCDIR -Wall -Wextra -pedantic -fno-builtin"
+
+MACHINE=`$APP_C -dumpmachine`
+ARCH=`echo $MACHINE | sed "s|-.*\$||"`
+
+echo $ARCH | grep -q "i[3-6]86\|x86_64"
+ISx86=$?
 
 cpucheck_c()
 {
@@ -138,9 +146,9 @@ int main()
                           , "=d" (edx)
                           : "a"  (1));
 
-    if(ecx & (0x00080000 /* 4.1 */ | 0x00100000 /* 4.2 */ )) printf("-msse2 -msse4");
-    else if(ecx & 0x00000001) printf("-msse2");
-    else if(edx & 0x04000000) printf("-msse2");
+    if(ecx & (0x00080000 /* 4.1 */ | 0x00100000 /* 4.2 */ )) printf("-msse -msse2 -msse4");
+    else if(ecx & 0x00000001) printf("-msse -msse2");
+    else if(edx & 0x04000000) printf("-msse -msse2");
     else if(edx & 0x02000000) printf("-msse");
     else if(edx & 0x00800000) printf("-mmmx");
 #endif
@@ -151,8 +159,8 @@ EOF
 
 cpucheck()
 {
-    CPUCHECK="$SRCDIR/$RANDOM.cpucheck"
-    cpucheck_c | $APP_C -Werror $CFLAGS -o $CPUCHECK -x c - >/dev/null 2>&1
+    CPUCHECK="./cpucheck"
+    cpucheck_c | $APP_C -Werror -O2 -fno-pic -o $CPUCHECK -x c - >/dev/null 2>&1
     if [ $? -eq 0 ] ; then
         $CPUCHECK
         rm $CPUCHECK
@@ -167,6 +175,19 @@ if [ $ARG_CC -eq 0 ]; then
             CFLAGS="$CFLAGS $CPUFLAGS"
         fi
     fi
+elif [ $ISx86 -eq 0 ]; then
+    $APP_C $CFLAGS -msse -E -x c /dev/null >/dev/null 2>&1
+    if [ $? -eq 0 ] ; then
+        CFLAGS="$CFLAGS -msse"
+        $APP_C $CFLAGS -msse2 -E -x c /dev/null >/dev/null 2>&1
+        if [ $? -eq 0 ] ; then
+            CFLAGS="$CFLAGS -msse2"
+            $APP_C $CFLAGS -msse4 -E -x c /dev/null >/dev/null 2>&1
+            if [ $? -eq 0 ] ; then
+                CFLAGS="$CFLAGS -msse4"
+            fi
+        fi
+    fi
 fi
 
 $APP_C $CFLAGS -march=$ARG_ARCH -E -x c /dev/null >/dev/null 2>&1
@@ -176,11 +197,10 @@ else
     echo "Error: gcc does not support -march=$ARG_ARCH" >&2
 fi
 
-CCSYSTEM=`$APP_C -dumpmachine`
-case "$CCSYSTEM" in
+case "$MACHINE" in
 *"linux"*)
     OS="linux"
-    CFLAGS="$CFLAGS -fPIC -pthread"
+    CFLAGS="$CFLAGS -pthread"
     if $APP_C $CFLAGS -dM -E -xc /dev/null | grep -q "__i386__" ; then
         CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
     fi
@@ -188,22 +208,22 @@ case "$CCSYSTEM" in
     ;;
 *"freebsd"*)
     OS="freebsd"
-    CFLAGS="$CFLAGS -fPIC -pthread"
+    CFLAGS="$CFLAGS -pthread"
     LDFLAGS="-lm -lpthread"
     ;;
 *"darwin"*)
     OS="darwin"
-    CFLAGS="$CFLAGS -fPIC -pthread"
+    CFLAGS="$CFLAGS -pthread"
     LDFLAGS=""
     ;;
 *"mingw"*)
-    APP="$APP.exe"
     OS="mingw"
+    APP="$APP.exe"
     WS32=`$APP_C -print-file-name=libws2_32.a`
     LDFLAGS="$WS32"
     ;;
 *)
-    echo "Unknown OS type \"$CCSYSTEM\""
+    echo "Unknown machine type \"$MACHINE\""
     exit 1
     ;;
 esac
@@ -219,6 +239,80 @@ fi
 if [ -n "$ARG_LDFLAGS" ] ; then
     LDFLAGS="$LDFLAGS $ARG_LDFLAGS"
 fi
+
+# libdvbcsa
+
+LIBDVBCSA=0
+
+libdvbcsa_test_c()
+{
+    cat <<EOF
+#include <stdio.h>
+#include <dvbcsa/dvbcsa.h>
+int main(void) {
+    struct dvbcsa_key_s *key = dvbcsa_key_alloc();
+    dvbcsa_key_free(key);
+    return 0;
+}
+EOF
+}
+
+check_libdvbcsa()
+{
+    O="check_libdvbcsa.o"
+    R=1
+    libdvbcsa_test_c | $APP_C -Werror $1 -c -o $O -x c - >/dev/null 2>&1
+    if [ $? -eq 0 ] ; then
+        $APP_C $O -o /dev/null $2 >/dev/null 2>&1
+        R=$?
+        rm $O
+    fi
+    return $R
+}
+
+check_libdvbcsa_all()
+{
+    if check_libdvbcsa "$CFLAGS" "$LDFLAGS" ; then
+        LIBDVBCSA=1
+        return 0
+    fi
+
+    LIBDVBCSA_LDFLAGS="-ldvbcsa"
+    if check_libdvbcsa "" "$LIBDVBCSA_LDFLAGS" ; then
+        LIBDVBCSA=1
+        LDFLAGS="$LDFLAGS $LIBDVBCSA_LDFLAGS"
+        return 0
+    fi
+
+    LIBDVBCSA_CFLAGS="-I$SRCDIR/contrib/build/libdvbcsa/src"
+    LIBDVBCSA_LDFLAGS="$SRCDIR/contrib/build/libdvbcsa/libdvbcsa.a"
+    if check_libdvbcsa "$LIBDVBCSA_CFLAGS" "$LIBDVBCSA_LDFLAGS" ; then
+        LIBDVBCSA=1
+        CFLAGS="$CFLAGS $LIBDVBCSA_CFLAGS"
+        LDFLAGS="$LDFLAGS $LIBDVBCSA_LDFLAGS"
+        return 0
+    fi
+
+    return 1
+}
+
+check_libdvbcsa_all
+
+if [ $LIBDVBCSA -eq 0 ] ; then
+    echo "$CFLAGS" | grep -q "\-msse"
+    if [ $? -eq 0 ] ; then
+        echo "Build libdvbcsa with SSE"
+        $SRCDIR/contrib/libdvbcsa.sh SSE $APP_C
+        echo ""
+    else
+        echo "Build libdvbcsa with UINT64"
+        $SRCDIR/contrib/libdvbcsa.sh UINT64 $APP_C
+        echo ""
+    fi
+    check_libdvbcsa_all
+fi
+
+# APP flags
 
 APP_CFLAGS="$CFLAGS -Wstrict-prototypes -std=iso9899:1999 -D_GNU_SOURCE"
 APP_LDFLAGS="$LDFLAGS"
@@ -241,7 +335,7 @@ rm -f $TMP_MODULE_MK
 
 cat >&2 <<EOF
 Compiler Flags:
-  TARGET: $CCSYSTEM
+  TARGET: $MACHINE
       CC: $APP_C
   CFLAGS: $APP_CFLAGS
 
@@ -340,7 +434,6 @@ APP_MODULES_LIST=`select_modules`
 # modules checking
 
 APP_MODULES_CONF=""
-APP_MODULES_A=""
 
 __check_module()
 {
@@ -368,13 +461,6 @@ __check_module()
     fi
 
     if [ -z "$SOURCES" ] ; then
-        if [ -f "$MODULE/module.a" ] ; then
-            APP_MODULES_A="$APP_MODULES_A $MODULE/module.a"
-            if [ -n "MODULES" ] ; then
-                APP_MODULES_CONF="$APP_MODULES_CONF $MODULES"
-            fi
-            return 0
-        fi
         echo "$MODULE: SOURCES is not defined" >$TMP_MODULE_MK
         return 1
     fi
@@ -505,7 +591,7 @@ SPATH       = $ARG_SPATH
 
 \$(APP): $APP_OBJS \$(CORE_OBJS) \$(MODS_OBJS)
 	@echo "BUILD: \$@"
-	@\$(LD) \$^$APP_MODULES_A -o \$@ \$(LDFLAGS)
+	@\$(LD) \$^ -o \$@ \$(LDFLAGS)
 	@\$(STRIP) \$@
 
 install: \$(APP)
