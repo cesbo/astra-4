@@ -41,6 +41,7 @@
 #include <time.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <errno.h>
 
 #define ASC_ARRAY_SIZE(_a) (sizeof(_a)/sizeof(_a[0]))

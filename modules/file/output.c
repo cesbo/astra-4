@@ -36,7 +36,6 @@
 
 #include <astra.h>
 
-#include <fcntl.h>
 #ifdef HAVE_AIO
 #include <aio.h>
 #ifdef HAVE_LIBAIO

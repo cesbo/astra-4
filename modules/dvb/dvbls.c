@@ -23,7 +23,6 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <net/if.h>
-#include <fcntl.h>
 #include <dirent.h>
 
 #include "dvb.h"

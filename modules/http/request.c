@@ -203,6 +203,11 @@ static void on_close(void *arg)
         mod->request.status = -1;
         call_error(mod, "connection failed");
     }
+    else if(mod->status == 0)
+    {
+        mod->request.status = -1;
+        call_error(mod, "failed to parse response");
+    }
 
     if(mod->status == 2)
     {
@@ -636,16 +641,24 @@ static void on_read(void *arg)
 
     if(mod->status == 0)
     {
+        // start checking from end of block - 4 bytes
+        if(mod->buffer_skip > 4)
+            skip = mod->buffer_skip - 4;
+
         // check empty line
         while(skip < mod->buffer_skip)
         {
-            if(   mod->buffer[skip + 0] == '\r'
-               && mod->buffer[skip + 1] == '\n'
-               && mod->buffer[skip + 2] == '\r'
-               && mod->buffer[skip + 3] == '\n')
+            if(mod->buffer[skip + 0] == '\n' && mod->buffer[skip + 1] == '\n')
+            {
+                eoh = skip + 2;
+                mod->status = 1;
+                break;
+            }
+            else if(   mod->buffer[skip + 0] == '\r' && mod->buffer[skip + 1] == '\n'
+                    && mod->buffer[skip + 2] == '\r' && mod->buffer[skip + 3] == '\n')
             {
                 eoh = skip + 4;
-                mod->status = 1; // empty line is found
+                mod->status = 1;
                 break;
             }
             ++skip;

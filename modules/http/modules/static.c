@@ -19,7 +19,6 @@
  */
 
 #include <astra.h>
-#include <fcntl.h>
 
 #if defined(__linux) || defined(__APPLE__) || defined(__FreeBSD__)
 #   define ASC_SENDFILE (128 * 1024)

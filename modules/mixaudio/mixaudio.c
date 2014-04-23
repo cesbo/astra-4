@@ -30,8 +30,6 @@
  */
 
 #include <astra.h>
-#include <time.h>
-#include <fcntl.h>
 
 #include <libavcodec/avcodec.h>
 

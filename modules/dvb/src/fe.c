@@ -20,8 +20,6 @@
 
 #include "fe.h"
 
-#include <fcntl.h>
-
 #define MSG(_msg) "[dvb_input %d:%d] " _msg, fe->adapter, fe->device
 
 #define DTV_PROPERTY_BEGIN(_cmdseq, _cmdlist)                                                   \

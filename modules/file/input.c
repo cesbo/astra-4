@@ -30,7 +30,6 @@
  */
 
 #include <astra.h>
-#include <fcntl.h>
 
 #define MSG(_msg) "[file_input %s] " _msg, mod->filename
 

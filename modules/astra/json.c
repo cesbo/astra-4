@@ -19,7 +19,6 @@
  */
 
 #include <astra.h>
-#include <fcntl.h>
 
 /*
  * ooooooooooo oooo   oooo  oooooooo8   ooooooo  ooooooooo  ooooooooooo

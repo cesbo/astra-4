@@ -285,12 +285,15 @@ bool http_parse_header(const char *str, parse_match_t *match)
     match[0].so = 0;
 
     // empty line
-    if(str[0] == '\r' && str[1] == '\n')
+    if(str[0] == '\n')
     {
-        match[1].so = 0;
-        match[1].eo = 0;
-        match[2].so = 0;
-        match[2].eo = 0;
+        memset(match, 0, sizeof(parse_match_t) * 3);
+        match[0].eo = 1;
+        return true;
+    }
+    else if(str[0] == '\r' && str[1] == '\n')
+    {
+        memset(match, 0, sizeof(parse_match_t) * 3);
         match[0].eo = 2;
         return true;
     }

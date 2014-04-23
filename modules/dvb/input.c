@@ -23,7 +23,6 @@
 #include "src/fe.h"
 #include "src/ca.h"
 
-#include <fcntl.h>
 #include <poll.h> // in dvb_thread_loop
 
 #define MSG(_msg) "[dvb_input %d:%d] " _msg, mod->adapter, mod->device

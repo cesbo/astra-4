@@ -21,8 +21,6 @@
 #include <astra.h>
 
 #include <sys/ioctl.h>
-#include <fcntl.h>
-#include <unistd.h>
 
 #define MSG(_msg) "[asi_input %d] " _msg, mod->adapter
 

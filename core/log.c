@@ -21,7 +21,6 @@
 #define ASC
 #include "log.h"
 
-#include <fcntl.h>
 #ifndef _WIN32
 #include <syslog.h>
 #endif

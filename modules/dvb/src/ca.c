@@ -20,7 +20,6 @@
 
 #include "ca.h"
 
-#include <fcntl.h>
 #include <netinet/in.h>
 
 #define MSG(_msg) "[dvb_ca %d:%d] " _msg, ca->adapter, ca->device

@@ -21,7 +21,6 @@
 #include "dvb.h"
 #include "src/ca.h"
 
-#include <fcntl.h>
 #include <poll.h>
 #include <sys/socket.h>
 
