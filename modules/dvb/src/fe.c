@@ -430,7 +430,10 @@ void fe_open(dvb_fe_t *fe)
 void fe_close(dvb_fe_t *fe)
 {
     if(fe->fe_fd > 0)
+    {
+        fe_clear(fe);
         close(fe->fe_fd);
+    }
 }
 
 void fe_loop(dvb_fe_t *fe, int is_data)
