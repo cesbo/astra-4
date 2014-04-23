@@ -641,10 +641,6 @@ static void on_read(void *arg)
 
     if(mod->status == 0)
     {
-        // start checking from end of block - 4 bytes
-        if(mod->buffer_skip > 4)
-            skip = mod->buffer_skip - 4;
-
         // check empty line
         while(skip < mod->buffer_skip)
         {
