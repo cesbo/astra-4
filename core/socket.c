@@ -354,6 +354,7 @@ void asc_socket_listen(  asc_socket_t *sock
 
         close(sock->fd);
         sock->fd = 0;
+        return;
     }
 
     sock->on_read = on_accept;
@@ -361,18 +362,10 @@ void asc_socket_listen(  asc_socket_t *sock
     sock->on_close = on_error;
     if(sock->event == NULL)
         sock->event = asc_event_init(sock->fd, sock);
-    if(sock->fd != 0)
-    {
-        asc_event_set_on_read(sock->event, __asc_socket_on_accept);
-        asc_event_set_on_write(sock->event, NULL);
-        asc_event_set_on_error(sock->event, __asc_socket_on_close);
-    }
-    else
-    {
-        asc_event_set_on_read(sock->event, __asc_socket_on_close);
-        asc_event_set_on_write(sock->event, __asc_socket_on_close);
-        asc_event_set_on_error(sock->event, __asc_socket_on_close);
-    }
+
+    asc_event_set_on_read(sock->event, __asc_socket_on_accept);
+    asc_event_set_on_write(sock->event, NULL);
+    asc_event_set_on_error(sock->event, __asc_socket_on_close);
 }
 
 /*
@@ -443,7 +436,8 @@ void asc_socket_connect(  asc_socket_t *sock, const char *addr, int port
     freeaddrinfo(res);
 
     if(sock->fd == 0)
-        ;
+        return;
+
     else if(connect(sock->fd, (struct sockaddr *)&sock->addr, sizeof(sock->addr)) == -1)
     {
 #ifdef _WIN32
@@ -458,6 +452,7 @@ void asc_socket_connect(  asc_socket_t *sock, const char *addr, int port
 
             close(sock->fd);
             sock->fd = 0;
+            return;
         }
     }
 
@@ -467,18 +462,9 @@ void asc_socket_connect(  asc_socket_t *sock, const char *addr, int port
     if(sock->event == NULL)
         sock->event = asc_event_init(sock->fd, sock);
 
-    if(sock->fd != 0)
-    {
-        asc_event_set_on_read(sock->event, NULL);
-        asc_event_set_on_write(sock->event, __asc_socket_on_connect);
-        asc_event_set_on_error(sock->event, __asc_socket_on_close);
-    }
-    else
-    {
-        asc_event_set_on_read(sock->event, __asc_socket_on_close);
-        asc_event_set_on_write(sock->event, __asc_socket_on_close);
-        asc_event_set_on_error(sock->event, __asc_socket_on_close);
-    }
+    asc_event_set_on_read(sock->event, NULL);
+    asc_event_set_on_write(sock->event, __asc_socket_on_connect);
+    asc_event_set_on_error(sock->event, __asc_socket_on_close);
 }
 
 /*
