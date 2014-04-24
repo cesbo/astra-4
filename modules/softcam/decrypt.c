@@ -92,6 +92,7 @@ struct module_data_t
     mpegts_psi_t *pmt;
 };
 
+#define BISS_CAID 0x2600
 #define MSG(_msg) "[decrypt %s] " _msg, mod->name
 
 ca_stream_t * ca_stream_init(module_data_t *mod, uint16_t ecm_pid)
@@ -170,20 +171,23 @@ static void module_decrypt_cas_destroy(module_data_t *mod)
         mod->__decrypt.cas = NULL;
     }
 
-    for(  asc_list_first(mod->ca_list)
-        ; !asc_list_eol(mod->ca_list)
-        ; asc_list_remove_current(mod->ca_list))
-    {
-        ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
-        ca_stream_destroy(ca_stream);
-    }
-
     for(  asc_list_first(mod->el_list)
         ; !asc_list_eol(mod->el_list)
         ; asc_list_remove_current(mod->el_list))
     {
         el_stream_t *el_stream = asc_list_data(mod->el_list);
         free(el_stream);
+    }
+
+    if(mod->caid == BISS_CAID)
+        return;
+
+    for(  asc_list_first(mod->ca_list)
+        ; !asc_list_eol(mod->ca_list)
+        ; asc_list_remove_current(mod->ca_list))
+    {
+        ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
+        ca_stream_destroy(ca_stream);
     }
 }
 
@@ -917,7 +921,7 @@ static void module_init(module_data_t *mod)
         str_to_hex(biss_key, key, sizeof(key));
         key[3] = (key[0] + key[1] + key[2]) & 0xFF;
         key[7] = (key[4] + key[5] + key[6]) & 0xFF;
-        mod->caid = 0x2600;
+        mod->caid = BISS_CAID;
 
         ca_stream_t *biss = ca_stream_init(mod, NULL_TS_PID);
         ca_stream_set_keys(biss, key, key);
@@ -958,6 +962,14 @@ static void module_destroy(module_data_t *mod)
         module_cam_detach_decrypt(mod->__decrypt.cam, &mod->__decrypt);
 
     module_decrypt_cas_destroy(mod);
+
+    if(mod->caid == BISS_CAID)
+    {
+        asc_list_first(mod->ca_list);
+        ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
+        ca_stream_destroy(ca_stream);
+        asc_list_remove_current(mod->ca_list);
+    }
 
     asc_list_destroy(mod->ca_list);
     asc_list_destroy(mod->el_list);
