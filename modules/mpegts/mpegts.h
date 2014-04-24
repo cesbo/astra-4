@@ -461,5 +461,6 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
 bool mpegts_pcr_check(const uint8_t *ts);
 uint64_t mpegts_pcr(const uint8_t *ts);
 double mpegts_pcr_block_ms(uint64_t pcr_last, uint64_t pcr_current);
+uint64_t mpegts_pcr_block_us(uint64_t pcr_last, uint64_t pcr_current);
 
 #endif /* _MPEGTS_H_ */

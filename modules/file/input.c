@@ -65,20 +65,22 @@ struct module_data_t
     uint8_t *buffer;
     uint32_t buffer_size;
     uint32_t buffer_skip;
+    uint32_t buffer_end;
 
     uint64_t pcr;
 };
 
 /* module code */
 
-static bool seek_pcr(module_data_t *mod, uint32_t *block_size)
+static bool seek_pcr(module_data_t *mod, uint32_t *block_size, uint64_t *pcr)
 {
     uint32_t count = mod->buffer_skip + mod->m2ts_header + TS_PACKET_SIZE;
 
-    while(count < mod->buffer_size)
+    while(count < mod->buffer_end)
     {
         if(mpegts_pcr_check(&mod->buffer[mod->m2ts_header + count]))
         {
+            *pcr = mpegts_pcr(&mod->buffer[mod->m2ts_header + count]);
             *block_size = count - mod->buffer_skip;
             return true;
         }
@@ -109,14 +111,6 @@ static bool open_file(module_data_t *mod)
     fstat(mod->fd, &sb);
     mod->file_size = sb.st_size;
 
-    if(mod->file_size < mod->buffer_size)
-    {
-        asc_log_error(MSG("file size must be greater than buffer_size"));
-        close(mod->fd);
-        mod->fd = 0;
-        return false;
-    }
-
     if(mod->file_skip)
     {
         if(mod->file_skip >= mod->file_size)
@@ -127,14 +121,16 @@ static bool open_file(module_data_t *mod)
     }
 
     const ssize_t len = pread(mod->fd, mod->buffer, mod->buffer_size, mod->file_skip);
-    if((ssize_t)mod->buffer_size != len)
+    if(len < 0)
     {
         asc_log_error(MSG("failed to read file"));
         close(mod->fd);
         mod->fd = 0;
         return false;
     }
-    else if(mod->buffer[0] == 0x47 && mod->buffer[TS_PACKET_SIZE] == 0x47)
+    mod->buffer_end = len;
+
+    if(mod->buffer[0] == 0x47 && mod->buffer[TS_PACKET_SIZE] == 0x47)
         mod->m2ts_header = 0;
     else if(mod->buffer[4] == 0x47 && mod->buffer[4 + M2TS_PACKET_SIZE] == 0x47)
         mod->m2ts_header = 4;
@@ -147,7 +143,7 @@ static bool open_file(module_data_t *mod)
     }
 
     uint32_t block_size = 0;
-    if(!seek_pcr(mod, &block_size))
+    if(!seek_pcr(mod, &block_size, &mod->pcr))
     {
         asc_log_error(MSG("first PCR is not found"));
         close(mod->fd);
@@ -174,7 +170,6 @@ static bool open_file(module_data_t *mod)
     }
 
     mod->buffer_skip = block_size;
-    mod->pcr = mpegts_pcr(&mod->buffer[mod->m2ts_header + mod->buffer_skip]);
 
     return true;
 }
@@ -184,13 +179,18 @@ static void thread_loop(void *arg)
     module_data_t *mod = arg;
 
     // pause
-    const struct timespec ts_pause = { .tv_sec = 0, .tv_nsec = 500000 };
     uint64_t pause_start, pause_stop;
-    double pause_total = 0.0;
 
     // block sync
-    uint64_t time_sync_b = asc_utime(), time_sync_bb;
-    double block_time_total = 0.0, total_sync_diff = 0.0;
+    uint64_t   time_sync_b = asc_utime()
+             , time_sync_e
+             , time_sync_bb
+             , time_sync_be
+             , real_time_total = 0
+             , block_time_total = 0
+             , ts_sync
+             , pcr;
+
     uint32_t block_size = 0;
 
     if(!open_file(mod))
@@ -199,8 +199,6 @@ static void thread_loop(void *arg)
         return;
     }
 
-    struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
-
     bool reset_values = true;
 
     while(mod->fd > 0)
@@ -208,7 +206,7 @@ static void thread_loop(void *arg)
         if(mod->pause)
         {
             while(mod->pause)
-                nanosleep(&ts_pause, NULL);
+                asc_usleep(100000);
 
             reset_values = true;
         }
@@ -230,62 +228,59 @@ static void thread_loop(void *arg)
         {
             reset_values = false;
             time_sync_b = asc_utime();
-            block_time_total = 0.0;
-            total_sync_diff = 0.0;
-            pause_total = 0.0;
+            real_time_total = 0;
+            block_time_total = 0;
         }
 
-        if(!seek_pcr(mod, &block_size))
+        if(!seek_pcr(mod, &block_size, &pcr))
         {
             // try to load data
             mod->file_skip += mod->buffer_skip;
             const ssize_t len = pread(mod->fd, mod->buffer, mod->buffer_size, mod->file_skip);
+            mod->buffer_end = (len > 0) ? len : 0;
             mod->buffer_skip = 0;
-
-            if(len != (ssize_t)mod->buffer_size)
+            if(!seek_pcr(mod, &block_size, &pcr))
             {
                 if(!mod->loop)
                 {
                     mod->is_eof = true;
                     return;
                 }
-
-                mod->file_skip = 0;
-                mod->reposition = true;
+                else
+                {
+                    mod->file_skip = 0;
+                    mod->reposition = true;
+                    continue;
+                }
             }
-            continue;
         }
 
         // get PCR
-        const uint64_t pcr = mpegts_pcr(&mod->buffer[  mod->m2ts_header
-                                                     + mod->buffer_skip
-                                                     + block_size]);
-        const double block_time = mpegts_pcr_block_ms(mod->pcr, pcr);
+        const uint64_t block_time = mpegts_pcr_block_us(mod->pcr, pcr);
         mod->pcr = pcr;
-        if(block_time < 0 || block_time > 250)
+        if(block_time == 0 || block_time > 250000)
         {
-            asc_log_error(MSG("block time out of range: %.2f block_size:%u")
-                          , block_time, block_size);
+            asc_log_error(  MSG("block time out of range: %llums block_size:%u")
+                          , (uint64_t)(block_time / 1000), block_size);
             mod->buffer_skip += block_size;
 
             reset_values = true;
             continue;
         }
+
+        ts_sync = 0;
+        if(block_time_total >= real_time_total + 1000)
+        {
+            const uint64_t ts_count = block_size / (mod->m2ts_header + TS_PACKET_SIZE);
+            ts_sync = (block_time + block_time_total - real_time_total) / ts_count;
+        }
+
         block_time_total += block_time;
 
-        // calculate the sync time value
-        if((block_time + total_sync_diff) > 0)
-            ts_sync.tv_nsec = ((block_time + total_sync_diff) * 1000000)
-                            / (block_size / (mod->m2ts_header + TS_PACKET_SIZE));
-        else
-            ts_sync.tv_nsec = 0;
+        const uint64_t __ts_sync = ts_sync;
 
-        const uint64_t ts_sync_nsec = ts_sync.tv_nsec;
-
-        uint64_t calc_block_time_ns = 0;
+        uint64_t calc_block_time = 0;
         time_sync_bb = asc_utime();
-
-        double pause_block = 0.0;
 
         const size_t block_end = mod->buffer_skip + block_size;
         while(mod->fd > 0 && mod->buffer_skip < block_end)
@@ -294,12 +289,20 @@ static void thread_loop(void *arg)
             {
                 pause_start = asc_utime();
                 while(mod->pause)
-                    nanosleep(&ts_pause, NULL);
+                    asc_usleep(100000);
                 pause_stop = asc_utime();
+
                 if(pause_stop < pause_start)
+                {
                     mod->reposition = true; // timetravel
+                    break;
+                }
                 else
-                    pause_block += (pause_stop - pause_start) / 1000;
+                {
+                    const uint64_t pause_time = pause_stop - pause_start;
+                    time_sync_bb += pause_time;
+                    time_sync_b += pause_time;
+                }
             }
 
             if(mod->reposition)
@@ -327,23 +330,23 @@ static void thread_loop(void *arg)
             mod->buffer_skip += mod->m2ts_header + TS_PACKET_SIZE;
 
             // sync block
-            if(ts_sync.tv_nsec > 0)
-                nanosleep(&ts_sync, NULL);
+            if(ts_sync > 0)
+                asc_usleep(ts_sync);
 
-            calc_block_time_ns += ts_sync_nsec;
-            const uint64_t time_sync_be = asc_utime();
+            calc_block_time += __ts_sync;
+            time_sync_be = asc_utime();
             if(time_sync_be < time_sync_bb)
                 break; // timetravel
-            const uint64_t real_block_time_ns = (time_sync_be - time_sync_bb) * 1000 - pause_block;
-            ts_sync.tv_nsec = (real_block_time_ns > calc_block_time_ns) ? 0 : ts_sync_nsec;
+
+            const uint64_t block_time_diff = time_sync_be - time_sync_bb;
+            ts_sync = (block_time_diff > calc_block_time) ? 0 : __ts_sync;
         }
-        pause_total += pause_block;
 
         if(mod->reposition)
             continue;
 
         // stream syncing
-        const uint64_t time_sync_e = asc_utime();
+        time_sync_e = asc_utime();
 
         if(time_sync_e < time_sync_b)
         {
@@ -353,13 +356,13 @@ static void thread_loop(void *arg)
             continue;
         }
 
-        const double time_sync_diff = (time_sync_e - time_sync_b) / 1000.0;
-        total_sync_diff = block_time_total - time_sync_diff - pause_total;
+        real_time_total = time_sync_e - time_sync_b;
 
-        // reset buffer on changing the system time
-        if(total_sync_diff < -100.0 || total_sync_diff > 100.0)
+        if(   (block_time_total > real_time_total + 100000)
+           || (block_time_total + 100000 < real_time_total))
         {
-            asc_log_warning(MSG("wrong syncing time: %.2fms"), total_sync_diff);
+            asc_log_warning(  MSG("wrong syncing time. %lld")
+                            , (int64_t)(block_time_total - real_time_total));
             reset_values = true;
         }
     }
