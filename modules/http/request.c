@@ -31,6 +31,7 @@
  *      headers     - table, list of the request headers
  *      content     - string, request content
  *      stream      - boolean, true to read MPEG-TS stream
+ *      sync        - boolean or number, enable stream synchronization
  *      timeout     - number, request timeout
  *      callback    - function,
  */
@@ -1141,9 +1142,12 @@ static void module_init(module_data_t *mod)
     {
         module_stream_init(mod, NULL);
 
-        int value = 1;
-        if(module_option_number("sync", &value))
+        int value = 0;
+        module_option_number("sync", &value);
+        if(value > 0)
             mod->config.sync = true;
+        else
+            value = 1;
 
         mod->sync.buffer_size = value * 1024 * 1024;
     }
