@@ -101,3 +101,43 @@ bool lua_parse_query(const char *str, size_t size)
 
     return (skip == size);
 }
+
+bool lua_safe_path(const char *str, size_t size)
+{
+    size_t skip = 0;
+
+    size_t sskip = 0;
+    char *safe = malloc(size + 1);
+
+    while(skip < size)
+    {
+        if(   (str[skip] == '/')
+           && (str[skip + 1] == '.' && str[skip + 2] == '.')
+           && (str[skip + 3] == '/' || skip + 3 == size))
+        {
+            while(sskip > 0)
+            {
+                -- sskip;
+                if(safe[sskip] == '/')
+                    break;
+            }
+            skip += 3;
+            if(skip == size)
+            {
+                safe[sskip] = '/';
+                ++ sskip;
+            }
+        }
+        else
+        {
+            safe[sskip] = str[skip];
+            ++ sskip;
+            ++ skip;
+        }
+    }
+
+    lua_pushlstring(lua, safe, sskip);
+    free(safe);
+
+    return (skip == sskip);
+}

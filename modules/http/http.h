@@ -58,6 +58,7 @@ void http_client_abort(http_client_t *client, int code, const char *text);
 void lua_string_to_lower(const char *str, size_t size);
 void lua_url_decode(const char *str, size_t size);
 bool lua_parse_query(const char *str, size_t size);
+bool lua_safe_path(const char *str, size_t size);
 
 // Parser
 

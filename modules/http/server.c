@@ -276,9 +276,16 @@ static void on_client_read(void *arg)
         while(path_skip < m[2].eo && client->buffer[path_skip] != '?')
             ++path_skip;
 
-        lua_pushlstring(lua, &client->buffer[m[2].so], path_skip - m[2].so);
+        const bool is_safe = lua_safe_path(&client->buffer[m[2].so], path_skip - m[2].so);
         const char *path = lua_tostring(lua, -1);
         lua_setfield(lua, request, __path);
+
+        if(!is_safe)
+        {
+            lua_pop(lua, 1); // request
+            http_client_redirect(client, 302, path);
+            return;
+        }
 
         if(path_skip < m[2].eo)
         {
