@@ -255,6 +255,11 @@ parse_addr.udp = function(addr, result)
     end
 end
 
+parse_addr.rtp = function(addr, result)
+    parse_addr.udp(addr, result)
+    result.rtp = true
+end
+
 parse_addr.file = function(addr, result)
     result.filename = addr
 end
@@ -531,6 +536,14 @@ kill_input_list.udp = function(channel_data, input_id)
 
     udp_instance.tail = nil
     udp_instance_list[addr] = nil
+end
+
+input_list.rtp = function(channel_data, input_id)
+    return input_list.udp(channel_data, input_id)
+end
+
+kill_input_list.rtp = function(channel_data, input_id)
+    kill_input_list.udp(channel_data, input_id)
 end
 
 -- ooooo         ooooooooooo ooooo ooooo       ooooooooooo
@@ -853,6 +866,14 @@ output_list.udp = function(channel_data, output_id)
 end
 
 kill_output_list.udp = function(channel_data, output_id)
+    --
+end
+
+output_list.rtp = function(channel_data, output_id)
+    return output_list.udp(channel_data, output_id)
+end
+
+kill_output_list.rtp = function(channel_data, output_id)
     --
 end
 

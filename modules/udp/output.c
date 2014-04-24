@@ -102,7 +102,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 
     if(mod->packet.skip > UDP_BUFFER_SIZE - TS_PACKET_SIZE)
     {
-        if(asc_socket_sendto(mod->sock, &mod->packet.buffer, mod->packet.skip) == -1)
+        if(asc_socket_sendto(mod->sock, mod->packet.buffer, mod->packet.skip) == -1)
             asc_log_warning(MSG("error on send [%s]"), asc_socket_error());
         mod->packet.skip = 0;
     }

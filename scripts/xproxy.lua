@@ -149,6 +149,7 @@ function on_http_udp(server, client, request)
         return
     end
 
+    local format = request.path:sub(2, 4)
     local path = request.path:sub(6) -- skip '/udp/'
 
     -- full path
@@ -165,10 +166,12 @@ function on_http_udp(server, client, request)
         end
     end
 
-    local client_id = make_client_id(server, client, request, "udp://" .. fpath)
+    local client_id = make_client_id(server, client, request, format .. "://" .. fpath)
     client_data.client_id = client_id
 
     local udp_input_conf = { socket_size = 0x80000 }
+
+    if format == 'rtp' then udp_input_conf.rtp = true end
 
     -- trim trailing slash
     local b = path:find("/")
@@ -493,6 +496,7 @@ http_server({
         { "/stat/", on_http_stat },
         { "/stat", http_redirect({ location = "/stat/" }) },
         { "/udp/*", http_upstream({ callback = on_http_udp }) },
+        { "/rtp/*", http_upstream({ callback = on_http_udp }) },
         { "/http/*", http_upstream({ callback = on_http_http }) },
         { "/*", http_upstream({ callback = on_http_channels }) },
     }

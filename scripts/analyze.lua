@@ -53,6 +53,11 @@ parse_source.udp = function(addr, source)
     end
 end
 
+parse_source.rtp = function(addr, source)
+    parse_source.udp(addr, source)
+    source.rtp = true
+end
+
 parse_source.file = function(addr, source)
     source.filename = addr
 end
@@ -248,12 +253,14 @@ end
 
 function usage()
     print([[Usage: astra analyze.lua ADDRESS
+RTP:
+    Template: rtp://[localaddr@]ip[:port]
 UDP:
     Template: udp://[localaddr@]ip[:port]
               localaddr - IP address of the local interface
               port      - default: 1234
 
-    Examples: udp://239.255.2.1
+    Examples: rtp://239.255.2.1
               udp://192.168.1.1@239.255.1.1:1234
 
 File:
@@ -293,6 +300,10 @@ end
 input_modules.udp = function(input_conf)
     instance.i = udp_input(input_conf)
     start_analyze()
+end
+
+input_modules.rtp = function(input_conf)
+    input_modules.udp(input_conf)
 end
 
 input_modules.file = function(input_conf)

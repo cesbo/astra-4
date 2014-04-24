@@ -28,6 +28,7 @@
  *      localaddr   - string, IP address of the local interface
  *      socket_size - number, socket buffer size
  *      renew       - number, renewing multicast subscription interval in seconds
+ *      rtp         - boolean, use RTP instad RAW UDP
  */
 
 #include <astra.h>
@@ -46,6 +47,7 @@ struct module_data_t
     int port;
     const char *localaddr;
 
+    bool is_error_message;
     int rtp_skip;
 
     asc_socket_t *sock;
@@ -87,48 +89,13 @@ void on_read(void *arg)
     }
 
     int i = mod->rtp_skip;
-    for(; i < len; i += TS_PACKET_SIZE)
+    for(; i <= len - TS_PACKET_SIZE; i += TS_PACKET_SIZE)
         module_stream_send(mod, &mod->buffer[i]);
 
-    if(i != len)
-        asc_log_warning(MSG("wrong UDP packet size. drop %d bytes"), len - i);
-}
-
-void on_read_check(void *arg)
-{
-    module_data_t *mod = (module_data_t *)arg;
-
-    ssize_t len = asc_socket_recv(mod->sock, mod->buffer, UDP_BUFFER_SIZE);
-    if(len <= 0)
+    if(i != len && !mod->is_error_message)
     {
-        if(len == 0 || errno == EAGAIN)
-            return;
-
-        on_close(mod);
-        return;
-    }
-
-    bool is_ok = false;
-
-    if(mod->buffer[0] == 0x47 && mod->buffer[TS_PACKET_SIZE] == 0x47)
-    {
-        is_ok = true;
-    }
-    else if(   mod->buffer[RTP_HEADER_SIZE] == 0x47
-            && mod->buffer[RTP_HEADER_SIZE + TS_PACKET_SIZE] == 0x47)
-    {
-        mod->rtp_skip = RTP_HEADER_SIZE;
-        is_ok = true;
-    }
-
-    if(!is_ok)
-    {
-        asc_log_error(MSG("wrong format"));
-        on_close(mod);
-    }
-    else
-    {
-        asc_socket_set_on_read(mod->sock, on_read);
+        asc_log_error(MSG("wrong stream format. drop %d bytes"), len - i);
+        mod->is_error_message = true;
     }
 }
 
@@ -166,7 +133,12 @@ static void module_init(module_data_t *mod)
     if(module_option_number("socket_size", &value))
         asc_socket_set_buffer(mod->sock, value, 0);
 
-    asc_socket_set_on_read(mod->sock, on_read_check);
+    bool rtp = false;
+    module_option_boolean("rtp", &rtp);
+    if(rtp)
+        mod->rtp_skip = RTP_HEADER_SIZE;
+
+    asc_socket_set_on_read(mod->sock, on_read);
     asc_socket_set_on_close(mod->sock, on_close);
 
     module_option_string("localaddr", &mod->localaddr, NULL);
