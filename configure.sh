@@ -159,10 +159,10 @@ EOF
 
 cpucheck()
 {
-    CPUCHECK="./cpucheck"
+    CPUCHECK=".cpucheck"
     cpucheck_c | $APP_C -Werror -O2 -fno-pic -o $CPUCHECK -x c - >/dev/null 2>&1
     if [ $? -eq 0 ] ; then
-        $CPUCHECK
+        ./$CPUCHECK
         rm $CPUCHECK
     fi
 }
@@ -259,15 +259,33 @@ EOF
 
 check_libdvbcsa()
 {
-    O="check_libdvbcsa.o"
-    R=1
-    libdvbcsa_test_c | $APP_C -Werror $1 -c -o $O -x c - >/dev/null 2>&1
+    libdvbcsa_test_c | $APP_C -Werror $1 -c -o .link-test.o -x c - >/dev/null 2>&1
     if [ $? -eq 0 ] ; then
-        $APP_C $O -o /dev/null $2 >/dev/null 2>&1
-        R=$?
-        rm $O
+        $APP_C .link-test.o -o .link-test $2 >/dev/null 2>&1
+        if [ $? -eq 0 ] ; then
+            rm -f .link-test.o .link-test
+            return 0
+        else
+            rm -f .link-test.o
+            return 1
+        fi
+    else
+        return 1
     fi
-    return $R
+}
+
+build_libdvbcsa()
+{
+    echo "$CFLAGS" | grep -q "\-msse"
+    if [ $? -eq 0 ] ; then
+        echo "Build libdvbcsa with SSE"
+        $SRCDIR/contrib/libdvbcsa.sh SSE $APP_C
+        return $?
+    else
+        echo "Build libdvbcsa with UINT64"
+        $SRCDIR/contrib/libdvbcsa.sh UINT64 $APP_C
+        return $?
+    fi
 }
 
 check_libdvbcsa_all()
@@ -284,6 +302,10 @@ check_libdvbcsa_all()
         return 0
     fi
 
+    if ! build_libdvbcsa ; then
+        return 1
+    fi
+
     LIBDVBCSA_CFLAGS="-I$SRCDIR/contrib/build/libdvbcsa/src"
     LIBDVBCSA_LDFLAGS="$SRCDIR/contrib/build/libdvbcsa/libdvbcsa.a"
     if check_libdvbcsa "$LIBDVBCSA_CFLAGS" "$LIBDVBCSA_LDFLAGS" ; then
@@ -297,20 +319,6 @@ check_libdvbcsa_all()
 }
 
 check_libdvbcsa_all
-
-if [ $LIBDVBCSA -eq 0 ] ; then
-    echo "$CFLAGS" | grep -q "\-msse"
-    if [ $? -eq 0 ] ; then
-        echo "Build libdvbcsa with SSE"
-        $SRCDIR/contrib/libdvbcsa.sh SSE $APP_C
-        echo ""
-    else
-        echo "Build libdvbcsa with UINT64"
-        $SRCDIR/contrib/libdvbcsa.sh UINT64 $APP_C
-        echo ""
-    fi
-    check_libdvbcsa_all
-fi
 
 # APP flags
 
@@ -378,9 +386,8 @@ APP_SCRIPTS=""
 
 __check_main_app()
 {
-    O="main.o"
-    APP_OBJS="$APP_OBJS $O"
-    $APP_C $APP_CFLAGS -MT $O -MM $APP_SOURCE 2>$TMP_MODULE_MK
+    APP_OBJS="main.o"
+    $APP_C $APP_CFLAGS -MT $APP_OBJS -MM $APP_SOURCE 2>$TMP_MODULE_MK
     if [ $? -ne 0 ] ; then
         return 1
     fi

@@ -26,6 +26,11 @@
 
 uint64_t asc_utime(void);
 
+#ifdef _WIN32
+ssize_t pread(int fd, void *buffer, size_t size, off_t off);
+int nanosleep(const struct timespec *req, struct timespec *rem);
+#endif
+
 // string_buffer
 
 typedef struct string_buffer_t string_buffer_t;

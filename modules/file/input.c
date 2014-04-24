@@ -160,9 +160,9 @@ static bool open_file(module_data_t *mod)
         mod->start_time = m2ts_time(mod->buffer) / 1000;
 
         uint8_t tail[M2TS_PACKET_SIZE];
-        const ssize_t r = pread(mod->fd, tail, M2TS_PACKET_SIZE
-                                , mod->file_size - M2TS_PACKET_SIZE);
-        if(r != M2TS_PACKET_SIZE || tail[4] != 0x47)
+        const ssize_t len = pread(  mod->fd, tail, M2TS_PACKET_SIZE
+                                  , mod->file_size - M2TS_PACKET_SIZE);
+        if(len != M2TS_PACKET_SIZE || tail[4] != 0x47)
         {
             asc_log_warning(MSG("failed to get M2TS file length"));
         }
@@ -239,9 +239,7 @@ static void thread_loop(void *arg)
         {
             // try to load data
             mod->file_skip += mod->buffer_skip;
-            const ssize_t len = pread(mod->fd, mod->buffer
-                                      , mod->buffer_size
-                                      , mod->file_skip);
+            const ssize_t len = pread(mod->fd, mod->buffer, mod->buffer_size, mod->file_skip);
             mod->buffer_skip = 0;
 
             if(len != (ssize_t)mod->buffer_size)
