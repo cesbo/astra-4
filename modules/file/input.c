@@ -269,7 +269,7 @@ static void thread_loop(void *arg)
         }
 
         ts_sync = 0;
-        if(block_time_total >= real_time_total + 1000)
+        if(block_time_total >= real_time_total)
         {
             const uint64_t ts_count = block_size / (mod->m2ts_header + TS_PACKET_SIZE);
             ts_sync = (block_time + block_time_total - real_time_total) / ts_count;
