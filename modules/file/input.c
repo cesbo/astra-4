@@ -314,18 +314,7 @@ static void thread_loop(void *arg)
             {
                 const ssize_t r = asc_thread_buffer_write(mod->thread_output, ptr, TS_PACKET_SIZE);
                 if(r != TS_PACKET_SIZE)
-                {
-                    ++mod->overflow;
-                }
-                else
-                {
-                    if(mod->overflow > 0)
-                    {
-                        asc_log_warning(MSG("sync buffer overflow. dropped %d packets")
-                                        , mod->overflow);
-                        mod->overflow = 0;
-                    }
-                }
+                    ;
             }
             mod->buffer_skip += mod->m2ts_header + TS_PACKET_SIZE;
 
