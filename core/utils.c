@@ -43,7 +43,8 @@ void asc_usleep(uint64_t usec)
     struct timespec ts;
     ts.tv_sec = usec / 1000000;
     ts.tv_nsec = (usec % 1000000) * 1000;
-    nanosleep(&ts, NULL);
+    while(nanosleep(&ts, &ts) == -1 && errno == EINTR)
+         continue;
 #else
     HANDLE timer;
     LARGE_INTEGER ft;
