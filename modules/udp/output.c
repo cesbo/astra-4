@@ -263,6 +263,10 @@ static void thread_loop(void *arg)
                 continue;
             }
 
+            system_time = asc_utime();
+            if(block_time_total > system_time + 100)
+                asc_usleep(block_time_total - system_time);
+
             const uint32_t ts_count = block_size / TS_PACKET_SIZE;
             const uint32_t ts_sync = block_time / ts_count;
             const uint32_t block_time_tail = block_time % ts_count;
@@ -287,7 +291,6 @@ static void thread_loop(void *arg)
                 {
                     asc_log_warning(MSG("system time changed"));
 
-                    mod->sync.buffer_count -= block_size;
                     mod->sync.buffer_read = next_block;
 
                     reset = true;
@@ -298,23 +301,20 @@ static void thread_loop(void *arg)
                 if(block_time_total > system_time + 100)
                     asc_usleep(block_time_total - system_time);
             }
+            mod->sync.buffer_count -= block_size;
 
             if(reset)
                 continue;
 
-            mod->sync.buffer_count -= block_size;
-
             system_time = asc_utime();
-            block_time_total += block_time_tail;
-            if(block_time_total > system_time + 100)
-                asc_usleep(block_time_total - system_time);
-
-            else if(system_time > block_time_total + 100000)
+            if(system_time > block_time_total + 100000)
             {
                 asc_log_warning(  MSG("wrong syncing time. -%llums")
                                 , (system_time - block_time_total) / 1000);
                 reset = true;
             }
+
+            block_time_total += block_time_tail;
         }
     }
 }
