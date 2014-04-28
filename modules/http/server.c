@@ -148,6 +148,8 @@ static void on_client_close(void *arg)
 
     asc_list_remove_item(mod->clients, client);
     free(client);
+
+    lua_gc(lua, LUA_GCCOLLECT, 0);
 }
 
 static bool routecmp(const char *path, const char *route)

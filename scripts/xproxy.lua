@@ -144,7 +144,6 @@ function on_http_udp(server, client, request)
                 end
             end
             client_list[client_data.client_id] = nil
-            collectgarbage()
         end
         return
     end
@@ -351,7 +350,6 @@ function on_http_http(server, client, request)
                 end
             end
             client_list[client_data.client_id] = nil
-            collectgarbage()
         end
         return
     end
