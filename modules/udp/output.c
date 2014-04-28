@@ -173,13 +173,13 @@ static void thread_loop(void *arg)
 
     while(mod->is_thread_started)
     {
-        uint64_t time_sync_b, time_sync_bb;
+        // block sync
+        uint64_t   pcr
+                 , system_time, system_time_check
+                 , block_time, block_time_total = 0;
+        size_t block_size = 0, next_block;
 
-        double block_time_total, total_sync_diff;
-        size_t next_block, block_size = 0;
-
-        struct timespec ts_sync = { .tv_sec = 0, .tv_nsec = 0 };
-        static const struct timespec data_wait = { .tv_sec = 0, .tv_nsec = 1000000 };
+        bool reset = true;
 
         asc_log_info(MSG("buffering..."));
 
@@ -199,7 +199,7 @@ static void thread_loop(void *arg)
             if(r > 0)
                 mod->sync.buffer_write += r;
             else
-                nanosleep(&data_wait, NULL);
+                asc_usleep(1000);
         }
         mod->sync.buffer_count = mod->sync.buffer_write;
         if(mod->sync.buffer_write == mod->sync.buffer_size)
@@ -214,12 +214,16 @@ static void thread_loop(void *arg)
         mod->sync.buffer_count -= block_size;
         mod->sync.buffer_read = next_block;
 
-        time_sync_b = asc_utime();
-        block_time_total = 0.0;
-        total_sync_diff = 0.0;
+        reset = true;
 
         while(mod->is_thread_started)
         {
+            if(reset)
+            {
+                reset = false;
+                block_time_total = asc_utime();
+            }
+
             if(   mod->is_thread_started
                && mod->sync.buffer_count < mod->sync.buffer_size)
             {
@@ -241,38 +245,29 @@ static void thread_loop(void *arg)
             }
 
             // get PCR
-            uint64_t pcr;
             if(!seek_pcr(mod, &block_size, &next_block, &pcr))
             {
                 asc_log_error(MSG("next PCR is not found"));
                 break;
             }
-            const double block_time = mpegts_pcr_block_ms(mod->pcr, pcr);
-            mod->pcr = pcr;
-            if(block_time < 0 || block_time > 250)
+            block_time = mpegts_pcr_block_us(&mod->pcr, &pcr);
+            if(block_time == 0 || block_time > 250000)
             {
-                asc_log_error(MSG("block time out of range: %.2f block_size:%u")
-                              , block_time, block_size / TS_PACKET_SIZE);
+                asc_log_error(  MSG("block time out of range: %llums block_size:%u")
+                          , (uint64_t)(block_time / 1000), block_size);
+
+                mod->sync.buffer_count -= block_size;
                 mod->sync.buffer_read = next_block;
 
-                time_sync_b = asc_utime();
-                block_time_total = 0.0;
-                total_sync_diff = 0.0;
+                reset = true;
                 continue;
             }
-            block_time_total += block_time;
 
-            // calculate the sync time value
-            if((block_time + total_sync_diff) > 0)
-                ts_sync.tv_nsec = ((block_time + total_sync_diff) * 1000000)
-                                / (block_size / TS_PACKET_SIZE);
-            else
-                ts_sync.tv_nsec = 0;
-            // store the sync time value for later usage
-            const uint64_t ts_sync_nsec = ts_sync.tv_nsec;
+            const uint32_t ts_count = block_size / TS_PACKET_SIZE;
+            const uint32_t ts_sync = block_time / ts_count;
+            const uint32_t block_time_tail = block_time % ts_count;
 
-            uint64_t calc_block_time_ns = 0;
-            time_sync_bb = asc_utime();
+            system_time_check = asc_utime();
 
             while(mod->is_thread_started && mod->sync.buffer_read != next_block)
             {
@@ -284,43 +279,41 @@ static void thread_loop(void *arg)
                 if(mod->sync.buffer_read >= mod->sync.buffer_size)
                     mod->sync.buffer_read = 0;
 
-                // sync block
-                if(ts_sync.tv_nsec > 0)
-                    nanosleep(&ts_sync, NULL);
+                system_time = asc_utime();
+                block_time_total += ts_sync;
 
-                calc_block_time_ns += ts_sync_nsec;
-                const uint64_t time_sync_be = asc_utime();
-                if(time_sync_be < time_sync_bb)
-                    break; // timetravel
-                const uint64_t real_block_time_ns = (time_sync_be - time_sync_bb) * 1000;
-                ts_sync.tv_nsec = (real_block_time_ns > calc_block_time_ns) ? 0 : ts_sync_nsec;
+                if(  (system_time < system_time_check) /* <-0s */
+                   ||(system_time > system_time_check + 1000000)) /* >+1s */
+                {
+                    asc_log_warning(MSG("system time changed"));
+
+                    mod->sync.buffer_count -= block_size;
+                    mod->sync.buffer_read = next_block;
+
+                    reset = true;
+                    break;
+                }
+                system_time_check = system_time;
+
+                if(block_time_total > system_time + 100)
+                    asc_usleep(block_time_total - system_time);
             }
+
+            if(reset)
+                continue;
+
             mod->sync.buffer_count -= block_size;
 
-            // stream syncing
-            const uint64_t time_sync_e = asc_utime();
+            system_time = asc_utime();
+            block_time_total += block_time_tail;
+            if(block_time_total > system_time + 100)
+                asc_usleep(block_time_total - system_time);
 
-            if(time_sync_e < time_sync_b)
+            else if(system_time > block_time_total + 100000)
             {
-                asc_log_warning(MSG("timetravel detected"));
-
-                time_sync_b = asc_utime();
-                block_time_total = 0.0;
-                total_sync_diff = 0.0;
-                continue;
-            }
-
-            const double time_sync_diff = (time_sync_e - time_sync_b) / 1000.0;
-            total_sync_diff = block_time_total - time_sync_diff;
-
-            // reset buffer on changing the system time
-            if(total_sync_diff < -100.0 || total_sync_diff > 100.0)
-            {
-                asc_log_warning(MSG("wrong syncing time: %.2fms"), total_sync_diff);
-
-                time_sync_b = asc_utime();
-                block_time_total = 0.0;
-                total_sync_diff = 0.0;
+                asc_log_warning(  MSG("wrong syncing time. -%llums")
+                                , (system_time - block_time_total) / 1000);
+                reset = true;
             }
         }
     }

@@ -70,10 +70,10 @@ struct module_data_t
 
 /* module code */
 
-static bool seek_pcr(module_data_t *mod, uint32_t *block_size, uint64_t *pcr)
+static bool seek_pcr(module_data_t *mod, size_t *block_size, uint64_t *pcr)
 {
     const uint8_t packet_size = mod->m2ts_header + TS_PACKET_SIZE;
-    uint32_t count = mod->buffer_skip + packet_size;
+    size_t count = mod->buffer_skip + packet_size;
 
     while(count < mod->buffer_end)
     {
@@ -141,7 +141,7 @@ static bool open_file(module_data_t *mod)
         return false;
     }
 
-    uint32_t block_size = 0;
+    size_t block_size = 0;
     if(!seek_pcr(mod, &block_size, &mod->pcr))
     {
         asc_log_error(MSG("first PCR is not found"));
@@ -181,7 +181,7 @@ static void thread_loop(void *arg)
     uint64_t   pcr
              , system_time, system_time_check
              , block_time, block_time_total = 0;
-    uint32_t block_size = 0;
+    size_t block_size = 0;
 
     bool reset = true;
 
