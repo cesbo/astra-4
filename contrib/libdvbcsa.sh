@@ -71,7 +71,7 @@ if [ -n "$ARG_GCC" ] ; then
 fi
 AR=`echo $GCC | sed 's/gcc$/ar/'`
 
-CFLAGS="-O3 -fomit-frame-pointer"
+CFLAGS="-O3 -fomit-frame-pointer -funroll-loops"
 if [ -n "$ARG_CFLAGS" ] ; then
     CFLAGS="$CFLAGS $ARG_CFLAGS"
 fi

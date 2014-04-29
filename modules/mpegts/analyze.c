@@ -101,13 +101,15 @@ static const char __psi[] = "psi";
 static const char __err[] = "error";
 static const char __callback[] = "callback";
 
-static void do_callback(module_data_t *mod)
+static void callback(module_data_t *mod)
 {
     asc_assert((lua_type(lua, -1) == LUA_TTABLE), "table required");
 
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
     lua_pushvalue(lua, -2);
     lua_call(lua, 1, 0);
+
+    lua_pop(lua, 1); // data
 }
 
 /*
@@ -138,8 +140,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     {
         lua_pushstring(lua, "PAT checksum error");
         lua_setfield(lua, -2, __err);
-        do_callback(mod);
-        lua_pop(lua, 1); // info
+        callback(mod);
         return;
     }
 
@@ -182,8 +183,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         free(mod->pmt_checksum_list);
     mod->pmt_checksum_list = calloc(mod->pmt_count, sizeof(pmt_checksum_t));
 
-    do_callback(mod);
-    lua_pop(lua, 1); // info
+    callback(mod);
 }
 
 /*
@@ -214,8 +214,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     {
         lua_pushstring(lua, "CAT checksum error");
         lua_setfield(lua, -2, __err);
-        do_callback(mod);
-        lua_pop(lua, 1); // info
+        callback(mod);
         return;
     }
     psi->crc32 = crc32;
@@ -239,8 +238,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     }
     lua_setfield(lua, -2, __descriptors);
 
-    do_callback(mod);
-    lua_pop(lua, 1); // info
+    callback(mod);
 }
 
 /*
@@ -271,8 +269,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
         lua_pushstring(lua, "PMT checksum error");
         lua_setfield(lua, -2, __err);
-        do_callback(mod);
-        lua_pop(lua, 1); // info
+        callback(mod);
         return;
     }
 
@@ -362,8 +359,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     }
     lua_setfield(lua, -2, "streams");
 
-    do_callback(mod);
-    lua_pop(lua, 1); // options
+    callback(mod);
 }
 
 /*
@@ -397,8 +393,7 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
 
         lua_pushstring(lua, "SDT checksum error");
         lua_setfield(lua, -2, __err);
-        do_callback(mod);
-        lua_pop(lua, 1); // info
+        callback(mod);
         return;
     }
 
@@ -475,8 +470,7 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
     }
     lua_setfield(lua, -2, "services");
 
-    do_callback(mod);
-    lua_pop(lua, 1); // options
+    callback(mod);
 }
 
 /*
@@ -503,7 +497,7 @@ static void append_rate(module_data_t *mod, int rate)
             lua_settable(lua, -3);
         }
         lua_setfield(lua, -2, "rate");
-        do_callback(mod);
+        callback(mod);
         mod->rate_count = 0;
     }
 }
@@ -691,9 +685,7 @@ static void on_check_stat(void *arg)
     lua_pushboolean(lua, on_air);
     lua_setfield(lua, -2, "on_air");
 
-    do_callback(mod);
-
-    lua_pop(lua, 1); // table
+    callback(mod);
 }
 
 /*

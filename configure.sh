@@ -276,14 +276,14 @@ check_libdvbcsa()
 
 build_libdvbcsa()
 {
-    echo "$CFLAGS" | grep -q "\-msse"
+    $APP_C -dM -E -x c /dev/null | grep -q "__x86_64__"
     if [ $? -eq 0 ] ; then
-        echo "Build libdvbcsa with SSE"
-        $SRCDIR/contrib/libdvbcsa.sh SSE $APP_C
-        return $?
-    else
         echo "Build libdvbcsa with UINT64"
         $SRCDIR/contrib/libdvbcsa.sh UINT64 $APP_C
+        return $?
+    else
+        echo "Build libdvbcsa with UINT32"
+        $SRCDIR/contrib/libdvbcsa.sh UINT32 $APP_C
         return $?
     fi
 }
@@ -292,6 +292,15 @@ check_libdvbcsa_all()
 {
     if check_libdvbcsa "$CFLAGS" "$LDFLAGS" ; then
         LIBDVBCSA=1
+        return 0
+    fi
+
+    LIBDVBCSA_CFLAGS="-I$SRCDIR/contrib/build/libdvbcsa/src"
+    LIBDVBCSA_LDFLAGS="$SRCDIR/contrib/build/libdvbcsa/libdvbcsa.a"
+    if check_libdvbcsa "$LIBDVBCSA_CFLAGS" "$LIBDVBCSA_LDFLAGS" ; then
+        LIBDVBCSA=1
+        CFLAGS="$CFLAGS $LIBDVBCSA_CFLAGS"
+        LDFLAGS="$LDFLAGS $LIBDVBCSA_LDFLAGS"
         return 0
     fi
 

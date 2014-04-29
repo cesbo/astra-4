@@ -34,7 +34,20 @@
 #include <astra.h>
 #include "module_cam.h"
 #include "cas/cas_list.h"
-#include <dvbcsa/dvbcsa.h>
+
+#ifndef FFDECSA
+#   define FFDECSA 1
+#endif
+
+#ifndef LIBDVBCSA
+#   define LIBDVBCSA 0
+#endif
+
+#if FFDECSA == 1
+#   include "FFdecsa/FFdecsa.h"
+#elif LIBDVBCSA == 1
+#   include <dvbcsa/dvbcsa.h>
+#endif
 
 typedef struct
 {
@@ -43,16 +56,26 @@ typedef struct
     uint8_t ecm_type;
     uint16_t ecm_pid;
 
+    bool is_keys;
     uint8_t parity;
+
+#if FFDECSA == 1
+
+    void *keys;
+    uint8_t **batch;
+
+#elif LIBDVBCSA == 1
+
     struct dvbcsa_bs_key_s *even_key;
     struct dvbcsa_bs_key_s *odd_key;
-    bool is_keys;
+    struct dvbcsa_bs_batch_s *batch;
+
+#endif
+
+    size_t batch_skip;
 
     int new_key_id;  // 0 - not, 1 - first key, 2 - second key, 3 - both keys
     uint8_t new_key[16];
-
-    struct dvbcsa_bs_batch_s *batch;
-    size_t batch_skip;
 } ca_stream_t;
 
 typedef struct
@@ -95,6 +118,8 @@ struct module_data_t
 #define BISS_CAID 0x2600
 #define MSG(_msg) "[decrypt %s] " _msg, mod->name
 
+void ca_stream_set_keys(ca_stream_t *ca_stream, const uint8_t *even, const uint8_t *odd);
+
 ca_stream_t * ca_stream_init(module_data_t *mod, uint16_t ecm_pid)
 {
     ca_stream_t *ca_stream;
@@ -109,12 +134,22 @@ ca_stream_t * ca_stream_init(module_data_t *mod, uint16_t ecm_pid)
 
     ca_stream->ecm_pid = ecm_pid;
 
+    ca_stream->is_keys = false;
     ca_stream->parity = 0x00;
+
+#if FFDECSA == 1
+
+    ca_stream->keys = get_key_struct();
+    ca_stream->batch = malloc(sizeof(void *) * (mod->batch_size * 2 + 2));
+
+#elif LIBDVBCSA == 1
+
     ca_stream->even_key = dvbcsa_bs_key_alloc();
     ca_stream->odd_key = dvbcsa_bs_key_alloc();
-    ca_stream->is_keys = false;
-
     ca_stream->batch = calloc(mod->batch_size + 1, sizeof(struct dvbcsa_bs_batch_s));
+
+#endif
+
     ca_stream->batch_skip = 0;
 
     asc_list_insert_tail(mod->ca_list, ca_stream);
@@ -124,18 +159,39 @@ ca_stream_t * ca_stream_init(module_data_t *mod, uint16_t ecm_pid)
 
 void ca_stream_destroy(ca_stream_t *ca_stream)
 {
+#if FFDECSA == 1
+
+    free_key_struct(ca_stream->keys);
+    free(ca_stream->batch);
+
+#elif LIBDVBCSA == 1
+
     dvbcsa_bs_key_free(ca_stream->even_key);
     dvbcsa_bs_key_free(ca_stream->odd_key);
     free(ca_stream->batch);
+
+#endif
+
     free(ca_stream);
 }
 
 void ca_stream_set_keys(ca_stream_t *ca_stream, const uint8_t *even, const uint8_t *odd)
 {
+#if FFDECSA == 1
+
+    if(even)
+        set_even_control_word(ca_stream->keys, even);
+    if(odd)
+        set_odd_control_word(ca_stream->keys, odd);
+
+#elif LIBDVBCSA == 1
+
     if(even)
         dvbcsa_bs_key_set(even, ca_stream->even_key);
     if(odd)
         dvbcsa_bs_key_set(odd, ca_stream->odd_key);
+
+#endif
 }
 
 ca_stream_t * ca_stream_get(module_data_t *mod, uint16_t es_pid)
@@ -615,12 +671,25 @@ static void decrypt(module_data_t *mod)
     asc_list_for(mod->ca_list)
     {
         ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
+
+#if FFDECSA == 1
+
+        ca_stream->batch[ca_stream->batch_skip] = NULL;
+
+        size_t i = 0;
+        while(i < mod->batch_size)
+            i += decrypt_packets(ca_stream->keys, ca_stream->batch);
+
+#elif LIBDVBCSA == 1
+
         ca_stream->batch[ca_stream->batch_skip].data = NULL;
 
         if(ca_stream->parity == 0x80)
             dvbcsa_bs_decrypt(ca_stream->even_key, ca_stream->batch, TS_BODY_SIZE);
         else if(ca_stream->parity == 0xC0)
             dvbcsa_bs_decrypt(ca_stream->odd_key, ca_stream->batch, TS_BODY_SIZE);
+
+#endif
 
         ca_stream->batch_skip = 0;
 
@@ -698,6 +767,20 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         mod->storage.write = 0;
     mod->storage.count += TS_PACKET_SIZE;
 
+#if FFDECSA == 1
+
+    asc_list_first(mod->ca_list);
+    ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
+
+    ca_stream->batch[ca_stream->batch_skip    ] = dst;
+    ca_stream->batch[ca_stream->batch_skip + 1] = dst + TS_PACKET_SIZE;
+    ca_stream->batch_skip += 2;
+
+    if(mod->storage.count - mod->storage.dsc_count >= mod->batch_size * TS_PACKET_SIZE)
+        decrypt(mod);
+
+#elif LIBDVBCSA == 1
+
     const uint8_t sc = TS_SC(dst);
     if(sc)
     {
@@ -757,6 +840,8 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     if(mod->storage.count >= mod->storage.size)
         decrypt(mod);
 
+#endif
+
     if(mod->storage.dsc_count > 0)
     {
         module_stream_send(mod, &mod->storage.buffer[mod->storage.read]);
@@ -793,6 +878,7 @@ void on_cam_error(module_data_t *mod)
     {
         ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
         ca_stream->new_key_id = 0;
+
         ca_stream->batch_skip = 0;
     }
 }
@@ -905,7 +991,15 @@ static void module_init(module_data_t *mod)
     mod->ca_list = asc_list_init();
     mod->el_list = asc_list_init();
 
+#if FFDECSA == 1
+
+    mod->batch_size = get_suggested_cluster_size();
+
+#elif LIBDVBCSA == 1
+
     mod->batch_size = dvbcsa_bs_batch_size();
+
+#endif
 
     mod->storage.size = mod->batch_size * 4 * TS_PACKET_SIZE;
     mod->storage.buffer = malloc(mod->storage.size);

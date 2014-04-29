@@ -144,7 +144,6 @@ function on_http_udp(server, client, request)
                 end
             end
             client_list[client_data.client_id] = nil
-            collectgarbage()
         end
         return
     end
@@ -351,7 +350,6 @@ function on_http_http(server, client, request)
                 end
             end
             client_list[client_data.client_id] = nil
-            collectgarbage()
         end
         return
     end
@@ -413,6 +411,8 @@ function on_http_channels(server, client, request)
     local client_data = server:data(client)
 
     if not request then -- on_close
+        client_data.callback(server, client, request)
+        client_data.callback = nil
         return
     end
 
@@ -439,10 +439,12 @@ function on_http_channels(server, client, request)
     local url = channel:sub(b + 3)
 
     request.path = "/" .. proto .. "/" .. url
-    if proto == "udp" then
-        server.__options.route[3][2](server, client, request)
+    if proto == "udp" or proto == "rtp" then
+        client_data.callback = on_http_udp
+        on_http_udp(server, client, request)
     elseif proto == "http" then
-        server.__options.route[4][2](server, client, request)
+        client_data.callback = on_http_http
+        on_http_http(server, client, request)
     else
         server:abort(client, 404)
     end
