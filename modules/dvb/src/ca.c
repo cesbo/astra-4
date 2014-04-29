@@ -128,10 +128,10 @@ enum
 
 #define DATA_INDICATOR 0x80
 
-static void ca_tpdu_send(dvb_ca_t *ca, uint8_t slot_id
+static void ca_tpdu_send(  dvb_ca_t *ca, uint8_t slot_id
                          , uint8_t tag, const uint8_t *data, uint16_t size);
 
-static void ca_apdu_send(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id
+static void ca_apdu_send(  dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id
                          , uint32_t tag, const uint8_t *data, uint16_t size);
 
 static uint32_t ca_apdu_get_tag(dvb_ca_t *ca, uint8_t slot_id);
@@ -271,7 +271,7 @@ static void application_information_event(dvb_ca_t *ca, uint8_t slot_id, uint16_
             char *name = malloc(size + 1);
             memcpy(name, buffer, size);
             name[size] = '\0';
-            asc_log_info(MSG("CA: Module %s. 0x%02X 0x%04X 0x%04X")
+            asc_log_info(  MSG("CA: Module %s. 0x%02X 0x%04X 0x%04X")
                          , name, type, manufacturer, product);
             free(name);
             break;
@@ -338,7 +338,7 @@ static bool ca_pmt_check_caid(conditional_access_data_t *ca_data, uint16_t caid)
     return false;
 }
 
-static uint16_t ca_pmt_copy_desc(const uint8_t *src, uint16_t size, uint8_t *dst
+static uint16_t ca_pmt_copy_desc(  const uint8_t *src, uint16_t size, uint8_t *dst
                                  , conditional_access_data_t *ca_data)
 {
     uint16_t ca_pmt_skip = 3; // info_length + ca_pmt_cmd_id
@@ -374,7 +374,7 @@ static uint16_t ca_pmt_copy_desc(const uint8_t *src, uint16_t size, uint8_t *dst
     }
 }
 
-static bool ca_pmt_build(dvb_ca_t *ca, ca_pmt_t *ca_pmt
+static bool ca_pmt_build(  dvb_ca_t *ca, ca_pmt_t *ca_pmt
                          , uint8_t slot_id, uint8_t session_id
                          , uint8_t list_manage, uint8_t cmd)
 {
@@ -391,7 +391,7 @@ static bool ca_pmt_build(dvb_ca_t *ca, ca_pmt_t *ca_pmt
 
     const uint8_t *pmt_info = PMT_DESC_FIRST(ca_pmt->psi);
     const uint16_t pmt_info_length = __PMT_DESC_SIZE(ca_pmt->psi);
-    const uint16_t desc_size = ca_pmt_copy_desc(pmt_info, pmt_info_length
+    const uint16_t desc_size = ca_pmt_copy_desc(  pmt_info, pmt_info_length
                                                 , &ca_pmt->buffer[ca_size], ca_data);
     if(desc_size > 2)
     {
@@ -400,8 +400,8 @@ static bool ca_pmt_build(dvb_ca_t *ca, ca_pmt_t *ca_pmt
     }
     ca_size += desc_size;
 
-    const uint8_t *pointer = PMT_ITEMS_FIRST(ca_pmt->psi);
-    while(!PMT_ITEMS_EOL(ca_pmt->psi, pointer))
+    const uint8_t *pointer;
+    PMT_ITEMS_FOREACH(ca_pmt->psi, pointer)
     {
         ca_pmt->buffer[ca_size + 0] = PMT_ITEM_GET_TYPE(ca_pmt->psi, pointer);
         const uint16_t pid = PMT_ITEM_GET_PID(ca_pmt->psi, pointer);
@@ -411,23 +411,21 @@ static bool ca_pmt_build(dvb_ca_t *ca, ca_pmt_t *ca_pmt
 
         const uint8_t *es_info = PMT_ITEM_DESC_FIRST(pointer);
         const uint16_t es_info_length = __PMT_ITEM_DESC_SIZE(pointer);
-        const uint16_t es_desc_size = ca_pmt_copy_desc(es_info, es_info_length
+        const uint16_t es_desc_size = ca_pmt_copy_desc(  es_info, es_info_length
                                                        , &ca_pmt->buffer[ca_size], ca_data);
-        if(desc_size > 2)
+        if(es_desc_size > 2)
         {
             ca_pmt->buffer[ca_size + 2] = cmd;
             is_caid = true;
         }
         ca_size += es_desc_size;
-
-        PMT_ITEMS_NEXT(ca_pmt->psi, pointer);
     }
     ca_pmt->buffer_size = ca_size;
 
     return is_caid;
 }
 
-static void ca_pmt_send(dvb_ca_t *ca, ca_pmt_t *ca_pmt
+static void ca_pmt_send(  dvb_ca_t *ca, ca_pmt_t *ca_pmt
                         , uint8_t slot_id, uint8_t session_id
                         , uint8_t list_manage, uint8_t cmd)
 {
@@ -487,14 +485,14 @@ static void conditional_access_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t ses
                 const uint16_t caid = (buffer[0] << 8) | (buffer[1]);
                 buffer += 2;
                 data->caid_list[i] = caid;
-                asc_log_info(MSG("CA: Module CAID:0x%04X (session %d:%d)")
+                asc_log_info(  MSG("CA: Module CAID:0x%04X (session %d:%d)")
                              , caid, slot_id, session_id);
             }
 
             asc_list_for(ca->ca_pmt_list)
             {
                 ca_pmt_t *ca_pmt = asc_list_data(ca->ca_pmt_list);
-                ca_pmt_send(ca, ca_pmt, slot_id, session_id
+                ca_pmt_send(  ca, ca_pmt, slot_id, session_id
                             , CA_PMT_LM_ADD, CA_PMT_CMD_OK_DESCRAMBLING);
             }
             break;
@@ -780,7 +778,7 @@ static void mmi_enq_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
     mmi->object.enq.text[size] = '\0';
 }
 
-static uint16_t mmi_get_text(dvb_ca_t *ca
+static uint16_t mmi_get_text(  dvb_ca_t *ca
                              , const uint8_t *buffer, uint16_t size
                              , char **text)
 {
@@ -931,7 +929,7 @@ static uint8_t * ca_apdu_get_buffer(dvb_ca_t *ca, uint8_t slot_id, uint16_t *siz
     return &buffer[skip];
 }
 
-static void ca_apdu_send(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id
+static void ca_apdu_send(  dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id
                          , uint32_t tag, const uint8_t *data, uint16_t size)
 {
     uint8_t *buffer = malloc(size + SPDU_HEADER_SIZE + 12);
@@ -1099,7 +1097,7 @@ static void ca_spdu_response_open(dvb_ca_t *ca, uint8_t slot_id)
             break;
         case RI_HOST_CONTROL:
         default:
-            asc_log_error(MSG("CA: Slot %d session %d unknown resource %d")
+            asc_log_error(  MSG("CA: Slot %d session %d unknown resource %d")
                           , slot_id, session_id, resource_id);
             session->resource_id = 0;
             break;
@@ -1194,7 +1192,7 @@ static void ca_tpdu_write(dvb_ca_t *ca, uint8_t slot_id)
     free(message);
 }
 
-static void ca_tpdu_send(dvb_ca_t *ca, uint8_t slot_id
+static void ca_tpdu_send(  dvb_ca_t *ca, uint8_t slot_id
                          , uint8_t tag, const uint8_t *data, uint16_t size)
 {
     ca_slot_t *slot = &ca->slots[slot_id];
@@ -1309,7 +1307,7 @@ static void ca_tpdu_event(dvb_ca_t *ca)
 
             if(slot->buffer_size + message_size > MAX_TPDU_SIZE)
             {
-                asc_log_error(MSG("tpdu buffer limit: buffer_size:%d message_size:%d")
+                asc_log_error(  MSG("tpdu buffer limit: buffer_size:%d message_size:%d")
                               , slot->buffer_size, message_size);
                 slot->buffer_size = 0;
                 break;
@@ -1362,7 +1360,7 @@ static void ca_tpdu_event(dvb_ca_t *ca)
                 break;
             case RI_HOST_CONTROL:
             default:
-                asc_log_error(MSG("CA: Slot %d session %d unknown resource %d")
+                asc_log_error(  MSG("CA: Slot %d session %d unknown resource %d")
                               , slot_id, session_id, resource_id);
                 slot->sessions[session_id].resource_id = 0;
                 break;
@@ -1834,7 +1832,7 @@ void ca_loop(dvb_ca_t *ca, int is_data)
                     if(session->resource_id != RI_CONDITIONAL_ACCESS_SUPPORT)
                         continue;
 
-                    ca_pmt_send(ca, ca_pmt, slot_id, session_id
+                    ca_pmt_send(  ca, ca_pmt, slot_id, session_id
                                 , (is_update == true) ? CA_PMT_LM_UPDATE : CA_PMT_LM_ADD
                                 , CA_PMT_CMD_OK_DESCRAMBLING);
                 }
