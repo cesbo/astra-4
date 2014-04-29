@@ -411,8 +411,10 @@ function on_http_channels(server, client, request)
     local client_data = server:data(client)
 
     if not request then -- on_close
-        client_data.callback(server, client, request)
-        client_data.callback = nil
+        if client_data.callback then
+            client_data.callback(server, client, request)
+            client_data.callback = nil
+        end
         return
     end
 
