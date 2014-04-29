@@ -295,6 +295,15 @@ check_libdvbcsa_all()
         return 0
     fi
 
+    LIBDVBCSA_CFLAGS="-I$SRCDIR/contrib/build/libdvbcsa/src"
+    LIBDVBCSA_LDFLAGS="$SRCDIR/contrib/build/libdvbcsa/libdvbcsa.a"
+    if check_libdvbcsa "$LIBDVBCSA_CFLAGS" "$LIBDVBCSA_LDFLAGS" ; then
+        LIBDVBCSA=1
+        CFLAGS="$CFLAGS $LIBDVBCSA_CFLAGS"
+        LDFLAGS="$LDFLAGS $LIBDVBCSA_LDFLAGS"
+        return 0
+    fi
+
     LIBDVBCSA_LDFLAGS="-ldvbcsa"
     if check_libdvbcsa "" "$LIBDVBCSA_LDFLAGS" ; then
         LIBDVBCSA=1
