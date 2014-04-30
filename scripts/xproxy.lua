@@ -466,52 +466,135 @@ end
 --  88  888  88    8oooo88    888   88   8888
 -- o88o  8  o88o o88o  o888o o888o o88o    88
 
-function usage()
-    print("Usage: astra xproxy.lua [OPTIONS]\n" ..
-          "    -h                  help\n" ..
-          "    -a ADDR             local addres to listen\n" ..
-          "    -p PORT             local port to listen\n" ..
-          "    -l ADDR             source interface address\n" ..
-          "    --channels FILE     file with the channel names\n" ..
-          "    --debug             print debug messages"
-          )
-    astra.exit()
-end
-
 http_addr = "0.0.0.0"
 http_port = 8000
 
+allow_udp = true
+allow_rtp = true
+allow_http = true
+
 options = {
-    ["-h"] = function() usage() return 1 end,
-    ["--help"] = function() usage() return 1 end,
-    ["-a"] = function(i) http_addr = argv[i + 1] return 2 end,
-    ["-p"] = function(i) http_port = tonumber(argv[i + 1]) return 2 end,
-    ["-l"] = function(i) localaddr = argv[i + 1] return 2 end,
-    ["--channels"] = function(i) dofile(argv[i + 1]) return 2 end,
-    ["--debug"] = function () log.set({ debug = true }) return 1 end,
+    {
+        { "-h", "--help" }, 0,
+        "    -h                  command line arguments",
+        function(idx)
+            usage()
+        end
+    }, {
+        { "--pid" }, 1,
+        "    --pid FILE          create PID-file",
+        function(idx)
+            pidfile(argv[idx + 1])
+        end
+    }, {
+        { "-a" }, 1,
+        "    -a ADDR             local address to listen",
+        function(idx)
+            http_addr = argv[idx + 1]
+        end
+    }, {
+        { "-p" }, 1,
+        "    -p PORT             local port for incoming connections",
+        function(idx)
+            http_port = tonumber(argv[idx + 1])
+            if not http_port then
+                log.error("[xProxy] wrong port value")
+                usage()
+            end
+        end
+    }, {
+        { "-l" }, 1,
+        "    -l ADDR             source interface for UDP/RTP streams",
+        function(idx)
+            localaddr = argv[idx + 1]
+        end
+    }, {
+        { "--channels" }, 1,
+        "    --channels FILE     file with the channel names",
+        function(idx)
+            dofile(argv[idx + 1])
+        end
+    }, {
+        { "--no-udp" }, 0,
+        "    --no-udp            disable direct access the to UDP source",
+        function(idx)
+            allow_udp = false
+        end
+    }, {
+        { "--no-rtp" }, 0,
+        "    --no-rtp            disable direct access the to RTP source",
+        function(idx)
+            allow_rtp = false
+        end
+    }, {
+        { "--no-http" }, 0,
+        "    --no-http           disable direct access the to HTTP source",
+        function(idx)
+            allow_http = false
+        end
+    }, {
+        { "--debug" }, 0,
+        "    --debug             print debug messages",
+        function(idx)
+            log.set({ debug = true })
+        end
+    }
 }
 
-i = 2
-while i <= #argv do
-    if not options[argv[i]] then
-        print("unknown option: " .. argv[i])
-        usage()
-    end
-    i = i + options[argv[i]](i)
+function usage()
+    print("Usage: astra " .. argv[1] .. " [OPTIONS]")
+    for _,o in ipairs(options) do print(o[3]) end
+    astra.exit()
 end
+
+function load()
+    function get_option(key)
+        for _,o in ipairs(options) do
+            for _,k in ipairs(o[1]) do
+                if k == key then return o end
+            end
+        end
+        return nil
+    end
+
+    local idx = 2
+    while idx <= #argv do
+        local o = get_option(argv[idx])
+        if not o then
+            print("unknown option: " .. argv[idx])
+            usage()
+        end
+        o[4](idx)
+        idx = idx + 1 + o[2]
+    end
+end
+
+load()
+
+route = {
+    { "/stat/", on_http_stat },
+    { "/stat", http_redirect({ location = "/stat/" }) },
+}
+
+if allow_udp then
+    table.insert(route, { "/udp/*", http_upstream({ callback = on_http_udp }) })
+end
+
+if allow_rtp then
+    table.insert(route, { "/rtp/*", http_upstream({ callback = on_http_udp }) })
+end
+
+if allow_http then
+    table.insert(route, { "/http/*", http_upstream({ callback = on_http_http }) })
+end
+
+table.insert(route, { "/*", http_upstream({ callback = on_http_channels }) })
 
 http_server({
     addr = http_addr,
     port = http_port,
     server_name = "xProxy",
-    route = {
-        { "/stat/", on_http_stat },
-        { "/stat", http_redirect({ location = "/stat/" }) },
-        { "/udp/*", http_upstream({ callback = on_http_udp }) },
-        { "/rtp/*", http_upstream({ callback = on_http_udp }) },
-        { "/http/*", http_upstream({ callback = on_http_http }) },
-        { "/*", http_upstream({ callback = on_http_channels }) },
-    }
+    route = route
 })
 
 log.info("xProxy started on " .. http_addr .. ":" .. http_port)
