@@ -72,15 +72,23 @@ function render_stat_html()
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <title>xProxy: stat</title>
+    <title>xProxy : Statistics</title>
     <style type="text/css">
-table {
-    width: 600px;
-    margin: auto;
-}
+body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333333; }
+table { width: 600px; margin: auto; }
+.brand { text-align: left; font-size: 18px; line-height: 20px; }
+.version { text-align: right; font-size: 14px; line-height: 20px; color: #888; }
     </style>
 </head>
 <body>
+    <table border="0">
+        <tbody>
+            <tr>
+                <td class="brand">xProxy</td>
+                <td class="version">Astra v.]] .. astra.version .. [[</td>
+            </tr>
+        </tbody>
+    </table>
     <table border="1">
         <thead>
             <tr>
