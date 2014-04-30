@@ -93,6 +93,7 @@ struct module_data_t
     /* Config */
     const char *name;
     int caid;
+    bool disable_emm;
 
     /* dvbcsa */
     asc_list_t *el_list;
@@ -352,7 +353,7 @@ static bool __cat_check_desc(module_data_t *mod, const uint8_t *desc)
     else
     {
         mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_CA, pid);
-        if(mod->__decrypt.cam->disable_emm)
+        if(mod->disable_emm)
             return false;
     }
 
@@ -394,7 +395,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
 
     psi->crc32 = crc32;
 
-    bool is_emm_selected = mod->__decrypt.cam->disable_emm;
+    bool is_emm_selected = mod->disable_emm;
 
     const uint8_t *desc_pointer;
     CAT_DESC_FOREACH(psi, desc_pointer)
@@ -640,7 +641,7 @@ static void on_em(void *arg, mpegts_psi_t *psi)
     }
     else if(em_type >= 0x82 && em_type <= 0x8F)
     { /* EMM */
-        if(mod->__decrypt.cam->disable_emm)
+        if(mod->disable_emm)
             return;
 
         if(!module_cas_check_em(mod->__decrypt.cas, psi))
@@ -865,6 +866,8 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 void on_cam_ready(module_data_t *mod)
 {
     mod->caid = mod->__decrypt.cam->caid;
+    mod->disable_emm = mod->__decrypt.cam->disable_emm;
+
     stream_reload(mod);
 }
 
@@ -1016,6 +1019,7 @@ static void module_init(module_data_t *mod)
         key[3] = (key[0] + key[1] + key[2]) & 0xFF;
         key[7] = (key[4] + key[5] + key[6]) & 0xFF;
         mod->caid = BISS_CAID;
+        mod->disable_emm = true;
 
         ca_stream_t *biss = ca_stream_init(mod, NULL_TS_PID);
         ca_stream_set_keys(biss, key, key);
