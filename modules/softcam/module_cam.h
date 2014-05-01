@@ -87,7 +87,6 @@ void module_cam_detach_decrypt(module_cam_t *cam, module_decrypt_t *decrypt);
 void module_cam_ready(module_cam_t *cam);
 void module_cam_reset(module_cam_t *cam);
 
-#define module_cam_queue_push(_cam, _packet) asc_list_insert_tail((_cam)->packet_queue, _packet)
 em_packet_t * module_cam_queue_pop(module_cam_t *cam);
 void module_cam_queue_flush(module_cam_t *cam, module_decrypt_t *decrypt);
 

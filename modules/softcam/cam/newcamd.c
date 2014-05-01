@@ -190,9 +190,12 @@ static void timeout_timer_callback(void *arg)
                 mod->packet->buffer[1] = 0x00;
                 mod->packet->buffer[2] = 0x00;
                 mod->packet->buffer_size = 3;
+
                 on_cam_response(  mod->packet->decrypt->self, mod->packet->arg
                                 , mod->packet->buffer
                                 , errmsg);
+                free(mod->packet);
+
                 mod->packet = module_cam_queue_pop(&mod->__cam);
                 if(mod->packet)
                     newcamd_send_msg(mod);
@@ -582,6 +585,8 @@ static int newcamd_response(module_data_t *mod)
     on_cam_response(  mod->packet->decrypt->self, mod->packet->arg
                     , mod->packet->buffer
                     , errmsg);
+    free(mod->packet);
+
     mod->packet = module_cam_queue_pop(&mod->__cam);
     if(mod->packet)
         newcamd_send_msg(mod);
@@ -719,7 +724,7 @@ static void newcamd_send_em(  module_data_t *mod
         }
     }
 
-    module_cam_queue_push(&mod->__cam, packet);
+    asc_list_insert_tail(mod->__cam.packet_queue, packet);
     if(mod->packet) // newcamd is busy
         return;
     mod->packet = module_cam_queue_pop(&mod->__cam);
