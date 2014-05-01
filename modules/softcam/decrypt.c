@@ -625,7 +625,6 @@ static void on_em(void *arg, mpegts_psi_t *psi)
                 ca_stream = i;
                 break;
             }
-
         }
 
         if(!ca_stream)
@@ -673,26 +672,30 @@ static void decrypt(module_data_t *mod)
     {
         ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
 
+        if(ca_stream->batch_skip > 0)
+        {
+
 #if FFDECSA == 1
 
-        ca_stream->batch[ca_stream->batch_skip] = NULL;
+            ca_stream->batch[ca_stream->batch_skip] = NULL;
 
-        size_t i = 0;
-        while(i < mod->batch_size)
-            i += decrypt_packets(ca_stream->keys, ca_stream->batch);
+            size_t i = 0, i_size = ca_stream->batch_skip / 2;
+            while(i < i_size)
+                i += decrypt_packets(ca_stream->keys, ca_stream->batch);
 
 #elif LIBDVBCSA == 1
 
-        ca_stream->batch[ca_stream->batch_skip].data = NULL;
+            ca_stream->batch[ca_stream->batch_skip].data = NULL;
 
-        if(ca_stream->parity == 0x80)
-            dvbcsa_bs_decrypt(ca_stream->even_key, ca_stream->batch, TS_BODY_SIZE);
-        else if(ca_stream->parity == 0xC0)
-            dvbcsa_bs_decrypt(ca_stream->odd_key, ca_stream->batch, TS_BODY_SIZE);
+            if(ca_stream->parity == 0x80)
+                dvbcsa_bs_decrypt(ca_stream->even_key, ca_stream->batch, TS_BODY_SIZE);
+            else if(ca_stream->parity == 0xC0)
+                dvbcsa_bs_decrypt(ca_stream->odd_key, ca_stream->batch, TS_BODY_SIZE);
 
 #endif
 
-        ca_stream->batch_skip = 0;
+            ca_stream->batch_skip = 0;
+        }
 
         // check new key
         switch(ca_stream->new_key_id)
@@ -777,7 +780,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     ca_stream->batch[ca_stream->batch_skip + 1] = dst + TS_PACKET_SIZE;
     ca_stream->batch_skip += 2;
 
-    if(mod->storage.count - mod->storage.dsc_count >= mod->batch_size * TS_PACKET_SIZE)
+    if(ca_stream->batch_skip >= mod->batch_size * 2)
         decrypt(mod);
 
 #elif LIBDVBCSA == 1
