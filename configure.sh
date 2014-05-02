@@ -16,6 +16,8 @@ Usage: $0 [OPTIONS]
                                   For example, to append custom module, use:
                                   --with-modules=*:path/to/custom/module
 
+    --disable-libdvbcsa         - build without libdvbcsa
+
     --cc=GCC                    - custom C compiler (cross-compile)
     --static                    - build static binary
     --arch=ARCH                 - CPU architecture type (by default: native)
@@ -45,6 +47,7 @@ ARG_BUILD_STATIC=0
 ARG_ARCH="native"
 ARG_CFLAGS=""
 ARG_LDFLAGS=""
+ARG_LIBDVBCSA=1
 ARG_DEBUG=0
 
 set_cc()
@@ -70,6 +73,9 @@ while [ $# -ne 0 ] ; do
             ;;
         "--with-modules="*)
             ARG_MODULES=`echo $OPT | sed -e 's/^[a-z-]*=//'`
+            ;;
+        "--disable-libdvbcsa")
+            ARG_LIBDVBCSA=0
             ;;
         "--cc="*)
             set_cc `echo $OPT | sed 's/^--cc=//'`
@@ -327,7 +333,9 @@ check_libdvbcsa_all()
     return 1
 }
 
-check_libdvbcsa_all
+if [ $ARG_LIBDVBCSA -eq 1 ] ; then
+    check_libdvbcsa_all
+fi
 
 # APP flags
 
