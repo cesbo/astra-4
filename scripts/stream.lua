@@ -49,6 +49,34 @@ function split(s, d)
     end
 end
 
+function usage()
+    print("Usage: astra " .. argv[1] .. " [OPTIONS]")
+    for _,o in ipairs(options) do print(o[3]) end
+    astra.exit()
+end
+
+function load(idx)
+    function get_option(key)
+        for _,o in ipairs(options) do
+            for _,k in ipairs(o[1]) do
+                if k == key then return o end
+            end
+        end
+        return nil
+    end
+
+    if not idx then idx = 1 end
+    while idx <= #argv do
+        local o = get_option(argv[idx])
+        if not o then
+            print("unknown option: " .. argv[idx])
+            usage()
+        end
+        o[4](idx)
+        idx = idx + 1 + o[2]
+    end
+end
+
 --      o      oooo   oooo     o      ooooo    ooooo  oooo ooooooooooo ooooooooooo
 --     888      8888o  88     888      888       888  88   88    888    888    88
 --    8  88     88 888o88    8  88     888         888         888      888ooo8
@@ -693,7 +721,7 @@ input_list.http = function(channel_data, input_id)
             end
         end
 
-    instance.tail = transmit({})
+    instance.tail = transmit()
     instance.request = http_request(http_conf)
 
     return instance
@@ -829,7 +857,7 @@ function kill_input(channel_data, input_id)
     local input_conf = channel_data.config.input[input_id]
     local input_data = channel_data.input[input_id]
 
-    if not input_data.source then return nil end
+    if not input_data or not input_data.source then return nil end
 
     kill_input_list[input_conf.module_name](channel_data, input_id)
 
@@ -900,50 +928,178 @@ end
 -- 888o   o888           888   888      888         888      888
 --   88ooo88            o888o o888o    o888o       o888o    o888o
 
-local http_instance_list = {}
+http_client_list = {}
+http_instance_list = {}
+
+function make_client_id(server, client, request, url)
+    local client_id
+    repeat
+        client_id = math.random(10000000, 99000000)
+    until not http_client_list[client_id]
+
+    local client_addr = request.headers['x-real-ip']
+    if not client_addr then client_addr = request.addr end
+
+    http_client_list[client_id] = {
+        server = server,
+        client = client,
+        addr   = client_addr,
+        url   = url,
+        st     = os.time(),
+    }
+
+    return client_id
+end
+
+function render_stat_html()
+    local table_content = ""
+    local i = 1
+    local ct = os.time()
+    for client_id, client_stat in pairs(http_client_list) do
+        local dt = ct - client_stat.st
+        local uptime = string.format("%02d:%02d", (dt / 3600), (dt / 60) % 60)
+        table_content = table_content .. "<tr>" ..
+                        "<td>" .. i .. "</td>" ..
+                        "<td>" .. client_stat.addr .. "</td>" ..
+                        "<td>" .. client_stat.url .. "</td>" ..
+                        "<td>" .. uptime .. "</td>" ..
+                        "<td><a href=\"/stat/?close=" .. client_id .. "\">Disconnect</a></td>" ..
+                        "</tr>\r\n"
+        i = i + 1
+    end
+
+    return [[<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Astra : HTTP Clients</title>
+    <style type="text/css">
+body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333333; }
+table { width: 80%; margin: auto; }
+.brand { text-align: left; font-size: 18px; line-height: 20px; }
+.version { text-align: right; font-size: 14px; line-height: 20px; color: #888; }
+    </style>
+</head>
+<body>
+    <table border="0"><tbody>
+        <tr>
+            <td class="brand">Astra</td>
+            <td class="version">v.]] .. astra.version .. [[</td>
+        </tr>
+    </tbody></table>
+    <table border="1"><thead>
+        <tr><th>#</th><th>Client</th><th>URL</th><th>Uptime</th><th></th></tr>
+    </thead><tbody>
+]] .. table_content .. [[
+    </tbody></table>
+</body>
+</html>
+]]
+end
+
+function on_http_stat(server, client, request)
+    if not request then return nil end
+
+    if request.query then
+        if request.query.close then
+            local client = http_client_list[tonumber(request.query.close)]
+            if client then
+                client.server:close(client.client)
+            end
+            server:redirect(client, "/stat/")
+            return
+        end
+    end
+
+    server:send(client, {
+        code = 200,
+        headers = {
+            "Content-Type: text/html; charset=utf-8",
+            "Connection: close",
+        },
+        content = render_stat_html(),
+    })
+end
 
 function on_http_request(server, client, request)
     if not request then
+        local client_data = server:data(client)
+
+        if client_data.channel_data and client_data.client_id then
+            local channel_data = client_data.channel_data
+            channel_data.clients = channel_data.clients - 1
+
+            if channel_data.clients == 0 then
+                for input_id = 1, #channel_data.config.input do
+                    kill_input(channel_data, input_id)
+                end
+                channel_data.input = {}
+            end
+
+            http_client_list[client_data.client_id] = nil
+            client_data.client_id = nil
+            client_data.channel_data = nil
+        end
+
         return
     end
 
-    local http_upstream = server.__options.path_list[request.path]
+    local channel_data = server.__options.channel_list[request.path]
 
-    if not http_upstream then
+    if not channel_data then
         server:abort(client, 404)
         return
     end
 
-    server:send(client, http_upstream)
+    local url = "http://" .. server.__options.addr .. ":"
+                          .. server.__options.port
+                          .. request.path
+
+    local client_id = make_client_id(server, client, request, url)
+
+    local client_data = server:data(client)
+    client_data.client_id = client_id
+    client_data.channel_data = channel_data
+
+    if channel_data.clients == 0 then init_input(channel_data, 1) end
+    channel_data.clients = channel_data.clients + 1
+    channel_data.http_client_list[client_id] = true
+
+    server:send(client, channel_data.tail:stream())
 end
 
 output_list.http = function(channel_data, output_id)
     local output_conf = channel_data.config.output[output_id]
-
     local addr = output_conf.host .. ":" .. output_conf.port
+    local http_instance = nil
 
-    local http_instance
+    if not channel_data.http_client_list then channel_data.http_client_list = {} end
 
     if http_instance_list[addr] then
         http_instance = http_instance_list[addr]
-        http_instance.path_list[output_conf.path] = output_conf.upstream
+        http_instance.channel_list[output_conf.path] = channel_data
+
         return http_instance
     end
 
-    http_instance = { path_list = {} }
-    http_instance.path_list[output_conf.path] = output_conf.upstream
+    http_instance = { channel_list = {} }
+    http_instance.channel_list[output_conf.path] = channel_data
     http_instance.tail = http_server({
         addr = output_conf.host,
         port = output_conf.port,
         buffer_size = output_conf.buffer_size,
         buffer_fill = output_conf.buffer_fill,
-        path_list = http_instance.path_list,
+        channel_list = http_instance.channel_list,
         route = {
+            { "/stat/", on_http_stat },
+            { "/stat", http_redirect({ location = "/stat/" }) },
             { "*", http_upstream({ callback = on_http_request }) },
         },
     })
 
     http_instance_list[addr] = http_instance
+
     return http_instance
 end
 
@@ -954,14 +1110,16 @@ kill_output_list.http = function(channel_data, output_id)
 
     local http_instance = http_instance_list[addr]
 
-    http_instance.path_list[output_conf.path] = nil
-    local has_path = false
-    for _ in ipairs(http_instance.path_list) do
-        has_path = true
-        break
+    for client_id,_ in pairs(channel_data.http_client_list) do
+        local client = http_client_list[client_id]
+        client.server:close(client.client)
     end
 
-    if has_path == true then return nil end
+    http_instance.channel_list[output_conf.path] = nil
+
+    for _ in pairs(http_instance.channel_list) do
+        return nil
+    end
 
     http_instance.tail:close()
     http_instance.tail = nil
@@ -1115,13 +1273,31 @@ function make_channel(channel_conf)
     channel_data.output = {}
     channel_data.ri_delay = 3 -- the delay for reserve
 
+    channel_data.clients = 0
+    if #channel_conf.output == 0 then
+        channel_data.clients = 1
+    else
+        for _,output_conf in pairs(channel_conf.output) do
+            if output_conf.module_name ~= "http" then
+                channel_data.clients = channel_data.clients + 1
+            end
+        end
+    end
+
     for input_id = 1, #channel_conf.input do
         channel_data.input[input_id] = { on_air = false, }
     end
-    init_input(channel_data, 1)
 
-    channel_data.transmit = transmit({ upstream = channel_data.input[1].tail:stream() })
+    channel_data.transmit = transmit()
     channel_data.tail = channel_data.transmit
+
+    if channel_data.clients > 0 then
+        init_input(channel_data, 1)
+
+        if channel_conf.input[1]['no_analyze'] == true then
+            channel_data.transmit:set_upstream(channel_data.input[1].tail:stream())
+        end
+    end
 
     for output_id,_ in pairs(channel_conf.output) do
         init_output(channel_data, output_id)
@@ -1178,6 +1354,11 @@ end
 --  888      o 888o   o888 8oooo88    888    888
 -- o888ooooo88   88ooo88 o88o  o888o o888ooo88
 
-function main()
+
+function version()
     log.info("Starting Astra " .. astra.version)
+end
+
+function main()
+    version()
 end
