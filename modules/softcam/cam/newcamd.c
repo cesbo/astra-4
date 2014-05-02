@@ -481,8 +481,8 @@ static int newcamd_login_3(module_data_t *mod)
                  , (buffer[3] == 1) ? "YES" : "NO"
                  , hex_to_str(hex_str, mod->__cam.ua, 8));
 
-    if(buffer[3] != 1) // disable emm if not admin
-        mod->__cam.disable_emm = true;
+    // disable emm if not admin
+    mod->__cam.disable_emm = (buffer[3] != 1);
 
     const int prov_count = (buffer[14] <= MAX_PROV_COUNT) ? buffer[14] : MAX_PROV_COUNT;
 

@@ -50,7 +50,7 @@ check_aio()
 
 if check_aio ; then
     CFLAGS="$CFLAGS -DHAVE_AIO=1"
-    if [ $OS = "linux" ] ; then
+    if [ "$OS" = "linux" ] ; then
         LDFLAGS="-lrt"
         if check_libaio ; then
             CFLAGS="$CFLAGS -DHAVE_LIBAIO=1"

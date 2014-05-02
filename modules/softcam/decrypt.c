@@ -353,7 +353,7 @@ static bool __cat_check_desc(module_data_t *mod, const uint8_t *desc)
     else
     {
         mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_CA, pid);
-        if(mod->disable_emm)
+        if(mod->disable_emm || mod->__decrypt.cam->disable_emm)
             return false;
     }
 
@@ -395,7 +395,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
 
     psi->crc32 = crc32;
 
-    bool is_emm_selected = mod->disable_emm;
+    bool is_emm_selected = (mod->disable_emm || mod->__decrypt.cam->disable_emm);
 
     const uint8_t *desc_pointer;
     CAT_DESC_FOREACH(psi, desc_pointer)
@@ -640,7 +640,7 @@ static void on_em(void *arg, mpegts_psi_t *psi)
     }
     else if(em_type >= 0x82 && em_type <= 0x8F)
     { /* EMM */
-        if(mod->disable_emm)
+        if(mod->disable_emm || mod->__decrypt.cam->disable_emm)
             return;
 
         if(!module_cas_check_em(mod->__decrypt.cas, psi))
@@ -869,7 +869,6 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 void on_cam_ready(module_data_t *mod)
 {
     mod->caid = mod->__decrypt.cam->caid;
-    mod->disable_emm = mod->__decrypt.cam->disable_emm;
 
     stream_reload(mod);
 }
@@ -1047,6 +1046,8 @@ static void module_init(module_data_t *mod)
             mod->__decrypt.is_cas_data = true;
             str_to_hex(cas_data, mod->__decrypt.cas_data, sizeof(mod->__decrypt.cas_data));
         }
+
+        module_option_boolean("disable_emm", &mod->disable_emm);
 
         module_cam_attach_decrypt(mod->__decrypt.cam, &mod->__decrypt);
     }
