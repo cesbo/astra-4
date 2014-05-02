@@ -177,6 +177,9 @@ static void on_close(void *arg)
 {
     module_data_t *mod = arg;
 
+    if(mod->thread)
+        on_thread_close(mod);
+
     if(!mod->sock)
         return;
 
@@ -201,9 +204,6 @@ static void on_close(void *arg)
         luaL_unref(lua, LUA_REGISTRYINDEX, mod->request.idx_body);
         mod->request.idx_body = 0;
     }
-
-    if(mod->thread)
-        on_thread_close(mod);
 
     if(mod->request.status == 0)
     {
