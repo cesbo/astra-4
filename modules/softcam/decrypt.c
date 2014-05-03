@@ -1,5 +1,5 @@
 /*
- * Astra Module: SoftCAM
+ * Astra Module: SoftCAM. Decrypt Module
  * http://cesbo.com/astra
  *
  * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
@@ -888,7 +888,7 @@ void on_cam_error(module_data_t *mod)
     }
 }
 
-void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data, const char *errmsg)
+void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data)
 {
     ca_stream_t *ca_stream = arg;
 
@@ -901,35 +901,19 @@ void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data, const c
     bool is_keys_ok = false;
     do
     {
-        if(errmsg)
-            break;
-
         if(!module_cas_check_keys(mod->__decrypt.cas, data))
-        {
-            errmsg = "Wrong ECM id";
             break;
-        }
 
         if(data[2] != 16)
-        {
-            errmsg = (data[2] == 0) ? "" : "Wrong ECM length";
             break;
-        }
 
-        static const char *errmsg_checksum = "Wrong ECM checksum";
         const uint8_t ck1 = (data[3] + data[4] + data[5]) & 0xFF;
         if(ck1 != data[6])
-        {
-            errmsg = errmsg_checksum;
             break;
-        }
 
         const uint8_t ck2 = (data[7] + data[8] + data[9]) & 0xFF;
         if(ck2 != data[10])
-        {
-            errmsg = errmsg_checksum;
             break;
-        }
 
         is_keys_ok = true;
     } while(0);
@@ -963,13 +947,10 @@ void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data, const c
         hex_to_str(key_2, &data[11], 8);
         asc_log_debug(MSG("ECM Found [%02X:%s:%s]") , data[0], key_1, key_2);
 #endif
+
     }
     else
-    {
-        if(!errmsg)
-            errmsg = "Unknown";
-        asc_log_error(MSG("ECM:0x%02X size:%d Not Found. %s") , data[0], data[2], errmsg);
-    }
+        asc_log_error(MSG("ECM:0x%02X size:%d Not Found") , data[0], data[2]);
 }
 
 /*
