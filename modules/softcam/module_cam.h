@@ -76,7 +76,7 @@ struct module_cam_t
     void (*disconnect)(module_data_t *mod);
     void (*send_em)(  module_data_t *mod
                     , module_decrypt_t *decrypt, void *arg
-                    , uint8_t *buffer, uint16_t size);
+                    , const uint8_t *buffer, uint16_t size);
 };
 
 #define MODULE_CAM_DATA() module_cam_t __cam
@@ -189,6 +189,6 @@ struct module_decrypt_t
 
 void on_cam_ready(module_data_t *mod);
 void on_cam_error(module_data_t *mod);
-void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data, const char *errmsg);
+void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data);
 
 #endif /* _MODULE_CAM_H_ */

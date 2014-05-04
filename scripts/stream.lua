@@ -1030,11 +1030,6 @@ function on_http_request(server, client, request)
             return
         end
 
-        if client_data.auth then
-            client_data.auth(client_data.client_id, nil, nil)
-            client_data.auth = nil
-        end
-
         if client_data.channel_data then
             local channel_data = client_data.channel_data
             channel_data.clients = channel_data.clients - 1
