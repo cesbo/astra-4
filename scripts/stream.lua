@@ -799,7 +799,7 @@ function init_input(channel_data, input_id)
         end
 
         if input_conf.filter then channel_conf.filter = input_conf.filter end
-        if input_conf.cam then channel_conf.cas = true end
+        if input_conf.cam or input_conf.cas == true then channel_conf.cas = true end
 
         input_data.channel = channel(channel_conf)
         input_data.tail = input_data.channel
