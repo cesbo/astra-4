@@ -1048,14 +1048,15 @@ function on_http_request(server, client, request)
     end
 
     local http_output_info = server.__options.channel_list[request.path]
-    local channel_data = http_output_info[1]
-    local output_id = http_output_info[2]
-    local output_conf = channel_data.config.output[output_id]
 
-    if not channel_data then
+    if not http_output_info then
         server:abort(client, 404)
         return
     end
+
+    local channel_data = http_output_info[1]
+    local output_id = http_output_info[2]
+    local output_conf = channel_data.config.output[output_id]
 
     local url = "http://" .. server.__options.addr .. ":"
                           .. server.__options.port
