@@ -94,6 +94,8 @@ struct module_data_t
     bool is_content_length;
     string_buffer_t *content;
 
+    bool is_active;
+
     // stream
     bool is_thread_started;
     asc_thread_t *thread;
@@ -567,6 +569,20 @@ static void thread_loop(void *arg)
     }
 }
 
+static void check_is_active(void *arg)
+{
+    module_data_t *mod = arg;
+
+    if(mod->is_active)
+    {
+        mod->is_active = false;
+        return;
+    }
+
+    asc_log_error(MSG("receiving timeout"));
+    on_close(mod);
+}
+
 static void on_ts_read(void *arg)
 {
     module_data_t *mod = arg;
@@ -580,6 +596,7 @@ static void on_ts_read(void *arg)
         return;
     }
 
+    mod->is_active = true;
     mod->sync.buffer_write += size;
     mod->sync.buffer_read = 0;
 
@@ -814,6 +831,8 @@ static void on_read(void *arg)
 
         if(!mod->config.sync)
         {
+            mod->timeout = asc_timer_init(mod->timeout_ms, check_is_active, mod);
+
             asc_socket_set_on_read(mod->sock, on_ts_read);
             asc_socket_set_on_ready(mod->sock, NULL);
             return;
