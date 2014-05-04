@@ -1278,7 +1278,9 @@ function make_channel(channel_conf)
         channel_data.clients = 1
     else
         for _,output_conf in pairs(channel_conf.output) do
-            if output_conf.module_name ~= "http" then
+            if output_conf.module_name ~= "http" or
+               output_conf.keep_active == true
+            then
                 channel_data.clients = channel_data.clients + 1
             end
         end
