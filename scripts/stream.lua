@@ -1026,7 +1026,7 @@ function on_http_request(server, client, request)
     local client_data = server:data(client)
 
     if not request then
-        if no client_data.client_id then
+        if not client_data.client_id then
             return
         end
 
@@ -1062,13 +1062,18 @@ function on_http_request(server, client, request)
                           .. request.path
 
     client_data.client_id = make_client_id(server, client, request, url)
-    client_data.channel_data = channel_data
 
-    if channel_data.clients == 0 then init_input(channel_data, 1) end
-    channel_data.clients = channel_data.clients + 1
-    channel_data.http_client_list[client_data.client_id] = true
+    local http_allow_client = function()
+        client_data.channel_data = channel_data
 
-    server:send(client, channel_data.tail:stream())
+        if channel_data.clients == 0 then init_input(channel_data, 1) end
+        channel_data.clients = channel_data.clients + 1
+        channel_data.http_client_list[client_data.client_id] = true
+
+        server:send(client, channel_data.tail:stream())
+    end
+
+    http_allow_client()
 end
 
 output_list.http = function(channel_data, output_id)
