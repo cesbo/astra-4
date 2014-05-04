@@ -27,6 +27,7 @@
 
 static jmp_buf main_loop;
 bool is_main_loop_idle = true;
+bool is_sighup = false;
 
 void astra_exit(void)
 {
@@ -59,19 +60,19 @@ void astra_reload(void)
 
 static void signal_handler(int signum)
 {
-#ifndef _WIN32
-    if(signum == SIGHUP)
+    switch(signum)
     {
-        asc_log_hup();
-        return;
-    }
-    if(signum == SIGPIPE)
-        return;
-#else
-    __uarg(signum);
+#ifndef _WIN32
+        case SIGHUP:
+            asc_log_hup();
+            is_sighup = true;
+            return;
+        case SIGPIPE:
+            return;
 #endif
-
-    astra_exit();
+        default:
+            astra_exit();
+    }
 }
 
 int main(int argc, const char **argv)
@@ -178,9 +179,25 @@ astra_reload_entry:
         while(true)
         {
             is_main_loop_idle = true;
+
             asc_event_core_loop();
             asc_timer_core_loop();
             asc_thread_core_loop();
+
+            if(is_sighup)
+            {
+                is_sighup = false;
+
+                lua_getglobal(lua, "on_sighup");
+                if(lua_isfunction(lua, -1))
+                {
+                    lua_call(lua, 0, 0);
+                    is_main_loop_idle = false;
+                }
+                else
+                    lua_pop(lua, 1);
+            }
+
             if(is_main_loop_idle)
                 nanosleep(&main_loop_delay, NULL);
         }

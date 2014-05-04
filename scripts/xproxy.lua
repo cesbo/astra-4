@@ -473,6 +473,14 @@ allow_udp = true
 allow_rtp = true
 allow_http = true
 
+channels_filename = nil
+
+function on_sighup()
+    if channels_filename then
+        dofile(channels_filename)
+    end
+end
+
 options = {
     {
         { "-h", "--help" }, 0,
@@ -512,7 +520,8 @@ options = {
         { "--channels" }, 1,
         "    --channels FILE     file with the channel names",
         function(idx)
-            dofile(argv[idx + 1])
+            channels_filename = argv[idx + 1]
+            on_sighup()
         end
     }, {
         { "--no-udp" }, 0,
