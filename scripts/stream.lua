@@ -1023,29 +1023,39 @@ function on_http_stat(server, client, request)
 end
 
 function on_http_request(server, client, request)
-    if not request then
-        local client_data = server:data(client)
+    local client_data = server:data(client)
 
-        if client_data.channel_data and client_data.client_id then
+    if not request then
+        if no client_data.client_id then
+            return
+        end
+
+        if client_data.auth then
+            client_data.auth(client_data.client_id, nil, nil)
+            client_data.auth = nil
+        end
+
+        if client_data.channel_data then
             local channel_data = client_data.channel_data
             channel_data.clients = channel_data.clients - 1
-
             if channel_data.clients == 0 then
                 for input_id = 1, #channel_data.config.input do
                     kill_input(channel_data, input_id)
                 end
                 channel_data.input = {}
             end
-
-            http_client_list[client_data.client_id] = nil
-            client_data.client_id = nil
             client_data.channel_data = nil
         end
 
+        http_client_list[client_data.client_id] = nil
+        client_data.client_id = nil
         return
     end
 
-    local channel_data = server.__options.channel_list[request.path]
+    local http_output_info = server.__options.channel_list[request.path]
+    local channel_data = http_output_info[1]
+    local output_id = http_output_info[2]
+    local output_conf = channel_data.config.output[output_id]
 
     if not channel_data then
         server:abort(client, 404)
@@ -1056,15 +1066,12 @@ function on_http_request(server, client, request)
                           .. server.__options.port
                           .. request.path
 
-    local client_id = make_client_id(server, client, request, url)
-
-    local client_data = server:data(client)
-    client_data.client_id = client_id
+    client_data.client_id = make_client_id(server, client, request, url)
     client_data.channel_data = channel_data
 
     if channel_data.clients == 0 then init_input(channel_data, 1) end
     channel_data.clients = channel_data.clients + 1
-    channel_data.http_client_list[client_id] = true
+    channel_data.http_client_list[client_data.client_id] = true
 
     server:send(client, channel_data.tail:stream())
 end
@@ -1076,15 +1083,17 @@ output_list.http = function(channel_data, output_id)
 
     if not channel_data.http_client_list then channel_data.http_client_list = {} end
 
+    local http_output_info = { channel_data, output_id }
+
     if http_instance_list[addr] then
         http_instance = http_instance_list[addr]
-        http_instance.channel_list[output_conf.path] = channel_data
+        http_instance.channel_list[output_conf.path] = http_output_info
 
         return http_instance
     end
 
     http_instance = { channel_list = {} }
-    http_instance.channel_list[output_conf.path] = channel_data
+    http_instance.channel_list[output_conf.path] = http_output_info
     http_instance.tail = http_server({
         addr = output_conf.host,
         port = output_conf.port,
