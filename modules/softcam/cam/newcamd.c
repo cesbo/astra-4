@@ -311,14 +311,20 @@ static void on_newcamd_read_packet(void *arg)
 {
     module_data_t *mod = arg;
 
-    if(mod->buffer_skip == 0)
+    if(mod->buffer_skip < 2)
     {
-        if(asc_socket_recv(mod->sock, mod->buffer, 2) != 2)
+        const ssize_t len = asc_socket_recv(  mod->sock
+                                            , &mod->buffer[mod->buffer_skip]
+                                            , 2 - mod->buffer_skip);
+        if(len <= 0)
         {
             asc_log_error(MSG("failed to read header"));
             newcamd_reconnect(mod, true);
             return;
         }
+        mod->buffer_skip += len;
+        if(mod->buffer_skip != 2)
+            return;
 
         mod->payload_size = 2 + ((mod->buffer[0] << 8) | mod->buffer[1]);
         if(mod->payload_size > NEWCAMD_MSG_SIZE)
@@ -328,7 +334,6 @@ static void on_newcamd_read_packet(void *arg)
             return;
         }
 
-        mod->buffer_skip = 2;
         return;
     }
 
@@ -369,6 +374,9 @@ static void on_newcamd_read_packet(void *arg)
     }
 
     const uint8_t msg_type = mod->buffer[NEWCAMD_HEADER_SIZE];
+    if(msg_type == 0xFD) // keepalive ?
+        return;
+
     uint8_t *buffer = &mod->buffer[NEWCAMD_HEADER_SIZE];
     mod->payload_size = ((buffer[1] & 0x0F) << 8) | buffer[2];
 
