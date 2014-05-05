@@ -634,15 +634,9 @@ EOF
 done
 
 cat >&5 <<EOF
-	@echo "INSTALL: \$(SPATH)/analyze.lua"
-	@cp $SRCDIR/scripts/analyze.lua \$(SPATH)/analyze.lua
-	@chmod +x \$(SPATH)/analyze.lua
 	@echo "INSTALL: \$(SPATH)/dvbls.lua"
 	@cp $SRCDIR/scripts/dvbls.lua \$(SPATH)/dvbls.lua
 	@chmod +x \$(SPATH)/dvbls.lua
-	@echo "INSTALL: \$(SPATH)/xproxy.lua"
-	@cp $SRCDIR/scripts/xproxy.lua \$(SPATH)/xproxy.lua
-	@chmod +x \$(SPATH)/xproxy.lua
 
 uninstall:
 	@echo "UNINSTALL: \$(APP)"

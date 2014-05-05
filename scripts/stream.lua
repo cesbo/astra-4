@@ -16,67 +16,6 @@
 -- You should have received a copy of the GNU General Public License
 -- along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-function dump_table(t, p, i)
-    if not p then p = print end
-    if not i then
-        p("{")
-        dump_table(t, p, "    ")
-        p("}")
-        return
-    end
-
-    for key,val in pairs(t) do
-        if type(val) == 'table' then
-            p(i .. tostring(key) .. " = {")
-            dump_table(val, p, i .. "    ")
-            p(i .. "}")
-        elseif type(val) == 'string' then
-            p(i .. tostring(key) .. " = \"" .. val .. "\"")
-        else
-            p(i .. tostring(key) .. " = " .. tostring(val))
-        end
-    end
-end
-
-function split(s, d)
-    local p = 1
-    local t = {}
-    while true do
-        b = s:find(d, p)
-        if not b then table.insert(t, s:sub(p)) return t end
-        table.insert(t, s:sub(p, b - 1))
-        p = b + 1
-    end
-end
-
-function usage()
-    print("Usage: astra " .. argv[1] .. " [OPTIONS]")
-    for _,o in ipairs(options) do print(o[3]) end
-    astra.exit()
-end
-
-function load(idx)
-    function get_option(key)
-        for _,o in ipairs(options) do
-            for _,k in ipairs(o[1]) do
-                if k == key then return o end
-            end
-        end
-        return nil
-    end
-
-    if not idx then idx = 1 end
-    while idx <= #argv do
-        local o = get_option(argv[idx])
-        if not o then
-            print("unknown option: " .. argv[idx])
-            usage()
-        end
-        o[4](idx)
-        idx = idx + 1 + o[2]
-    end
-end
-
 --      o      oooo   oooo     o      ooooo    ooooo  oooo ooooooooooo ooooooooooo
 --     888      8888o  88     888      888       888  88   88    888    888    88
 --    8  88     88 888o88    8  88     888         888         888      888ooo8
@@ -1360,18 +1299,27 @@ function find_channel(key, value)
     end
 end
 
+--  oooooooo8 ooooooooooo oooooooooo  ooooooooooo      o      oooo     oooo
+-- 888        88  888  88  888    888  888    88      888      8888o   888
+--  888oooooo     888      888oooo88   888ooo8       8  88     88 888o8 88
+--         888    888      888  88o    888    oo    8oooo88    88  888  88
+-- o88oooo888    o888o    o888o  88o8 o888ooo8888 o88o  o888o o88o  8  o88o
 
--- ooooo         ooooooo      o      ooooooooo
---  888        o888   888o   888      888    88o
---  888        888     888  8  88     888    888
---  888      o 888o   o888 8oooo88    888    888
--- o888ooooo88   88ooo88 o88o  o888o o888ooo88
+options_usage = [[
+    FILE                stream configuration file
+]]
 
-
-function version()
-    log.info("Starting Astra " .. astra.version)
-end
+options = {
+    ["*"] = function(idx)
+        local filename = argv[idx]
+        if utils.stat(filename).type == 'file' then
+            dofile(filename)
+            return 0
+        end
+        return -1
+    end,
+}
 
 function main()
-    version()
+    log.info("Starting Astra " .. astra.version)
 end

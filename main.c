@@ -79,13 +79,6 @@ int main(int argc, const char **argv)
 {
     static const struct timespec main_loop_delay = { .tv_sec = 0, .tv_nsec = 1000000 };
 
-    static const char version_string[] = "Astra " ASTRA_VERSION_STR "\n";
-    if(argc == 2 && !strcmp(argv[1], "-v"))
-    {
-        printf(version_string);
-        return 0;
-    }
-
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 #ifndef _WIN32
@@ -155,7 +148,7 @@ astra_reload_entry:
 
             if(argc < 2)
             {
-                printf(version_string);
+                printf("Astra " ASTRA_VERSION_STR);
                 printf("Usage: %s script.lua [OPTIONS]\n", argv[0]);
                 astra_exit();
             }

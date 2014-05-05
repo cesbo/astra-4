@@ -1,31 +1,20 @@
-#!/usr/bin/astra
-
--- Astra MPEG-TS Analyzer
--- http://cesbo.com/astra
+-- MPEG-TS Analyzer
+-- https://cesbo.com/solutions/analyze/
 --
 -- Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
-
-function dump_table(t, p, i)
-    if not p then p = print end
-    if not i then
-        p("{")
-        dump_table(t, p, "    ")
-        p("}")
-        return
-    end
-
-    for key,val in pairs(t) do
-        if type(val) == 'table' then
-            p(i .. tostring(key) .. " = {")
-            dump_table(val, p, i .. "    ")
-            p(i .. "}")
-        elseif type(val) == 'string' then
-            p(i .. tostring(key) .. " = \"" .. val .. "\"")
-        else
-            p(i .. tostring(key) .. " = " .. tostring(val))
-        end
-    end
-end
+--
+-- This program is free software: you can redistribute it and/or modify
+-- it under the terms of the GNU General Public License as published by
+-- the Free Software Foundation, either version 3 of the License, or
+-- (at your option) any later version.
+--
+-- This program is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-- GNU General Public License for more details.
+--
+-- You should have received a copy of the GNU General Public License
+-- along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 -- ooooo  oooo oooooooooo  ooooo
 --  888    88   888    888  888
@@ -251,41 +240,6 @@ end
 --  88  888  88    8oooo88    888   88   8888
 -- o88o  8  o88o o88o  o888o o888o o88o    88
 
-function usage()
-    print([[Usage: astra analyze.lua ADDRESS
-RTP:
-    Template: rtp://[localaddr@]ip[:port]
-UDP:
-    Template: udp://[localaddr@]ip[:port]
-              localaddr - IP address of the local interface
-              port      - default: 1234
-
-    Examples: rtp://239.255.2.1
-              udp://192.168.1.1@239.255.1.1:1234
-
-File:
-    Template: file:///path/to/file.ts
-
-HTTP:
-    Template: http://[login:password@]host[:port][/uri]
-              login:password
-                        - Basic authentication
-              host      - Server hostname
-              port      - default: 80
-              /uri      - resource identifier. default: '/'
-
-]])
-    astra.exit()
-end
-
-if #argv < 2 or argv[2] == "-h" or argv[2] == "--help" then usage() end
-
-local input_conf = parse_url(argv[2])
-if not input_conf then
-    print("ERROR: wrong address format\n")
-    usage()
-end
-
 local instance = {}
 local input_modules = {}
 
@@ -369,9 +323,54 @@ input_modules.http = function(input_conf)
     http_request(http_conf)
 end
 
-if not input_modules[input_conf.type] then
-    print("ERROR: unknown source type\n")
-    usage()
-else
-    input_modules[input_conf.type](input_conf)
+options_usage = [[
+    ADDRESS             source address. Available formats:
+
+UDP:
+    Template: udp://[localaddr@]ip[:port]
+              localaddr - IP address of the local interface
+              port      - default: 1234
+
+    Examples: udp://239.255.2.1
+              udp://192.168.1.1@239.255.1.1:1234
+
+RTP:
+    Template: rtp://[localaddr@]ip[:port]
+
+File:
+    Template: file:///path/to/file.ts
+
+HTTP:
+    Template: http://[login:password@]host[:port][/uri]
+              login:password
+                        - Basic authentication
+              host      - Server hostname
+              port      - default: 80
+              /uri      - resource identifier. default: '/'
+]]
+
+input_url = nil
+
+options = {
+    ["*"] = function(idx)
+        input_url = argv[idx]
+        return 0
+    end,
+}
+
+function main()
+    if not input_url then usage() end
+
+    local input_conf = parse_url(input_url)
+    if not input_conf then
+        print("ERROR: wrong address format\n")
+        astra.exit()
+    end
+
+    if not input_modules[input_conf.type] then
+        print("ERROR: unknown source type\n")
+        usage()
+    else
+        input_modules[input_conf.type](input_conf)
+    end
 end
