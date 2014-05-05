@@ -80,6 +80,7 @@ typedef enum {
     NEWCAMD_MSG_CLIENT_2_SERVER_LOGIN_NAK,
     NEWCAMD_MSG_CARD_DATA_REQ,
     NEWCAMD_MSG_CARD_DATA,
+    NEWCAMD_MSG_KEEPALIVE = 0xFD,
 } newcamd_cmd_t;
 
 static void newcamd_connect(module_data_t *mod);
@@ -375,14 +376,23 @@ static void on_newcamd_read_packet(void *arg)
     }
 
     const uint8_t msg_type = mod->buffer[NEWCAMD_HEADER_SIZE];
-    if(msg_type == 0xFD) // keepalive ?
-        return;
 
     uint8_t *buffer = &mod->buffer[NEWCAMD_HEADER_SIZE];
     mod->payload_size = ((buffer[1] & 0x0F) << 8) | buffer[2];
 
     if(mod->status == 3)
     {
+        if(!mod->packet && msg_type == NEWCAMD_MSG_KEEPALIVE)
+        {
+            buffer[0] = NEWCAMD_MSG_KEEPALIVE;
+            buffer[1] = 0;
+            buffer[2] = 0;
+            mod->payload_size = 0;
+
+            asc_socket_set_on_ready(mod->sock, on_newcamd_ready);
+            return;
+        }
+
         if(!mod->packet || msg_type < 0x80 || msg_type > 0x8F)
         {
             asc_log_warning(MSG("unknown packet type [0x%02X]"), msg_type);
