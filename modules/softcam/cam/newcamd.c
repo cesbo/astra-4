@@ -26,6 +26,7 @@
 #define NEWCAMD_HEADER_SIZE 12
 #define NEWCAMD_MSG_SIZE (NEWCAMD_HEADER_SIZE + EM_MAX_SIZE)
 #define MAX_PROV_COUNT 16
+#define KEY_SIZE 14
 
 #define MSG(_msg) "[newcamd %s] " _msg, mod->config.name
 
@@ -44,7 +45,7 @@ struct module_data_t
         const char *user;
         char pass[36];
 
-        uint8_t key[14];
+        uint8_t key[KEY_SIZE];
 
         bool disable_emm;
     } config;
@@ -516,16 +517,20 @@ static void on_newcamd_read_init(void *arg)
 {
     module_data_t *mod = arg;
 
-    uint8_t rnd_data[14];
-    const ssize_t len = asc_socket_recv(mod->sock, rnd_data, sizeof(rnd_data));
-    if(len != sizeof(rnd_data))
+    const ssize_t len = asc_socket_recv(  mod->sock
+                                        , &mod->buffer[mod->buffer_skip]
+                                        , KEY_SIZE - mod->buffer_skip);
+    if(len <= 0)
     {
         asc_log_error(MSG("failed to read initial response"));
         newcamd_reconnect(mod, true);
         return;
     }
+    mod->buffer_skip += len;
+    if(mod->buffer_skip != KEY_SIZE)
+        return;
 
-    triple_des_set_key(mod, rnd_data, sizeof(rnd_data));
+    triple_des_set_key(mod, mod->buffer, KEY_SIZE);
 
     uint8_t *buffer = &mod->buffer[NEWCAMD_HEADER_SIZE];
 
@@ -558,6 +563,8 @@ static void on_newcamd_connect(void *arg)
 
     asc_timer_destroy(mod->timeout);
     mod->timeout = asc_timer_init(mod->config.timeout, on_timeout, mod);
+
+    mod->buffer_skip = 0;
 
     asc_socket_set_on_read(mod->sock, on_newcamd_read_init);
 }
