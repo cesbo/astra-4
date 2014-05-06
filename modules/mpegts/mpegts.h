@@ -420,6 +420,13 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
         ; SDT_ITEMS_NEXT(_psi, _ptr))
 
 #define SDT_ITEM_GET_SID(_psi, _pointer) ((_pointer[0] << 8) | _pointer[1])
+#define SDT_ITEM_SET_SID(_psi, _pointer, _sid)                                                  \
+    {                                                                                           \
+        const uint16_t __sid = _sid;                                                            \
+        _pointer[0] = __sid >> 8;                                                               \
+        _pointer[1] = __sid & 0xFF;                                                             \
+    }
+
 #define SDT_ITEM_DESC_FIRST(_pointer) (&_pointer[5])
 #define SDT_ITEM_DESC_EOL(_pointer, _desc_pointer)                                              \
     (_desc_pointer >= SDT_ITEM_DESC_FIRST(_pointer) + __SDT_ITEM_DESC_SIZE(_pointer))

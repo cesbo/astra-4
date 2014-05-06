@@ -595,6 +595,13 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
     memcpy(&mod->custom_sdt->buffer[11], pointer, item_length);
     const uint16_t section_length = item_length + 8 + CRC32_SIZE;
     mod->custom_sdt->buffer_size = 3 + section_length;
+
+    if(mod->config.set_pnr)
+    {
+        uint8_t *custom_pointer = SDT_ITEMS_FIRST(mod->custom_sdt);
+        SDT_ITEM_SET_SID(mod->custom_sdt, custom_pointer, mod->config.set_pnr);
+    }
+
     PSI_SET_SIZE(mod->custom_sdt);
     PSI_SET_CRC32(mod->custom_sdt);
 
