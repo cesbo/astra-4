@@ -120,6 +120,19 @@ function on_http_stat(server, client, request)
         end
     end
 
+    if xproxy_pass then
+        if request.headers['authorization'] ~= xproxy_pass then
+            server:send(client, {
+                code = 401,
+                headers = {
+                    "WWW-Authenticate: Basic realm=\"xProxy\"",
+                    "Content-Length: 0",
+                }
+            })
+            return
+        end
+    end
+
     server:send(client, {
         code = 200,
         headers = {
@@ -464,6 +477,8 @@ xproxy_allow_udp = true
 xproxy_allow_rtp = true
 xproxy_allow_http = true
 
+xproxy_pass = nil
+
 xproxy_channels = nil
 
 function on_sighup()
@@ -480,6 +495,7 @@ options_usage = [[
     --no-udp            disable direct access the to UDP source
     --no-rtp            disable direct access the to RTP source
     --no-http           disable direct access the to HTTP source
+    --pass              basic authentication for statistics login:password
 ]]
 
 options = {
@@ -515,6 +531,10 @@ options = {
     ["--no-http"] = function(idx)
         xproxy_allow_http = false
         return 0
+    end,
+    ["--pass"] = function(idx)
+        xproxy_pass = "Basic " .. base64.encode(argv[idx + 1])
+        return 1
     end,
 }
 
