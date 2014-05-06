@@ -464,18 +464,18 @@ end
 --  88  888  88    8oooo88    888   88   8888
 -- o88o  8  o88o o88o  o888o o888o o88o    88
 
-http_addr = "0.0.0.0"
-http_port = 8000
+xproxy_addr = "0.0.0.0"
+xproxy_port = 8000
 
-allow_udp = true
-allow_rtp = true
-allow_http = true
+xproxy_allow_udp = true
+xproxy_allow_rtp = true
+xproxy_allow_http = true
 
-channels_filename = nil
+xproxy_channels = nil
 
 function on_sighup()
-    if channels_filename then
-        dofile(channels_filename)
+    if xproxy_channels then
+        dofile(xproxy_channels)
     end
 end
 
@@ -491,12 +491,12 @@ options_usage = [[
 
 options = {
     ["-a"] = function(idx)
-        http_addr = argv[idx + 1]
+        xproxy_addr = argv[idx + 1]
         return 1
     end,
     ["-p"] = function(idx)
-        http_port = tonumber(argv[idx + 1])
-        if not http_port then
+        xproxy_port = tonumber(argv[idx + 1])
+        if not xproxy_port then
             log.error("[xProxy] wrong port value")
             astra.abort()
         end
@@ -507,50 +507,50 @@ options = {
         return 1
     end,
     ["--channels"] = function(idx)
-        channels_filename = argv[idx + 1]
+        xproxy_channels = argv[idx + 1]
         on_sighup()
         return 1
     end,
     ["--no-udp"] = function(idx)
-        allow_udp = false
+        xproxy_allow_udp = false
         return 0
     end,
     ["--no-rtp"] = function(idx)
-        allow_rtp = false
+        xproxy_allow_rtp = false
         return 0
     end,
     ["--no-http"] = function(idx)
-        allow_http = false
+        xproxy_allow_http = false
         return 0
     end,
 }
 
 function main()
     log.info("Starting Astra " .. astra.version)
-    log.info("xProxy started on " .. http_addr .. ":" .. http_port)
+    log.info("xProxy started on " .. xproxy_addr .. ":" .. xproxy_port)
 
     route = {
         { "/stat/", on_http_stat },
         { "/stat", http_redirect({ location = "/stat/" }) },
     }
 
-    if allow_udp then
+    if xproxy_allow_udp then
         table.insert(route, { "/udp/*", http_upstream({ callback = on_http_udp }) })
     end
 
-    if allow_rtp then
+    if xproxy_allow_rtp then
         table.insert(route, { "/rtp/*", http_upstream({ callback = on_http_udp }) })
     end
 
-    if allow_http then
+    if xproxy_allow_http then
         table.insert(route, { "/http/*", http_upstream({ callback = on_http_http }) })
     end
 
     table.insert(route, { "/*", http_upstream({ callback = on_http_channels }) })
 
     http_server({
-        addr = http_addr,
-        port = http_port,
+        addr = xproxy_addr,
+        port = xproxy_port,
         server_name = "xProxy",
         route = route
     })
