@@ -301,12 +301,7 @@ function on_http_http_callback(self, response)
             instance.timeout = nil
         end
 
-        for _,v in pairs(instance.client_list) do
-            local server = v[1]
-            local client = v[2]
-            local client_data = server:data(client)
-            client_data.transmit:set_upstream(instance.request:stream())
-        end
+        instance.transmit:set_upstream(instance.request:stream())
 
     elseif response.code == 301 or response.code == 302 then
         if instance.timeout then
@@ -347,11 +342,11 @@ function on_http_http(server, client, request)
         if client_data.client_id then
             if client_data.input_id then
                 local instance = instance_list[client_data.input_id]
-                instance.client_list[client_data.client_id] = nil
                 instance.clients = instance.clients - 1
                 if instance.clients == 0 then
                     instance.request:close()
                     instance.request = nil
+                    instance.transmit = nil
                     instance_list[client_data.input_id] = nil
                 end
             end
@@ -392,19 +387,17 @@ function on_http_http(server, client, request)
         http_input_conf.instance = instance
 
         instance.clients = 0
-        instance.client_list = {}
+        instance.transmit = transmit()
         instance.request = http_request(http_input_conf)
 
         instance_list[instance_id] = instance
     end
 
-    client_data.transmit = transmit()
     client_data.input_id = instance_id
 
     instance.clients = instance.clients + 1
-    instance.client_list[client_id] = { server, client }
 
-    server:send(client, client_data.transmit:stream())
+    server:send(client, instance.transmit:stream())
 end
 
 --  oo    oo
