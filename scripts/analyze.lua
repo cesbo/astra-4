@@ -16,113 +16,114 @@
 -- You should have received a copy of the GNU General Public License
 -- along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+input = { parse = {}, start = {}, stop = {}, }
+
 -- ooooo  oooo oooooooooo  ooooo
 --  888    88   888    888  888
 --  888    88   888oooo88   888
 --  888    88   888  88o    888      o
 --   888oo88   o888o  88o8 o888ooooo88
 
-local parse_source = {}
+parse_option = {}
 
-parse_source.udp = function(addr, source)
+input.parse.udp = function(addr, options)
     local x = addr:find("@")
     if x then
         if x > 1 then
-            source.localaddr = addr:sub(1, x - 1)
+            options.localaddr = addr:sub(1, x - 1)
         end
         addr = addr:sub(x + 1)
     end
     local x = addr:find(":")
     if x then
-        source.addr = addr:sub(1, x - 1)
-        source.port = tonumber(addr:sub(x + 1))
+        options.addr = addr:sub(1, x - 1)
+        options.port = tonumber(addr:sub(x + 1))
+        if not options.port then options.port = 1234 end
     else
-        source.addr = addr
-        source.port = 1234
+        options.addr = addr
+        options.port = 1234
     end
 end
 
-parse_source.rtp = function(addr, source)
-    parse_source.udp(addr, source)
-    source.rtp = true
+input.parse.rtp = function(addr, options)
+    input.parse.udp(addr, options)
+    options.rtp = true
 end
 
-parse_source.file = function(addr, source)
-    source.filename = addr
+input.parse.file = function(addr, options)
+    options.filename = addr
 end
 
-parse_source.http = function(addr, source)
+input.parse.http = function(addr, options)
     local x = addr:find("@")
     if x then
-        source.auth = base64.encode(addr:sub(1, x - 1))
+        options.auth = base64.encode(addr:sub(1, x - 1))
         addr = addr:sub(x + 1)
     end
     local x = addr:find("/")
     if x then
-        source.path = addr:sub(x)
+        options.path = addr:sub(x)
         addr = addr:sub(1, x - 1)
     else
-        source.path = "/"
+        options.path = "/"
     end
     local x = addr:find(":")
     if x then
-        source.host = addr:sub(1, x - 1)
-        source.port = tonumber(addr:sub(x + 1))
+        options.host = addr:sub(1, x - 1)
+        options.port = tonumber(addr:sub(x + 1))
+        if not options.port then options.port = 80 end
     else
-        source.host = addr
-        source.port = 80
+        options.host = addr
+        options.port = 80
     end
 end
 
-function parse_options(options, source)
-    function parse_option(option)
-        local x = option:find("=")
-        local key, value
+function parse_options(address, options)
+    function parse_key_val(option)
+        local x, key, val
+        x = option:find("=")
         if x then
             key = option:sub(1, x - 1)
-            value = option:sub(x + 1)
+            val = option:sub(x + 1)
         else
             key = option
-            value = true
+            val = true
         end
-        source[key] = value
+
+        x = key:find("%.")
+        if x then
+            local _key = key:sub(x + 1)
+            key = key:sub(1, x - 1)
+
+            local _val = {}
+            _val[_key] = val
+            val = _val
+        end
+
+        if parse_option[key] then
+            parse_option[key](val, options)
+        else
+            if type(options[key]) == 'table' and type(val) == 'table' then
+                for _key,_val in pairs(val) do
+                    options[key][_key] = _val
+                end
+            else
+                options[key] = val
+            end
+        end
     end
 
     local pos = 1
     while true do
-        local x = options:find("&", pos)
+        local x = address:find("&", pos)
         if x then
-            parse_option(options:sub(pos, x - 1))
+            parse_key_val(address:sub(pos, x - 1))
             pos = x + 1
         else
-            parse_option(options:sub(pos))
+            parse_key_val(address:sub(pos))
             return nil
         end
     end
-end
-
-function parse_url(url)
-    local x = url:find("://")
-    if not x then return nil end
-
-    local source = {}
-
-    source.type = url:sub(1, x - 1)
-    if type(parse_source[source.type]) ~= 'function' then return nil end
-
-    url = url:sub(x + 3)
-
-    local options = nil
-    local x = url:find("#")
-    if x then
-        options = url:sub(x + 1)
-        url = url:sub(1, x - 1)
-    end
-
-    parse_source[source.type](url, source)
-    if options then parse_options(options, source) end
-
-    return source
 end
 
 --      o      oooo   oooo     o      ooooo    ooooo  oooo ooooooooooo ooooooooooo
@@ -204,7 +205,7 @@ dump_psi_info["sdt"] = function(info)
     log.info(("SDT: crc32: 0x%X"):format(info.crc32))
 end
 
-function on_analyze(data)
+function on_analyze(instance, data)
     if data.error then
         log.error(data.error)
     elseif data.psi then
@@ -240,87 +241,184 @@ end
 --  88  888  88    8oooo88    888   88   8888
 -- o88o  8  o88o o88o  o888o o888o o88o    88
 
-local instance = {}
-local input_modules = {}
-
-function start_analyze()
-    instance.a = analyze({
-        upstream = instance.i:stream(),
-        name = "Test Channel",
-        callback = on_analyze
-    })
+input.start.udp = function(instance, options)
+    instance.input = udp_input(options)
 end
 
-input_modules.udp = function(input_conf)
-    instance.i = udp_input(input_conf)
-    start_analyze()
+input.stop.udp = function(instance)
+    instance.input = nil
 end
 
-input_modules.rtp = function(input_conf)
-    input_modules.udp(input_conf)
+input.start.rtp = function(instance, options)
+    instance.input = udp_input(options)
 end
 
-input_modules.file = function(input_conf)
-    instance.i = file_input(input_conf)
-    start_analyze()
+input.stop.rtp = function(instance)
+    instance.input = nil
 end
 
-function http_parse_location(headers)
-    for _, header in pairs(headers) do
-        local _,_,location = header:find("^Location: http://(.*)")
-        if location then
-            local x = {}
-            parse_source.http(location, x)
-            return x.host, x.port, x.path
-        end
+input.start.file = function(instance, options)
+    if utils.stat(options.filename).type ~= "file" then
+        local err = "file not found"
+        log.error(err)
+        astra.exit()
+        return
     end
-    return nil
+
+    options.callback = function()
+        local err = "end of file"
+        log.info("[analyze] " .. err)
+        astra.exit()
+    end
+    instance.input = file_input(options)
 end
 
-input_modules.http = function(input_conf)
+input.stop.file = function(instance)
+    instance.input = nil
+end
+
+input.start.http = function(instance, options)
     local http_conf = {}
 
-    http_conf.host = input_conf.host
-    http_conf.port = input_conf.port
-    http_conf.path = input_conf.path
+    http_conf.host = options.host
+    http_conf.port = options.port
+    http_conf.path = options.path
 
     http_conf.headers =
     {
         "User-Agent: Astra " .. astra.version,
-        "Host: " .. input_conf.host .. ":" .. input_conf.port,
+        "Host: " .. options.host .. ":" .. options.port,
         "Connection: close",
     }
-    if input_conf.auth then
-        table.insert(http_conf.headers, "Authorization: Basic " .. input_conf.auth)
+    if options.auth then
+        table.insert(http_conf.headers, "Authorization: Basic " .. options.auth)
     end
 
     http_conf.stream = true
-    if input_conf.no_sync == true then
-        http_conf.no_sync = true
+    if options.sync then http_conf.sync = options.sync end
+
+    http_conf.callback = function(self, response)
+        if not response then
+            instance.request:close()
+            instance.request = nil
+
+            stop_analyze(instance)
+
+        elseif response.code == 200 then
+            instance.input:set_upstream(self:stream())
+
+        elseif response.code == 301 or response.code == 302 then
+            instance.request:close()
+            instance.request = nil
+
+            local location = response.headers['location']
+            if not location then
+                local err = "Redirect failed"
+
+                log.error(err)
+                astra.exit()
+                return
+            end
+
+            local b,e = location:find("://")
+            if b then
+                local o = {}
+                input.parse.http(location:sub(e + 1), o)
+                http_conf.host = o.host
+                http_conf.port = o.port
+                http_conf.path = o.path
+                http_conf.headers[2] = "Host: " .. http_conf.host .. ":" .. http_conf.path
+                log.info("Redirect to http://" ..
+                         http_conf.host .. ":" .. http_conf.port .. http_conf.path)
+            else
+                http_conf.path = location
+                log.info("Redirect to " .. http_conf.path)
+            end
+
+            instance.request = http_request(http_conf)
+
+        else
+            instance.request:close()
+            instance.request = nil
+
+            local err = "HTTP Error " .. response.code .. ":" .. response.message
+            log.error(err)
+            astra.exit()
+        end
     end
 
-    http_conf.callback = function(self, data)
-            if not data then
-                astra.exit()
-            elseif data.code == 200 then
-                instance.i = self
-                start_analyze()
-            elseif data.code == 301 or data.code == 302 then
-                local host, port, path = http_parse_location(data.headers)
-                if host then
-                    http_conf.host = host
-                    http_conf.port = port
-                    http_conf.path = path
-                    http_conf.headers[2] = "Host: " .. host .. ":" .. port
-                    http_request(http_conf)
-                end
-            else
-                log.error("ERROR: " .. data.code .. ":" .. data.message)
-                astra.exit()
-            end
-        end
+    instance.input = transmit()
+    instance.request = http_request(http_conf)
+end
 
-    http_request(http_conf)
+input.stop.http = function(instance)
+    if instance.request then
+        instance.request:close()
+        instance.request = nil
+    end
+
+    instance.input = nil
+end
+
+function start_analyze(instance, addr)
+    local b,e = addr:find("://")
+    if not b then
+        local err = "wrong address format"
+        log.error("[analyze] " .. err)
+        astra.exit()
+        return
+    end
+    instance.proto = addr:sub(1, b - 1)
+    if not input.parse[instance.proto] then
+        local err = "unwknown source type"
+        log.error("[analyze] " .. err)
+        astra.exit()
+        return
+    end
+    instance.addr = addr:sub(e + 1)
+
+    local options = {}
+    local addr = instance.addr
+    local b = addr:find("#")
+    if b then
+        parse_options(addr:sub(b + 1), options)
+        addr = addr:sub(1, b - 1)
+    end
+    input.parse[instance.proto](addr, options)
+
+    input.start[instance.proto](instance, options)
+    instance.tail = instance.input
+    if options.pnr then
+        instance.channel = channel({
+            upstream = instance.tail:stream(),
+            name = "Test",
+            pnr = options.pnr,
+            cas = true,
+            sdt = true,
+            eit = true,
+        })
+        instance.tail = instance.channel
+    end
+
+    instance.analyze = analyze({
+        upstream = instance.tail:stream(),
+        name = "Test",
+        rate_stat = true,
+        callback = function(data)
+            on_analyze(instance, data)
+        end,
+    })
+end
+
+function stop_analyze(instance)
+    if not instance.proto then return nil end
+
+    input.stop[instance.proto](instance)
+    instance.proto = nil
+    instance.addr = nil
+    instance.analyze = nil
+
+    collectgarbage()
 end
 
 options_usage = [[
@@ -359,18 +457,13 @@ options = {
 }
 
 function main()
-    if not input_url then usage() end
+    log.info("Starting Astra " .. astra.version)
 
-    local input_conf = parse_url(input_url)
-    if not input_conf then
-        print("ERROR: wrong address format\n")
-        astra.exit()
+    if input_url then
+        _G.instance = {}
+        start_analyze(_G.instance, input_url)
+        return
     end
 
-    if not input_modules[input_conf.type] then
-        print("ERROR: unknown source type\n")
-        usage()
-    else
-        input_modules[input_conf.type](input_conf)
-    end
+    astra_usage()
 end

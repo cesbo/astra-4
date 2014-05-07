@@ -127,6 +127,7 @@ function on_http_stat(server, client, request)
                 headers = {
                     "WWW-Authenticate: Basic realm=\"xProxy\"",
                     "Content-Length: 0",
+                    "Connection: close",
                 }
             })
             return
@@ -482,9 +483,7 @@ xproxy_pass = nil
 xproxy_channels = nil
 
 function on_sighup()
-    if xproxy_channels then
-        dofile(xproxy_channels)
-    end
+    if xproxy_channels then dofile(xproxy_channels) end
 end
 
 options_usage = [[
