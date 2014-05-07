@@ -416,6 +416,8 @@ function stop_analyze(instance)
     input.stop[instance.proto](instance)
     instance.proto = nil
     instance.addr = nil
+    instance.channel = nil
+    instance.tail = nil
     instance.analyze = nil
 
     collectgarbage()
