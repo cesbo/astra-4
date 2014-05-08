@@ -217,6 +217,12 @@ static int module_call(module_data_t *mod)
     {
         if(client->response)
         {
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, client->response->mod->idx_callback);
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_server);
+            lua_pushlightuserdata(lua, client);
+            lua_pushnil(lua);
+            lua_call(lua, 3, 0);
+
             if(client->content)
             {
                 string_buffer_free(client->content);
