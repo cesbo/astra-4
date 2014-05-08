@@ -94,6 +94,8 @@ struct module_data_t
     bool is_content_length;
     string_buffer_t *content;
 
+    bool is_active;
+
     // stream
     bool is_thread_started;
     asc_thread_t *thread;
@@ -162,11 +164,16 @@ void timeout_callback(void *arg)
 
     if(mod->request.status == 0)
     {
+        mod->status = -1;
         mod->request.status = -1;
         call_error(mod, "connection timeout");
     }
     else
+    {
+        mod->status = -1;
+        mod->request.status = -1;
         call_error(mod, "response timeout");
+    }
 
     on_close(mod);
 }
@@ -176,6 +183,9 @@ static void on_thread_close(void *arg);
 static void on_close(void *arg)
 {
     module_data_t *mod = arg;
+
+    if(mod->thread)
+        on_thread_close(mod);
 
     if(!mod->sock)
         return;
@@ -202,9 +212,6 @@ static void on_close(void *arg)
         mod->request.idx_body = 0;
     }
 
-    if(mod->thread)
-        on_thread_close(mod);
-
     if(mod->request.status == 0)
     {
         mod->request.status = -1;
@@ -228,6 +235,7 @@ static void on_close(void *arg)
     {
         /* stream on_close */
         mod->status = -1;
+        mod->request.status = -1;
 
         lua_pushnil(lua);
         callback(mod);
@@ -567,6 +575,20 @@ static void thread_loop(void *arg)
     }
 }
 
+static void check_is_active(void *arg)
+{
+    module_data_t *mod = arg;
+
+    if(mod->is_active)
+    {
+        mod->is_active = false;
+        return;
+    }
+
+    asc_log_error(MSG("receiving timeout"));
+    on_close(mod);
+}
+
 static void on_ts_read(void *arg)
 {
     module_data_t *mod = arg;
@@ -580,6 +602,7 @@ static void on_ts_read(void *arg)
         return;
     }
 
+    mod->is_active = true;
     mod->sync.buffer_write += size;
     mod->sync.buffer_read = 0;
 
@@ -814,6 +837,8 @@ static void on_read(void *arg)
 
         if(!mod->config.sync)
         {
+            mod->timeout = asc_timer_init(mod->timeout_ms, check_is_active, mod);
+
             asc_socket_set_on_read(mod->sock, on_ts_read);
             asc_socket_set_on_ready(mod->sock, NULL);
             return;
@@ -1116,6 +1141,7 @@ static void on_connect(void *arg)
 static int method_close(module_data_t *mod)
 {
     mod->status = -1;
+    mod->request.status = -1;
     on_close(mod);
     return 0;
 }
@@ -1169,6 +1195,8 @@ static void module_destroy(module_data_t *mod)
         module_stream_destroy(mod);
 
     mod->status = -1;
+    mod->request.status = -1;
+
     on_close(mod);
 }
 

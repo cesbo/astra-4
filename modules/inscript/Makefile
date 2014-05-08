@@ -1,11 +1,23 @@
 
 MAKEFLAGS = -rR --no-print-directory
 
+SCRIPTS = ../../scripts
+LUA_BASE = $(SCRIPTS)/base.lua
+LUA_STREAM = $(SCRIPTS)/stream.lua
+LUA_XPROXY = $(SCRIPTS)/xproxy.lua
+LUA_ANALYZE = $(SCRIPTS)/analyze.lua
+
+LUA_ALL = $(LUA_BASE) $(LUA_STREAM) $(LUA_XPROXY) $(LUA_ANALYZE)
+
 .PHONY: all
 
 all: inscript.h
 
-inscript.h: ../../scripts/stream.lua
+inscript.h: $(LUA_ALL)
 	@gcc -Wall -O2 -std=iso9899:1999 -DINSCRIPT_APP=1 -o inscript inscript.c
-	@./inscript stream $< >$@
+	@rm -f $@
+	@./inscript base $(LUA_BASE) >>$@
+	@./inscript stream $(LUA_STREAM) >>$@
+	@./inscript xproxy $(LUA_XPROXY) >>$@
+	@./inscript analyze $(LUA_ANALYZE) >>$@
 	@rm inscript

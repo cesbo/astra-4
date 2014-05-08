@@ -71,6 +71,8 @@ struct dvb_fe_t
     fe_transmit_mode_t transmitmode;
     fe_hierarchy_t hierarchy;
 
+    bool raw_signal;
+
     /* FE Base */
     int fe_fd;
 

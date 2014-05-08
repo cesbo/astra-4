@@ -27,6 +27,7 @@
 
 static jmp_buf main_loop;
 bool is_main_loop_idle = true;
+bool is_sighup = false;
 
 void astra_exit(void)
 {
@@ -59,31 +60,24 @@ void astra_reload(void)
 
 static void signal_handler(int signum)
 {
-#ifndef _WIN32
-    if(signum == SIGHUP)
+    switch(signum)
     {
-        asc_log_hup();
-        return;
-    }
-    if(signum == SIGPIPE)
-        return;
-#else
-    __uarg(signum);
+#ifndef _WIN32
+        case SIGHUP:
+            asc_log_hup();
+            is_sighup = true;
+            return;
+        case SIGPIPE:
+            return;
 #endif
-
-    astra_exit();
+        default:
+            astra_exit();
+    }
 }
 
 int main(int argc, const char **argv)
 {
     static const struct timespec main_loop_delay = { .tv_sec = 0, .tv_nsec = 1000000 };
-
-    static const char version_string[] = "Astra " ASTRA_VERSION_STR "\n";
-    if(argc == 2 && !strcmp(argv[1], "-v"))
-    {
-        printf(version_string);
-        return 0;
-    }
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
@@ -154,7 +148,7 @@ astra_reload_entry:
 
             if(argc < 2)
             {
-                printf(version_string);
+                printf("Astra " ASTRA_VERSION_STR);
                 printf("Usage: %s script.lua [OPTIONS]\n", argv[0]);
                 astra_exit();
             }
@@ -178,9 +172,25 @@ astra_reload_entry:
         while(true)
         {
             is_main_loop_idle = true;
+
             asc_event_core_loop();
             asc_timer_core_loop();
             asc_thread_core_loop();
+
+            if(is_sighup)
+            {
+                is_sighup = false;
+
+                lua_getglobal(lua, "on_sighup");
+                if(lua_isfunction(lua, -1))
+                {
+                    lua_call(lua, 0, 0);
+                    is_main_loop_idle = false;
+                }
+                else
+                    lua_pop(lua, 1);
+            }
+
             if(is_main_loop_idle)
                 nanosleep(&main_loop_delay, NULL);
         }

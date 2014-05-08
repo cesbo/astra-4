@@ -23,38 +23,90 @@
 #include <astra.h>
 #include "inscript.h"
 
+static int load_inscript(const char *buffer, size_t size, const char *name)
+{
+    if(   luaL_loadbuffer(lua, buffer, size, name) != 0
+       || lua_pcall(lua, 0, LUA_MULTRET, 0) != 0)
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
 static int fn_inscript_callback(lua_State *L)
 {
     __uarg(L);
 
-    const int load = luaL_loadbuffer(lua, (const char *)stream, sizeof(stream), "=stream");
+    int load;
 
-    if(load != 0 || lua_pcall(lua, 0, LUA_MULTRET, 0) != 0)
+    load = load_inscript((const char *)base, sizeof(base), "=base");
+    if(load != 0)
         luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
 
-    lua_getglobal(lua, "main");
-    luaL_checktype(lua, -1, LUA_TFUNCTION);
-    lua_call(lua, 0, 0);
-
-    const char *script = NULL;
     lua_getglobal(lua, "argv");
     const int argc = luaL_len(lua, -1);
-    if(argc >= 1)
+
+    if(argc == 0)
     {
-        lua_rawgeti(lua, -1, 1);
-        script = lua_tostring(lua, -1);
-        lua_pop(lua, 1);
+        lua_pop(lua, 1); // argv
 
-        int start = 0;
-        if(script[0] == '-' && script[1] == 0)
-            start = luaL_dofile(lua, NULL);
-        else if(!access(script, R_OK))
-            start = luaL_dofile(lua, script);
-
-        if(start != 0)
-            luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
+        lua_getglobal(lua, "astra_usage");
+        luaL_checktype(lua, -1, LUA_TFUNCTION);
+        lua_call(lua, 0, 0);
+        return 0;
     }
-    lua_pop(lua, 1); // argv
+
+    int argv_idx = 1;
+
+    lua_rawgeti(lua, -1, 1);
+    const char *script = luaL_checkstring(lua, -1);
+    lua_pop(lua, 2); // script + argv
+
+    if(!strcmp(script, "--stream"))
+    {
+        load = load_inscript((const char *)stream, sizeof(stream), "=stream");
+        argv_idx += 1;
+    }
+    else if(!strcmp(script, "--analyze"))
+    {
+        load = load_inscript((const char *)analyze, sizeof(analyze), "=analyze");
+        argv_idx += 1;
+    }
+    else if(!strcmp(script, "--xproxy"))
+    {
+        load = load_inscript((const char *)xproxy, sizeof(xproxy), "=xproxy");
+        argv_idx += 1;
+    }
+    else
+    {
+        load = load_inscript((const char *)stream, sizeof(stream), "=stream");
+
+        if(!strcmp(script, "-"))
+        {
+            load = luaL_dofile(lua, NULL);
+            argv_idx += 1;
+        }
+        else if(!access(script, R_OK))
+        {
+            load = luaL_dofile(lua, script);
+            argv_idx += 1;
+        }
+    }
+
+    if(load != 0)
+        luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
+
+    lua_getglobal(lua, "astra_parse_options");
+    luaL_checktype(lua, -1, LUA_TFUNCTION);
+    lua_pushnumber(lua, argv_idx);
+    lua_call(lua, 1, 0);
+
+    lua_getglobal(lua, "main");
+    if(lua_isfunction(lua, -1))
+        lua_call(lua, 0, 0);
+    else
+        lua_pop(lua, 1);
 
     return 0;
 }
@@ -133,33 +185,41 @@ static const char * skip_sp(const char *source)
     return NULL;
 }
 
+static bool check_string_tail(const char *source, int l)
+{
+    if(source[0] != ']' || source[l + 1] != ']')
+    {
+        return false;
+    }
+
+    for(int i = 0; i < l; ++i)
+    {
+        if(source[i + 1] != '=')
+            return false;
+    }
+
+    return true;
+}
+
 static const char * skip_comment(const char *source, string_buffer_t *buffer)
 {
     if(*source == '[')
     {
-        int l = 0;
         ++source;
+        int l = 0;
         for(; *source == '='; ++source, ++l)
             ;
+
         if(*source == '[')
         {
             ++source;
             for(; *source; ++source)
             {
+                if(*source == ']' && check_string_tail(source, l))
+                    return source + l + 2;
+
                 if(*source == '\n')
                     string_buffer_addchar(buffer, '\n');
-                else if(*source == ']')
-                {
-                    ++source;
-                    int i = 0;
-                    for(; i < l; ++i, ++source)
-                    {
-                        if(*source != '=')
-                            break;
-                    }
-                    if(i == l && *source == ']')
-                        return source + 1;
-                }
             }
         }
     }
@@ -190,26 +250,19 @@ static const char * parse_string(const char *source, string_buffer_t *buffer)
         {
             string_buffer_addchar(buffer, '[');
             ++source;
+
             for(; *source; ++source)
             {
-                string_buffer_addchar(buffer, *source);
-
-                if(*source == ']')
+                if(*source == ']' && check_string_tail(source, l))
                 {
-                    ++source;
-                    int i = 0;
-                    for(; i < l; ++i, ++source)
-                    {
-                        string_buffer_addchar(buffer, *source);
-                        if(*source != '=')
-                            break;
-                    }
-                    if(i == l && *source == ']')
-                    {
-                        string_buffer_addchar(buffer, ']');
-                        return source + 1;
-                    }
+                    string_buffer_addchar(buffer, ']');
+                    for(int i = 0; i < l; ++i)
+                        string_buffer_addchar(buffer, '=');
+                    string_buffer_addchar(buffer, ']');
+                    return source + l + 2;
                 }
+
+                string_buffer_addchar(buffer, *source);
             }
         }
     }
@@ -259,20 +312,20 @@ static string_buffer_t * parse(const char *source)
         }
 
         if(source[0] == '-' && source[1] == '-')
-            source = skip_comment(source, buffer);
+            source = skip_comment(&source[2], buffer);
 
-        if(*source == '\'' || *source == '"')
+        if(source[0] == '\'' || source[0] == '"')
             source = parse_string(source, buffer);
 
-        if(*source == '[' && (source[1] == '=' || source[1] == '['))
+        if(source[0] == '[' && (source[1] == '=' || source[1] == '['))
             source = parse_string(source, buffer);
 
-        if(*source == '\r')
+        if(source[0] == '\r')
             continue;
 
-        string_buffer_addchar(buffer, *source);
+        string_buffer_addchar(buffer, source[0]);
 
-        if(*source == '\n')
+        if(source[0] == '\n')
             is_new_line = true;
     }
 

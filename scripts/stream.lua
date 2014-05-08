@@ -16,39 +16,6 @@
 -- You should have received a copy of the GNU General Public License
 -- along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-function dump_table(t, p, i)
-    if not p then p = print end
-    if not i then
-        p("{")
-        dump_table(t, p, "    ")
-        p("}")
-        return
-    end
-
-    for key,val in pairs(t) do
-        if type(val) == 'table' then
-            p(i .. tostring(key) .. " = {")
-            dump_table(val, p, i .. "    ")
-            p(i .. "}")
-        elseif type(val) == 'string' then
-            p(i .. tostring(key) .. " = \"" .. val .. "\"")
-        else
-            p(i .. tostring(key) .. " = " .. tostring(val))
-        end
-    end
-end
-
-function split(s, d)
-    local p = 1
-    local t = {}
-    while true do
-        b = s:find(d, p)
-        if not b then table.insert(t, s:sub(p)) return t end
-        table.insert(t, s:sub(p, b - 1))
-        p = b + 1
-    end
-end
-
 --      o      oooo   oooo     o      ooooo    ooooo  oooo ooooooooooo ooooooooooo
 --     888      8888o  88     888      888       888  88   88    888    888    88
 --    8  88     88 888o88    8  88     888         888         888      888ooo8
@@ -693,7 +660,7 @@ input_list.http = function(channel_data, input_id)
             end
         end
 
-    instance.tail = transmit({})
+    instance.tail = transmit()
     instance.request = http_request(http_conf)
 
     return instance
@@ -771,6 +738,7 @@ function init_input(channel_data, input_id)
         end
 
         if input_conf.filter then channel_conf.filter = input_conf.filter end
+        if input_conf.cam or input_conf.cas == true then channel_conf.cas = true end
 
         input_data.channel = channel(channel_conf)
         input_data.tail = input_data.channel
@@ -793,6 +761,7 @@ function init_input(channel_data, input_id)
         if input_conf.cas_data then decrypt_conf.cas_data = input_conf.cas_data end
         if input_conf.ecm_pid then decrypt_conf.ecm_pid = input_conf.ecm_pid end
         if input_conf.pnr and input_conf.set_pnr then decrypt_conf.cas_pnr = input_conf.pnr end
+        if input_conf.disable_emm == true then decrypt_conf.disable_emm = true end
         input_data.decrypt = decrypt(decrypt_conf)
         input_data.tail = input_data.decrypt
 
@@ -828,7 +797,7 @@ function kill_input(channel_data, input_id)
     local input_conf = channel_data.config.input[input_id]
     local input_data = channel_data.input[input_id]
 
-    if not input_data.source then return nil end
+    if not input_data or not input_data.source then return nil end
 
     kill_input_list[input_conf.module_name](channel_data, input_id)
 
@@ -899,50 +868,188 @@ end
 -- 888o   o888           888   888      888         888      888
 --   88ooo88            o888o o888o    o888o       o888o    o888o
 
-local http_instance_list = {}
+http_client_list = {}
+http_instance_list = {}
+
+function make_client_id(server, client, request, url)
+    local client_id
+    repeat
+        client_id = math.random(10000000, 99000000)
+    until not http_client_list[client_id]
+
+    local client_addr = request.headers['x-real-ip']
+    if not client_addr then client_addr = request.addr end
+
+    http_client_list[client_id] = {
+        server = server,
+        client = client,
+        addr   = client_addr,
+        url   = url,
+        st     = os.time(),
+    }
+
+    return client_id
+end
+
+function render_stat_html()
+    local table_content = ""
+    local i = 1
+    local ct = os.time()
+    for client_id, client_stat in pairs(http_client_list) do
+        local dt = ct - client_stat.st
+        local uptime = string.format("%02d:%02d", (dt / 3600), (dt / 60) % 60)
+        table_content = table_content .. "<tr>" ..
+                        "<td>" .. i .. "</td>" ..
+                        "<td>" .. client_stat.addr .. "</td>" ..
+                        "<td>" .. client_stat.url .. "</td>" ..
+                        "<td>" .. uptime .. "</td>" ..
+                        "<td><a href=\"/stat/?close=" .. client_id .. "\">Disconnect</a></td>" ..
+                        "</tr>\r\n"
+        i = i + 1
+    end
+
+    return [[<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Astra : HTTP Clients</title>
+    <style type="text/css">
+body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333333; }
+table { width: 80%; margin: auto; }
+.brand { text-align: left; font-size: 18px; line-height: 20px; }
+.version { text-align: right; font-size: 14px; line-height: 20px; color: #888; }
+    </style>
+</head>
+<body>
+    <table border="0"><tbody>
+        <tr>
+            <td class="brand">Astra</td>
+            <td class="version">v.]] .. astra.version .. [[</td>
+        </tr>
+    </tbody></table>
+    <table border="1"><thead>
+        <tr><th>#</th><th>Client</th><th>URL</th><th>Uptime</th><th></th></tr>
+    </thead><tbody>
+]] .. table_content .. [[
+    </tbody></table>
+</body>
+</html>
+]]
+end
+
+function on_http_stat(server, client, request)
+    if not request then return nil end
+
+    if request.query then
+        if request.query.close then
+            local client = http_client_list[tonumber(request.query.close)]
+            if client then
+                client.server:close(client.client)
+            end
+            server:redirect(client, "/stat/")
+            return
+        end
+    end
+
+    server:send(client, {
+        code = 200,
+        headers = {
+            "Content-Type: text/html; charset=utf-8",
+            "Connection: close",
+        },
+        content = render_stat_html(),
+    })
+end
 
 function on_http_request(server, client, request)
+    local client_data = server:data(client)
+
     if not request then
+        if not client_data.client_id then
+            return
+        end
+
+        if client_data.channel_data then
+            local channel_data = client_data.channel_data
+            channel_data.clients = channel_data.clients - 1
+            if channel_data.clients == 0 then
+                for input_id = 1, #channel_data.config.input do
+                    kill_input(channel_data, input_id)
+                end
+                channel_data.input = {}
+            end
+            client_data.channel_data = nil
+        end
+
+        http_client_list[client_data.client_id] = nil
+        client_data.client_id = nil
         return
     end
 
-    local http_upstream = server.__options.path_list[request.path]
+    local http_output_info = server.__options.channel_list[request.path]
 
-    if not http_upstream then
+    if not http_output_info then
         server:abort(client, 404)
         return
     end
 
-    server:send(client, http_upstream)
+    local channel_data = http_output_info[1]
+    local output_id = http_output_info[2]
+    local output_conf = channel_data.config.output[output_id]
+
+    local url = "http://" .. server.__options.addr .. ":"
+                          .. server.__options.port
+                          .. request.path
+
+    client_data.client_id = make_client_id(server, client, request, url)
+
+    local http_allow_client = function()
+        client_data.channel_data = channel_data
+
+        if channel_data.clients == 0 then init_input(channel_data, 1) end
+        channel_data.clients = channel_data.clients + 1
+        channel_data.http_client_list[client_data.client_id] = true
+
+        server:send(client, channel_data.tail:stream())
+    end
+
+    http_allow_client()
 end
 
 output_list.http = function(channel_data, output_id)
     local output_conf = channel_data.config.output[output_id]
-
     local addr = output_conf.host .. ":" .. output_conf.port
+    local http_instance = nil
 
-    local http_instance
+    if not channel_data.http_client_list then channel_data.http_client_list = {} end
+
+    local http_output_info = { channel_data, output_id }
 
     if http_instance_list[addr] then
         http_instance = http_instance_list[addr]
-        http_instance.path_list[output_conf.path] = output_conf.upstream
+        http_instance.channel_list[output_conf.path] = http_output_info
+
         return http_instance
     end
 
-    http_instance = { path_list = {} }
-    http_instance.path_list[output_conf.path] = output_conf.upstream
+    http_instance = { channel_list = {} }
+    http_instance.channel_list[output_conf.path] = http_output_info
     http_instance.tail = http_server({
         addr = output_conf.host,
         port = output_conf.port,
         buffer_size = output_conf.buffer_size,
         buffer_fill = output_conf.buffer_fill,
-        path_list = http_instance.path_list,
+        channel_list = http_instance.channel_list,
         route = {
+            { "/stat/", on_http_stat },
+            { "/stat", http_redirect({ location = "/stat/" }) },
             { "*", http_upstream({ callback = on_http_request }) },
         },
     })
 
     http_instance_list[addr] = http_instance
+
     return http_instance
 end
 
@@ -953,14 +1060,16 @@ kill_output_list.http = function(channel_data, output_id)
 
     local http_instance = http_instance_list[addr]
 
-    http_instance.path_list[output_conf.path] = nil
-    local has_path = false
-    for _ in ipairs(http_instance.path_list) do
-        has_path = true
-        break
+    for client_id,_ in pairs(channel_data.http_client_list) do
+        local client = http_client_list[client_id]
+        client.server:close(client.client)
     end
 
-    if has_path == true then return nil end
+    http_instance.channel_list[output_conf.path] = nil
+
+    for _ in pairs(http_instance.channel_list) do
+        return nil
+    end
 
     http_instance.tail:close()
     http_instance.tail = nil
@@ -1114,13 +1223,33 @@ function make_channel(channel_conf)
     channel_data.output = {}
     channel_data.ri_delay = 3 -- the delay for reserve
 
+    channel_data.clients = 0
+    if #channel_conf.output == 0 then
+        channel_data.clients = 1
+    else
+        for _,output_conf in pairs(channel_conf.output) do
+            if output_conf.module_name ~= "http" or
+               output_conf.keep_active == true
+            then
+                channel_data.clients = channel_data.clients + 1
+            end
+        end
+    end
+
     for input_id = 1, #channel_conf.input do
         channel_data.input[input_id] = { on_air = false, }
     end
-    init_input(channel_data, 1)
 
-    channel_data.transmit = transmit({ upstream = channel_data.input[1].tail:stream() })
+    channel_data.transmit = transmit()
     channel_data.tail = channel_data.transmit
+
+    if channel_data.clients > 0 then
+        init_input(channel_data, 1)
+
+        if channel_conf.input[1]['no_analyze'] == true then
+            channel_data.transmit:set_upstream(channel_data.input[1].tail:stream())
+        end
+    end
 
     for output_id,_ in pairs(channel_conf.output) do
         init_output(channel_data, output_id)
@@ -1170,12 +1299,26 @@ function find_channel(key, value)
     end
 end
 
+--  oooooooo8 ooooooooooo oooooooooo  ooooooooooo      o      oooo     oooo
+-- 888        88  888  88  888    888  888    88      888      8888o   888
+--  888oooooo     888      888oooo88   888ooo8       8  88     88 888o8 88
+--         888    888      888  88o    888    oo    8oooo88    88  888  88
+-- o88oooo888    o888o    o888o  88o8 o888ooo8888 o88o  o888o o88o  8  o88o
 
--- ooooo         ooooooo      o      ooooooooo
---  888        o888   888o   888      888    88o
---  888        888     888  8  88     888    888
---  888      o 888o   o888 8oooo88    888    888
--- o888ooooo88   88ooo88 o88o  o888o o888ooo88
+options_usage = [[
+    FILE                stream configuration file
+]]
+
+options = {
+    ["*"] = function(idx)
+        local filename = argv[idx]
+        if utils.stat(filename).type == 'file' then
+            dofile(filename)
+            return 0
+        end
+        return -1
+    end,
+}
 
 function main()
     log.info("Starting Astra " .. astra.version)

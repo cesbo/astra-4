@@ -1,5 +1,5 @@
 /*
- * Astra Module: SoftCAM
+ * Astra Module: SoftCAM. Decrypt Module
  * http://cesbo.com/astra
  *
  * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
@@ -93,6 +93,7 @@ struct module_data_t
     /* Config */
     const char *name;
     int caid;
+    bool disable_emm;
 
     /* dvbcsa */
     asc_list_t *el_list;
@@ -352,7 +353,7 @@ static bool __cat_check_desc(module_data_t *mod, const uint8_t *desc)
     else
     {
         mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_CA, pid);
-        if(mod->__decrypt.cam->disable_emm)
+        if(mod->disable_emm || mod->__decrypt.cam->disable_emm)
             return false;
     }
 
@@ -394,7 +395,7 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
 
     psi->crc32 = crc32;
 
-    bool is_emm_selected = mod->__decrypt.cam->disable_emm;
+    bool is_emm_selected = (mod->disable_emm || mod->__decrypt.cam->disable_emm);
 
     const uint8_t *desc_pointer;
     CAT_DESC_FOREACH(psi, desc_pointer)
@@ -624,7 +625,6 @@ static void on_em(void *arg, mpegts_psi_t *psi)
                 ca_stream = i;
                 break;
             }
-
         }
 
         if(!ca_stream)
@@ -640,7 +640,7 @@ static void on_em(void *arg, mpegts_psi_t *psi)
     }
     else if(em_type >= 0x82 && em_type <= 0x8F)
     { /* EMM */
-        if(mod->__decrypt.cam->disable_emm)
+        if(mod->disable_emm || mod->__decrypt.cam->disable_emm)
             return;
 
         if(!module_cas_check_em(mod->__decrypt.cas, psi))
@@ -672,26 +672,30 @@ static void decrypt(module_data_t *mod)
     {
         ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
 
+        if(ca_stream->batch_skip > 0)
+        {
+
 #if FFDECSA == 1
 
-        ca_stream->batch[ca_stream->batch_skip] = NULL;
+            ca_stream->batch[ca_stream->batch_skip] = NULL;
 
-        size_t i = 0;
-        while(i < mod->batch_size)
-            i += decrypt_packets(ca_stream->keys, ca_stream->batch);
+            size_t i = 0, i_size = ca_stream->batch_skip / 2;
+            while(i < i_size)
+                i += decrypt_packets(ca_stream->keys, ca_stream->batch);
 
 #elif LIBDVBCSA == 1
 
-        ca_stream->batch[ca_stream->batch_skip].data = NULL;
+            ca_stream->batch[ca_stream->batch_skip].data = NULL;
 
-        if(ca_stream->parity == 0x80)
-            dvbcsa_bs_decrypt(ca_stream->even_key, ca_stream->batch, TS_BODY_SIZE);
-        else if(ca_stream->parity == 0xC0)
-            dvbcsa_bs_decrypt(ca_stream->odd_key, ca_stream->batch, TS_BODY_SIZE);
+            if(ca_stream->parity == 0x80)
+                dvbcsa_bs_decrypt(ca_stream->even_key, ca_stream->batch, TS_BODY_SIZE);
+            else if(ca_stream->parity == 0xC0)
+                dvbcsa_bs_decrypt(ca_stream->odd_key, ca_stream->batch, TS_BODY_SIZE);
 
 #endif
 
-        ca_stream->batch_skip = 0;
+            ca_stream->batch_skip = 0;
+        }
 
         // check new key
         switch(ca_stream->new_key_id)
@@ -776,7 +780,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     ca_stream->batch[ca_stream->batch_skip + 1] = dst + TS_PACKET_SIZE;
     ca_stream->batch_skip += 2;
 
-    if(mod->storage.count - mod->storage.dsc_count >= mod->batch_size * TS_PACKET_SIZE)
+    if(ca_stream->batch_skip >= mod->batch_size * 2)
         decrypt(mod);
 
 #elif LIBDVBCSA == 1
@@ -865,6 +869,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 void on_cam_ready(module_data_t *mod)
 {
     mod->caid = mod->__decrypt.cam->caid;
+
     stream_reload(mod);
 }
 
@@ -883,7 +888,7 @@ void on_cam_error(module_data_t *mod)
     }
 }
 
-void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data, const char *errmsg)
+void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data)
 {
     ca_stream_t *ca_stream = arg;
 
@@ -896,35 +901,19 @@ void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data, const c
     bool is_keys_ok = false;
     do
     {
-        if(errmsg)
-            break;
-
         if(!module_cas_check_keys(mod->__decrypt.cas, data))
-        {
-            errmsg = "Wrong ECM id";
             break;
-        }
 
         if(data[2] != 16)
-        {
-            errmsg = (data[2] == 0) ? "" : "Wrong ECM length";
             break;
-        }
 
-        static const char *errmsg_checksum = "Wrong ECM checksum";
         const uint8_t ck1 = (data[3] + data[4] + data[5]) & 0xFF;
         if(ck1 != data[6])
-        {
-            errmsg = errmsg_checksum;
             break;
-        }
 
         const uint8_t ck2 = (data[7] + data[8] + data[9]) & 0xFF;
         if(ck2 != data[10])
-        {
-            errmsg = errmsg_checksum;
             break;
-        }
 
         is_keys_ok = true;
     } while(0);
@@ -958,13 +947,10 @@ void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data, const c
         hex_to_str(key_2, &data[11], 8);
         asc_log_debug(MSG("ECM Found [%02X:%s:%s]") , data[0], key_1, key_2);
 #endif
+
     }
     else
-    {
-        if(!errmsg)
-            errmsg = "Unknown";
-        asc_log_error(MSG("ECM:0x%02X size:%d Not Found. %s") , data[0], data[2], errmsg);
-    }
+        asc_log_error(MSG("ECM:0x%02X size:%d Not Found") , data[0], data[2]);
 }
 
 /*
@@ -1016,6 +1002,7 @@ static void module_init(module_data_t *mod)
         key[3] = (key[0] + key[1] + key[2]) & 0xFF;
         key[7] = (key[4] + key[5] + key[6]) & 0xFF;
         mod->caid = BISS_CAID;
+        mod->disable_emm = true;
 
         ca_stream_t *biss = ca_stream_init(mod, NULL_TS_PID);
         ca_stream_set_keys(biss, key, key);
@@ -1040,6 +1027,8 @@ static void module_init(module_data_t *mod)
             mod->__decrypt.is_cas_data = true;
             str_to_hex(cas_data, mod->__decrypt.cas_data, sizeof(mod->__decrypt.cas_data));
         }
+
+        module_option_boolean("disable_emm", &mod->disable_emm);
 
         module_cam_attach_decrypt(mod->__decrypt.cam, &mod->__decrypt);
     }

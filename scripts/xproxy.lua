@@ -1,5 +1,3 @@
-#!/usr/bin/astra
-
 -- xProxy
 -- https://cesbo.com/solutions/xproxy/
 --
@@ -72,15 +70,23 @@ function render_stat_html()
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <title>xProxy: stat</title>
+    <title>xProxy : Statistics</title>
     <style type="text/css">
-table {
-    width: 600px;
-    margin: auto;
-}
+body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333333; }
+table { width: 600px; margin: auto; }
+.brand { text-align: left; font-size: 18px; line-height: 20px; }
+.version { text-align: right; font-size: 14px; line-height: 20px; color: #888; }
     </style>
 </head>
 <body>
+    <table border="0">
+        <tbody>
+            <tr>
+                <td class="brand">xProxy</td>
+                <td class="version">Astra v.]] .. astra.version .. [[</td>
+            </tr>
+        </tbody>
+    </table>
     <table border="1">
         <thead>
             <tr>
@@ -110,6 +116,20 @@ function on_http_stat(server, client, request)
                 server:close(client_list[client_id].client)
             end
             server:redirect(client, "/stat/")
+            return
+        end
+    end
+
+    if xproxy_pass then
+        if request.headers['authorization'] ~= xproxy_pass then
+            server:send(client, {
+                code = 401,
+                headers = {
+                    "WWW-Authenticate: Basic realm=\"xProxy\"",
+                    "Content-Length: 0",
+                    "Connection: close",
+                }
+            })
             return
         end
     end
@@ -295,12 +315,7 @@ function on_http_http_callback(self, response)
             instance.timeout = nil
         end
 
-        for _,v in pairs(instance.client_list) do
-            local server = v[1]
-            local client = v[2]
-            local client_data = server:data(client)
-            client_data.transmit:set_upstream(instance.request:stream())
-        end
+        instance.transmit:set_upstream(instance.request:stream())
 
     elseif response.code == 301 or response.code == 302 then
         if instance.timeout then
@@ -341,11 +356,11 @@ function on_http_http(server, client, request)
         if client_data.client_id then
             if client_data.input_id then
                 local instance = instance_list[client_data.input_id]
-                instance.client_list[client_data.client_id] = nil
                 instance.clients = instance.clients - 1
                 if instance.clients == 0 then
                     instance.request:close()
                     instance.request = nil
+                    instance.transmit = nil
                     instance_list[client_data.input_id] = nil
                 end
             end
@@ -386,19 +401,17 @@ function on_http_http(server, client, request)
         http_input_conf.instance = instance
 
         instance.clients = 0
-        instance.client_list = {}
+        instance.transmit = transmit()
         instance.request = http_request(http_input_conf)
 
         instance_list[instance_id] = instance
     end
 
-    client_data.transmit = transmit()
     client_data.input_id = instance_id
 
     instance.clients = instance.clients + 1
-    instance.client_list[client_id] = { server, client }
 
-    server:send(client, client_data.transmit:stream())
+    server:send(client, instance.transmit:stream())
 end
 
 --  oo    oo
@@ -411,8 +424,10 @@ function on_http_channels(server, client, request)
     local client_data = server:data(client)
 
     if not request then -- on_close
-        client_data.callback(server, client, request)
-        client_data.callback = nil
+        if client_data.callback then
+            client_data.callback(server, client, request)
+            client_data.callback = nil
+        end
         return
     end
 
@@ -456,52 +471,99 @@ end
 --  88  888  88    8oooo88    888   88   8888
 -- o88o  8  o88o o88o  o888o o888o o88o    88
 
-function usage()
-    print("Usage: astra xproxy.lua [OPTIONS]\n" ..
-          "    -h                  help\n" ..
-          "    -a ADDR             local addres to listen\n" ..
-          "    -p PORT             local port to listen\n" ..
-          "    -l ADDR             source interface address\n" ..
-          "    --channels FILE     file with the channel names\n" ..
-          "    --debug             print debug messages"
-          )
-    astra.exit()
+xproxy_addr = "0.0.0.0"
+xproxy_port = 8000
+
+xproxy_allow_udp = true
+xproxy_allow_rtp = true
+xproxy_allow_http = true
+
+xproxy_pass = nil
+
+xproxy_channels = nil
+
+function on_sighup()
+    if xproxy_channels then dofile(xproxy_channels) end
 end
 
-http_addr = "0.0.0.0"
-http_port = 8000
+options_usage = [[
+    -a ADDR             local address to listen
+    -p PORT             local port for incoming connections
+    -l ADDR             source interface for UDP/RTP streams
+    --channels FILE     file with the channel names
+    --no-udp            disable direct access the to UDP source
+    --no-rtp            disable direct access the to RTP source
+    --no-http           disable direct access the to HTTP source
+    --pass              basic authentication for statistics login:password
+]]
 
 options = {
-    ["-h"] = function() usage() return 1 end,
-    ["--help"] = function() usage() return 1 end,
-    ["-a"] = function(i) http_addr = argv[i + 1] return 2 end,
-    ["-p"] = function(i) http_port = tonumber(argv[i + 1]) return 2 end,
-    ["-l"] = function(i) localaddr = argv[i + 1] return 2 end,
-    ["--channels"] = function(i) dofile(argv[i + 1]) return 2 end,
-    ["--debug"] = function () log.set({ debug = true }) return 1 end,
+    ["-a"] = function(idx)
+        xproxy_addr = argv[idx + 1]
+        return 1
+    end,
+    ["-p"] = function(idx)
+        xproxy_port = tonumber(argv[idx + 1])
+        if not xproxy_port then
+            log.error("[xProxy] wrong port value")
+            astra.abort()
+        end
+        return 1
+    end,
+    ["-l"] = function(idx)
+        localaddr = argv[idx + 1]
+        return 1
+    end,
+    ["--channels"] = function(idx)
+        xproxy_channels = argv[idx + 1]
+        on_sighup()
+        return 1
+    end,
+    ["--no-udp"] = function(idx)
+        xproxy_allow_udp = false
+        return 0
+    end,
+    ["--no-rtp"] = function(idx)
+        xproxy_allow_rtp = false
+        return 0
+    end,
+    ["--no-http"] = function(idx)
+        xproxy_allow_http = false
+        return 0
+    end,
+    ["--pass"] = function(idx)
+        xproxy_pass = "Basic " .. base64.encode(argv[idx + 1])
+        return 1
+    end,
 }
 
-i = 2
-while i <= #argv do
-    if not options[argv[i]] then
-        print("unknown option: " .. argv[i])
-        usage()
-    end
-    i = i + options[argv[i]](i)
-end
+function main()
+    log.info("Starting Astra " .. astra.version)
+    log.info("xProxy started on " .. xproxy_addr .. ":" .. xproxy_port)
 
-http_server({
-    addr = http_addr,
-    port = http_port,
-    server_name = "xProxy",
     route = {
         { "/stat/", on_http_stat },
         { "/stat", http_redirect({ location = "/stat/" }) },
-        { "/udp/*", http_upstream({ callback = on_http_udp }) },
-        { "/rtp/*", http_upstream({ callback = on_http_udp }) },
-        { "/http/*", http_upstream({ callback = on_http_http }) },
-        { "/*", http_upstream({ callback = on_http_channels }) },
     }
-})
 
-log.info("xProxy started on " .. http_addr .. ":" .. http_port)
+    if xproxy_allow_udp then
+        table.insert(route, { "/udp/*", http_upstream({ callback = on_http_udp }) })
+    end
+
+    if xproxy_allow_rtp then
+        table.insert(route, { "/rtp/*", http_upstream({ callback = on_http_udp }) })
+    end
+
+    if xproxy_allow_http then
+        table.insert(route, { "/http/*", http_upstream({ callback = on_http_http }) })
+    end
+
+    table.insert(route, { "/*", http_upstream({ callback = on_http_channels }) })
+
+    http_server({
+        addr = xproxy_addr,
+        port = xproxy_port,
+        server_name = "xProxy",
+        route = route
+    })
+end

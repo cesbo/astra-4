@@ -497,6 +497,7 @@ static void module_options(module_data_t *mod)
     if(!module_option_number(__frequency, &mod->fe->frequency))
         option_required(mod, __frequency);
 
+    module_option_boolean("raw_signal", &mod->fe->raw_signal);
     module_option_boolean("budget", &mod->dmx_budget);
     module_option_number("buffer_size", &mod->dvr_buffer_size);
 

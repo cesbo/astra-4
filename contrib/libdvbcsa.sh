@@ -205,7 +205,7 @@ all: \$(OUT) \$(ALIB)
 
 clean:
 	@echo "CLEAN"
-	@rm -f \$(OUT) \$(OBJS) \$(BSOBJS)
+	@rm -f \$(OUT) \$(ALIB) \$(OBJS) \$(BSOBJS) $MAKEFILE $CONFIG
 
 \$(OUT): \$(OBJS) \$(BSOBJS)
 	@echo "BUILD: \$@"

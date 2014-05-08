@@ -117,6 +117,15 @@ static void on_websocket_read(void *arg)
     if(response->data_size == 0)
     {
         // TODO: check FIN, OPCODE
+        // const bool fin = ((data[0] & 0x80) == 0x80);
+
+        const uint8_t opcode = data[0] & 0x0F;
+        if(opcode == 0x08)
+        {
+            http_client_close(client);
+            return;
+        }
+
         response->frame_key_i = 0;
         response->data_size = data[1] & 0x7F;
 

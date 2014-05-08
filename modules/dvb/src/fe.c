@@ -60,12 +60,18 @@ static void fe_read_status(dvb_fe_t *fe)
     if(ioctl(fe->fe_fd, FE_READ_SIGNAL_STRENGTH, &fe->signal) != 0)
         fe->signal = -2;
     else
-        fe->signal = (fe->signal * 100) / 0xFFFF;
+    {
+        if(!fe->raw_signal)
+            fe->signal = (fe->signal * 100) / 0xFFFF;
+    }
 
     if(ioctl(fe->fe_fd, FE_READ_SNR, &fe->snr) != 0)
         fe->snr = -2;
     else
-        fe->snr = (fe->snr * 100) / 0xFFFF;
+    {
+        if(!fe->raw_signal)
+            fe->snr = (fe->snr * 100) / 0xFFFF;
+    }
 
     if(ioctl(fe->fe_fd, FE_READ_BER, &fe->ber) != 0)
         fe->ber = -2;
@@ -145,9 +151,18 @@ static void fe_event(dvb_fe_t *fe)
             {
                 fe_read_status(fe);
 
-                asc_log_info(MSG("fe has lock. status:%c%c%c%c%c signal:%d%% snr:%d%%")
-                             , ss, sc, sv, sy, sl
-                             , fe->signal, fe->snr);
+                if(!fe->raw_signal)
+                {
+                    asc_log_info(  MSG("fe has lock. status:%c%c%c%c%c signal:%d%% snr:%d%%")
+                                 , ss, sc, sv, sy, sl
+                                 , fe->signal, fe->snr);
+                }
+                else
+                {
+                    asc_log_info(  MSG("fe has lock. status:%c%c%c%c%c signal:-%ddBm snr:%d.%ddB")
+                                 , ss, sc, sv, sy, sl
+                                 , fe->signal, fe->snr / 10, fe->snr % 10);
+                }
 
                 fe->do_retune = 0;
             }

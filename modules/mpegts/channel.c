@@ -29,6 +29,7 @@
  *      pid         - list, join PID in list
  *      sdt         - boolean, join SDT table
  *      eit         - boolean, join EIT table
+ *      cas         - boolean, join CAT, ECM, EMM tables
  *      map         - list, map PID by stream type, item format: "type=pid"
  *                    type: video, audio, rus, eng... and other languages code
  *                     pid: number identifier in range 32-8190
@@ -57,6 +58,7 @@ struct module_data_t
         int set_pnr;
         bool sdt;
         bool eit;
+        bool cas;
 
         bool pass_sdt;
         bool pass_eit;
@@ -101,14 +103,18 @@ static void stream_reload(module_data_t *mod)
     }
 
     mod->stream[0] = MPEGTS_PACKET_PAT;
-    mod->stream[1] = MPEGTS_PACKET_CAT;
 
     mod->pat->crc32 = 0;
     mod->cat->crc32 = 0;
     mod->pmt->crc32 = 0;
 
     module_stream_demux_join_pid(mod, 0x00);
-    module_stream_demux_join_pid(mod, 0x01);
+
+    if(mod->config.cas)
+    {
+        mod->stream[0x01] = MPEGTS_PACKET_CAT;
+        module_stream_demux_join_pid(mod, 0x01);
+    }
 
     if(mod->config.sdt)
     {
@@ -367,6 +373,9 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
     psi->crc32 = crc32;
 
+    uint16_t skip = 12;
+    memcpy(mod->custom_pmt->buffer, psi->buffer, 10);
+
     const uint16_t pcr_pid = PMT_GET_PCR(psi);
     bool join_pcr = true;
 
@@ -376,6 +385,9 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     {
         if(desc_pointer[0] == 0x09)
         {
+            if(!mod->config.cas)
+                continue;
+
             const uint16_t ca_pid = DESC_CA_PID(desc_pointer);
             if(mod->stream[ca_pid] == MPEGTS_PACKET_UNKNOWN && ca_pid != NULL_TS_PID)
             {
@@ -383,10 +395,17 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                 module_stream_demux_join_pid(mod, ca_pid);
             }
         }
+
+        const uint8_t size = desc_pointer[1] + 2;
+        memcpy(&mod->custom_pmt->buffer[skip], desc_pointer, size);
+        skip += size;
     }
 
-    mod->custom_pmt->buffer_size = PMT_ITEMS_FIRST(psi) - psi->buffer;
-    memcpy(mod->custom_pmt->buffer, psi->buffer, mod->custom_pmt->buffer_size);
+    {
+        const uint16_t size = skip - 12; // 12 - PMT header
+        mod->custom_pmt->buffer[10] = (psi->buffer[10] & 0xF0) | ((size >> 8) & 0x0F);
+        mod->custom_pmt->buffer[11] = (size & 0xFF);
+    }
 
     if(mod->config.set_pnr)
     {
@@ -394,20 +413,17 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     }
 
     const uint8_t *pointer;
-
     PMT_ITEMS_FOREACH(psi, pointer)
     {
         const uint16_t pid = PMT_ITEM_GET_PID(psi, pointer);
 
-        if(mod->pid_map[pid] == MAX_PID)
-        { // skip filtered pid
+        if(mod->pid_map[pid] == MAX_PID) // skip filtered pid
             continue;
-        }
 
-        const uint16_t item_size = 5 + __PMT_ITEM_DESC_SIZE(pointer);
-        uint8_t *custom_pointer = &mod->custom_pmt->buffer[mod->custom_pmt->buffer_size];
-        memcpy(custom_pointer, pointer, item_size);
-        mod->custom_pmt->buffer_size += item_size;
+        const uint16_t skip_last = skip;
+
+        memcpy(&mod->custom_pmt->buffer[skip], pointer, 5);
+        skip += 5;
 
         module_stream_demux_join_pid(mod, pid);
 
@@ -418,6 +434,9 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         {
             if(desc_pointer[0] == 0x09)
             {
+                if(!mod->config.cas)
+                    continue;
+
                 const uint16_t ca_pid = DESC_CA_PID(desc_pointer);
                 if(mod->stream[ca_pid] == MPEGTS_PACKET_UNKNOWN && ca_pid != NULL_TS_PID)
                 {
@@ -425,6 +444,16 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                     module_stream_demux_join_pid(mod, ca_pid);
                 }
             }
+
+            const uint8_t size = desc_pointer[1] + 2;
+            memcpy(&mod->custom_pmt->buffer[skip], desc_pointer, size);
+            skip += size;
+        }
+
+        {
+            const uint16_t size = skip - skip_last - 5;
+            mod->custom_pmt->buffer[skip_last + 3] = (size << 8) & 0x0F;
+            mod->custom_pmt->buffer[skip_last + 4] = (size & 0xFF);
         }
 
         if(mod->map)
@@ -465,10 +494,14 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
             }
 
             if(custom_pid)
-                PMT_ITEM_SET_PID(mod->custom_pmt, custom_pointer, custom_pid);
+            {
+                PMT_ITEM_SET_PID(  mod->custom_pmt
+                                 , &mod->custom_pmt->buffer[skip_last]
+                                 , custom_pid);
+            }
         }
     }
-    mod->custom_pmt->buffer_size += CRC32_SIZE;
+    mod->custom_pmt->buffer_size = skip + CRC32_SIZE;
 
     if(join_pcr)
         module_stream_demux_join_pid(mod, pcr_pid);
@@ -562,6 +595,13 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
     memcpy(&mod->custom_sdt->buffer[11], pointer, item_length);
     const uint16_t section_length = item_length + 8 + CRC32_SIZE;
     mod->custom_sdt->buffer_size = 3 + section_length;
+
+    if(mod->config.set_pnr)
+    {
+        uint8_t *custom_pointer = SDT_ITEMS_FIRST(mod->custom_sdt);
+        SDT_ITEM_SET_SID(mod->custom_sdt, custom_pointer, mod->config.set_pnr);
+    }
+
     PSI_SET_SIZE(mod->custom_sdt);
     PSI_SET_CRC32(mod->custom_sdt);
 
@@ -705,6 +745,8 @@ static void module_init(module_data_t *mod)
     {
         module_option_number("set_pnr", &mod->config.set_pnr);
 
+        module_option_boolean("cas", &mod->config.cas);
+
         mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
         mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
         mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
@@ -712,8 +754,11 @@ static void module_init(module_data_t *mod)
         mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
         mod->stream[0] = MPEGTS_PACKET_PAT;
         module_stream_demux_join_pid(mod, 0);
-        mod->stream[1] = MPEGTS_PACKET_CAT;
-        module_stream_demux_join_pid(mod, 1);
+        if(mod->config.cas)
+        {
+            mod->stream[1] = MPEGTS_PACKET_CAT;
+            module_stream_demux_join_pid(mod, 1);
+        }
 
         module_option_boolean("sdt", &mod->config.sdt);
         if(mod->config.sdt)
