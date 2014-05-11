@@ -41,6 +41,9 @@ struct module_data_t
     asc_thread_t *thread;
     bool is_thread_started;
 
+    asc_timer_t *status_timer;
+    int idx_callback;
+
     /* DVR Config */
     int dvr_buffer_size;
 
@@ -681,6 +684,25 @@ static void thread_loop(void *arg)
  *
  */
 
+static void on_status_timer(void *arg)
+{
+    module_data_t *mod = arg;
+
+    lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+    lua_newtable(lua);
+    lua_pushnumber(lua, mod->fe->status);
+    lua_setfield(lua, -2, "status");
+    lua_pushnumber(lua, mod->fe->signal);
+    lua_setfield(lua, -2, "signal");
+    lua_pushnumber(lua, mod->fe->snr);
+    lua_setfield(lua, -2, "snr");
+    lua_pushnumber(lua, mod->fe->ber);
+    lua_setfield(lua, -2, "ber");
+    lua_pushnumber(lua, mod->fe->unc);
+    lua_setfield(lua, -2, "unc");
+    lua_call(lua, 1, 0);
+}
+
 static int method_ca_set_pnr(module_data_t *mod)
 {
     if(!mod->ca || !mod->ca->ca_fd)
@@ -712,6 +734,15 @@ static void module_init(module_data_t *mod)
 
     module_options(mod);
 
+    lua_getfield(lua, MODULE_OPTIONS_IDX, "callback");
+    if(lua_isfunction(lua, -1))
+    {
+        mod->idx_callback = luaL_ref(lua, LUA_REGISTRYINDEX);
+        mod->status_timer = asc_timer_init(1000, on_status_timer, mod);
+    }
+    else
+        lua_pop(lua, 1);
+
     dvr_open(mod);
     if(mod->dvr_fd == 0)
         return;
@@ -736,6 +767,18 @@ static void module_destroy(module_data_t *mod)
 
     free(mod->fe);
     free(mod->ca);
+
+    if(mod->status_timer)
+    {
+        asc_timer_destroy(mod->status_timer);
+        mod->status_timer = NULL;
+    }
+
+    if(mod->idx_callback)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+        mod->idx_callback = 0;
+    }
 
     module_stream_destroy(mod);
 }
