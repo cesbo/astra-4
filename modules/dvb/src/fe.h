@@ -79,8 +79,10 @@ struct dvb_fe_t
     int do_retune;
 
     /* FE Status */
-    fe_status_t fe_status;
-    int lock;
+    bool is_started;
+    fe_status_t fe_event_status;
+    fe_status_t status;
+    bool lock;
     int signal;
     int snr;
     int ber;

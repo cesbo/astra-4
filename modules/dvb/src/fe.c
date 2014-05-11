@@ -89,9 +89,24 @@ static void fe_check_status(dvb_fe_t *fe)
         astra_abort();
     }
 
-    fe->lock = fe_status & FE_HAS_LOCK;
+    fe->status = fe_status;
+    fe->lock = (fe_status & FE_HAS_LOCK) != 0;
     if(!fe->lock)
     {
+        if(!fe->is_started)
+        {
+            const char ss = (fe_status & FE_HAS_SIGNAL) ? 'S' : '_';
+            const char sc = (fe_status & FE_HAS_CARRIER) ? 'C' : '_';
+            const char sv = (fe_status & FE_HAS_VITERBI) ? 'V' : '_';
+            const char sy = (fe_status & FE_HAS_SYNC) ? 'Y' : '_';
+            const char sl = (fe_status & FE_HAS_LOCK) ? 'L' : '_';
+            asc_log_warning(  MSG("fe has no lock. status:%c%c%c%c%c")
+                            , ss, sc, sv, sy, sl);
+        }
+        fe->signal = 0;
+        fe->snr = 0;
+        fe->ber = 0;
+        fe->unc = 0;
         fe->do_retune = 1;
         return;
     }
@@ -124,8 +139,8 @@ static void fe_event(dvb_fe_t *fe)
         }
 
         fe_status = dvb_fe_event.status;
-        fe_status_diff = fe_status ^ fe->fe_status;
-        fe->fe_status = fe_status;
+        fe_status_diff = fe_status ^ fe->fe_event_status;
+        fe->fe_event_status = fe_status;
 
         if(fe_status_diff & FE_REINIT)
         {
@@ -146,7 +161,7 @@ static void fe_event(dvb_fe_t *fe)
 
         if(fe_status_diff & FE_HAS_LOCK)
         {
-            fe->lock = fe_status & FE_HAS_LOCK;
+            fe->lock = (fe_status & FE_HAS_LOCK) != 0;
             if(fe->lock)
             {
                 fe_read_status(fe);
@@ -164,13 +179,15 @@ static void fe_event(dvb_fe_t *fe)
                                  , fe->signal, fe->snr / 10, fe->snr % 10);
                 }
 
+                fe->is_started = true;
                 fe->do_retune = 0;
             }
             else
             {
-                asc_log_warning(MSG("fe has lost lock. status:%c%c%c%c%c")
+                asc_log_warning(  MSG("fe has lost lock. status:%c%c%c%c%c")
                                 , ss, sc, sv, sy, sl);
                 fe_clear(fe);
+                fe->is_started = false;
                 fe->do_retune = 1;
                 return;
             }
@@ -459,11 +476,18 @@ void fe_loop(dvb_fe_t *fe, int is_data)
     }
     else
     {
-        if(fe->do_retune == 0)
-            fe_check_status(fe);
-        else if(fe->do_retune == 1)
-            fe_tune(fe);
-        else
-            --fe->do_retune;
+        switch(fe->do_retune) {
+            case 0:
+                fe_check_status(fe);
+                break;
+            case 1:
+                if(!fe->is_started)
+                    fe_check_status(fe);
+                fe_tune(fe);
+                break;
+            default:
+                --fe->do_retune;
+                break;
+        }
     }
 }
