@@ -37,7 +37,8 @@ struct http_response_t
 {
     module_data_t *mod;
 
-    uint64_t data_size;
+    uint32_t header_size;
+    uint32_t data_size;
 
     uint8_t frame_key[FRAME_KEY_SIZE];
     uint8_t frame_key_i;
@@ -104,18 +105,18 @@ static void on_websocket_read(void *arg)
     http_client_t *client = arg;
     http_response_t *response = client->response;
 
-    ssize_t size = asc_socket_recv(client->sock, client->buffer, HTTP_BUFFER_SIZE);
-    if(size <= 0)
-    {
-        http_client_close(client);
-        return;
-    }
-
-    size_t skip = 0;
+    ssize_t size;
     uint8_t *data = (uint8_t *)client->buffer;
 
-    if(response->data_size == 0)
+    if(response->header_size == 0)
     {
+        size = asc_socket_recv(client->sock, data, FRAME_HEADER_SIZE);
+        if(size <= 0)
+        {
+            http_client_close(client);
+            return;
+        }
+
         // TODO: check FIN, OPCODE
         // const bool fin = ((data[0] & 0x80) == 0x80);
 
@@ -125,77 +126,110 @@ static void on_websocket_read(void *arg)
             http_client_close(client);
             return;
         }
-
-        response->frame_key_i = 0;
-        response->data_size = data[1] & 0x7F;
-
-        if(response->data_size > 127)
+        else if(opcode != 0x01)
         {
-            http_client_warning(client, "wrong websocket frame format");
-            response->data_size = 0;
-        }
-        else if(response->data_size < 126)
-        {
-            skip = FRAME_HEADER_SIZE + FRAME_SIZE8_SIZE;
-        }
-        else if(response->data_size == 126)
-        {
-            response->data_size = (data[2] << 8) | data[3];
-
-            skip = FRAME_HEADER_SIZE + FRAME_SIZE16_SIZE;
-        }
-        else if(response->data_size == 127)
-        {
-            response->data_size = (  ((uint64_t)data[2] << 56)
-                                   | ((uint64_t)data[3] << 48)
-                                   | ((uint64_t)data[4] << 40)
-                                   | ((uint64_t)data[5] << 32)
-                                   | ((uint64_t)data[6] << 24)
-                                   | ((uint64_t)data[7] << 16)
-                                   | ((uint64_t)data[8] << 8 )
-                                   | ((uint64_t)data[9]      ));
-
-            skip = FRAME_HEADER_SIZE + FRAME_SIZE64_SIZE;
+            http_client_error(client, "wrong opcode type");
+            http_client_close(client);
+            return;
         }
 
-        response->frame_key_i = 0;
-        memcpy(response->frame_key, &data[skip], FRAME_KEY_SIZE);
+        const uint8_t data_size = data[1] & 0x7F;
+        if(data_size < 126)
+            response->header_size = FRAME_HEADER_SIZE + FRAME_SIZE8_SIZE + FRAME_KEY_SIZE;
+        else if(data_size == 126)
+            response->header_size = FRAME_HEADER_SIZE + FRAME_SIZE16_SIZE + FRAME_KEY_SIZE;
+        else if(data_size == 127)
+            response->header_size = FRAME_HEADER_SIZE + FRAME_SIZE64_SIZE + FRAME_KEY_SIZE;
+        else
+        {
+            http_client_error(client, "wrong websocket frame format");
+            http_client_close(client);
+            return;
+        }
 
-        skip += FRAME_KEY_SIZE;
+        return;
     }
 
-    const size_t data_size = size - skip;
-    data = &data[skip];
-    skip = 0;
+    if(response->data_size == 0)
+    {
+        size = asc_socket_recv(  client->sock
+                                       , &data[FRAME_HEADER_SIZE]
+                                       , response->header_size - FRAME_HEADER_SIZE);
+        if(size <= 0)
+        {
+            http_client_close(client);
+            return;
+        }
+
+        const uint8_t data_size = data[1] & 0x7F;
+        if(data_size < 126)
+        {
+            response->data_size = data_size;
+        }
+        else if(data_size == 126)
+        {
+            response->data_size = (data[2] << 8) | data[3];
+        }
+        else if(data_size == 127)
+        {
+            if(data[2] || data[3] || data[4] || data[5])
+            {
+                http_client_error(client, "wrong frame size");
+                http_client_close(client);
+                return;
+            }
+            response->data_size = (  (data[6] << 24)
+                                   | (data[7] << 16)
+                                   | (data[8] << 8 )
+                                   | (data[9]      ));
+        }
+
+        response->frame_key_i = 0;
+        memcpy(  response->frame_key
+               , &data[response->header_size - FRAME_KEY_SIZE]
+               , FRAME_KEY_SIZE);
+        return;
+    }
+
+    const uint32_t data_size = (response->data_size <= HTTP_BUFFER_SIZE)
+                             ? response->data_size
+                             : HTTP_BUFFER_SIZE;
+
+    size = asc_socket_recv(client->sock, data, data_size);
+    if(size <= 0)
+    {
+        http_client_close(client);
+        return;
+    }
 
     // TODO: SSE
-    while(skip < data_size)
+    uint32_t skip = 0;
+    while(skip < size)
     {
         data[skip] ^= response->frame_key[response->frame_key_i];
         ++skip;
         response->frame_key_i = (response->frame_key_i + 1) % 4;
     }
-    response->data_size -= skip;
 
-    if(!client->content)
+    if(response->data_size == size)
     {
-        if(response->data_size == 0)
-        {
-            lua_rawgeti(lua, LUA_REGISTRYINDEX, response->mod->idx_callback);
-            lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_server);
-            lua_pushlightuserdata(lua, client);
-            lua_pushlstring(lua, (const char *)data, skip);
-            lua_call(lua, 3, 0);
-        }
-        else
-        {
-            client->content = string_buffer_alloc();
-            string_buffer_addlstring(client->content, (const char *)data, skip);
-        }
+        lua_rawgeti(lua, LUA_REGISTRYINDEX, response->mod->idx_callback);
+        lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_server);
+        lua_pushlightuserdata(lua, client);
+        lua_pushlstring(lua, (const char *)data, response->data_size);
+        lua_call(lua, 3, 0);
+
+        response->header_size = 0;
+        response->data_size = 0;
     }
     else
     {
-        string_buffer_addlstring(client->content, (const char *)data, skip);
+        if(!client->content)
+            client->content = string_buffer_alloc();
+
+        string_buffer_addlstring(client->content, (const char *)data, size);
+
+        response->data_size -= size;
 
         if(response->data_size == 0)
         {
@@ -205,6 +239,9 @@ static void on_websocket_read(void *arg)
             string_buffer_push(lua, client->content);
             client->content = NULL;
             lua_call(lua, 3, 0);
+
+            response->header_size = 0;
+            response->data_size = 0;
         }
     }
 }
