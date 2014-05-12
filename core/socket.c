@@ -433,12 +433,10 @@ void asc_socket_connect(  asc_socket_t *sock, const char *addr, int port
 
         close(sock->fd);
         sock->fd = 0;
+        return;
     }
 
-    if(sock->fd == 0)
-        return;
-
-    else if(connect(sock->fd, (struct sockaddr *)&sock->addr, sizeof(sock->addr)) == -1)
+    if(connect(sock->fd, (struct sockaddr *)&sock->addr, sizeof(sock->addr)) == -1)
     {
 #ifdef _WIN32
         const int err = WSAGetLastError();
