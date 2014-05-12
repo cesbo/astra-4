@@ -358,8 +358,14 @@ function on_http_http(server, client, request)
                 local instance = instance_list[client_data.input_id]
                 instance.clients = instance.clients - 1
                 if instance.clients == 0 then
-                    instance.request:close()
-                    instance.request = nil
+                    if instance.request then
+                        instance.request:close()
+                        instance.request = nil
+                    end
+                    if instance.timeout then
+                        instance.timeout:close()
+                        instance.timeout = nil
+                    end
                     instance.transmit = nil
                     instance_list[client_data.input_id] = nil
                 end

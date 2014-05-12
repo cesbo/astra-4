@@ -415,7 +415,7 @@ void asc_socket_connect(  asc_socket_t *sock, const char *addr, int port
     // sock->addr.sin_addr.s_addr = inet_addr(addr);
     sock->addr.sin_port = htons(port);
 
-    struct addrinfo hints, *res;
+    struct addrinfo hints, *res = NULL;
     memset(&hints, 0, sizeof(hints));
     hints.ai_socktype = sock->type;
     hints.ai_family = sock->family;
@@ -425,6 +425,7 @@ void asc_socket_connect(  asc_socket_t *sock, const char *addr, int port
         memcpy(&sock->addr.sin_addr
                , &((struct sockaddr_in *)res->ai_addr)->sin_addr
                , sizeof(sock->addr.sin_addr));
+        freeaddrinfo(res);
     }
     else
     {
@@ -433,7 +434,6 @@ void asc_socket_connect(  asc_socket_t *sock, const char *addr, int port
         close(sock->fd);
         sock->fd = 0;
     }
-    freeaddrinfo(res);
 
     if(sock->fd == 0)
         return;
