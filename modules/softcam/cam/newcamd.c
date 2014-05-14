@@ -187,19 +187,6 @@ static void on_newcamd_close(void *arg)
         mod->timeout = NULL;
     }
 
-    if(mod->status == 0)
-    {
-        mod->status = -1;
-        asc_log_error(MSG("connection failed"));
-    }
-    else if(mod->status == 1)
-    {
-        mod->status = -1;
-        asc_log_error(MSG("failed to parse response"));
-    }
-
-    mod->status = 0;
-
     module_cam_reset(&mod->__cam);
 
     if(mod->prov_buffer)
@@ -213,6 +200,16 @@ static void on_newcamd_close(void *arg)
         free(mod->packet);
         mod->packet = NULL;
     }
+
+    if(mod->status == 0)
+        asc_log_error(MSG("connection failed"));
+    else if(mod->status == 1)
+        asc_log_error(MSG("failed to parse response"));
+
+    if(mod->status != -1)
+        newcamd_connect(mod);
+    else
+        mod->status = 0;
 }
 
 /*
