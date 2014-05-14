@@ -254,7 +254,7 @@ static void thread_loop(void *arg)
             if(block_time == 0 || block_time > 250000)
             {
                 asc_log_error(  MSG("block time out of range: %llums block_size:%u")
-                          , (uint64_t)(block_time / 1000), block_size);
+                              , (uint64_t)(block_time / 1000), block_size);
 
                 mod->sync.buffer_count -= block_size;
                 mod->sync.buffer_read = next_block;
