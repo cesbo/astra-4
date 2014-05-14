@@ -722,9 +722,8 @@ static void module_init(module_data_t *mod)
                      , NULL, NULL
                      , on_thread_close);
 
-    struct timespec ts = { .tv_sec = 0, .tv_nsec = 500000 };
     while(!mod->is_thread_started)
-        nanosleep(&ts, NULL);
+        asc_usleep(500);
 }
 
 static void module_destroy(module_data_t *mod)

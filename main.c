@@ -77,8 +77,6 @@ static void signal_handler(int signum)
 
 int main(int argc, const char **argv)
 {
-    static const struct timespec main_loop_delay = { .tv_sec = 0, .tv_nsec = 1000000 };
-
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 #ifndef _WIN32
@@ -192,7 +190,7 @@ astra_reload_entry:
             }
 
             if(is_main_loop_idle)
-                nanosleep(&main_loop_delay, NULL);
+                asc_usleep(1000);
         }
     }
 
