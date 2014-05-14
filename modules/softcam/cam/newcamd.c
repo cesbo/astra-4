@@ -207,7 +207,10 @@ static void on_newcamd_close(void *arg)
         asc_log_error(MSG("failed to parse response"));
 
     if(mod->status != -1)
-        newcamd_connect(mod);
+    {
+        mod->status = -1;
+        mod->timeout = asc_timer_init(mod->config.timeout, on_timeout, mod);
+    }
     else
         mod->status = 0;
 }
