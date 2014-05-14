@@ -40,11 +40,17 @@ inline uint64_t mpegts_pcr(const uint8_t *ts)
     return (pcr_base * 300 + pcr_ext);
 }
 
-inline double mpegts_pcr_block_ms(uint64_t pcr_last, uint64_t pcr_current)
+inline uint64_t mpegts_pcr_block_us(uint64_t *pcr_last, const uint64_t *pcr_current)
 {
-    const uint64_t delta_pcr = pcr_current - pcr_last;
+    if(*pcr_current <= *pcr_last)
+    {
+        *pcr_last = *pcr_current;
+        return 0;
+    }
+
+    const uint64_t delta_pcr = *pcr_current - *pcr_last;
+    *pcr_last = *pcr_current;
     const uint64_t dpcr_base = delta_pcr / 300;
     const uint64_t dpcr_ext = delta_pcr % 300;
-    return (  (double)(dpcr_base / 90.0)        // 90 kHz
-            + (double)(dpcr_ext / 27000.0));    // 27 MHz
+    return (dpcr_base * 1000 / 90) + (dpcr_ext * 1000 / 27000);
 }

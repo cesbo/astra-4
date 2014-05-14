@@ -37,28 +37,31 @@ uint64_t asc_utime(void)
 #endif
 }
 
+void asc_usleep(uint64_t usec)
+{
+#ifndef _WIN32
+    struct timespec ts;
+    ts.tv_sec = usec / 1000000;
+    ts.tv_nsec = (usec % 1000000) * 1000;
+    while(nanosleep(&ts, &ts) == -1 && errno == EINTR)
+         continue;
+#else
+    HANDLE timer;
+    LARGE_INTEGER ft;
+    ft.QuadPart = -(usec * 10);
+    timer = CreateWaitableTimer(NULL, TRUE, NULL);
+    SetWaitableTimer(timer, &ft, 0, NULL, NULL, 0);
+    WaitForSingleObject(timer, INFINITE);
+    CloseHandle(timer);
+#endif
+}
+
 #ifdef _WIN32
 ssize_t pread(int fd, void *buffer, size_t size, off_t off)
 {
     if(lseek(fd, off, SEEK_SET) != off)
         return -1;
     return read(fd, buffer, size);
-}
-
-int nanosleep(const struct timespec *req, struct timespec *rem)
-{
-    __uarg(rem);
-
-    __int64 timeEllapsed;
-    __int64 timeStart;
-    __int64 timeDelta;
-    QueryPerformanceFrequency((LARGE_INTEGER *)&timeDelta);
-    __int64 timeToWait = (double)timeDelta * (double)(req->tv_nsec / 1000) / 1000000.0f;
-    QueryPerformanceCounter((LARGE_INTEGER *)&timeStart);
-    timeEllapsed = timeStart;
-    while((timeEllapsed - timeStart) < timeToWait)
-        QueryPerformanceCounter((LARGE_INTEGER *)&timeEllapsed);
-    return 0;
 }
 #endif
 

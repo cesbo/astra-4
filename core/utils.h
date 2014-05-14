@@ -25,10 +25,10 @@
 #include <lua/lauxlib.h>
 
 uint64_t asc_utime(void);
+void asc_usleep(uint64_t usec);
 
 #ifdef _WIN32
 ssize_t pread(int fd, void *buffer, size_t size, off_t off);
-int nanosleep(const struct timespec *req, struct timespec *rem);
 #endif
 
 // string_buffer

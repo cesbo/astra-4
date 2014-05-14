@@ -197,8 +197,6 @@ static void fe_event(dvb_fe_t *fe)
 
 static void diseqc_setup(dvb_fe_t *fe, int voltage, int tone)
 {
-    static struct timespec ns = { .tv_sec = 0, .tv_nsec = 15 * 1000 * 1000 };
-
     if(ioctl(fe->fe_fd, FE_SET_TONE, SEC_TONE_OFF) != 0)
     {
         asc_log_error(MSG("diseqc: FE_SET_TONE failed [%s]"), strerror(errno));
@@ -211,7 +209,7 @@ static void diseqc_setup(dvb_fe_t *fe, int voltage, int tone)
         astra_abort();
     }
 
-    nanosleep(&ns, NULL);
+    asc_usleep(15000);
 
     const int data0 = 0xF0
                     | ((fe->diseqc - 1) << 2)
@@ -230,7 +228,7 @@ static void diseqc_setup(dvb_fe_t *fe, int voltage, int tone)
         astra_abort();
     }
 
-    nanosleep(&ns, NULL);
+    asc_usleep(15000);
 
     fe_sec_mini_cmd_t burst = ((fe->diseqc - 1) & 1) ? SEC_MINI_B : SEC_MINI_A;
     if(ioctl(fe->fe_fd, FE_DISEQC_SEND_BURST, burst) != 0)
@@ -239,7 +237,7 @@ static void diseqc_setup(dvb_fe_t *fe, int voltage, int tone)
         astra_abort();
     }
 
-    nanosleep(&ns, NULL);
+    asc_usleep(15000);
 
     if(ioctl(fe->fe_fd, FE_SET_TONE, tone) != 0)
     {
