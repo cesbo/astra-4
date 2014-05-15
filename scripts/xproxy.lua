@@ -22,7 +22,14 @@ localaddr = nil -- for -l option
 instance_list = {}
 
 function make_client_id(server, client, request, path)
-    local client_id
+    local client_data = server:data(client)
+
+    local client_id = client_data.client_id
+    if client_id then
+        client_list[client_id].path = path
+        return
+    end
+
     repeat
         client_id = math.random(10000000, 99000000)
     until not client_list[client_id]
@@ -37,7 +44,7 @@ function make_client_id(server, client, request, path)
         st   = os.time(),
     }
 
-    return client_id
+    client_data.client_id = client_id
 end
 
 --  oooooooo8 ooooooooooo   o   ooooooooooo
@@ -185,56 +192,59 @@ function on_http_udp(server, client, request)
         end
     end
 
-    local client_id = make_client_id(server, client, request, format .. "://" .. fpath)
-    client_data.client_id = client_id
+    make_client_id(server, client, request, format .. "://" .. fpath)
 
-    local udp_input_conf = { socket_size = 0x80000 }
+    local allow_channel = function()
+        local udp_input_conf = { socket_size = 0x80000 }
 
-    if format == 'rtp' then udp_input_conf.rtp = true end
+        if format == 'rtp' then udp_input_conf.rtp = true end
 
-    -- trim trailing slash
-    local b = path:find("/")
-    if b then
-        path = path:sub(1, b - 1)
-    end
-
-    local b = path:find("@")
-    if b then
-        udp_input_conf.localaddr = path:sub(1, b - 1)
-        path = path:sub(b + 1)
-    else
-        if localaddr then
-            udp_input_conf.localaddr = localaddr
+        -- trim trailing slash
+        local b = path:find("/")
+        if b then
+            path = path:sub(1, b - 1)
         end
-    end
 
-    local b = path:find(":")
-    if b then
-        udp_input_conf.port = tonumber(path:sub(b + 1))
-        if not udp_input_conf.port then
-            server:abort(client, 400)
-            return
+        local b = path:find("@")
+        if b then
+            udp_input_conf.localaddr = path:sub(1, b - 1)
+            path = path:sub(b + 1)
+        else
+            if localaddr then
+                udp_input_conf.localaddr = localaddr
+            end
         end
-        udp_input_conf.addr = path:sub(1, b - 1)
-    else
-        udp_input_conf.port = 1234
-        udp_input_conf.addr = path
+
+        local b = path:find(":")
+        if b then
+            udp_input_conf.port = tonumber(path:sub(b + 1))
+            if not udp_input_conf.port then
+                server:abort(client, 400)
+                return
+            end
+            udp_input_conf.addr = path:sub(1, b - 1)
+        else
+            udp_input_conf.port = 1234
+            udp_input_conf.addr = path
+        end
+
+        local instance_id = udp_input_conf.addr .. ":" .. udp_input_conf.port
+        local udp_instance = instance_list[instance_id]
+        if not udp_instance then
+            udp_instance = {}
+            udp_instance.clients = 0
+            udp_instance.instance = udp_input(udp_input_conf)
+            instance_list[instance_id] = udp_instance
+        end
+
+        client_data.input_id = instance_id
+
+        udp_instance.clients = udp_instance.clients + 1
+
+        server:send(client, udp_instance.instance:stream())
     end
 
-    local instance_id = udp_input_conf.addr .. ":" .. udp_input_conf.port
-    local udp_instance = instance_list[instance_id]
-    if not udp_instance then
-        udp_instance = {}
-        udp_instance.clients = 0
-        udp_instance.instance = udp_input(udp_input_conf)
-        instance_list[instance_id] = udp_instance
-    end
-
-    client_data.input_id = instance_id
-
-    udp_instance.clients = udp_instance.clients + 1
-
-    server:send(client, udp_instance.instance:stream())
+    allow_channel()
 end
 
 -- ooooo ooooo ooooooooooo ooooooooooo oooooooooo
@@ -376,48 +386,50 @@ function on_http_http(server, client, request)
     end
 
     local url = "http://" .. request.path:sub(7)
+    make_client_id(server, client, request, url)
 
-    local client_id = make_client_id(server, client, request, url)
-    client_data.client_id = client_id
+    local allow_channel = function()
+        local http_input_conf = {}
+        local host, port, path = http_parse_url(url)
 
-    local http_input_conf = {}
-    local host, port, path = http_parse_url(url)
+        if not port then
+            server:abort(client, 400)
+            return
+        end
+        http_input_conf.host = host
+        http_input_conf.port = port
+        http_input_conf.path = path
 
-    if not port then
-        server:abort(client, 400)
-        return
+        local instance_id = host .. ":" .. port .. path
+        local instance = instance_list[instance_id]
+        if not instance then
+            http_input_conf.headers =
+            {
+                "User-Agent: xProxy",
+                "Host: " .. host .. ":" .. port,
+                "Connection: close",
+            }
+            http_input_conf.stream = true
+            http_input_conf.callback = on_http_http_callback
+
+            instance = {}
+            http_input_conf.instance = instance
+
+            instance.clients = 0
+            instance.transmit = transmit()
+            instance.request = http_request(http_input_conf)
+
+            instance_list[instance_id] = instance
+        end
+
+        client_data.input_id = instance_id
+
+        instance.clients = instance.clients + 1
+
+        server:send(client, instance.transmit:stream())
     end
-    http_input_conf.host = host
-    http_input_conf.port = port
-    http_input_conf.path = path
 
-    local instance_id = host .. ":" .. port .. path
-    local instance = instance_list[instance_id]
-    if not instance then
-        http_input_conf.headers =
-        {
-            "User-Agent: xProxy",
-            "Host: " .. host .. ":" .. port,
-            "Connection: close",
-        }
-        http_input_conf.stream = true
-        http_input_conf.callback = on_http_http_callback
-
-        instance = {}
-        http_input_conf.instance = instance
-
-        instance.clients = 0
-        instance.transmit = transmit()
-        instance.request = http_request(http_input_conf)
-
-        instance_list[instance_id] = instance
-    end
-
-    client_data.input_id = instance_id
-
-    instance.clients = instance.clients + 1
-
-    server:send(client, instance.transmit:stream())
+    allow_channel()
 end
 
 --  oo    oo
@@ -431,7 +443,7 @@ function on_http_channels(server, client, request)
 
     if not request then -- on_close
         if client_data.callback then
-            client_data.callback(server, client, request)
+            client_data.callback(server, client, nil)
             client_data.callback = nil
         end
         return
@@ -456,19 +468,23 @@ function on_http_channels(server, client, request)
         return
     end
 
-    local proto = channel:sub(1, b - 1)
-    local url = channel:sub(b + 3)
+    local allow_channel = function()
+        local proto = channel:sub(1, b - 1)
+        local url = channel:sub(b + 3)
 
-    request.path = "/" .. proto .. "/" .. url
-    if proto == "udp" or proto == "rtp" then
-        client_data.callback = on_http_udp
-        on_http_udp(server, client, request)
-    elseif proto == "http" then
-        client_data.callback = on_http_http
-        on_http_http(server, client, request)
-    else
-        server:abort(client, 404)
+        request.path = "/" .. proto .. "/" .. url
+        if proto == "udp" or proto == "rtp" then
+            client_data.callback = on_http_udp
+            on_http_udp(server, client, request)
+        elseif proto == "http" then
+            client_data.callback = on_http_http
+            on_http_http(server, client, request)
+        else
+            server:abort(client, 404)
+        end
     end
+
+    allow_channel()
 end
 
 -- oooo     oooo      o      ooooo oooo   oooo
@@ -547,7 +563,7 @@ function main()
     log.info("Starting Astra " .. astra.version)
     log.info("xProxy started on " .. xproxy_addr .. ":" .. xproxy_port)
 
-    route = {
+    local route = {
         { "/stat/", on_http_stat },
         { "/stat", http_redirect({ location = "/stat/" }) },
     }

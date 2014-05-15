@@ -204,14 +204,14 @@ static void on_websocket_read(void *arg)
 
     // TODO: SSE
     uint32_t skip = 0;
-    while(skip < size)
+    while(skip < (uint32_t)size)
     {
         data[skip] ^= response->frame_key[response->frame_key_i];
         ++skip;
         response->frame_key_i = (response->frame_key_i + 1) % 4;
     }
 
-    if(response->data_size == size)
+    if(response->data_size == (uint32_t)size)
     {
         lua_rawgeti(lua, LUA_REGISTRYINDEX, response->mod->idx_callback);
         lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_server);
