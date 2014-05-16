@@ -151,6 +151,12 @@ function on_http_stat(server, client, request)
     })
 end
 
+-- oooooooooo ooooo            o   ooooo  oooo ooooo       ooooo  oooooooo8 ooooooooooo
+--  888    888 888            888    888  88    888         888  888        88  888  88
+--  888oooo88  888           8  88     888      888         888   888oooooo     888
+--  888        888      o   8oooo88    888      888      o  888          888    888
+-- o888o      o888ooooo88 o88o  o888o o888o    o888ooooo88 o888o o88oooo888    o888o
+
 function on_http_playlist(server, client, request)
     if not request then return nil end
 
@@ -159,20 +165,22 @@ function on_http_playlist(server, client, request)
         return
     end
 
-    local content_type, content = playlist_request(request)
-    if not content_type then
-        server:abort(client, 404)
-        return
+    local playlist_callback = function(content_type, content)
+        if content_type then
+            server:send(client, {
+                code = 200,
+                headers = {
+                    "Content-Type: " .. content_type,
+                    "Connection: close",
+                },
+                content = content,
+            })
+        else
+            server:abort(client, 404)
+        end
     end
 
-    server:send(client, {
-        code = 200,
-        headers = {
-            "Content-Type: " .. content_type,
-            "Connection: close",
-        },
-        content = content,
-    })
+    playlist_request(request, playlist_callback)
 end
 
 -- ooooo  oooo ooooooooo  oooooooooo
