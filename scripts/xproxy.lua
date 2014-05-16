@@ -612,7 +612,7 @@ function main()
     end
 
     if playlist_request then
-        table.insert(route, { "/playlist", on_http_playlist })
+        table.insert(route, { "/playlist*", on_http_playlist })
     end
 
     table.insert(route, { "/*", http_upstream({ callback = on_http_channels }) })
