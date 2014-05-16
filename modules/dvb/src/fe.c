@@ -465,18 +465,19 @@ void fe_loop(dvb_fe_t *fe, int is_data)
     }
     else
     {
-        switch(fe->do_retune) {
-            case 0:
-                fe_check_status(fe);
-                break;
-            case 1:
-                if(!fe->is_started)
-                    fe_check_status(fe);
-                fe_tune(fe);
-                break;
-            default:
-                --fe->do_retune;
-                break;
-        }
+        if(fe->do_retune == 0)
+            fe_check_status(fe);
+    }
+
+    switch(fe->do_retune)
+    {
+        case 0:
+            break;
+        case 1:
+            fe_tune(fe);
+            break;
+        default:
+            --fe->do_retune;
+            break;
     }
 }
