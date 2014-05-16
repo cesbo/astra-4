@@ -587,6 +587,7 @@ options = {
             return -1
         end
         on_sighup()
+        return 0
     end,
 }
 
