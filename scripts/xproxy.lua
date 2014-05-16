@@ -151,6 +151,30 @@ function on_http_stat(server, client, request)
     })
 end
 
+function on_http_playlist(server, client, request)
+    if not request then return nil end
+
+    if not playlist_request then
+        server:abort(client, 404)
+        return
+    end
+
+    local content_type, content = playlist_request(request)
+    if not content_type then
+        server:abort(client, 404)
+        return
+    end
+
+    server:send(client, {
+        code = 200,
+        headers = {
+            "Content-Type: " .. content_type,
+            "Connection: close",
+        },
+        content = content,
+    })
+end
+
 -- ooooo  oooo ooooooooo  oooooooooo
 --  888    88   888    88o 888    888
 --  888    88   888    888 888oooo88
@@ -502,21 +526,21 @@ xproxy_allow_http = true
 
 xproxy_pass = nil
 
-xproxy_channels = nil
+xproxy_script = nil
 
 function on_sighup()
-    if xproxy_channels then dofile(xproxy_channels) end
+    if xproxy_script then dofile(xproxy_script) end
 end
 
 options_usage = [[
     -a ADDR             local address to listen
     -p PORT             local port for incoming connections
     -l ADDR             source interface for UDP/RTP streams
-    --channels FILE     file with the channel names
     --no-udp            disable direct access the to UDP source
     --no-rtp            disable direct access the to RTP source
     --no-http           disable direct access the to HTTP source
     --pass              basic authentication for statistics login:password
+    FILE                xProxy configuration file
 ]]
 
 options = {
@@ -537,7 +561,7 @@ options = {
         return 1
     end,
     ["--channels"] = function(idx)
-        xproxy_channels = argv[idx + 1]
+        xproxy_script = argv[idx + 1]
         on_sighup()
         return 1
     end,
@@ -556,6 +580,13 @@ options = {
     ["--pass"] = function(idx)
         xproxy_pass = "Basic " .. base64.encode(argv[idx + 1])
         return 1
+    end,
+    ["*"] = function(idx)
+        xproxy_script = argv[idx]
+        if utils.stat(xproxy_script).type ~= 'file' then
+            return -1
+        end
+        on_sighup()
     end,
 }
 
@@ -578,6 +609,10 @@ function main()
 
     if xproxy_allow_http then
         table.insert(route, { "/http/*", http_upstream({ callback = on_http_http }) })
+    end
+
+    if playlist_request then
+        table.insert(route, { "/playlist", on_http_playlist })
     end
 
     table.insert(route, { "/*", http_upstream({ callback = on_http_channels }) })
