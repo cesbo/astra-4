@@ -13,10 +13,10 @@
 
 #define rol(value, bits) (((value) << (bits)) | ((value) >> (32 - (bits))))
 
-#if 1 /* little-endian */
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 #   define blk0(i) (block->l[i] = (rol(block->l[i],24) & 0xFF00FF00) \
                                 | (rol(block->l[i],8) & 0x00FF00FF))
-#else
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 #   define blk0(i) block->l[i]
 #endif
 

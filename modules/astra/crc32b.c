@@ -5,8 +5,7 @@
  * Dr. Dobb's Journal, May 1992, pp. 64-67
  */
 
-#include "stddef.h"
-#include "stdint.h"
+#include <astra.h>
 
 static uint32_t crc32_table[256] = { 0 };
 
@@ -15,12 +14,12 @@ static void _init_crc32(void)
     int i, j;
     uint32_t c;
 
-#if 0 /* little-endian */
-#   define POLY 0xedb88320
-#   define STEP { c = (c&1) ? ((c >> 1) ^ POLY) : (c >> 1); }
-#else
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 #   define POLY 0x04c11db7
 #   define STEP { c = c & 0x80000000 ? (c << 1) ^ POLY : (c << 1); }
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#   define POLY 0xedb88320
+#   define STEP { c = (c&1) ? ((c >> 1) ^ POLY) : (c >> 1); }
 #endif
 
     for(i = 0; i < 256; ++i)
@@ -39,10 +38,10 @@ uint32_t crc32b(const uint8_t *buffer, int size)
     if(!crc32_table[0])
         _init_crc32();
 
-#if 0 /* little-endian */
-#   define ESTEP (crc >> 8) ^ crc32_table[(crc ^ *buffer) & 0xFF]
-#else
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 #   define ESTEP (crc << 8) ^ crc32_table[(crc >> 24) ^ *buffer]
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#   define ESTEP (crc >> 8) ^ crc32_table[(crc ^ *buffer) & 0xFF]
 #endif
 
 #define STEP { crc = ESTEP; ++buffer; --size; }

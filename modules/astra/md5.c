@@ -41,9 +41,10 @@
  * x86/x64 allows us to do 4-byte loads on non 4-byte aligned addresses,
  * and on PPC we do 1-byte loads anyway.
  */
-#if 1
+
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 #   define FETCH_32(p) (*(const uint32_t *)(p))
-#else
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 #   define FETCH_32(p)                                                      \
                        (((uint32_t)*((const uint8_t *)(p))) |             \
                        (((uint32_t)*((const uint8_t *)(p) + 1)) << 8) |   \
