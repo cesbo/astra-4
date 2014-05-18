@@ -771,8 +771,11 @@ static void on_read(void *arg)
         lua_getfield(lua, headers, "content-length");
         if(lua_isnumber(lua, -1))
         {
-            mod->is_content_length = true;
             mod->chunk_left = lua_tonumber(lua, -1);
+            if(mod->chunk_left > 0)
+            {
+                mod->is_content_length = true;
+            }
         }
         lua_pop(lua, 1); // content-length
 
@@ -1148,7 +1151,7 @@ static void module_init(module_data_t *mod)
     module_option_number("port", &mod->config.port);
 
     mod->config.path = __default_path;
-    module_option_string("path", &mod->config.path, NULL);
+    module_option_string(__path, &mod->config.path, NULL);
 
     lua_getfield(lua, 2, __callback);
     asc_assert(lua_isfunction(lua, -1), MSG("option 'callback' is required"));

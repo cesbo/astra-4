@@ -347,11 +347,14 @@ static void on_client_read(void *arg)
         lua_getfield(lua, headers, "content-length");
         if(lua_isnumber(lua, -1))
         {
-            if(client->content)
-                string_buffer_free(client->content);
-            client->content = string_buffer_alloc();
-            client->is_content_length = true;
             client->chunk_left = lua_tonumber(lua, -1);
+            if(client->chunk_left > 0)
+            {
+                if(client->content)
+                    string_buffer_free(client->content);
+                client->content = string_buffer_alloc();
+                client->is_content_length = true;
+            }
         }
         lua_pop(lua, 1); // content-length
 
