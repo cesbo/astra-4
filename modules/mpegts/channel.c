@@ -102,12 +102,11 @@ static void stream_reload(module_data_t *mod)
             module_stream_demux_leave_pid(mod, __i);
     }
 
-    mod->stream[0] = MPEGTS_PACKET_PAT;
-
     mod->pat->crc32 = 0;
     mod->cat->crc32 = 0;
     mod->pmt->crc32 = 0;
 
+    mod->stream[0] = MPEGTS_PACKET_PAT;
     module_stream_demux_join_pid(mod, 0x00);
 
     if(mod->config.cas)
@@ -199,8 +198,8 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         if(pnr == mod->config.pnr)
         {
             const uint16_t pid = PAT_ITEM_GET_PID(psi, pointer);
-            module_stream_demux_join_pid(mod, pid);
             mod->stream[pid] = MPEGTS_PACKET_PMT;
+            module_stream_demux_join_pid(mod, pid);
             mod->pmt->pid = pid;
             mod->pmt->crc32 = 0;
             break;
@@ -425,6 +424,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         memcpy(&mod->custom_pmt->buffer[skip], pointer, 5);
         skip += 5;
 
+        mod->stream[pid] = MPEGTS_PACKET_PES;
         module_stream_demux_join_pid(mod, pid);
 
         if(pid == pcr_pid)
@@ -504,7 +504,10 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     mod->custom_pmt->buffer_size = skip + CRC32_SIZE;
 
     if(join_pcr)
+    {
+        mod->stream[pcr_pid] = MPEGTS_PACKET_PES;
         module_stream_demux_join_pid(mod, pcr_pid);
+    }
 
     if(mod->map)
     {
@@ -662,8 +665,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 
     switch(mod->stream[pid])
     {
-        case MPEGTS_PACKET_UNKNOWN:
-        case MPEGTS_PACKET_CA:
+        case MPEGTS_PACKET_PES:
             break;
         case MPEGTS_PACKET_PAT:
             mpegts_psi_mux(mod->pat, ts, on_pat, mod);
@@ -684,8 +686,8 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
                 break;
             mpegts_psi_mux(mod->eit, ts, on_eit, mod);
             return;
-        case MPEGTS_PACKET_TDT:
-            break;
+        case MPEGTS_PACKET_UNKNOWN:
+            return;
         default:
             break;
     }
@@ -792,6 +794,7 @@ static void module_init(module_data_t *mod)
             lua_foreach(lua, -2)
             {
                 const int pid = lua_tonumber(lua, -1);
+                mod->stream[pid] = MPEGTS_PACKET_PES;
                 module_stream_demux_join_pid(mod, pid);
             }
         }

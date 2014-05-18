@@ -77,6 +77,7 @@ struct module_data_t
     mpegts_psi_t *pmt;
     mpegts_psi_t *sdt;
 
+    int pmt_ready;
     int pmt_count;
     pmt_checksum_t *pmt_checksum_list;
 
@@ -156,7 +157,9 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     lua_pushnumber(lua, mod->tsid);
     lua_setfield(lua, -2, __tsid);
 
-    int programs_count = 1;
+    mod->pmt_ready = 0;
+    mod->pmt_count = 0;
+
     lua_newtable(lua);
     const uint8_t *pointer = PAT_ITEMS_FIRST(psi);
     while(!PAT_ITEMS_EOL(psi, pointer))
@@ -164,7 +167,8 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         const uint16_t pnr = PAT_ITEM_GET_PNR(psi, pointer);
         const uint16_t pid = PAT_ITEM_GET_PID(psi, pointer);
 
-        lua_pushnumber(lua, programs_count++);
+        const int item_count = luaL_len(lua, -1) + 1;
+        lua_pushnumber(lua, item_count);
         lua_newtable(lua);
         lua_pushnumber(lua, pnr);
         lua_setfield(lua, -2, __pnr);
@@ -172,13 +176,20 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         lua_setfield(lua, -2, __pid);
         lua_settable(lua, -3); // append to the "programs" table
 
-        mod->stream[pid].type = (pnr) ? MPEGTS_PACKET_PMT : MPEGTS_PACKET_NIT;
+        if(pnr != 0)
+        {
+            mod->stream[pid].type = MPEGTS_PACKET_PMT;
+            ++ mod->pmt_count;
+        }
+        else
+        {
+            mod->stream[pid].type = MPEGTS_PACKET_NIT;
+        }
 
         PAT_ITEMS_NEXT(psi, pointer);
     }
     lua_setfield(lua, -2, "programs");
 
-    mod->pmt_count = programs_count;
     if(mod->pmt_checksum_list)
         free(mod->pmt_checksum_list);
     mod->pmt_checksum_list = calloc(mod->pmt_count, sizeof(pmt_checksum_t));
@@ -278,11 +289,22 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     // check changes
     for(int i = 0; i < mod->pmt_count; ++i)
     {
-        if(mod->pmt_checksum_list[i].pnr == pnr || mod->pmt_checksum_list[i].pnr == 0)
+        if(mod->pmt_checksum_list[i].pnr == pnr)
         {
             if(mod->pmt_checksum_list[i].crc == crc32)
                 return;
 
+            -- mod->pmt_ready;
+            mod->pmt_checksum_list[i].pnr = 0;
+            break;
+        }
+    }
+
+    for(int i = 0; i < mod->pmt_count; ++i)
+    {
+        if(mod->pmt_checksum_list[i].pnr == 0)
+        {
+            ++ mod->pmt_ready;
             mod->pmt_checksum_list[i].pnr = pnr;
             mod->pmt_checksum_list[i].crc = crc32;
             break;
@@ -595,6 +617,15 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     }
 }
 
+/*
+ *  oooooooo8 ooooooooooo   o   ooooooooooo
+ * 888        88  888  88  888  88  888  88
+ *  888oooooo     888     8  88     888
+ *         888    888    8oooo88    888
+ * o88oooo888    o888o o88o  o888o o888o
+ *
+ */
+
 static void on_check_stat(void *arg)
 {
     module_data_t *mod = arg;
@@ -614,7 +645,7 @@ static void on_check_stat(void *arg)
     {
         analyze_item_t *item = &mod->stream[i];
 
-        if(item->type == MPEGTS_PACKET_UNKNOWN && item->packets == 0)
+        if(item->packets == 0)
             continue;
 
         if(!mod->cc_check)
@@ -675,12 +706,15 @@ static void on_check_stat(void *arg)
     }
     lua_setfield(lua, -2, "total");
 
+    if(!mod->cc_check)
+        mod->cc_check = true;
+
     if(bitrate < 32)
         on_air = false;
     if(mod->cc_limit > 0 && cc_errors >= (uint32_t)mod->cc_limit)
         on_air = false;
-    if(!mod->cc_check)
-        mod->cc_check = true;
+    if(mod->pmt_ready == 0 || mod->pmt_ready != mod->pmt_count)
+        on_air = false;
 
     lua_pushboolean(lua, on_air);
     lua_setfield(lua, -2, "on_air");
