@@ -270,8 +270,6 @@ static void on_close(void *arg)
         string_buffer_free(mod->content);
         mod->content = NULL;
     }
-
-    lua_gc(lua, LUA_GCCOLLECT, 0);
 }
 
 /*

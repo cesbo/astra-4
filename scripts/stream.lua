@@ -367,6 +367,8 @@ function start_reserve(channel_data)
             channel_data.input[input_id] = { on_air = false, }
         end
     end
+
+    collectgarbage()
 end
 
 -- ooooo         ooooooooo  ooooo  oooo oooooooooo
@@ -602,14 +604,12 @@ input_list.http = function(channel_data, input_id)
     {
         interval = 5,
         callback = function(self)
-                instance.timeout:close()
-                instance.timeout = nil
+            instance.timeout:close()
+            instance.timeout = nil
 
-                if instance.request then instance.request:close() end
-                instance.request = http_request(http_conf)
-
-                collectgarbage()
-            end
+            if instance.request then instance.request:close() end
+            instance.request = http_request(http_conf)
+        end
     }
 
     http_conf.callback = function(self, response)
@@ -712,8 +712,7 @@ function init_input(channel_data, input_id)
     end
 
     if input_conf.pnr ~= nil or input_conf.pid ~= nil then
-        local channel_conf =
-        {
+        local channel_conf = {
             name = input_data.name,
             upstream = input_data.tail:stream(),
         }
@@ -787,8 +786,8 @@ function init_input(channel_data, input_id)
             name = input_data.name,
             cc_limit = cc_limit,
             callback = function(data)
-                    on_analyze(channel_data, input_id, data)
-                end
+                on_analyze(channel_data, input_id, data)
+            end
         })
     end
 end
@@ -813,7 +812,6 @@ function kill_input(channel_data, input_id)
     input_data.decrypt = nil
     input_data.tail = nil
     channel_data.input[input_id] = nil
-    collectgarbage()
 end
 
 --   ooooooo            ooooo  oooo ooooooooo  oooooooooo
@@ -978,6 +976,7 @@ function on_http_request(server, client, request)
                     kill_input(channel_data, input_id)
                 end
                 channel_data.input = {}
+                collectgarbage()
             end
             client_data.channel_data = nil
         end
@@ -1287,7 +1286,6 @@ function kill_channel(channel_data)
     channel_data.tail = nil
 
     table.remove(channel_list, channel_id)
-
     collectgarbage()
 end
 

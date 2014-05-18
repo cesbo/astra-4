@@ -200,6 +200,7 @@ function on_http_udp(server, client, request)
                 if udp_instance.clients == 0 then
                     udp_instance.instance = nil
                     instance_list[client_data.input_id] = nil
+                    collectgarbage()
                 end
             end
             client_list[client_data.client_id] = nil
@@ -336,14 +337,12 @@ function on_http_http_callback(self, response)
     local timer_conf = {
         interval = 5,
         callback = function(self)
-                instance.timeout:close()
-                instance.timeout = nil
+            instance.timeout:close()
+            instance.timeout = nil
 
-                if instance.request then instance.request:close() end
-                instance.request = http_request(http_conf)
-
-                collectgarbage()
-            end
+            if instance.request then instance.request:close() end
+            instance.request = http_request(http_conf)
+        end
     }
 
     if not response then
@@ -410,6 +409,7 @@ function on_http_http(server, client, request)
                     end
                     instance.transmit = nil
                     instance_list[client_data.input_id] = nil
+                    collectgarbage()
                 end
             end
             client_list[client_data.client_id] = nil

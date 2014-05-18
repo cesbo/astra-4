@@ -187,9 +187,9 @@ static int module_call(module_data_t *mod)
         if(client->response)
         {
             lua_rawgeti(lua, LUA_REGISTRYINDEX, client->response->mod->idx_callback);
-            lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_server);
-            lua_pushlightuserdata(lua, client);
-            lua_pushnil(lua);
+            lua_pushvalue(lua, 2);
+            lua_pushvalue(lua, 3);
+            lua_pushvalue(lua, 4);
             lua_call(lua, 3, 0);
 
             module_stream_destroy(client->response);
@@ -209,9 +209,9 @@ static int module_call(module_data_t *mod)
     client->on_send = on_upstream_send;
 
     lua_rawgeti(lua, LUA_REGISTRYINDEX, client->response->mod->idx_callback);
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_server);
-    lua_pushlightuserdata(lua, client);
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_request);
+    lua_pushvalue(lua, 2);
+    lua_pushvalue(lua, 3);
+    lua_pushvalue(lua, 4);
     lua_call(lua, 3, 0);
 
     return 0;
