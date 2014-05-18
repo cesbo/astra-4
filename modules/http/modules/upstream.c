@@ -166,10 +166,14 @@ static void on_upstream_send(void *arg)
     client->on_read = on_upstream_read;
     client->on_ready = NULL;
 
+    const char *content_type = lua_isstring(lua, 4)
+                             ? lua_tostring(lua, 4)
+                             : "application/octet-stream";
+
     http_response_code(client, 200, NULL);
     http_response_header(client, "Cache-Control: no-cache");
     http_response_header(client, "Pragma: no-cache");
-    http_response_header(client, "Content-Type: application/octet-stream");
+    http_response_header(client, "Content-Type: %s", content_type);
     http_response_header(client, "Connection: close");
     http_response_send(client);
 }
