@@ -288,7 +288,11 @@ static void on_client_read(void *arg)
             skip = path_skip;
             while(path_skip < m[2].eo && client->buffer[path_skip] != '/')
                 ++path_skip;
-            uri_host = strndup(&client->buffer[skip], path_skip - skip);
+
+            const size_t uri_host_size = path_skip - skip;
+            uri_host = malloc(uri_host_size + 1);
+            memcpy(uri_host, &client->buffer[skip], uri_host_size);
+            uri_host[uri_host_size] = 0;
         }
 
         skip = path_skip;
