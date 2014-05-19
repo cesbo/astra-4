@@ -206,6 +206,7 @@ static void on_client_read(void *arg)
         return;
     }
 
+    char *uri_host = NULL;
     size_t eoh = 0; // end of headers
     size_t skip = 0;
     client->buffer_skip += size;
@@ -234,8 +235,6 @@ static void on_client_read(void *arg)
     if(client->status == 1)
     {
         parse_match_t m[4];
-
-        skip = 0;
 
 /*
  *     oooooooooo  ooooooooooo  ooooooo  ooooo  oooo ooooooooooo  oooooooo8 ooooooooooo
@@ -273,10 +272,30 @@ static void on_client_read(void *arg)
         client->is_head = (strcmp(method, "HEAD") == 0);
 
         size_t path_skip = m[2].so;
+        if(client->buffer[path_skip] != '/' && client->buffer[path_skip] != '*')
+        {
+            while(path_skip < m[2].eo && client->buffer[path_skip] != ':')
+                ++path_skip;
+            if(client->buffer[path_skip + 1] != '/' || client->buffer[path_skip + 2] != '/')
+            {
+                asc_log_error(MSG("failed to parse request URI"));
+                lua_pop(lua, 2); // query + request
+                on_client_close(client);
+                return;
+            }
+            path_skip += 3;
+
+            skip = path_skip;
+            while(path_skip < m[2].eo && client->buffer[path_skip] != '/')
+                ++path_skip;
+            uri_host = strndup(&client->buffer[skip], path_skip - skip);
+        }
+
+        skip = path_skip;
         while(path_skip < m[2].eo && client->buffer[path_skip] != '?')
             ++path_skip;
 
-        const bool is_safe = lua_safe_path(&client->buffer[m[2].so], path_skip - m[2].so);
+        const bool is_safe = lua_safe_path(&client->buffer[skip], path_skip - skip);
         const char *path = lua_tostring(lua, -1);
         lua_setfield(lua, request, __path);
 
@@ -303,7 +322,7 @@ static void on_client_read(void *arg)
         lua_pushlstring(lua, &client->buffer[m[3].so], m[3].eo - m[3].so);
         lua_setfield(lua, request, __version);
 
-        skip += m[0].eo;
+        skip = m[0].eo;
 
 /*
  *     ooooo ooooo ooooooooooo      o      ooooooooo  ooooooooooo oooooooooo   oooooooo8
@@ -340,6 +359,14 @@ static void on_client_read(void *arg)
             lua_settable(lua, headers);
 
             skip += m[0].eo;
+        }
+
+        if(uri_host)
+        {
+            lua_pushstring(lua, uri_host);
+            lua_setfield(lua, headers, "host");
+            free(uri_host);
+            uri_host = NULL;
         }
 
         lua_getfield(lua, headers, "content-length");
