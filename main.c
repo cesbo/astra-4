@@ -20,18 +20,25 @@
 
 #include <astra.h>
 
-#include <signal.h>
+#ifndef _WIN32
+#   include <signal.h>
+#endif
+
 #include <setjmp.h>
 
 #include "config.h"
 
-static jmp_buf main_loop;
+jmp_buf main_loop;
 bool is_main_loop_idle = true;
 bool is_sighup = false;
 
 void astra_exit(void)
 {
+#ifndef _WIN32
     longjmp(main_loop, 1);
+#else
+    exit(0);
+#endif
 }
 
 void astra_abort(void)
@@ -58,31 +65,49 @@ void astra_reload(void)
     longjmp(main_loop, 2);
 }
 
+#ifndef _WIN32
 static void signal_handler(int signum)
 {
     switch(signum)
     {
-#ifndef _WIN32
         case SIGHUP:
             asc_log_hup();
             is_sighup = true;
             return;
         case SIGPIPE:
             return;
-#endif
         default:
             astra_exit();
     }
 }
+#else
+static bool WINAPI signal_handler(DWORD signum)
+{
+    switch(signum)
+    {
+        case CTRL_C_EVENT:
+            astra_exit();
+            break;
+        case CTRL_BREAK_EVENT:
+            astra_exit();
+            break;
+        default:
+            break;
+    }
+    return true;
+}
+#endif
 
 int main(int argc, const char **argv)
 {
+#ifndef _WIN32
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
-#ifndef _WIN32
     signal(SIGPIPE, signal_handler);
     signal(SIGHUP, signal_handler);
     signal(SIGQUIT, signal_handler);
+#else
+    SetConsoleCtrlHandler((PHANDLER_ROUTINE)signal_handler, true);
 #endif
 
 astra_reload_entry:
