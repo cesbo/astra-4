@@ -204,6 +204,7 @@ function on_http_udp(server, client, request)
                 end
             end
             client_list[client_data.client_id] = nil
+            client_data.client_id = nil
         end
         return
     end
@@ -413,6 +414,7 @@ function on_http_http(server, client, request)
                 end
             end
             client_list[client_data.client_id] = nil
+            client_data.client_id = nil
         end
         return
     end
@@ -547,7 +549,7 @@ options_usage = [[
     --no-udp            disable direct access the to UDP source
     --no-rtp            disable direct access the to RTP source
     --no-http           disable direct access the to HTTP source
-    --pass              basic authentication for statistics login:password
+    --pass              basic authentication for statistics. login:password
     FILE                xProxy configuration file
 ]]
 
