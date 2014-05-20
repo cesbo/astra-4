@@ -490,13 +490,21 @@ static int json_load(lua_State *L)
     struct stat sb;
     fstat(fd, &sb);
     char *json = malloc(sb.st_size);
-    const int r = read(fd, json, sb.st_size);
-    if(r != sb.st_size)
+    off_t skip = 0;
+    while(skip != sb.st_size)
     {
-        asc_log_error("[json] json.load(%s) failed to read [%s]", filename, strerror(errno));
-        lua_pushnil(L);
+        const ssize_t r = read(fd, &json[skip], sb.st_size - skip);
+        if(r == -1)
+        {
+            asc_log_error("[json] json.load(%s) failed to read [%s]", filename, strerror(errno));
+            lua_pushnil(L);
+            skip = 0;
+            break;
+        }
+        skip += sb.st_size;
     }
-    else
+
+    if(skip)
     {
         const int top = lua_gettop(L);
         scan_json(L, json, 0);
