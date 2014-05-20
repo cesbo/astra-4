@@ -161,7 +161,7 @@ void asc_event_core_loop(void)
         asc_event_t *event = ed->udata;
         const bool is_rd = (ed->data > 0) && (ed->filter == EVFILT_READ);
         const bool is_wr = (ed->data > 0) && (ed->filter == EVFILT_WRITE);
-        const bool is_er = (ed->flags & ~EV_ADD);
+        const bool is_er = (ed->flags & ~EV_ADD) && (!is_rd || is_wr);
 #else
         asc_event_t *event = ed->data.ptr;
         const bool is_rd = ed->events & EPOLLIN;
