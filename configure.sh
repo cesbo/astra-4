@@ -54,7 +54,7 @@ set_cc()
 {
     ARG_CC=1
     APP_C="$1"
-    APP_STRIP=`echo $1 | sed 's/-gcc$/-strip/'`
+    APP_STRIP=`echo $1 | sed 's/gcc$/strip/'`
 }
 
 while [ $# -ne 0 ] ; do
