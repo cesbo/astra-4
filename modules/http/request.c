@@ -926,16 +926,12 @@ static void on_read(void *arg)
 
         if(mod->chunk_left > tail)
         {
-            string_buffer_addlstring(  mod->content
-                                     , &mod->buffer[skip]
-                                     , mod->buffer_skip);
+            string_buffer_addlstring(mod->content, &mod->buffer[skip], tail);
             mod->chunk_left -= tail;
         }
         else
         {
-            string_buffer_addlstring(  mod->content
-                                     , &mod->buffer[skip]
-                                     , mod->chunk_left);
+            string_buffer_addlstring(mod->content, &mod->buffer[skip], mod->chunk_left);
             mod->chunk_left = 0;
 
             lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_response);
