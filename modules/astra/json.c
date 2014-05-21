@@ -504,13 +504,12 @@ static int json_load(lua_State *L)
         skip += sb.st_size;
     }
 
+    const int top = lua_gettop(L);
     if(skip)
-    {
-        const int top = lua_gettop(L);
         scan_json(L, json, 0);
-        if(top == lua_gettop(L))
-            lua_pushnil(L);
-    }
+
+    if(top == lua_gettop(L))
+        lua_pushnil(L);
 
     close(fd);
     free(json);
@@ -545,9 +544,9 @@ static int json_save(lua_State *L)
     const ssize_t w = write(fd, json, json_size);
     if(w != (ssize_t)json_size)
         asc_log_error("[json] json.save(%s) failed to write [%s]", filename, strerror(errno));
-    free(json);
 
     close(fd);
+    free(json);
 
     return 0;
 }
