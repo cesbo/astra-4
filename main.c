@@ -156,6 +156,11 @@ astra_reload_entry:
     }
     lua_setglobal(lua, "argv");
 
+#define GC_TIMEOUT (1 * 1000 * 1000)
+
+    uint64_t current_time = asc_utime();
+    uint64_t gc_check_timeout = current_time;
+
     /* start */
     const int main_loop_status = setjmp(main_loop);
     if(main_loop_status == 0)
@@ -215,7 +220,16 @@ astra_reload_entry:
             }
 
             if(is_main_loop_idle)
+            {
+                current_time = asc_utime();
+                if((current_time - gc_check_timeout) >= GC_TIMEOUT)
+                {
+                    gc_check_timeout = current_time;
+                    lua_gc(lua, LUA_GCCOLLECT, 0);
+                }
+
                 asc_usleep(1000);
+            }
         }
     }
 
