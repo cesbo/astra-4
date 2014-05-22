@@ -812,6 +812,8 @@ function kill_input(channel_data, input_id)
     input_data.decrypt = nil
     input_data.tail = nil
     channel_data.input[input_id] = nil
+
+    collectgarbage()
 end
 
 --   ooooooo            ooooo  oooo ooooooooo  oooooooooo
