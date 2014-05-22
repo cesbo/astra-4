@@ -791,14 +791,12 @@ static void on_read(void *arg)
             mod->content = NULL;
         }
 
-        if(mod->is_head)
-            ;
-        else if(mod->is_content_length || mod->is_chunked)
+        if(mod->is_content_length || mod->is_chunked)
             mod->content = string_buffer_alloc();
 
         lua_pop(lua, 2); // headers + response
 
-        if(   (mod->content == NULL)
+        if(   (mod->is_head)
            || (mod->status_code >= 100 && mod->status_code < 200)
            || (mod->status_code == 204)
            || (mod->status_code == 304))
