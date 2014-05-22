@@ -218,6 +218,7 @@ function on_analyze(instance, data)
         local bitrate = 0
         local cc_error = ""
         local pes_error = ""
+        local sc_error = ""
         for _,item in pairs(data.analyze) do
             bitrate = bitrate + item.bitrate
 
@@ -228,10 +229,22 @@ function on_analyze(instance, data)
             if item.pes_error > 0 then
                 pes_error = pes_error .. tostring(item.pid) .. "=" .. tostring(item.pes_error) .. " "
             end
+
+            if item.sc_error > 0 then
+                sc_error = sc_error .. tostring(item.pid) .. "=" .. tostring(item.sc_error) .. " "
+            end
         end
         log.info("Bitrate: " .. tostring(bitrate) .. " Kbit/s")
-        if #cc_error > 0 then log.error("CC: " .. cc_error) end
-        if #pes_error > 0 then log.error("PES: " .. pes_error) end
+        if #cc_error > 0 then
+            log.error("CC: " .. cc_error)
+        end
+        if #sc_error > 0 then
+            log.error("Scrambled: " .. sc_error)
+        else
+            if #pes_error > 0 then
+                log.error("PES: " .. pes_error)
+            end
+        end
     end
 end
 
