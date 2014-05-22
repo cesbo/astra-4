@@ -185,10 +185,10 @@ end
 
 --
 
-local ifaddrs
+ifaddrs = nil
 if utils.ifaddrs then ifaddrs = utils.ifaddrs() end
 
-local parse_addr = {}
+parse_addr = {}
 
 parse_addr.dvb = function(addr, result)
     if _G[addr] then
@@ -377,10 +377,10 @@ end
 --  888           888    888   88888     888    888
 -- o888o         o888ooo88      888     o888ooo888
 
-local dvb_list
+dvb_list = nil
 
-local input_list = {}
-local kill_input_list = {}
+input_list = {}
+kill_input_list = {}
 
 function dvb_tune(dvb_conf)
     if dvb_conf.mac then
@@ -388,7 +388,7 @@ function dvb_tune(dvb_conf)
             if dvbls then
                 dvb_list = dvbls()
             else
-                log.error("module dvbls is required")
+                log.error("[stream.lua] module dvbls is required")
                 astra.abort()
             end
         end
@@ -399,11 +399,7 @@ function dvb_tune(dvb_conf)
                          ":" .. adapter_info.device .. "] " ..
                          "selected by mac:" .. adapter_info.mac)
                 dvb_conf.adapter = adapter_info.adapter
-                if adapter_info.device > 0 then
-                    dvb_conf.device = adapter_info.device
-                else
-                    dvb_conf.device = nil
-                end
+                dvb_conf.device = adapter_info.device
                 dvb_conf.mac = nil
                 break
             end
@@ -468,7 +464,7 @@ end
 --  888           888    88   888    888 888
 -- o888o           888oo88   o888ooo88  o888o
 
-local udp_instance_list = {}
+udp_instance_list = {}
 
 input_list.udp = function(channel_data, input_id)
     local input_conf = channel_data.config.input[input_id]
@@ -537,7 +533,7 @@ end
 --  888           888   888      888         888      888
 -- o888o         o888o o888o    o888o       o888o    o888o
 
-local http_instance_list = {}
+http_instance_list = {}
 
 function http_parse_location(self, response)
     if not response.headers then return nil end
@@ -839,8 +835,8 @@ end
 -- 888o   o888           888    88   888    888 888
 --   88ooo88              888oo88   o888ooo88  o888o
 
-local output_list = {}
-local kill_output_list = {}
+output_list = {}
+kill_output_list = {}
 
 output_list.udp = function(channel_data, output_id)
     local output_conf = channel_data.config.output[output_id]
@@ -1195,7 +1191,7 @@ end
 -- 888o     oo  888   888    8oooo88    88   8888   88   8888   888    oo   888      o
 --  888oooo88  o888o o888o o88o  o888o o88o    88  o88o    88  o888ooo8888 o888ooooo88
 
-local channel_list = {}
+channel_list = {}
 
 function make_channel(channel_conf)
     if not channel_conf.name then
