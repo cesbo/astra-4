@@ -537,6 +537,8 @@ end
 --  888           888   888      888         888      888
 -- o888o         o888o o888o    o888o       o888o    o888o
 
+local http_instance_list = {}
+
 function http_parse_location(self, response)
     if not response.headers then return nil end
     local location = response.headers['location']
@@ -579,7 +581,16 @@ input_list.http = function(channel_data, input_id)
     local input_conf = channel_data.config.input[input_id]
     local input_data = channel_data.input[input_id]
 
-    local instance = {}
+    local addr = input_conf.host .. ":" .. input_conf.port .. input_conf.path
+    local instance = http_instance_list[addr]
+    if instance then
+        instance.count = instance.count + 1
+        return instance
+    end
+
+    instance = { count = 1, }
+    http_instance_list[addr] = instance
+
     local http_conf = {}
 
     http_conf.host = input_conf.host
@@ -667,9 +678,13 @@ input_list.http = function(channel_data, input_id)
 end
 
 kill_input_list.http = function(channel_data, input_id)
-    local input_data = channel_data.input[input_id]
+    local input_conf = channel_data.config.input[input_id]
 
-    local instance = input_data.source
+    local addr = input_conf.host .. ":" .. input_conf.port .. input_conf.path
+    local instance = http_instance_list[addr]
+
+    instance.count = instance.count - 1
+    if instance.count > 0 then return nil end
 
     if instance.timeout then
         instance.timeout:close()
@@ -680,6 +695,8 @@ kill_input_list.http = function(channel_data, input_id)
         instance.request:close()
         instance.request = nil
     end
+
+    http_instance_list[addr] = nil
 end
 
 -- ooooo oooo   oooo oooooooooo ooooo  oooo ooooooooooo
