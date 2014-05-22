@@ -253,13 +253,19 @@ function on_http_udp(server, client, request)
         if b then
             udp_input_conf.port = tonumber(path:sub(b + 1))
             if not udp_input_conf.port then
-                server:abort(client, 400)
+                server:abort(client, 404)
                 return
             end
             udp_input_conf.addr = path:sub(1, b - 1)
         else
             udp_input_conf.port = 1234
             udp_input_conf.addr = path
+        end
+
+        local _,_,o1,o2,o3,o4 = udp_input_conf.addr:find("(%d+)%.(%d+)%.(%d+)%.(%d+)")
+        if not o4 then
+            server:abort(client, 404)
+            return
         end
 
         local instance_id = udp_input_conf.addr .. ":" .. udp_input_conf.port
