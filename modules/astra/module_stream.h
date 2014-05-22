@@ -34,8 +34,7 @@ struct module_stream_t
     // stream
     void (*on_ts)(module_data_t *mod, const uint8_t *ts);
 
-    TAILQ_ENTRY(module_stream_t) entries;
-    TAILQ_HEAD(a_list_t, module_stream_t) childs;
+    asc_list_t *childs;
 
     // demux
     void (*join_pid)(module_data_t *mod, uint16_t pid);
