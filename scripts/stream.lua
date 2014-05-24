@@ -1025,7 +1025,7 @@ function on_http_request(server, client, request)
         channel_data.clients = channel_data.clients + 1
         channel_data.http_client_list[client_data.client_id] = true
 
-        server:send(client, channel_data.tail:stream())
+        server:send(client, output_conf.upstream)
     end
 
     http_allow_client()
