@@ -190,12 +190,18 @@ void mpegts_desc_to_lua(const uint8_t *desc)
 
             desc += 3;
             // service provider
-            push_description_text(desc);
+            if(desc[0] > 0)
+                push_description_text(desc);
+            else
+                lua_pushstring(lua, "");
             lua_setfield(lua, -2, "service_provider");
 
             desc += desc[0] + 1;
             // service name
-            push_description_text(desc);
+            if(desc[0] > 0)
+                push_description_text(desc);
+            else
+                lua_pushstring(lua, "");
             lua_setfield(lua, -2, "service_name");
 
             break;
