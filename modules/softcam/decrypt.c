@@ -298,23 +298,26 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 
     psi->crc32 = crc32;
 
-    const uint8_t *pointer = PAT_ITEMS_FIRST(psi);
-    while(!PAT_ITEMS_EOL(psi, pointer))
+    const uint8_t *pointer;
+    PAT_ITEMS_FOREACH(psi, pointer)
     {
         const uint16_t pnr = PAT_ITEM_GET_PNR(psi, pointer);
-        if(pnr)
+        if(pnr == 0)
+            continue; // skip NIT
+
+        const uint16_t pid = PAT_ITEM_GET_PID(psi, pointer);
+        if(mod->stream[pid])
+            asc_log_error(MSG("Skip PMT pid:%d"), pid);
+        else
         {
             mod->__decrypt.pnr = pnr;
             if(mod->__decrypt.cas_pnr == 0)
                 mod->__decrypt.cas_pnr = pnr;
-            const uint16_t pmt_pid = PAT_ITEM_GET_PID(psi, pointer);
-            if(!mod->stream[pmt_pid])
-                mod->stream[pmt_pid] = mpegts_psi_init(MPEGTS_PACKET_PMT, pmt_pid);
-            else
-                asc_log_warning(MSG("Skip PMT pid:%d"), pmt_pid);
-            break;
+
+            mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_PMT, pid);
         }
-        PAT_ITEMS_NEXT(psi, pointer);
+
+        break;
     }
 
     if(mod->__decrypt.cam && mod->__decrypt.cam->is_ready)
@@ -351,11 +354,10 @@ static bool __cat_check_desc(module_data_t *mod, const uint8_t *desc)
         }
     }
     else
-    {
         mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_CA, pid);
-        if(mod->disable_emm || mod->__decrypt.cam->disable_emm)
-            return false;
-    }
+
+    if(mod->disable_emm || mod->__decrypt.cam->disable_emm)
+        return false;
 
     if(   mod->__decrypt.cas
        && DESC_CA_CAID(desc) == mod->caid
@@ -482,7 +484,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     const uint32_t crc32 = PSI_GET_CRC32(psi);
     if(crc32 == psi->crc32)
     {
-        mpegts_psi_demux(mod->pmt
+        mpegts_psi_demux(  mod->pmt
                          , (void (*)(void *, const uint8_t *))__module_stream_send
                          , &mod->__stream);
         return;
@@ -584,7 +586,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     PSI_SET_SIZE(mod->pmt);
     PSI_SET_CRC32(mod->pmt);
 
-    mpegts_psi_demux(mod->pmt
+    mpegts_psi_demux(  mod->pmt
                      , (void (*)(void *, const uint8_t *))__module_stream_send
                      , &mod->__stream);
 }
@@ -788,6 +790,8 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
     const uint8_t sc = TS_SC(dst);
     if(sc)
     {
+        dst[3] &= ~0xC0;
+
         int hdr_size = 0;
 
         switch(TS_AF(ts))
@@ -831,7 +835,6 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
                 ca_stream->parity = sc;
             }
 
-            dst[3] &= ~0xC0;
             ca_stream->batch[ca_stream->batch_skip].data = &dst[hdr_size];
             ca_stream->batch[ca_stream->batch_skip].len = TS_PACKET_SIZE - hdr_size;
             ++ca_stream->batch_skip;
@@ -1062,7 +1065,10 @@ static void module_destroy(module_data_t *mod)
     for(int i = 0; i < MAX_PID; ++i)
     {
         if(mod->stream[i])
+        {
             mpegts_psi_destroy(mod->stream[i]);
+            mod->stream[i] = NULL;
+        }
     }
     mpegts_psi_destroy(mod->pmt);
 }

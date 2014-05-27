@@ -16,6 +16,8 @@
 -- You should have received a copy of the GNU General Public License
 -- along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+http_user_agent = "Astra"
+
 --      o      oooo   oooo     o      ooooo    ooooo  oooo ooooooooooo ooooooooooo
 --     888      8888o  88     888      888       888  88   88    888    888    88
 --    8  88     88 888o88    8  88     888         888         888      888ooo8
@@ -595,7 +597,7 @@ input_list.http = function(channel_data, input_id)
 
     http_conf.headers =
     {
-        "User-Agent: Astra",
+        "User-Agent: " .. http_user_agent,
         "Host: " .. input_conf.host .. ":" .. input_conf.port,
         "Connection: close",
     }

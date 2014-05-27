@@ -106,7 +106,7 @@ static void stream_reload(module_data_t *mod)
     mod->cat->crc32 = 0;
     mod->pmt->crc32 = 0;
 
-    mod->stream[0] = MPEGTS_PACKET_PAT;
+    mod->stream[0x00] = MPEGTS_PACKET_PAT;
     module_stream_demux_join_pid(mod, 0x00);
 
     if(mod->config.cas)
@@ -169,7 +169,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        asc_log_error(MSG("PAT checksum error"));
+        asc_log_error(MSG("PAT checksum mismatch"));
         return;
     }
 
@@ -358,7 +358,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
     {
-        asc_log_error(MSG("PMT checksum error"));
+        asc_log_error(MSG("PMT checksum mismatch"));
         return;
     }
 
