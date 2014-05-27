@@ -18,6 +18,8 @@
 
 input = { parse = {}, start = {}, stop = {}, }
 
+arg_n = nil
+
 -- ooooo  oooo oooooooooo  ooooo
 --  888    88   888    888  888
 --  888    88   888oooo88   888
@@ -245,6 +247,10 @@ function on_analyze(instance, data)
                 log.error("PES: " .. pes_error)
             end
         end
+        if arg_n then
+            arg_n = arg_n - 1
+            if arg_n == 0 then astra.exit() end
+        end
     end
 end
 
@@ -437,6 +443,7 @@ function stop_analyze(instance)
 end
 
 options_usage = [[
+    -n S                stop analyzer and exit after S seconds
     ADDRESS             source address. Available formats:
 
 UDP:
@@ -465,6 +472,10 @@ HTTP:
 input_url = nil
 
 options = {
+    ["-n"] = function(idx)
+        arg_n = tonumber(argv[idx + 1])
+        return 1
+    end,
     ["*"] = function(idx)
         input_url = argv[idx]
         return 0
