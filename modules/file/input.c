@@ -66,6 +66,7 @@ struct module_data_t
     uint32_t buffer_end;
 
     uint64_t pcr;
+    uint16_t pcr_pid;
 };
 
 /* module code */
@@ -77,11 +78,19 @@ static bool seek_pcr(module_data_t *mod, size_t *block_size, uint64_t *pcr)
 
     while(count < mod->buffer_end)
     {
-        if(mpegts_pcr_check(&mod->buffer[mod->m2ts_header + count]))
+        const uint8_t *ts = &mod->buffer[mod->m2ts_header + count];
+        if(mpegts_pcr_check(ts))
         {
-            *pcr = mpegts_pcr(&mod->buffer[mod->m2ts_header + count]);
-            *block_size = count - mod->buffer_skip;
-            return true;
+            const uint16_t pid = TS_PID(ts);
+            if(mod->pcr_pid == 0)
+                mod->pcr_pid = pid;
+
+            if(mod->pcr_pid == pid)
+            {
+                *pcr = mpegts_pcr(ts);
+                *block_size = count - mod->buffer_skip;
+                return true;
+            }
         }
         count += packet_size;
     }
