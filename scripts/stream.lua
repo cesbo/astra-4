@@ -608,6 +608,7 @@ input_list.http = function(channel_data, input_id)
     http_conf.stream = true
     if input_conf.sync then http_conf.sync = input_conf.sync end
     if input_conf.buffer_size then http_conf.buffer_size = input_conf.buffer_size end
+    if input_conf.timeout then http_conf.timeout = input_conf.timeout end
 
     local timer_conf =
     {
