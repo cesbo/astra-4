@@ -33,9 +33,13 @@
 
 static void fe_clear(dvb_fe_t *fe)
 {
-    static struct dtv_property clear[] = { { .cmd = DTV_CLEAR } };
-    static struct dtv_properties cmdclear = { .num = 1, .props = clear };
-    if(ioctl(fe->fe_fd, FE_SET_PROPERTY, &cmdclear ) != 0)
+    struct dtv_properties cmdseq;
+    struct dtv_property cmdlist[1];
+
+    DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_CLEAR, 0);
+
+    if(ioctl(fe->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
     {
         asc_log_error(MSG("FE_SET_PROPERTY DTV_CLEAR failed [%s]"), strerror(errno));
         astra_abort();

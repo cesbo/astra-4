@@ -228,7 +228,7 @@ static void on_newcamd_ready(void *arg)
 {
     module_data_t *mod = arg;
 
-    memset(&mod->buffer[2], 0, NEWCAMD_HEADER_SIZE - 2);
+    memset(mod->buffer, 0, NEWCAMD_HEADER_SIZE);
 
     uint8_t *buffer = &mod->buffer[NEWCAMD_HEADER_SIZE];
 
@@ -619,6 +619,15 @@ void newcamd_send_em(  module_data_t *mod
 {
     if(mod->status != 3)
         return;
+
+    const size_t packet_size = NEWCAMD_HEADER_SIZE + size;
+    const uint8_t no_pad_bytes = (8 - ((packet_size - 1) % 8)) % 8;
+    if(packet_size + no_pad_bytes > NEWCAMD_MSG_SIZE)
+    {
+        asc_log_error(  MSG("wrong packet size (pnr:%d drop:0x%02X size:%d")
+                      , decrypt->pnr, buffer[0], size);
+        return;
+    }
 
     em_packet_t *packet = malloc(sizeof(em_packet_t));
     memcpy(packet->buffer, buffer, size);

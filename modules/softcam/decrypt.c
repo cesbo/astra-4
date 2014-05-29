@@ -209,15 +209,15 @@ ca_stream_t * ca_stream_get(module_data_t *mod, uint16_t es_pid)
     return el_stream->ca_stream;
 }
 
-static module_cas_t * module_decrypt_cas_init(module_data_t *mod)
+static void module_decrypt_cas_init(module_data_t *mod)
 {
     for(int i = 0; cas_init_list[i]; ++i)
     {
-        module_cas_t *cas = cas_init_list[i](&mod->__decrypt);
-        if(cas)
-            return cas;
+        mod->__decrypt.cas = cas_init_list[i](&mod->__decrypt);
+        if(mod->__decrypt.cas)
+            return;
     }
-    return NULL;
+    asc_assert(mod->__decrypt.cas != NULL, MSG("CAS with CAID:0x%04X not found"), mod->caid);
 }
 
 static void module_decrypt_cas_destroy(module_data_t *mod)
@@ -262,6 +262,11 @@ static void stream_reload(module_data_t *mod)
     }
 
     module_decrypt_cas_destroy(mod);
+
+    mod->storage.count = 0;
+    mod->storage.dsc_count = 0;
+    mod->storage.read = 0;
+    mod->storage.write = 0;
 }
 
 /*
@@ -322,8 +327,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 
     if(mod->__decrypt.cam && mod->__decrypt.cam->is_ready)
     {
-        mod->__decrypt.cas = module_decrypt_cas_init(mod);
-        asc_assert(mod->__decrypt.cas != NULL, MSG("CAS with CAID:0x%04X not found"), mod->caid);
+        module_decrypt_cas_init(mod);
         mod->stream[1] = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
     }
 }
@@ -609,7 +613,7 @@ static void on_em(void *arg, mpegts_psi_t *psi)
 
     if(psi->buffer_size > EM_MAX_SIZE)
     {
-        asc_log_error(MSG("Entitlement message size is greater than %d"), EM_MAX_SIZE);
+        asc_log_error(MSG("em size is greater than %d"), EM_MAX_SIZE);
         return;
     }
 
