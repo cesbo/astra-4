@@ -766,6 +766,15 @@ static void on_read(void *arg)
             skip += m[0].eo;
         }
 
+        mod->chunk_left = 0;
+        mod->is_content_length = false;
+
+        if(mod->content)
+        {
+            free(mod->content);
+            mod->content = NULL;
+        }
+
         lua_getfield(lua, headers, "content-length");
         if(lua_isnumber(lua, -1))
         {
@@ -785,12 +794,6 @@ static void on_read(void *arg)
         }
         lua_pop(lua, 1); // transfer-encoding
 
-        if(mod->content)
-        {
-            free(mod->content);
-            mod->content = NULL;
-        }
-
         if(mod->is_content_length || mod->is_chunked)
             mod->content = string_buffer_alloc();
 
@@ -801,13 +804,65 @@ static void on_read(void *arg)
            || (mod->status_code == 204)
            || (mod->status_code == 304))
         {
-            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_response);
             mod->status = 3;
+
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_response);
             callback(mod);
 
             if(mod->is_connection_close)
                 on_close(mod);
 
+            mod->buffer_skip = 0;
+            return;
+        }
+
+        if(mod->is_stream && mod->status_code == 200)
+        {
+            mod->status = 3;
+
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_response);
+            lua_pushboolean(lua, mod->is_stream);
+            lua_setfield(lua, -2, __stream);
+            callback(mod);
+
+            mod->sync.buffer = malloc(mod->sync.buffer_size);
+
+            if(!mod->config.sync)
+            {
+                mod->timeout = asc_timer_init(mod->timeout_ms, check_is_active, mod);
+
+                asc_socket_set_on_read(mod->sock, on_ts_read);
+                asc_socket_set_on_ready(mod->sock, NULL);
+            }
+            else
+            {
+                asc_socket_set_on_read(mod->sock, NULL);
+                asc_socket_set_on_ready(mod->sock, NULL);
+                asc_socket_set_on_close(mod->sock, NULL);
+
+                mod->thread = asc_thread_init(mod);
+                mod->thread_output = asc_thread_buffer_init(mod->sync.buffer_size);
+                asc_thread_start(  mod->thread
+                                 , thread_loop
+                                 , on_thread_read, mod->thread_output
+                                 , on_thread_close);
+            }
+
+            mod->buffer_skip = 0;
+            return;
+        }
+
+        if(!mod->content)
+        {
+            mod->status = 3;
+
+            lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_response);
+            callback(mod);
+
+            if(mod->is_connection_close)
+                on_close(mod);
+
+            mod->buffer_skip = 0;
             return;
         }
     }
@@ -820,39 +875,6 @@ static void on_read(void *arg)
  * 888  888oooo88    88ooo88  o88o    88     o888o    o888ooo8888 o88o    88     o888o
  *
  */
-
-    if(mod->is_stream && mod->status_code == 200)
-    {
-        lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_response);
-        lua_pushboolean(lua, mod->is_stream);
-        lua_setfield(lua, -2, __stream);
-        mod->status = 3;
-        callback(mod);
-
-        mod->sync.buffer = malloc(mod->sync.buffer_size);
-
-        if(!mod->config.sync)
-        {
-            mod->timeout = asc_timer_init(mod->timeout_ms, check_is_active, mod);
-
-            asc_socket_set_on_read(mod->sock, on_ts_read);
-            asc_socket_set_on_ready(mod->sock, NULL);
-            return;
-        }
-
-        asc_socket_set_on_read(mod->sock, NULL);
-        asc_socket_set_on_ready(mod->sock, NULL);
-        asc_socket_set_on_close(mod->sock, NULL);
-
-        mod->thread = asc_thread_init(mod);
-        mod->thread_output = asc_thread_buffer_init(mod->sync.buffer_size);
-        asc_thread_start(  mod->thread
-                         , thread_loop
-                         , on_thread_read, mod->thread_output
-                         , on_thread_close);
-
-        return;
-    }
 
     // Transfer-Encoding: chunked
     if(mod->is_chunked)
@@ -919,6 +941,9 @@ static void on_read(void *arg)
                 break;
             }
         }
+
+        mod->buffer_skip = 0;
+        return;
     }
 
     // Content-Length: *
@@ -949,9 +974,10 @@ static void on_read(void *arg)
                 return;
             }
         }
-    }
 
-    mod->buffer_skip = 0;
+        mod->buffer_skip = 0;
+        return;
+    }
 }
 
 /*
@@ -1130,11 +1156,31 @@ static void on_connect(void *arg)
  *
  */
 
+static int method_send(module_data_t *mod)
+{
+    mod->status = 0;
+
+    if(mod->timeout)
+        asc_timer_destroy(mod->timeout);
+    mod->timeout = asc_timer_init(mod->timeout_ms, timeout_callback, mod);
+
+    asc_assert(lua_istable(lua, 2), MSG(":send() table required"));
+    lua_pushvalue(lua, 2);
+    lua_make_request(mod);
+    lua_pop(lua, 2); // :send() options
+
+    asc_socket_set_on_read(mod->sock, on_read);
+    asc_socket_set_on_ready(mod->sock, on_ready_send_request);
+
+    return 0;
+}
+
 static int method_close(module_data_t *mod)
 {
     mod->status = -1;
     mod->request.status = -1;
     on_close(mod);
+
     return 0;
 }
 
@@ -1196,6 +1242,7 @@ MODULE_STREAM_METHODS()
 MODULE_LUA_METHODS()
 {
     MODULE_STREAM_METHODS_REF(),
+    { "send", method_send },
     { "close", method_close }
 };
 
