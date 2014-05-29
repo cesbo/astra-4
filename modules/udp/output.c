@@ -113,7 +113,7 @@ static void thread_input_push(module_data_t *mod, const uint8_t *ts)
     const ssize_t r = asc_thread_buffer_write(mod->thread_input, ts, TS_PACKET_SIZE);
     if(r != TS_PACKET_SIZE)
     {
-        asc_log_warning(MSG("sync buffer overflow"));
+        asc_log_debug(MSG("sync buffer overflow"));
         asc_thread_buffer_flush(mod->thread_input);
     }
 }
@@ -253,7 +253,7 @@ static void thread_loop(void *arg)
             block_time = mpegts_pcr_block_us(&mod->pcr, &pcr);
             if(block_time == 0 || block_time > 500000)
             {
-                asc_log_error(  MSG("block time out of range: %llums block_size:%u")
+                asc_log_debug(  MSG("block time out of range: %llums block_size:%u")
                               , (uint64_t)(block_time / 1000), block_size);
 
                 mod->sync.buffer_count -= block_size;
