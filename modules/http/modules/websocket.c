@@ -33,6 +33,13 @@ struct module_data_t
     int idx_callback;
 };
 
+typedef struct
+{
+    uint8_t *buffer;
+    size_t size;
+    size_t skip;
+} frame_t;
+
 struct http_response_t
 {
     module_data_t *mod;
@@ -42,6 +49,8 @@ struct http_response_t
 
     uint8_t frame_key[FRAME_KEY_SIZE];
     uint8_t frame_key_i;
+
+    asc_list_t *frame_queue;
 };
 
 /*
@@ -51,53 +60,87 @@ struct http_response_t
 
 static const char __websocket_magic[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-/* Stack: 1 - server, 2 - client, 3 - response */
-static void on_websocket_send(void *arg)
+static void on_websocket_ready(void *arg)
 {
     http_client_t *client = arg;
+    http_response_t *response = client->response;
 
-    const char *str = lua_tostring(lua, 3);
-    const int str_size = luaL_len(lua, 3);
+    asc_list_first(response->frame_queue);
+    frame_t *frame = asc_list_data(response->frame_queue);
 
-    uint8_t *data = (uint8_t *)client->buffer;
-    uint8_t frame_header = FRAME_HEADER_SIZE;
-
-    data[0] = 0x81;
-    if(str_size <= 125)
-    {
-        data[1] = str_size & 0xFF;
-    }
-    else if(str_size <= 0xFFFF)
-    {
-        data[1] = 126;
-        data[2] = (str_size >> 8) & 0xFF;
-        data[3] = (str_size     ) & 0xFF;
-
-        frame_header += FRAME_SIZE16_SIZE;
-    }
-    else
-    {
-        data[1] = 127;
-        data[2] = ((uint64_t)str_size >> 56) & 0xFF;
-        data[3] = ((uint64_t)str_size >> 48) & 0xFF;
-        data[4] = ((uint64_t)str_size >> 40) & 0xFF;
-        data[5] = ((uint64_t)str_size >> 32) & 0xFF;
-        data[6] = ((uint64_t)str_size >> 24) & 0xFF;
-        data[7] = ((uint64_t)str_size >> 16) & 0xFF;
-        data[8] = ((uint64_t)str_size >> 8 ) & 0xFF;
-        data[9] = ((uint64_t)str_size      ) & 0xFF;
-
-        frame_header += FRAME_SIZE64_SIZE;
-    }
-
-    memcpy(&data[frame_header], str, str_size);
-
-    ssize_t size = asc_socket_send(client->sock, (void *)data, frame_header + str_size);
+    ssize_t size = asc_socket_send(  client->sock
+                                   , &frame->buffer[frame->skip]
+                                   , frame->size - frame->skip);
     if(size <= 0)
     {
         http_client_error(client, "failed to send data [%s]", asc_socket_error());
         http_client_close(client);
+        return;
     }
+
+    frame->skip += size;
+
+    if(frame->size == frame->skip)
+    {
+        free(frame->buffer);
+        free(frame);
+        asc_list_remove_current(response->frame_queue);
+        if(asc_list_eol(response->frame_queue))
+            asc_socket_set_on_ready(client->sock, NULL);
+    }
+}
+
+/* Stack: 1 - server, 2 - client, 3 - response */
+static void on_websocket_send(void *arg)
+{
+    http_client_t *client = arg;
+    http_response_t *response = client->response;
+
+    const char *str = lua_tostring(lua, 3);
+    const int str_size = luaL_len(lua, 3);
+
+    frame_t *frame = malloc(sizeof(frame_t));
+
+    if(str_size <= 125)
+    {
+        frame->size = FRAME_HEADER_SIZE;
+        frame->buffer = malloc(frame->size + str_size);
+
+        frame->buffer[1] = str_size & 0xFF;
+    }
+    else if(str_size <= 0xFFFF)
+    {
+        frame->size = FRAME_HEADER_SIZE + FRAME_SIZE16_SIZE;
+        frame->buffer = malloc(frame->size + str_size);
+
+        frame->buffer[1] = 126;
+        frame->buffer[2] = (str_size >> 8) & 0xFF;
+        frame->buffer[3] = (str_size     ) & 0xFF;
+    }
+    else
+    {
+        frame->size = FRAME_HEADER_SIZE + FRAME_SIZE64_SIZE;
+        frame->buffer = malloc(frame->size + str_size);
+
+        frame->buffer[1] = 127;
+        frame->buffer[2] = 0;
+        frame->buffer[3] = 0;
+        frame->buffer[4] = 0;
+        frame->buffer[5] = 0;
+        frame->buffer[6] = (str_size >> 24) & 0xFF;
+        frame->buffer[7] = (str_size >> 16) & 0xFF;
+        frame->buffer[8] = (str_size >> 8 ) & 0xFF;
+        frame->buffer[9] = (str_size      ) & 0xFF;
+    }
+
+    frame->buffer[0] = 0x81;
+    memcpy(&frame->buffer[frame->size], str, str_size);
+    frame->size += str_size;
+    frame->skip = 0;
+
+    asc_list_insert_tail(response->frame_queue, frame);
+    if(asc_list_size(response->frame_queue) == 1)
+        asc_socket_set_on_ready(client->sock, on_websocket_ready);
 }
 
 static void on_websocket_read(void *arg)
@@ -265,6 +308,19 @@ static int module_call(module_data_t *mod)
                 string_buffer_free(client->content);
                 client->content = NULL;
             }
+            if(client->response->frame_queue)
+            {
+                for(  asc_list_first(client->response->frame_queue)
+                    ; !asc_list_eol(client->response->frame_queue)
+                    ; asc_list_remove_current(client->response->frame_queue))
+                {
+                    frame_t *frame = asc_list_data(client->response->frame_queue);
+                    free(frame->buffer);
+                    free(frame);
+                }
+                asc_list_destroy(client->response->frame_queue);
+                client->response->frame_queue = NULL;
+            }
             free(client->response);
             client->response = NULL;
         }
@@ -312,6 +368,7 @@ static int module_call(module_data_t *mod)
 
     client->response = calloc(1, sizeof(http_response_t));
     client->response->mod = mod;
+    client->response->frame_queue = asc_list_init();
     client->on_send = on_websocket_send;
     client->on_read = on_websocket_read;
     client->on_ready = NULL;
