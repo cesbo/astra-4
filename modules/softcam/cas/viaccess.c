@@ -31,7 +31,7 @@ struct module_data_t
     {
         uint8_t type; // last shared type
         size_t size;
-        uint8_t data[512]; // ???
+        uint8_t data[EM_MAX_SIZE]; // ???
     } shared;
 };
 
@@ -91,10 +91,11 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
 
             // 3 - shared EMM header size
             const uint8_t *nano = &em->buffer[3];
-            if(!(nano[0] == 0x90 && nano[1] == 0x03
-                 && (nano[2] == mod->ident[0])
-                 && (nano[3] == mod->ident[1])
-                 && ((nano[4] & 0xF0) == (mod->ident[2] & 0xF0))))
+            if(   (nano[0] != 0x90)
+               || (nano[1] != 0x03)
+               || (nano[2] != mod->ident[0])
+               || (nano[3] != mod->ident[1])
+               || ((nano[4] & 0xF0) != (mod->ident[2] & 0xF0)))
             {
                 break;
             }
@@ -104,7 +105,7 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
                 const size_t emm_size = __emm_size(em->buffer);
                 if(emm_size > sizeof(mod->shared.data))
                 {
-                    asc_log_warning("[softcam/viaccess pnr:%d] EMM packet size is to large"
+                    asc_log_warning(  "[softcam/viaccess pnr:%d] EMM nano size is to large"
                                     , mod->__cas.decrypt->cas_pnr);
                     mod->shared.size = 0;
                     break;
@@ -124,7 +125,7 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
             if(em->buffer[6] & 0x02)
                 break;
 
-            uint8_t emm[512];
+            uint8_t emm[EM_MAX_SIZE];
             const size_t emm_size = __emm_size(em->buffer);
             // 7 - unique EMM header size
             const uint8_t *nano = &em->buffer[7];
@@ -143,6 +144,13 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
 
             // 3 - shared EMM header size
             const size_t s_data_size = mod->shared.size - 3;
+            if(size + s_data_size > sizeof(emm))
+            {
+                asc_log_warning(  "[softcam/viaccess pnr:%d] EMM packet size is to large"
+                                , mod->__cas.decrypt->cas_pnr);
+                mod->shared.size = 0;
+                return false;
+            }
             memcpy(&emm[size], &mod->shared.data[3], s_data_size);
             size += s_data_size;
 
@@ -150,6 +158,7 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
             sort_nanos(&em->buffer[7], emm, size);
             em->buffer_size = PSI_SIZE(em->buffer);
 
+            mod->shared.size = 0;
             return true;
         }
         default:
@@ -168,7 +177,7 @@ static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
 
 static inline int __check_ident(const uint8_t *ident, const uint8_t *prov)
 {
-    return (ident[0] == prov[0]
+    return (   ident[0] == prov[0]
             && ident[1] == prov[1]
             && (ident[2] & 0xF0) == prov[2]);
 }
