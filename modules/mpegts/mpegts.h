@@ -258,9 +258,8 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
 #define PAT_GET_VERSION(_psi) ((_psi->buffer[5] & 0x3E) >> 1)
 #define PAT_SET_VERSION(_psi, _version)                                                         \
     {                                                                                           \
-        const uint8_t __version = _version;                                                     \
-        _psi->buffer[5] &= ~0x3E;                                                               \
-        _psi->buffer[5] |= ((__version << 1) & 0x3E);                                           \
+        const uint8_t __version = (_version) & 0x0F;                                            \
+        _psi->buffer[5] = (_psi->buffer[5] & 0xC1) | (__version << 1);                          \
     }
 
 #define PAT_ITEMS_FIRST(_psi) (&_psi->buffer[8])

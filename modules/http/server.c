@@ -207,6 +207,8 @@ static void on_client_read(void *arg)
     }
 
     char *uri_host = NULL;
+    size_t uri_host_size = 0;
+
     size_t eoh = 0; // end of headers
     size_t skip = 0;
     client->buffer_skip += size;
@@ -289,10 +291,8 @@ static void on_client_read(void *arg)
             while(path_skip < m[2].eo && client->buffer[path_skip] != '/')
                 ++path_skip;
 
-            const size_t uri_host_size = path_skip - skip;
-            uri_host = malloc(uri_host_size + 1);
-            memcpy(uri_host, &client->buffer[skip], uri_host_size);
-            uri_host[uri_host_size] = 0;
+            uri_host = &client->buffer[skip];
+            uri_host_size = path_skip - skip;
         }
 
         skip = path_skip;
@@ -367,10 +367,8 @@ static void on_client_read(void *arg)
 
         if(uri_host)
         {
-            lua_pushstring(lua, uri_host);
+            lua_pushlstring(lua, uri_host, uri_host_size);
             lua_setfield(lua, headers, "host");
-            free(uri_host);
-            uri_host = NULL;
         }
 
         lua_getfield(lua, headers, "content-length");

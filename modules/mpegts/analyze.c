@@ -195,8 +195,12 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     lua_setfield(lua, -2, "programs");
 
     if(mod->pmt_checksum_list)
+    {
         free(mod->pmt_checksum_list);
-    mod->pmt_checksum_list = calloc(mod->pmt_count, sizeof(pmt_checksum_t));
+        mod->pmt_checksum_list = NULL;
+    }
+    if(mod->pmt_count > 0)
+        mod->pmt_checksum_list = calloc(mod->pmt_count, sizeof(pmt_checksum_t));
 
     callback(mod);
 }

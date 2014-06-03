@@ -367,11 +367,17 @@ static void module_destroy(module_data_t *mod)
         close(mod->fd);
 
     if(mod->buffer)
+    {
         free(mod->buffer);
+        mod->buffer = NULL;
+    }
 
 #ifdef HAVE_AIO
     if(mod->buffer_aio)
+    {
         free(mod->buffer_aio);
+        mod->buffer_aio = NULL;
+    }
 #endif
 }
 

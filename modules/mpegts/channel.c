@@ -88,6 +88,8 @@ struct module_data_t
     uint32_t *sdt_checksum_list;
 
     uint8_t eit_cc;
+
+    uint8_t pat_version;
 };
 
 #define MSG(_msg) "[channel %s] " _msg, mod->config.name
@@ -247,6 +249,9 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
             }
         }
     }
+
+    mod->pat_version = (mod->pat_version + 1) & 0x0F;
+    PAT_SET_VERSION(mod->custom_pat, mod->pat_version);
 
     mod->custom_pat->buffer_size = 8 + 4 + CRC32_SIZE;
     PSI_SET_SIZE(mod->custom_pat);

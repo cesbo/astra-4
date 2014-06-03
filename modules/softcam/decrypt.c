@@ -51,8 +51,6 @@
 
 typedef struct
 {
-    module_data_t *mod;
-
     uint8_t ecm_type;
     uint16_t ecm_pid;
 
@@ -132,16 +130,14 @@ ca_stream_t * ca_stream_init(module_data_t *mod, uint16_t ecm_pid)
     }
 
     ca_stream = malloc(sizeof(ca_stream_t));
+    memset(ca_stream, 0, sizeof(ca_stream_t));
 
     ca_stream->ecm_pid = ecm_pid;
-
-    ca_stream->is_keys = false;
-    ca_stream->parity = 0x00;
 
 #if FFDECSA == 1
 
     ca_stream->keys = get_key_struct();
-    ca_stream->batch = malloc(sizeof(void *) * (mod->batch_size * 2 + 2));
+    ca_stream->batch = calloc(mod->batch_size * 2 + 2, sizeof(uint8_t *));
 
 #elif LIBDVBCSA == 1
 
@@ -150,8 +146,6 @@ ca_stream_t * ca_stream_init(module_data_t *mod, uint16_t ecm_pid)
     ca_stream->batch = calloc(mod->batch_size + 1, sizeof(struct dvbcsa_bs_batch_s));
 
 #endif
-
-    ca_stream->batch_skip = 0;
 
     asc_list_insert_tail(mod->ca_list, ca_stream);
 
@@ -195,20 +189,6 @@ void ca_stream_set_keys(ca_stream_t *ca_stream, const uint8_t *even, const uint8
 #endif
 }
 
-ca_stream_t * ca_stream_get(module_data_t *mod, uint16_t es_pid)
-{
-    asc_list_for(mod->el_list)
-    {
-        el_stream_t *el_stream = asc_list_data(mod->el_list);
-        if(el_stream->es_pid == es_pid)
-            return el_stream->ca_stream;
-    }
-
-    asc_list_first(mod->el_list);
-    el_stream_t *el_stream = asc_list_data(mod->el_list);
-    return el_stream->ca_stream;
-}
-
 static void module_decrypt_cas_init(module_data_t *mod)
 {
     for(int i = 0; cas_init_list[i]; ++i)
@@ -237,7 +217,12 @@ static void module_decrypt_cas_destroy(module_data_t *mod)
     }
 
     if(mod->caid == BISS_CAID)
+    {
+        asc_list_first(mod->ca_list);
+        ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
+        ca_stream->batch_skip = 0;
         return;
+    }
 
     for(  asc_list_first(mod->ca_list)
         ; !asc_list_eol(mod->ca_list)
@@ -885,14 +870,6 @@ void on_cam_error(module_data_t *mod)
     mod->caid = 0x0000;
 
     module_decrypt_cas_destroy(mod);
-
-    asc_list_for(mod->ca_list)
-    {
-        ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
-        ca_stream->new_key_id = 0;
-
-        ca_stream->batch_skip = 0;
-    }
 }
 
 void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data)
@@ -1004,12 +981,13 @@ static void module_init(module_data_t *mod)
     {
         asc_assert(biss_length == 16, MSG("biss key must be 16 char length"));
 
+        mod->caid = BISS_CAID;
+        mod->disable_emm = true;
+
         uint8_t key[8];
         str_to_hex(biss_key, key, sizeof(key));
         key[3] = (key[0] + key[1] + key[2]) & 0xFF;
         key[7] = (key[4] + key[5] + key[6]) & 0xFF;
-        mod->caid = BISS_CAID;
-        mod->disable_emm = true;
 
         ca_stream_t *biss = ca_stream_init(mod, NULL_TS_PID);
         ca_stream_set_keys(biss, key, key);
@@ -1049,7 +1027,10 @@ static void module_destroy(module_data_t *mod)
     module_stream_destroy(mod);
 
     if(mod->__decrypt.cam)
+    {
         module_cam_detach_decrypt(mod->__decrypt.cam, &mod->__decrypt);
+        mod->__decrypt.cam = NULL;
+    }
 
     module_decrypt_cas_destroy(mod);
 

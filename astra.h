@@ -48,8 +48,8 @@
 
 /* main app */
 
-void astra_exit(void);
-void astra_abort(void);
-void astra_reload(void);
+void astra_exit(void) __attribute__ ((__noreturn__));
+void astra_abort(void) __attribute__ ((__noreturn__));
+void astra_reload(void) __attribute__ ((__noreturn__));
 
 #endif /* _ASTRA_H_ */
