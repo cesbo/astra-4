@@ -20,14 +20,15 @@
 
 #include <astra.h>
 
-static uint8_t * iso8859_1_text(const uint8_t *data, size_t size)
+static uint8_t * iso8859_1_decode(const uint8_t *data, size_t size)
 {
     uint8_t *text = malloc(size * 2 + 1);
+    uint8_t c;
     size_t i = 0, j = 0;
 
     while(i < size)
     {
-        uint8_t c = data[i++];
+        c = data[i++];
         if(c < 0x80)
         {
             if(!c) break;
@@ -35,7 +36,7 @@ static uint8_t * iso8859_1_text(const uint8_t *data, size_t size)
         }
         else
         {
-            text[j++] = 0xC0 | ((c & 0xC0) >> 6);
+            text[j++] = 0xC0 | (c >> 6);
             text[j++] = 0x80 | (c & 0x3F);
         }
     }
@@ -44,7 +45,31 @@ static uint8_t * iso8859_1_text(const uint8_t *data, size_t size)
     return text;
 }
 
-static uint8_t * iso8859_2_text(const uint8_t *data, size_t size)
+static uint8_t * iso8859_1_encode(const uint8_t *data, size_t size)
+{
+    uint8_t *text = malloc(size + 1);
+    uint8_t c;
+    size_t i = 0, j = 0;
+
+    while(i < size)
+    {
+        c = data[i++];
+        if(c < 0x80)
+        {
+            if(!c) break;
+            text[j++] = c;
+        }
+        else
+        {
+            text[j++] = ((c & 0x03) << 6) | (data[i++] & 0x3F);
+        }
+    }
+
+    text[j] = '\0';
+    return text;
+}
+
+static uint8_t * iso8859_2_decode(const uint8_t *data, size_t size)
 {
     uint8_t *text = malloc(size * 2 + 1);
     uint8_t c;
@@ -100,7 +125,7 @@ static uint8_t * iso8859_2_text(const uint8_t *data, size_t size)
     return text;
 }
 
-static uint8_t * iso8859_5_text(const uint8_t *data, size_t size)
+static uint8_t * iso8859_5_decode(const uint8_t *data, size_t size)
 {
     uint8_t *text = malloc(size * 2 + 1);
     uint8_t c, u1, u2;
@@ -133,7 +158,40 @@ static uint8_t * iso8859_5_text(const uint8_t *data, size_t size)
     return text;
 }
 
-static uint8_t * iso8859_7_text(const uint8_t *data, size_t size)
+static uint8_t * iso8859_5_encode(const uint8_t *data, size_t size)
+{
+    uint8_t *text = malloc(size + 1);
+    uint8_t c;
+    size_t i = 0, j = 0;
+
+    while(i < size)
+    {
+        c = data[i++];
+
+        if(c < 0x80)
+        {
+            if(!c) break;
+            text[j++] = c;
+        }
+        else if(c == 0xD1)
+        {
+            text[j++] = 0xE0 | data[i++];
+        }
+        else if(c == 0xD0)
+        {
+            c = data[i++];
+            if(c & 0x20)
+                text[j++] = 0xC0 | (c & 0x1F);
+            else
+                text[j++] = 0xA0 | (c & 0x1F);
+        }
+    }
+
+    text[j] = '\0';
+    return text;
+}
+
+static uint8_t * iso8859_7_decode(const uint8_t *data, size_t size)
 {
     uint8_t *text = malloc(size * 2 + 1);
     uint8_t c, u1, u2;
@@ -168,7 +226,7 @@ static uint8_t * iso8859_7_text(const uint8_t *data, size_t size)
     return text;
 }
 
-char * iso8859_text(const uint8_t *data, size_t size)
+char * iso8859_decode(const uint8_t *data, size_t size)
 {
     if(size == 0)
     {
@@ -182,9 +240,9 @@ char * iso8859_text(const uint8_t *data, size_t size)
     {
         switch((data[1] << 8) | (data[2]))
         {
-            case 0x02: return (char *)iso8859_2_text(&data[3], size - 3); // Central European
-            case 0x05: return (char *)iso8859_5_text(&data[3], size - 3); // Cyrillic
-            case 0x07: return (char *)iso8859_7_text(&data[3], size - 3); // Greek
+            case 0x02: return (char *)iso8859_2_decode(&data[3], size - 3); // Central European
+            case 0x05: return (char *)iso8859_5_decode(&data[3], size - 3); // Cyrillic
+            case 0x07: return (char *)iso8859_7_decode(&data[3], size - 3); // Greek
             default: break;
         }
     }
@@ -192,14 +250,14 @@ char * iso8859_text(const uint8_t *data, size_t size)
     {
         switch(charset_id)
         {
-            case 0x01: return (char *)iso8859_5_text(&data[1], size - 1); // Cyrillic
-            case 0x03: return (char *)iso8859_7_text(&data[1], size - 1); // Greek
+            case 0x01: return (char *)iso8859_5_decode(&data[1], size - 1); // Cyrillic
+            case 0x03: return (char *)iso8859_7_decode(&data[1], size - 1); // Greek
             default: break;
         }
     }
     else if(charset_id >= 0x20)
     {
-        return (char *)iso8859_1_text(data, size); // Western European
+        return (char *)iso8859_1_decode(data, size); // Western European
     }
 
     static const char unknown_charset[] = "unknown charset: 0x";
@@ -210,4 +268,53 @@ char * iso8859_text(const uint8_t *data, size_t size)
         skip += sprintf(&text[skip], "%02X", data[i]);
 
     return text;
+}
+
+static int lua_iso8859_encode(lua_State *L)
+{
+    const int part = luaL_checknumber(L, 1);
+    const uint8_t *data = (const uint8_t *)luaL_checkstring(L, 2);
+    const size_t data_size = luaL_len(L, 2);
+
+    uint8_t *iso8859;
+    luaL_Buffer b;
+
+    switch(part)
+    {
+        case 1:
+            iso8859 = iso8859_1_encode(data, data_size);
+            lua_pushstring(L, (char *)iso8859);
+            free(iso8859);
+            break;
+        case 5:
+            luaL_buffinit(L, &b);
+            luaL_addchar(&b, 0x10);
+            luaL_addchar(&b, 0x00);
+            luaL_addchar(&b, 0x05);
+            iso8859 = iso8859_5_encode(data, data_size);
+            luaL_addstring(&b, (const char *)iso8859);
+            free(iso8859);
+            luaL_pushresult(&b);
+            break;
+        default:
+            asc_log_error("[iso8859] charset is not supported");
+            lua_pushstring(L, "");
+            break;
+    }
+
+    return 1;
+}
+
+LUA_API int luaopen_iso8859(lua_State *L)
+{
+    static const luaL_Reg api[] =
+    {
+        { "encode", lua_iso8859_encode },
+        { NULL, NULL }
+    };
+
+    luaL_newlib(L, api);
+    lua_setglobal(L, "iso8859");
+
+    return 1;
 }

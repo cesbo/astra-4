@@ -76,6 +76,6 @@ void md5_crypt(const char *pw, const char *salt, char passwd[36]);
 
 /* iso8859.c */
 
-char * iso8859_text(const uint8_t *data, size_t size);
+char * iso8859_decode(const uint8_t *data, size_t size);
 
 #endif /* _ASTRA_BASE_H_ */
