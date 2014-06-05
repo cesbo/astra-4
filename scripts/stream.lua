@@ -788,7 +788,9 @@ function init_input(channel_data, input_id)
         end
     end
 
-    if input_conf.no_analyze ~= true then
+    if input_conf.no_analyze == true then
+        channel_data.transmit:set_upstream(input_data.tail:stream())
+    else
         local cc_limit = nil
         if input_conf.cc_limit then
             cc_limit = input_conf.cc_limit
@@ -1262,10 +1264,6 @@ function make_channel(channel_conf)
 
     if channel_data.clients > 0 then
         init_input(channel_data, 1)
-
-        if channel_conf.input[1]['no_analyze'] == true then
-            channel_data.transmit:set_upstream(channel_data.input[1].tail:stream())
-        end
     end
 
     for output_id,_ in pairs(channel_conf.output) do
