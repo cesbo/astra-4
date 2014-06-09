@@ -47,6 +47,8 @@
 #   include "FFdecsa/FFdecsa.h"
 #elif LIBDVBCSA == 1
 #   include <dvbcsa/dvbcsa.h>
+#else
+#   error "DVB-CSA is not defined"
 #endif
 
 typedef struct
@@ -638,10 +640,7 @@ static void on_em(void *arg, mpegts_psi_t *psi)
             return;
     }
     else
-    {
-        asc_log_error(MSG("wrong packet type 0x%02X"), em_type);
         return;
-    }
 
     mod->__decrypt.cam->send_em(  mod->__decrypt.cam->self
                                 , &mod->__decrypt, ca_stream

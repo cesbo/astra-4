@@ -789,7 +789,9 @@ function init_input(channel_data, input_id)
     end
 
     if input_conf.no_analyze == true then
-        channel_data.transmit:set_upstream(input_data.tail:stream())
+        if channel_data.transmit then
+            channel_data.transmit:set_upstream(input_data.tail:stream())
+        end
     else
         local cc_limit = nil
         if input_conf.cc_limit then

@@ -79,6 +79,7 @@ struct module_data_t
 
     uint16_t tsid;
     mpegts_psi_t *custom_pat;
+    mpegts_psi_t *custom_cat;
     mpegts_psi_t *custom_pmt;
     mpegts_psi_t *custom_sdt;
 
@@ -105,7 +106,6 @@ static void stream_reload(module_data_t *mod)
     }
 
     mod->pat->crc32 = 0;
-    mod->cat->crc32 = 0;
     mod->pmt->crc32 = 0;
 
     mod->stream[0x00] = MPEGTS_PACKET_PAT;
@@ -113,6 +113,7 @@ static void stream_reload(module_data_t *mod)
 
     if(mod->config.cas)
     {
+        mod->cat->crc32 = 0;
         mod->stream[0x01] = MPEGTS_PACKET_CAT;
         module_stream_demux_join_pid(mod, 0x01);
     }
@@ -276,7 +277,10 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
     if(crc32 == psi->crc32)
+    {
+        mpegts_psi_demux(mod->custom_cat, (ts_callback_t)__module_stream_send, &mod->__stream);
         return;
+    }
 
     // check crc
     if(crc32 != PSI_CALC_CRC32(psi))
@@ -309,6 +313,12 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
             }
         }
     }
+
+    memcpy(mod->custom_cat->buffer, psi->buffer, psi->buffer_size);
+    mod->custom_cat->buffer_size = psi->buffer_size;
+    mod->custom_cat->cc = 0;
+
+    mpegts_psi_demux(mod->custom_cat, (ts_callback_t)__module_stream_send, &mod->__stream);
 }
 
 /*
@@ -677,7 +687,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             return;
         case MPEGTS_PACKET_CAT:
             mpegts_psi_mux(mod->cat, ts, on_cat, mod);
-            break;
+            return;
         case MPEGTS_PACKET_PMT:
             mpegts_psi_mux(mod->pmt, ts, on_pmt, mod);
             return;
@@ -755,7 +765,6 @@ static void module_init(module_data_t *mod)
         module_option_boolean("cas", &mod->config.cas);
 
         mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
-        mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
         mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
         mod->custom_pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
         mod->custom_pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
@@ -763,6 +772,8 @@ static void module_init(module_data_t *mod)
         module_stream_demux_join_pid(mod, 0);
         if(mod->config.cas)
         {
+            mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
+            mod->custom_cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 1);
             mod->stream[1] = MPEGTS_PACKET_CAT;
             module_stream_demux_join_pid(mod, 1);
         }
@@ -835,7 +846,11 @@ static void module_destroy(module_data_t *mod)
     module_stream_destroy(mod);
 
     mpegts_psi_destroy(mod->pat);
-    mpegts_psi_destroy(mod->cat);
+    if(mod->cat)
+    {
+        mpegts_psi_destroy(mod->cat);
+        mpegts_psi_destroy(mod->custom_cat);
+    }
     mpegts_psi_destroy(mod->pmt);
     mpegts_psi_destroy(mod->custom_pat);
     mpegts_psi_destroy(mod->custom_pmt);
