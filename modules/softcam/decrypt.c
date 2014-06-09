@@ -76,6 +76,8 @@ typedef struct
 
     int new_key_id;  // 0 - not, 1 - first key, 2 - second key, 3 - both keys
     uint8_t new_key[16];
+
+    uint64_t sendtime;
 } ca_stream_t;
 
 typedef struct
@@ -127,8 +129,12 @@ ca_stream_t * ca_stream_init(module_data_t *mod, uint16_t ecm_pid)
     asc_list_for(mod->ca_list)
     {
         ca_stream = asc_list_data(mod->ca_list);
+#if FFDECSA == 1
+        return ca_stream;
+#else
         if(ca_stream->ecm_pid == ecm_pid)
             return ca_stream;
+#endif
     }
 
     ca_stream = malloc(sizeof(ca_stream_t));
@@ -630,6 +636,7 @@ static void on_em(void *arg, mpegts_psi_t *psi)
             return;
 
         ca_stream->ecm_type = em_type;
+        ca_stream->sendtime = asc_utime();
     }
     else if(em_type >= 0x82 && em_type <= 0x8F)
     { /* EMM */
@@ -640,7 +647,10 @@ static void on_em(void *arg, mpegts_psi_t *psi)
             return;
     }
     else
+    {
+        asc_log_error(MSG("wrong packet type 0x%02X"), em_type);
         return;
+    }
 
     mod->__decrypt.cam->send_em(  mod->__decrypt.cam->self
                                 , &mod->__decrypt, ca_stream
@@ -832,10 +842,10 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         }
     }
 
+#endif
+
     if(mod->storage.count >= mod->storage.size)
         decrypt(mod);
-
-#endif
 
     if(mod->storage.dsc_count > 0)
     {
@@ -874,6 +884,13 @@ void on_cam_error(module_data_t *mod)
 void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data)
 {
     ca_stream_t *ca_stream = arg;
+    asc_list_for(mod->ca_list)
+    {
+        if(asc_list_data(mod->ca_list) == ca_stream)
+            break;
+    }
+    if(asc_list_eol(mod->ca_list))
+        return;
 
     if((data[0] & ~0x01) != 0x80)
         return; /* Skip EMM */
@@ -924,16 +941,23 @@ void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data)
                 ca_stream->is_keys = true;
         }
 
-#if CAS_ECM_DUMP
-        char key_1[17], key_2[17];
-        hex_to_str(key_1, &data[3], 8);
-        hex_to_str(key_2, &data[11], 8);
-        asc_log_debug(MSG("ECM Found [%02X:%s:%s]") , data[0], key_1, key_2);
-#endif
+        if(asc_log_is_debug())
+        {
+            char key_1[17], key_2[17];
+            hex_to_str(key_1, &data[3], 8);
+            hex_to_str(key_2, &data[11], 8);
+            const uint64_t responsetime = (asc_utime() - ca_stream->sendtime) / 1000;
+            asc_log_debug(  MSG("ECM Found id:0x%02X time:%llums key:%s:%s")
+                          , data[0], responsetime, key_1, key_2);
+        }
 
     }
     else
-        asc_log_error(MSG("ECM:0x%02X size:%d Not Found") , data[0], data[2]);
+    {
+        const uint64_t responsetime = (asc_utime() - ca_stream->sendtime) / 1000;
+        asc_log_error(  MSG("ECM Not Found id:0x%02X time:%llums size:%d")
+                      , data[0], responsetime, data[2]);
+    }
 }
 
 /*

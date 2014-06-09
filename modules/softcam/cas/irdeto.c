@@ -47,14 +47,9 @@ struct module_data_t
 
 /* cas api */
 
-inline static uint16_t irdeto_ecm_chid(const uint8_t *payload)
-{
-    return (payload[6] << 8) | payload[7];
-}
-
 static bool irdeto_check_ecm(module_data_t *mod, const uint8_t *payload)
 {
-    const uint16_t chid = irdeto_ecm_chid(payload);
+    const uint16_t chid = (payload[6] << 8) | payload[7];
     if(mod->is_chid != 0)
         return (mod->chid == chid);
 
