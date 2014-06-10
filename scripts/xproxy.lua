@@ -303,7 +303,7 @@ function http_parse_url(url)
     url = url:sub(b + 3)
     b = url:find("@")
     if b then
-        auth = base64.encode(addr:sub(1, x - 1))
+        auth = base64.encode(addr:sub(1, b - 1))
         url = url:sub(b + 1)
     end
     b = url:find("/")
