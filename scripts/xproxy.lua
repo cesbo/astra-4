@@ -294,13 +294,18 @@ end
 -- o888o o888o    o888o       o888o    o888o
 
 function http_parse_url(url)
-    local host, port , path
+    local host, port, path, auth
     local b = url:find("://")
     local p = url:sub(1, b - 1)
     if p ~= "http" then
         return nil
     end
     url = url:sub(b + 3)
+    b = url:find("@")
+    if b then
+        auth = base64.encode(addr:sub(1, x - 1))
+        url = url:sub(b + 1)
+    end
     b = url:find("/")
     if b then
         path = url:sub(b)
@@ -316,7 +321,7 @@ function http_parse_url(url)
         port = 80
         host = url
     end
-    return host, port, path
+    return host, port, path, auth
 end
 
 function http_parse_location(self, response)
@@ -430,7 +435,7 @@ function on_http_http(server, client, request)
 
     local allow_channel = function()
         local http_input_conf = {}
-        local host, port, path = http_parse_url(url)
+        local host, port, path, auth = http_parse_url(url)
 
         if not port then
             server:abort(client, 400)
@@ -449,6 +454,9 @@ function on_http_http(server, client, request)
                 "Host: " .. host .. ":" .. port,
                 "Connection: close",
             }
+            if auth then
+                table.insert(http_input_conf.headers, "Authorization: Basic " .. auth)
+            end
             http_input_conf.stream = true
             http_input_conf.callback = on_http_http_callback
 

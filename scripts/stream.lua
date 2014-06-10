@@ -157,7 +157,7 @@ end
 --  888    88   888  88o    888      o
 --   888oo88   o888o  88o8 o888ooooo88
 
-local parse_option = {}
+parse_option = {}
 
 parse_option.cam = function(val, result)
     if val == true then
@@ -193,6 +193,8 @@ if utils.ifaddrs then ifaddrs = utils.ifaddrs() end
 parse_addr = {}
 
 parse_addr.dvb = function(addr, result)
+    if #addr == 0 then return nil end
+
     if _G[addr] then
         result._instance = _G[addr]
     else
@@ -444,6 +446,10 @@ end
 input_list.dvb = function(channel_data, input_id)
     local input_conf = channel_data.config.input[input_id]
 
+    if not input_conf._instance then
+        input_conf._instance = dvb_tune(input_conf)
+    end
+
     if input_conf.dvbcam and input_conf.pnr then
         input_conf._instance:ca_set_pnr(input_conf.pnr, true)
     end
@@ -458,6 +464,8 @@ kill_input_list.dvb = function(channel_data, input_id)
     if input_conf.dvbcam and input_conf.pnr then
         input_data.source.tail:ca_set_pnr(input_conf.pnr, false)
     end
+
+    input_conf._instance = nil
 end
 
 -- ooooo         ooooo  oooo ooooooooo  oooooooooo
