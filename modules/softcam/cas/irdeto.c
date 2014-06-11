@@ -20,7 +20,7 @@
 
 #include "../module_cam.h"
 
-#define ECM_MAX_ID 16
+#define CHID_LIST_SIZE 16
 
 struct module_data_t
 {
@@ -29,14 +29,9 @@ struct module_data_t
     // autoselect chid
     struct
     {
-        bool is_checking;
-        uint8_t current_id;
-        struct
-        {
-            int check;
-            uint16_t chid;
-        } ecm_id[ECM_MAX_ID];
-    } test;
+        int check;
+        uint16_t chid;
+    } chid_list[CHID_LIST_SIZE];
 
     int is_chid;
     uint16_t chid; // selected channel id
@@ -53,37 +48,33 @@ static bool irdeto_check_ecm(module_data_t *mod, const uint8_t *payload)
     if(mod->is_chid != 0)
         return (mod->chid == chid);
 
-    /* autoselect ecm chid */
-    if(mod->test.is_checking)
-        return false;
-
-    const uint8_t ecm_id = payload[4];
-    if(ecm_id >= ECM_MAX_ID)
-        return false;
-
-    int max_check = 0;
-    int min_check = 0;
-    for(int i = 0; i < ECM_MAX_ID; ++i)
+    for(int i = 0; i < CHID_LIST_SIZE; ++ i)
     {
-        const int ecm_check = mod->test.ecm_id[i].check;
-        if(ecm_check > max_check)
-            max_check = ecm_check;
-        if(ecm_check < min_check)
-            min_check = ecm_check;
+        if(mod->chid_list[i].check == 0)
+        {
+            mod->chid_list[i].check = 1;
+            mod->chid_list[i].chid = chid;
+            return true;
+        }
+
+        if(mod->chid_list[i].chid == chid)
+        {
+            mod->chid_list[i].check = 2;
+            break;
+        }
     }
 
-    if(max_check == min_check)
-        memset(&mod->test.ecm_id, 0, sizeof(mod->test.ecm_id));
+    int last_check = 0;
+    for(int i = 0; i < CHID_LIST_SIZE; ++ i)
+    {
+        if(mod->chid_list[i].check == 0)
+            break;
+        last_check = mod->chid_list[i].check;
+    }
+    if(last_check == 2)
+        memset(mod->chid_list, 0, sizeof(mod->chid_list));
 
-    if(max_check != min_check && mod->test.ecm_id[ecm_id].check >= max_check)
-        return false;
-
-    mod->test.is_checking = true;
-    mod->test.current_id = ecm_id;
-    ++mod->test.ecm_id[ecm_id].check;
-    mod->test.ecm_id[ecm_id].chid = chid;
-
-    return true;
+    return false;
 }
 
 static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
@@ -124,9 +115,11 @@ static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
 {
     if(!keys[2])
     {
-        mod->test.is_checking = false;
         if(mod->is_chid == 1)
+        {
+            memset(mod->chid_list, 0, sizeof(mod->chid_list));
             mod->is_chid = 0;
+        }
 
         return false;
     }
@@ -134,10 +127,14 @@ static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
     if(!mod->is_chid)
     {
         mod->is_chid = 1;
-        /* cas->test_count always greater than 0,
-           because increased in irdeto_check_ecm */
-        mod->chid = mod->test.ecm_id[mod->test.current_id].chid;
-        asc_log_info("[cas Irdeto PNR:%d] select chid:0x%04X", mod->__cas.decrypt->pnr, mod->chid);
+        for(int i = 0; i < CHID_LIST_SIZE; ++ i)
+        {
+            if(mod->chid_list[i].check == 0)
+                break;
+            mod->chid = mod->chid_list[i].chid;
+        }
+        asc_log_info(  "[cas Irdeto PNR:%d] select chid:0x%04X"
+                     , mod->__cas.decrypt->pnr, mod->chid);
     }
 
     return true;

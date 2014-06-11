@@ -464,8 +464,6 @@ kill_input_list.dvb = function(channel_data, input_id)
     if input_conf.dvbcam and input_conf.pnr then
         input_data.source.tail:ca_set_pnr(input_conf.pnr, false)
     end
-
-    input_conf._instance = nil
 end
 
 -- ooooo         ooooo  oooo ooooooooo  oooooooooo
