@@ -388,12 +388,11 @@ kill_input_list = {}
 
 function dvb_tune(dvb_conf)
     if dvb_conf.mac then
-        if not dvb_list then
+        if dvb_list == nil then
             if dvbls then
                 dvb_list = dvbls()
             else
-                log.error("[stream.lua] module dvbls is required")
-                astra.abort()
+                dvb_list = {}
             end
         end
         dvb_conf.mac = dvb_conf.mac:upper()
@@ -448,6 +447,7 @@ input_list.dvb = function(channel_data, input_id)
 
     if not input_conf._instance then
         input_conf._instance = dvb_tune(input_conf)
+        input_conf._instance_single = true
     end
 
     if input_conf.dvbcam and input_conf.pnr then
@@ -463,6 +463,11 @@ kill_input_list.dvb = function(channel_data, input_id)
 
     if input_conf.dvbcam and input_conf.pnr then
         input_data.source.tail:ca_set_pnr(input_conf.pnr, false)
+    end
+
+    if input_conf._instance_single == true then
+        input_conf._instance = nil
+        input_conf._instance_single = nil
     end
 end
 
