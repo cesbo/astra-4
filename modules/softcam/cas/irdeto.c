@@ -59,20 +59,18 @@ static bool irdeto_check_ecm(module_data_t *mod, const uint8_t *payload)
 
         if(mod->chid_list[i].chid == chid)
         {
-            mod->chid_list[i].check = 2;
+            if(   (i == CHID_LIST_SIZE - 1)
+               || (mod->chid_list[i].check == 2 && mod->chid_list[i + 1].check == 0))
+            {
+                memset(mod->chid_list, 0, sizeof(mod->chid_list));
+            }
+            else
+            {
+                mod->chid_list[i].check = 2;
+            }
             break;
         }
     }
-
-    int last_check = 0;
-    for(int i = 0; i < CHID_LIST_SIZE; ++ i)
-    {
-        if(mod->chid_list[i].check == 0)
-            break;
-        last_check = mod->chid_list[i].check;
-    }
-    if(last_check == 2)
-        memset(mod->chid_list, 0, sizeof(mod->chid_list));
 
     return false;
 }
