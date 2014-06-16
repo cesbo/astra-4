@@ -532,7 +532,8 @@ static int json_save(lua_State *L)
     if(fd <= 0)
     {
         asc_log_error("[json] json.save(%s) failed to open [%s]", filename, strerror(errno));
-        return 0;
+        lua_pushboolean(lua, false);
+        return 1;
     }
 
     string_buffer_t *buffer = string_buffer_alloc();
@@ -542,13 +543,20 @@ static int json_save(lua_State *L)
     size_t json_size = 0;
     char *json = string_buffer_release(buffer, &json_size);
     const ssize_t w = write(fd, json, json_size);
-    if(w != (ssize_t)json_size)
-        asc_log_error("[json] json.save(%s) failed to write [%s]", filename, strerror(errno));
-
     close(fd);
     free(json);
 
-    return 0;
+    if(w == (ssize_t)json_size)
+    {
+        lua_pushboolean(lua, true);
+    }
+    else
+    {
+        asc_log_error("[json] json.save(%s) failed to write [%s]", filename, strerror(errno));
+        lua_pushboolean(lua, false);
+    }
+
+    return 1;
 }
 
 LUA_API int luaopen_json(lua_State *L)
