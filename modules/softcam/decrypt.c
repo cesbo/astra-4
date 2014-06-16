@@ -113,6 +113,15 @@ struct module_data_t
         size_t write;
     } storage;
 
+    struct
+    {
+        uint8_t *buffer;
+        size_t size;
+        size_t count;
+        size_t read;
+        size_t write;
+    } shift;
+
     /* Base */
     mpegts_psi_t *stream[MAX_PID];
     mpegts_psi_t *pmt;
@@ -260,6 +269,10 @@ static void stream_reload(module_data_t *mod)
     mod->storage.dsc_count = 0;
     mod->storage.read = 0;
     mod->storage.write = 0;
+
+    mod->shift.count = 0;
+    mod->shift.read = 0;
+    mod->shift.write = 0;
 }
 
 /*
@@ -763,6 +776,24 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         return;
     }
 
+    if(mod->shift.buffer)
+    {
+        memcpy(&mod->shift.buffer[mod->shift.write], ts, TS_PACKET_SIZE);
+        mod->shift.write += TS_PACKET_SIZE;
+        if(mod->shift.write == mod->shift.size)
+            mod->shift.write = 0;
+        mod->shift.count += TS_PACKET_SIZE;
+
+        if(mod->shift.count < mod->shift.size)
+            return;
+
+        ts = &mod->shift.buffer[mod->shift.read];
+        mod->shift.read += TS_PACKET_SIZE;
+        if(mod->shift.read == mod->shift.size)
+            mod->shift.read = 0;
+        mod->shift.count -= TS_PACKET_SIZE;
+    }
+
     uint8_t *dst = &mod->storage.buffer[mod->storage.write];
     memcpy(dst, ts, TS_PACKET_SIZE);
 
@@ -1042,6 +1073,14 @@ static void module_init(module_data_t *mod)
     }
     lua_pop(lua, 1);
 
+    int shift = 0;
+    module_option_number("shift", &shift);
+    if(shift > 0)
+    {
+        mod->shift.size = (shift * 1000 * 1000) / (TS_PACKET_SIZE * 8) * (TS_PACKET_SIZE);
+        mod->shift.buffer = malloc(mod->shift.size);
+    }
+
     stream_reload(mod);
 }
 
@@ -1069,6 +1108,9 @@ static void module_destroy(module_data_t *mod)
     asc_list_destroy(mod->el_list);
 
     free(mod->storage.buffer);
+
+    if(mod->shift.buffer)
+        free(mod->shift.buffer);
 
     for(int i = 0; i < MAX_PID; ++i)
     {

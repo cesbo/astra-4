@@ -788,6 +788,7 @@ function init_input(channel_data, input_id)
         if input_conf.ecm_pid then decrypt_conf.ecm_pid = input_conf.ecm_pid end
         if input_conf.pnr and input_conf.set_pnr then decrypt_conf.cas_pnr = input_conf.pnr end
         if input_conf.disable_emm == true then decrypt_conf.disable_emm = true end
+        if input_conf.shift then decrypt_conf.shift = input_conf.shift end
         input_data.decrypt = decrypt(decrypt_conf)
         input_data.tail = input_data.decrypt
 
