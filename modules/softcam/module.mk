@@ -33,7 +33,7 @@ SOURCES_CSA=""
 
 if [ $FFDECSA -eq 1 ] ; then
     SOURCES_CSA="FFdecsa/FFdecsa.c"
-    CFLAGS="-DFFDECSA=1 -funroll-loops"
+    CFLAGS="-DFFDECSA=1"
 elif [ $LIBDVBCSA -eq 1 ]; then
     CFLAGS="-DLIBDVBCSA=1"
 fi
