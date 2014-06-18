@@ -923,77 +923,6 @@ function make_client_id(server, client, request, url)
     return client_id
 end
 
-function render_stat_html()
-    local table_content = ""
-    local i = 1
-    local ct = os.time()
-    for client_id, client_stat in pairs(http_client_list) do
-        local dt = ct - client_stat.st
-        local uptime = string.format("%02d:%02d", (dt / 3600), (dt / 60) % 60)
-        table_content = table_content .. "<tr>" ..
-                        "<td>" .. i .. "</td>" ..
-                        "<td>" .. client_stat.addr .. "</td>" ..
-                        "<td>" .. client_stat.url .. "</td>" ..
-                        "<td>" .. uptime .. "</td>" ..
-                        "<td><a href=\"/stat/?close=" .. client_id .. "\">Disconnect</a></td>" ..
-                        "</tr>\r\n"
-        i = i + 1
-    end
-
-    return [[<!DOCTYPE html>
-
-<html lang="en">
-<head>
-    <meta charset="utf-8" />
-    <title>Astra : HTTP Clients</title>
-    <style type="text/css">
-body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333333; }
-table { width: 80%; margin: auto; }
-.brand { text-align: left; font-size: 18px; line-height: 20px; }
-.version { text-align: right; font-size: 14px; line-height: 20px; color: #888; }
-    </style>
-</head>
-<body>
-    <table border="0"><tbody>
-        <tr>
-            <td class="brand">Astra</td>
-            <td class="version">v.]] .. astra.version .. [[</td>
-        </tr>
-    </tbody></table>
-    <table border="1"><thead>
-        <tr><th>#</th><th>Client</th><th>URL</th><th>Uptime</th><th></th></tr>
-    </thead><tbody>
-]] .. table_content .. [[
-    </tbody></table>
-</body>
-</html>
-]]
-end
-
-function on_http_stat(server, client, request)
-    if not request then return nil end
-
-    if request.query then
-        if request.query.close then
-            local client = http_client_list[tonumber(request.query.close)]
-            if client then
-                client.server:close(client.client)
-            end
-            server:redirect(client, "/stat/")
-            return
-        end
-    end
-
-    server:send(client, {
-        code = 200,
-        headers = {
-            "Content-Type: text/html; charset=utf-8",
-            "Connection: close",
-        },
-        content = render_stat_html(),
-    })
-end
-
 function on_http_request(server, client, request)
     local client_data = server:data(client)
 
@@ -1075,8 +1004,6 @@ output_list.http = function(channel_data, output_id)
         buffer_fill = output_conf.buffer_fill,
         channel_list = http_instance.channel_list,
         route = {
-            { "/stat/", on_http_stat },
-            { "/stat", http_redirect({ location = "/stat/" }) },
             { "*", http_upstream({ callback = on_http_request }) },
         },
     })
