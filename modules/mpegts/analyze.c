@@ -367,11 +367,6 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
             mod->stream[pid] = calloc(1, sizeof(analyze_item_t));
 
         mod->stream[pid]->type = mpegts_pes_type(type);
-        lua_pushstring(lua, mpegts_type_name(mod->stream[pid]->type));
-        lua_setfield(lua, -2, "type_name");
-
-        lua_pushnumber(lua, type);
-        lua_setfield(lua, -2, "type_id");
 
         lua_pushnumber(lua, pid);
         lua_setfield(lua, -2, __pid);
@@ -384,8 +379,29 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
             lua_pushnumber(lua, descriptors_count++);
             mpegts_desc_to_lua(desc_pointer);
             lua_settable(lua, -3); // append to the "streams[X].descriptors" table
+
+            if(type == 0x06)
+            {
+                switch(desc_pointer[0])
+                {
+                    case 0x59:
+                        mod->stream[pid]->type = MPEGTS_PACKET_SUB;
+                        break;
+                    case 0x6A:
+                        mod->stream[pid]->type = MPEGTS_PACKET_AUDIO;
+                        break;
+                    default:
+                        break;
+                }
+            }
         }
         lua_setfield(lua, -2, __descriptors);
+
+        lua_pushstring(lua, mpegts_type_name(mod->stream[pid]->type));
+        lua_setfield(lua, -2, "type_name");
+
+        lua_pushnumber(lua, type);
+        lua_setfield(lua, -2, "type_id");
 
         lua_settable(lua, -3); // append to the "streams" table
     }

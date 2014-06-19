@@ -434,6 +434,10 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         if(mod->pid_map[pid] == MAX_PID) // skip filtered pid
             continue;
 
+        const uint8_t item_type = PMT_ITEM_GET_TYPE(psi, pointer);
+        mpegts_packet_type_t mpegts_type = mpegts_pes_type(item_type);
+        const uint8_t *language_desc = NULL;
+
         const uint16_t skip_last = skip;
 
         memcpy(&mod->custom_pmt->buffer[skip], pointer, 5);
@@ -447,7 +451,9 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
         PMT_ITEM_DESC_FOREACH(pointer, desc_pointer)
         {
-            if(desc_pointer[0] == 0x09)
+            const uint8_t desc_type = desc_pointer[0];
+
+            if(desc_type == 0x09)
             {
                 if(!mod->config.cas)
                     continue;
@@ -457,6 +463,24 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                 {
                     mod->stream[ca_pid] = MPEGTS_PACKET_CA;
                     module_stream_demux_join_pid(mod, ca_pid);
+                }
+            }
+            else if(desc_type == 0x0A)
+            {
+                language_desc = desc_pointer;
+            }
+            else if(item_type == 0x06)
+            {
+                switch(desc_type)
+                {
+                    case 0x59:
+                        mpegts_type = MPEGTS_PACKET_SUB;
+                        break;
+                    case 0x6A:
+                        mpegts_type = MPEGTS_PACKET_AUDIO;
+                        break;
+                    default:
+                        break;
                 }
             }
 
@@ -475,7 +499,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         {
             uint16_t custom_pid = 0;
 
-            switch(mpegts_pes_type(PMT_ITEM_GET_TYPE(psi, pointer)))
+            switch(mpegts_type)
             {
                 case MPEGTS_PACKET_VIDEO:
                 {
@@ -484,18 +508,14 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                 }
                 case MPEGTS_PACKET_AUDIO:
                 {
-                    PMT_ITEM_DESC_FOREACH(pointer, desc_pointer)
+                    if(language_desc)
                     {
-                        if(desc_pointer[0] == 0x0A)
-                        {
-                            char type[4];
-                            type[0] = desc_pointer[2];
-                            type[1] = desc_pointer[3];
-                            type[2] = desc_pointer[4];
-                            type[3] = 0;
-                            custom_pid = map_custom_pid(mod, pid, type);
-                            break;
-                        }
+                        char lang[4];
+                        lang[0] = desc_pointer[2];
+                        lang[1] = desc_pointer[3];
+                        lang[2] = desc_pointer[4];
+                        lang[3] = 0;
+                        custom_pid = map_custom_pid(mod, pid, lang);
                     }
                     if(!custom_pid)
                         custom_pid = map_custom_pid(mod, pid, "audio");
