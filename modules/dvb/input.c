@@ -360,6 +360,8 @@ static void module_options_s(module_data_t *mod)
         mod->fe->rolloff = ROLLOFF_35;
 
     module_option_fec(mod);
+
+    mod->fe->stream_id = -1;
     module_option_number("stream_id", &mod->fe->stream_id);
 }
 
@@ -432,6 +434,7 @@ static void module_options_t(module_data_t *mod)
     else
         mod->fe->hierarchy = HIERARCHY_AUTO;
 
+    mod->fe->stream_id = -1;
     module_option_number("stream_id", &mod->fe->stream_id);
 }
 

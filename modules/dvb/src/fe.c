@@ -304,8 +304,14 @@ static void fe_tune_s(dvb_fe_t *fe)
     {
         DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,    fe->modulation);
     }
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_ROLLOFF,           fe->rolloff);
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_STREAM_ID,         fe->stream_id);
+    if(fe->type == DVB_TYPE_S2)
+    {
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_ROLLOFF,       fe->rolloff);
+    }
+    if(fe->stream_id != -1)
+    {
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_STREAM_ID,     fe->stream_id);
+    }
     if(!fe->diseqc)
     {
         DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_VOLTAGE,       voltage);
@@ -368,7 +374,10 @@ static void fe_tune_t(dvb_fe_t *fe)
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_GUARD_INTERVAL,    fe->guardinterval);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TRANSMISSION_MODE, fe->transmitmode);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_HIERARCHY,         fe->hierarchy);
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_STREAM_ID,         fe->stream_id);
+    if(fe->stream_id != -1)
+    {
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_STREAM_ID,     fe->stream_id);
+    }
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TUNE,              0);
 
     if(ioctl(fe->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
