@@ -544,6 +544,9 @@ end
 xproxy_addr = "0.0.0.0"
 xproxy_port = 8000
 
+xproxy_buffer_size = nil
+xproxy_buffer_fill = nil
+
 xproxy_allow_udp = true
 xproxy_allow_rtp = true
 xproxy_allow_http = true
@@ -560,6 +563,8 @@ options_usage = [[
     -a ADDR             local address to listen
     -p PORT             local port for incoming connections
     -l ADDR             source interface for UDP/RTP streams
+    --buffer-size       buffer size in Kb (default: 1024)
+    --buffer-fill       minimal packet size in Kb (default: 128)
     --no-udp            disable direct access the to UDP source
     --no-rtp            disable direct access the to RTP source
     --no-http           disable direct access the to HTTP source
@@ -582,6 +587,14 @@ options = {
     end,
     ["-l"] = function(idx)
         localaddr = argv[idx + 1]
+        return 1
+    end,
+    ["--buffer-size"] =  function(idx)
+        xproxy_buffer_size = tonumber(argv[idx + 1])
+        return 1
+    end,
+    ["--buffer-fill"] =  function(idx)
+        xproxy_buffer_fill = tonumber(argv[idx + 1])
         return 1
     end,
     ["--channels"] = function(idx)
@@ -624,23 +637,34 @@ function main()
         { "/stat", http_redirect({ location = "/stat/" }) },
     }
 
+    local init_http_upstream = function(callback)
+        local http_upstream_conf = { callback = callback }
+        if xproxy_buffer_size then
+            http_upstream_conf.buffer_size = xproxy_buffer_size
+        end
+        if xproxy_buffer_fill then
+            http_upstream_conf.buffer_fill = xproxy_buffer_fill
+        end
+        return http_upstream(http_upstream_conf)
+    end
+
     if xproxy_allow_udp then
-        table.insert(route, { "/udp/*", http_upstream({ callback = on_http_udp }) })
+        table.insert(route, { "/udp/*", init_http_upstream(on_http_udp) })
     end
 
     if xproxy_allow_rtp then
-        table.insert(route, { "/rtp/*", http_upstream({ callback = on_http_udp }) })
+        table.insert(route, { "/rtp/*", init_http_upstream(on_http_udp) })
     end
 
     if xproxy_allow_http then
-        table.insert(route, { "/http/*", http_upstream({ callback = on_http_http }) })
+        table.insert(route, { "/http/*", init_http_upstream(on_http_http) })
     end
 
     if playlist_request then
         table.insert(route, { "/playlist*", on_http_playlist })
     end
 
-    table.insert(route, { "/*", http_upstream({ callback = on_http_channels }) })
+    table.insert(route, { "/*", init_http_upstream(on_http_channels) })
 
     http_server({
         addr = xproxy_addr,
