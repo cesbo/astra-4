@@ -56,7 +56,8 @@ mpegts_packet_type_t mpegts_pes_type(uint8_t type_id)
         case 0x01:  // ISO/IEC 11172 Video
         case 0x02:  // ISO/IEC 13818-2 Video
         case 0x10:  // ISO/IEC 14496-2 Visual
-        case 0x1B:  // ISO/IEC 14496-10 Video | H.264 video
+        case 0x1B:  // ISO/IEC 14496-10 Video | H.264
+        case 0x24:  // ISO/IEC 23008-2 Video | H.265
             return MPEGTS_PACKET_VIDEO;
         case 0x03:  // ISO/IEC 11172 Audio
         case 0x04:  // ISO/IEC 13818-3 Audio
