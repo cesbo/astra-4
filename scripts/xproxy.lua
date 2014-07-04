@@ -664,6 +664,10 @@ function main()
         table.insert(route, { "/playlist*", on_http_playlist })
     end
 
+    if xproxy_route then
+        for _,r in ipairs(xproxy_route) do table.insert(route, r) end
+    end
+
     table.insert(route, { "/*", init_http_upstream(on_http_channels) })
 
     http_server({
