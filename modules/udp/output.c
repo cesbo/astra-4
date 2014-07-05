@@ -32,6 +32,7 @@
  *      rtp         - boolean, use RTP instad RAW UDP
  *      sync        - number, if greater then 0, then use MPEG-TS syncing.
  *                            average value of the stream bitrate in megabit per second
+ *      cbr         - number, constant bitrate
  */
 
 #include <astra.h>
@@ -46,6 +47,7 @@ struct module_data_t
 
     const char *addr;
     int port;
+    uint32_t cbr;
 
     bool is_rtp;
     uint16_t rtpseq;
@@ -75,6 +77,8 @@ struct module_data_t
 
     uint64_t pcr;
 };
+
+static const uint8_t null_ts[TS_PACKET_SIZE] = { 0x47, 0x1F, 0xFF, 0x10, 0x00 };
 
 static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
@@ -267,21 +271,34 @@ static void thread_loop(void *arg)
             if(block_time_total > system_time + 100)
                 asc_usleep(block_time_total - system_time);
 
-            const uint32_t ts_count = block_size / TS_PACKET_SIZE;
-            const uint32_t ts_sync = block_time / ts_count;
-            const uint32_t block_time_tail = block_time % ts_count;
+            uint32_t ts_count = block_size / TS_PACKET_SIZE;
+            if(mod->cbr > 0)
+            {
+                uint32_t cbr_ts_count = mod->cbr * block_time / 1000000;
+                if(cbr_ts_count > ts_count)
+                    ts_count = cbr_ts_count;
+            }
+            uint32_t ts_sync = block_time / ts_count;
+            uint32_t block_time_tail = block_time % ts_count;
 
             system_time_check = asc_utime();
 
-            while(mod->is_thread_started && mod->sync.buffer_read != next_block)
+            for(uint32_t i = 0; mod->is_thread_started && i < ts_count; ++i)
             {
                 // sending
-                const uint8_t *const pointer = &mod->sync.buffer[mod->sync.buffer_read];
-                on_ts(mod, pointer);
+                if(mod->sync.buffer_read != next_block)
+                {
+                    const uint8_t *const pointer = &mod->sync.buffer[mod->sync.buffer_read];
+                    on_ts(mod, pointer);
 
-                mod->sync.buffer_read += TS_PACKET_SIZE;
-                if(mod->sync.buffer_read >= mod->sync.buffer_size)
-                    mod->sync.buffer_read = 0;
+                    mod->sync.buffer_read += TS_PACKET_SIZE;
+                    if(mod->sync.buffer_read >= mod->sync.buffer_size)
+                        mod->sync.buffer_read = 0;
+                }
+                else
+                {
+                    on_ts(mod, null_ts);
+                }
 
                 system_time = asc_utime();
                 block_time_total += ts_sync;
@@ -365,13 +382,19 @@ static void module_init(module_data_t *mod)
     asc_socket_set_sockaddr(mod->sock, mod->addr, mod->port);
 
     value = 0;
-    if(module_option_number("sync", &value) && value > 0)
+    module_option_number("sync", &value);
+    if(value > 0)
     {
         module_stream_init(mod, thread_input_push);
 
         mod->sync.buffer_size = value * 1024 * 1024;
         mod->sync.buffer_size -= mod->sync.buffer_size % TS_PACKET_SIZE;
         mod->sync.buffer = malloc(mod->sync.buffer_size);
+
+        value = 0;
+        module_option_number("cbr", &value);
+        if(value > 0)
+            mod->cbr = (value * 1000 * 1000) / (8 * TS_PACKET_SIZE); // ts/s
 
         mod->thread = asc_thread_init(mod);
         mod->thread_input = asc_thread_buffer_init(mod->sync.buffer_size * 2);

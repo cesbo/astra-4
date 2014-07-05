@@ -516,6 +516,8 @@ function on_http_channels(server, client, request)
         return
     end
 
+    make_client_id(server, client, request, request.path)
+
     local allow_channel = function()
         local proto = channel:sub(1, b - 1)
         local url = channel:sub(b + 3)
