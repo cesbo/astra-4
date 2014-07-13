@@ -515,7 +515,6 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                         lang[1] = language_desc[3];
                         lang[2] = language_desc[4];
                         lang[3] = 0;
-                        printf("TEST:%s\n", lang);
                         custom_pid = map_custom_pid(mod, pid, lang);
                     }
                     if(!custom_pid)
