@@ -96,6 +96,7 @@ struct module_data_t
     const char *name;
     int caid;
     bool disable_emm;
+    int ecm_pid;
 
     /* dvbcsa */
     asc_list_t *el_list;
@@ -442,27 +443,15 @@ static ca_stream_t * __pmt_check_desc(  module_data_t *mod
     if(pid == NULL_TS_PID)
         return NULL;
 
-    if(mod->stream[pid])
-    {
-        if(!(mod->stream[pid]->type & MPEGTS_PACKET_CA))
-        {
-            asc_log_warning(MSG("Skip ECM pid:%d"), pid);
-            return NULL;
-        }
-    }
-    else
+    if(mod->stream[pid] == NULL)
         mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_CA, pid);
 
-    if(   mod->__decrypt.cas
-       && DESC_CA_CAID(desc) == mod->caid
-       && module_cas_check_descriptor(mod->__decrypt.cas, desc))
+    if(   (mod->__decrypt.cas)
+       && (mod->stream[pid]->type & MPEGTS_PACKET_CA)
+       && (is_ecm_selected == false)
+       && (DESC_CA_CAID(desc) == mod->caid)
+       && (module_cas_check_descriptor(mod->__decrypt.cas, desc)))
     {
-        if(is_ecm_selected)
-        {
-            asc_log_warning(MSG("Skip ECM pid:%d"), pid);
-            return NULL;
-        }
-
         asc_list_for(mod->ca_list)
         {
             ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
@@ -470,11 +459,15 @@ static ca_stream_t * __pmt_check_desc(  module_data_t *mod
                 return ca_stream;
         }
 
-        mod->stream[pid]->type = MPEGTS_PACKET_ECM;
-        asc_log_info(MSG("Select ECM pid:%d"), pid);
-        return ca_stream_init(mod, pid);
+        if(mod->ecm_pid == 0 || mod->ecm_pid == pid)
+        {
+            mod->stream[pid]->type = MPEGTS_PACKET_ECM;
+            asc_log_info(MSG("Select ECM pid:%d"), pid);
+            return ca_stream_init(mod, pid);
+        }
     }
 
+    asc_log_warning(MSG("Skip ECM pid:%d"), pid);
     return NULL;
 }
 
@@ -1068,6 +1061,7 @@ static void module_init(module_data_t *mod)
         }
 
         module_option_boolean("disable_emm", &mod->disable_emm);
+        module_option_number("ecm_pid", &mod->ecm_pid);
 
         module_cam_attach_decrypt(mod->__decrypt.cam, &mod->__decrypt);
     }
