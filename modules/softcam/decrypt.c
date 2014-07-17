@@ -446,12 +446,28 @@ static ca_stream_t * __pmt_check_desc(  module_data_t *mod
     if(mod->stream[pid] == NULL)
         mod->stream[pid] = mpegts_psi_init(MPEGTS_PACKET_CA, pid);
 
-    if(   (mod->__decrypt.cas)
-       && (mod->stream[pid]->type & MPEGTS_PACKET_CA)
-       && (is_ecm_selected == false)
-       && (DESC_CA_CAID(desc) == mod->caid)
-       && (module_cas_check_descriptor(mod->__decrypt.cas, desc)))
+    do
     {
+        if(!mod->__decrypt.cas)
+            break;
+        if(is_ecm_selected)
+            break;
+        if(!(mod->stream[pid]->type & MPEGTS_PACKET_CA))
+            break;
+
+        if(mod->ecm_pid == 0)
+        {
+            if(DESC_CA_CAID(desc) != mod->caid)
+                break;
+            if(!module_cas_check_descriptor(mod->__decrypt.cas, desc))
+                break;
+        }
+        else
+        {
+            if(mod->ecm_pid != pid)
+                break;
+        }
+
         asc_list_for(mod->ca_list)
         {
             ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
@@ -459,13 +475,10 @@ static ca_stream_t * __pmt_check_desc(  module_data_t *mod
                 return ca_stream;
         }
 
-        if(mod->ecm_pid == 0 || mod->ecm_pid == pid)
-        {
-            mod->stream[pid]->type = MPEGTS_PACKET_ECM;
-            asc_log_info(MSG("Select ECM pid:%d"), pid);
-            return ca_stream_init(mod, pid);
-        }
-    }
+        mod->stream[pid]->type = MPEGTS_PACKET_ECM;
+        asc_log_info(MSG("Select ECM pid:%d"), pid);
+        return ca_stream_init(mod, pid);
+    } while(0);
 
     asc_log_warning(MSG("Skip ECM pid:%d"), pid);
     return NULL;
