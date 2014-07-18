@@ -47,6 +47,7 @@ struct dvb_fe_t
     dvb_type_t type;
     int adapter;
     int device;
+    int timeout;
 
     /* FE Config */
     int frequency;

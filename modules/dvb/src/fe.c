@@ -426,7 +426,7 @@ static void fe_tune_c(dvb_fe_t *fe)
 static void fe_tune(dvb_fe_t *fe)
 {
     fe_clear(fe);
-    fe->do_retune = 6;
+    fe->do_retune = fe->timeout + 1;
 
     switch(fe->type)
     {

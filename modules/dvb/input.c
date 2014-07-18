@@ -481,6 +481,9 @@ static void module_options(module_data_t *mod)
     mod->fe->device = mod->device;
     mod->ca->device = mod->device;
 
+    mod->fe->timeout = 5;
+    module_option_number("timeout", &mod->fe->timeout);
+
     const char *string_val = NULL;
 
     static const char __type[] = "type";
