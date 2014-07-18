@@ -30,6 +30,11 @@
 
 #define MSG(_msg) "[newcamd %s] " _msg, mod->config.name
 
+typedef union {
+    uint8_t a[8];
+    uint64_t l;
+} csa_key_t;
+
 struct module_data_t
 {
     MODULE_CAM_DATA();
@@ -65,7 +70,7 @@ struct module_data_t
 
     uint16_t msg_id;        // curren message id
     em_packet_t *packet;    // current packet
-    uint64_t last_key[2];   // NDS
+    csa_key_t last_key[2];  // NDS
 
     uint8_t buffer[NEWCAMD_MSG_SIZE];
     size_t payload_size;    // to send
@@ -420,17 +425,18 @@ static void on_newcamd_read_packet(void *arg)
         if(mod->payload_size == 16)
         {
             // NDS
-            uint64_t *key_0 = (uint64_t *)&buffer[3];
-            uint64_t *key_1 = (uint64_t *)&buffer[11];
-            if(!(*key_0))
+            csa_key_t key_0, key_1;
+            memcpy(key_0.a, &buffer[3], 8);
+            memcpy(key_1.a, &buffer[11], 8);
+            if(key_0.l == 0)
             {
-                *key_0 = mod->last_key[0];
-                mod->last_key[1] = *key_1;
+                key_0.l = mod->last_key[0].l;
+                mod->last_key[1].l = key_1.l;
             }
-            else if(!(*key_1))
+            else if(key_1.l == 0)
             {
-                *key_1 = mod->last_key[1];
-                mod->last_key[0] = *key_0;
+                key_1.l = mod->last_key[1].l;
+                mod->last_key[0].l = key_0.l;
             }
 
             memcpy(mod->packet->buffer, buffer, 16 + 3);
