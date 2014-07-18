@@ -101,6 +101,8 @@ static void on_ts(void *arg, const uint8_t *ts)
     {
         // overflow
         response->buffer_count = 0;
+        response->buffer_read = 0;
+        response->buffer_write = 0;
         if(response->is_socket_busy)
         {
             asc_socket_set_on_ready(client->sock, NULL);
