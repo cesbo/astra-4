@@ -30,8 +30,12 @@
 
 #define MSG(_msg) "[newcamd %s] " _msg, mod->config.name
 
+#define CSA_KEY_SIZE 8
+#define ECM_HEADER_SIZE 3
+#define ECM_PAYLOAD_SIZE (CSA_KEY_SIZE * 2)
+
 typedef union {
-    uint8_t a[8];
+    uint8_t a[CSA_KEY_SIZE];
     uint64_t l;
 } csa_key_t;
 
@@ -422,36 +426,36 @@ static void on_newcamd_read_packet(void *arg)
             return;
         }
 
-        if(mod->payload_size == 16)
+        if(mod->payload_size == ECM_PAYLOAD_SIZE)
         {
             // NDS
             csa_key_t key_0, key_1;
-            memcpy(key_0.a, &buffer[3], 8);
-            memcpy(key_1.a, &buffer[11], 8);
+            memcpy(key_0.a, &buffer[3], CSA_KEY_SIZE);
+            memcpy(key_1.a, &buffer[11], CSA_KEY_SIZE);
             if(key_0.l == 0)
             {
-                key_0.l = mod->last_key[0].l;
+                memcpy(&buffer[3], mod->last_key[0].a, CSA_KEY_SIZE);
                 mod->last_key[1].l = key_1.l;
             }
             else if(key_1.l == 0)
             {
-                key_1.l = mod->last_key[1].l;
+                memcpy(&buffer[11], mod->last_key[1].a, CSA_KEY_SIZE);
                 mod->last_key[0].l = key_0.l;
             }
 
-            memcpy(mod->packet->buffer, buffer, 16 + 3);
-            mod->packet->buffer_size = 16 + 3;
+            memcpy(mod->packet->buffer, buffer, ECM_HEADER_SIZE + ECM_PAYLOAD_SIZE);
+            mod->packet->buffer_size = ECM_HEADER_SIZE + ECM_PAYLOAD_SIZE;
         }
         else if(mod->payload_size == 0)
         {
-            memcpy(mod->packet->buffer, buffer, 3);
-            mod->packet->buffer_size = 3;
+            memcpy(mod->packet->buffer, buffer, ECM_HEADER_SIZE);
+            mod->packet->buffer_size = ECM_HEADER_SIZE;
         }
         else
         {
             mod->packet->buffer[2] = 0x00;
             mod->packet->buffer[3] = 0x00;
-            mod->packet->buffer_size = 3;
+            mod->packet->buffer_size = ECM_HEADER_SIZE;
         }
 
         on_cam_response(mod->packet->decrypt->self, mod->packet->arg, mod->packet->buffer);
