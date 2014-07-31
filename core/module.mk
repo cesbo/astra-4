@@ -21,3 +21,22 @@ if check_clock_gettime ; then
     CFLAGS="-DHAVE_CLOCK_GETTIME=1"
     LDFLAGS="-lrt"
 fi
+
+sctp_h_test_c()
+{
+    cat <<EOF
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/sctp.h>
+int main(void) { return 0; }
+EOF
+}
+
+check_sctp_h()
+{
+    sctp_h_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+}
+
+if check_sctp_h ; then
+    CFLAGS="-DHAVE_SCTP_H=1"
+fi

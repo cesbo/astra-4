@@ -33,6 +33,7 @@ const char * asc_socket_error(void);
 
 asc_socket_t * asc_socket_open_tcp4(void * arg) __wur;
 asc_socket_t * asc_socket_open_udp4(void * arg) __wur;
+asc_socket_t * asc_socket_open_sctp4(void * arg) __wur;
 
 void asc_socket_set_on_read(asc_socket_t * sock, event_callback_t on_read);
 void asc_socket_set_on_close(asc_socket_t * sock, event_callback_t on_close);

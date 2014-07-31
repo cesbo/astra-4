@@ -33,6 +33,9 @@
 #   include <arpa/inet.h>
 #   include <netinet/in.h>
 #   include <netinet/tcp.h>
+#   ifdef HAVE_SCTP_H
+#       include <netinet/sctp.h>
+#   endif
 #   include <netdb.h>
 #endif
 
@@ -43,6 +46,7 @@ struct asc_socket_t
     int fd;
     int family;
     int type;
+    int protocol;
 
     asc_event_t *event;
 
@@ -116,15 +120,16 @@ const char * asc_socket_error(void)
  *
  */
 
-static asc_socket_t * __socket_open(int family, int type, void * arg)
+static asc_socket_t * __socket_open(int family, int type, int protocol, void * arg)
 {
-    const int fd = socket(family, type, 0);
+    const int fd = socket(family, type, protocol);
     asc_assert(fd != -1, "[core/socket] failed to open socket [%s]", asc_socket_error());
     asc_socket_t *sock = calloc(1, sizeof(asc_socket_t));
     sock->fd = fd;
     sock->mreq.imr_multiaddr.s_addr = INADDR_NONE;
     sock->family = family;
     sock->type = type;
+    sock->protocol = protocol;
     sock->arg = arg;
 
     asc_socket_set_nonblock(sock, true);
@@ -133,12 +138,23 @@ static asc_socket_t * __socket_open(int family, int type, void * arg)
 
 asc_socket_t * asc_socket_open_tcp4(void * arg)
 {
-    return __socket_open(PF_INET, SOCK_STREAM, arg);
+    return __socket_open(PF_INET, SOCK_STREAM, IPPROTO_TCP, arg);
 }
 
 asc_socket_t * asc_socket_open_udp4(void * arg)
 {
-    return __socket_open(PF_INET, SOCK_DGRAM, arg);
+    return __socket_open(PF_INET, SOCK_DGRAM, IPPROTO_UDP, arg);
+}
+
+asc_socket_t * asc_socket_open_sctp4(void * arg)
+{
+#ifndef IPPROTO_SCTP
+    asc_log_error("[core/socket] SCTP protocol is not available");
+    astra_abort();
+    return NULL;
+#else
+    return __socket_open(PF_INET, SOCK_STREAM, IPPROTO_SCTP, arg);
+#endif
 }
 
 /*
@@ -592,7 +608,23 @@ void asc_socket_set_reuseaddr(asc_socket_t *sock, int is_on)
 
 void asc_socket_set_non_delay(asc_socket_t *sock, int is_on)
 {
-    setsockopt(sock->fd, IPPROTO_TCP, TCP_NODELAY, (void *)&is_on, sizeof(is_on));
+    switch(sock->protocol)
+    {
+#ifdef IPPROTO_SCTP
+        case IPPROTO_SCTP:
+#ifdef SCTP_NODELAY
+            setsockopt(sock->fd, sock->protocol, SCTP_NODELAY, (void *)&is_on, sizeof(is_on));
+#else
+            asc_log_error("[core/socket] SCTP_NODELAY is not available");
+#endif
+            break;
+#endif
+        case IPPROTO_TCP:
+            setsockopt(sock->fd, sock->protocol, TCP_NODELAY, (void *)&is_on, sizeof(is_on));
+            break;
+        default:
+            break;
+    }
 }
 
 void asc_socket_set_keep_alive(asc_socket_t *sock, int is_on)
