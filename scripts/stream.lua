@@ -620,6 +620,7 @@ input_list.http = function(channel_data, input_id)
     if input_conf.sync then http_conf.sync = input_conf.sync end
     if input_conf.buffer_size then http_conf.buffer_size = input_conf.buffer_size end
     if input_conf.timeout then http_conf.timeout = input_conf.timeout end
+    if input_conf.sctp then http_conf.sctp = true end
 
     local timer_conf =
     {
@@ -1002,6 +1003,7 @@ output_list.http = function(channel_data, output_id)
         port = output_conf.port,
         buffer_size = output_conf.buffer_size,
         buffer_fill = output_conf.buffer_fill,
+        sctp = output_conf.sctp,
         channel_list = http_instance.channel_list,
         route = {
             { "*", http_upstream({ callback = on_http_request }) },

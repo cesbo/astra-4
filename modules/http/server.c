@@ -27,6 +27,7 @@
  *      port         - number, server port
  *      server_name  - string, default value: "Astra"
  *      http_version - string, default value: "HTTP/1.1"
+ *      sctp         - boolean, use sctp instead of tcp
  *      route        - list, format: { { "/path", callback }, ... }
  *
  * Module Methods:
@@ -993,7 +994,13 @@ static void module_init(module_data_t *mod)
 
     mod->clients = asc_list_init();
 
-    mod->sock = asc_socket_open_tcp4(mod);
+    bool sctp = false;
+    module_option_boolean("sctp", &sctp);
+    if(sctp == true)
+        mod->sock = asc_socket_open_sctp4(mod);
+    else
+        mod->sock = asc_socket_open_tcp4(mod);
+
     asc_socket_set_reuseaddr(mod->sock, 1);
     if(!asc_socket_bind(mod->sock, mod->addr, mod->port))
     {

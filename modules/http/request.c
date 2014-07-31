@@ -32,6 +32,7 @@
  *      content     - string, request content
  *      stream      - boolean, true to read MPEG-TS stream
  *      sync        - boolean or number, enable stream synchronization
+ *      sctp        - boolean, use sctp instead of tcp
  *      timeout     - number, request timeout
  *      callback    - function,
  */
@@ -1223,7 +1224,13 @@ static void module_init(module_data_t *mod)
     mod->timeout_ms *= 1000;
     mod->timeout = asc_timer_init(mod->timeout_ms, timeout_callback, mod);
 
-    mod->sock = asc_socket_open_tcp4(mod);
+    bool sctp = false;
+    module_option_boolean("sctp", &sctp);
+    if(sctp == true)
+        mod->sock = asc_socket_open_sctp4(mod);
+    else
+        mod->sock = asc_socket_open_tcp4(mod);
+
     asc_socket_connect(mod->sock, mod->config.host, mod->config.port, on_connect, on_close);
 }
 
