@@ -732,6 +732,7 @@ function init_input(channel_data, input_id)
 
     if input_conf.pnr == nil and input_conf.pid == nil then
         if  input_conf.set_pnr or
+            input_conf.no_sdt or input_conf.no_eit or
             input_conf.map or channel_data.config.map or
             input_conf.filter
         then
