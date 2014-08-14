@@ -745,18 +745,16 @@ function init_input(channel_data, input_id)
             upstream = input_data.tail:stream(),
         }
 
-        if input_conf.pnr ~= nil then
-            channel_conf.pnr = input_conf.pnr
-            if input_conf.set_pnr then channel_conf.set_pnr = input_conf.set_pnr end
-
-            if input_conf.no_sdt ~= true and _G.no_sdt ~= true then channel_conf.sdt = true end
-            if input_conf.no_eit ~= true and _G.no_eit ~= true then channel_conf.eit = true end
-
-            if channel_conf.sdt and input_conf.pass_sdt then channel_conf.pass_sdt = true end
-            if channel_conf.eit and input_conf.pass_eit then channel_conf.pass_eit = true end
-        end
-
+        if input_conf.pnr ~= nil then channel_conf.pnr = input_conf.pnr end
         if input_conf.pid then channel_conf.pid = input_conf.pid end
+
+        if input_conf.set_pnr then channel_conf.set_pnr = input_conf.set_pnr end
+
+        if input_conf.no_sdt ~= true and _G.no_sdt ~= true then channel_conf.sdt = true end
+        if input_conf.no_eit ~= true and _G.no_eit ~= true then channel_conf.eit = true end
+
+        if input_conf.pass_sdt then channel_conf.pass_sdt = true end
+        if input_conf.pass_eit then channel_conf.pass_eit = true end
 
         if input_conf.map then
             channel_conf.map = input_conf.map

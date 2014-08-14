@@ -57,10 +57,10 @@ end
 
 function astra_usage()
     print([[
-Usage: astra [APP] [OPTIONS]
+Usage: astra APP [OPTIONS]
 
 Available Applications:
-    --stream            Digital TV Streaming application. Used by default
+    --stream            Digital TV Streaming
     --analyze           MPEG-TS Analyzer
     --xproxy            xProxy
     SCRIPT              execute lua-script
