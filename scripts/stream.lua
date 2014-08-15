@@ -1,5 +1,5 @@
 -- Astra Script: IPTV Streaming
--- http://cesbo.com/astra
+-- https://cesbo.com/astra
 --
 -- Copyright (C) 2013-2014, Andrey Dyldin <and@cesbo.com>
 --
@@ -335,7 +335,7 @@ end
 -- o888o  88o8 o888ooo8888 o88oooo888 o888ooo8888 o888o  88o8    888     o888ooo8888
 
 function start_reserve(channel_data)
-    function set_input()
+    local function set_input()
         for input_id = 1, #channel_data.input do
             local input_data = channel_data.input[input_id]
             if input_data.on_air then
@@ -350,25 +350,19 @@ function start_reserve(channel_data)
     local active_input_id = set_input()
 
     if active_input_id == 0 then
-        for input_id = 2, #channel_data.input do
-            local input_data = channel_data.input[input_id]
-            if not input_data.source then
-                init_input(channel_data, input_id)
-                return nil
-            end
+        if #channel_data.input < #channel_data.config.input then
+            init_input(channel_data, #channel_data.input + 1)
+        else
+            log.error("[" .. channel_data.config.name .. "] No active input")
         end
-
-        log.error("[" .. channel_data.config.name .. "] No active input")
-        return
+        return nil
     end
 
     for input_id = active_input_id + 1, #channel_data.input do
         local input_data = channel_data.input[input_id]
         if input_data.source then
             kill_input(channel_data, input_id)
-
             log.debug("[" .. channel_data.config.name .. "] Destroy input #" .. input_id)
-            channel_data.input[input_id] = { on_air = false, }
         end
     end
 
@@ -724,6 +718,15 @@ function init_input(channel_data, input_id)
 
     local input_conf = channel_data.config.input[input_id]
     local input_data = channel_data.input[input_id]
+    if input_data ~= nil then
+        if input_data.source then
+            log.error("[" .. channel_data.config.name .. " #" .. input_id .. "] is started twice")
+            return nil
+        end
+    else
+        input_data = {}
+        channel_data.input[input_id] = input_data
+    end
 
     input_data.name = channel_data.config.name .. " #" .. input_id
     input_data.config = input_conf
@@ -938,7 +941,7 @@ function on_http_request(server, client, request)
                 for input_id = 1, #channel_data.config.input do
                     kill_input(channel_data, input_id)
                 end
-                channel_data.input = {}
+                channel_data.ri_delay = channel_data.config.timeout
                 collectgarbage()
             end
             client_data.channel_data = nil
@@ -1152,6 +1155,7 @@ function make_channel(channel_conf)
     end
 
     if not channel_conf.output then channel_conf.output = {} end
+    if not channel_conf.timeout then channel_conf.timeout = 3 end
 
     if type(channel_conf.enable) == 'nil' then
         channel_conf.enable = true
@@ -1182,23 +1186,17 @@ function make_channel(channel_conf)
     channel_data.config = channel_conf
     channel_data.input = {}
     channel_data.output = {}
-    channel_data.ri_delay = 3 -- the delay for reserve
+    channel_data.ri_delay = channel_conf.timeout -- the delay for reserve
 
     channel_data.clients = 0
     if #channel_conf.output == 0 then
         channel_data.clients = 1
     else
         for _,output_conf in pairs(channel_conf.output) do
-            if output_conf.module_name ~= "http" or
-               output_conf.keep_active == true
-            then
+            if output_conf.module_name ~= "http" or output_conf.keep_active == true then
                 channel_data.clients = channel_data.clients + 1
             end
         end
-    end
-
-    for input_id = 1, #channel_conf.input do
-        channel_data.input[input_id] = { on_air = false, }
     end
 
     channel_data.transmit = transmit()
