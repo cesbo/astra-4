@@ -29,6 +29,7 @@
 typedef struct
 {
     int fd;
+    bool color;
     bool debug;
     bool sout;
     char *filename;
@@ -40,6 +41,7 @@ typedef struct
 static log_t __log =
 {
     0,
+    false,
     false,
     true,
     NULL
@@ -104,8 +106,31 @@ static void _log(int type, const char *msg, va_list ap)
     buffer[len_2] = '\n';
     ++len_2;
 
-    if(__log.sout && write(1, buffer, len_2) == -1)
-        fprintf(stderr, "[log] failed to write to the stdout [%s]\n", strerror(errno));
+    if(__log.sout)
+    {
+        bool reset_color = false;
+        if(__log.color && isatty(STDOUT_FILENO))
+        {
+            switch(type)
+            {
+                case LOG_TYPE_WARNING:
+                    reset_color = true;
+                    write(STDOUT_FILENO, "\x1b[33m", 5);
+                    break;
+                case LOG_TYPE_ERROR:
+                    reset_color = true;
+                    write(STDOUT_FILENO, "\x1b[31m", 5);
+                    break;
+                default:
+                    break;
+            }
+        }
+        const int r = write(1, buffer, len_2);
+        if(reset_color)
+            write(STDOUT_FILENO, "\x1b[0m", 4);
+        if(r == -1)
+            fprintf(stderr, "[log] failed to write to the stdout [%s]\n", strerror(errno));
+    }
 
     if(__log.fd && write(__log.fd, buffer, len_2) == -1)
         fprintf(stderr, "[log] failed to write to the file [%s]\n", strerror(errno));
@@ -189,6 +214,7 @@ void asc_log_core_destroy(void)
     __log.syslog = false;
 #endif
 
+    __log.color = false;
     __log.debug = false;
     __log.sout = true;
     if(__log.filename)
@@ -206,6 +232,11 @@ void asc_log_set_stdout(bool val)
 void asc_log_set_debug(bool val)
 {
     __log.debug = val;
+}
+
+void asc_log_set_color(bool val)
+{
+    __log.color = val;
 }
 
 void asc_log_set_file(const char *val)

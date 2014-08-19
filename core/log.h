@@ -25,6 +25,7 @@
 
 void asc_log_set_stdout(bool);
 void asc_log_set_debug(bool);
+void asc_log_set_color(bool);
 void asc_log_set_file(const char *);
 #ifndef _WIN32
 void asc_log_set_syslog(const char *);

@@ -72,6 +72,7 @@ Astra Options:
     --syslog NAME       send log messages to syslog
     --log FILE          write log to file
     --no-stdout         do not print log messages into console
+    --log-color         colored log messages in console
     --debug             print debug messages
 ]])
 
@@ -107,6 +108,10 @@ astra_options = {
     end,
     ["--no-stdout"] = function(idx)
         log.set({ stdout = false })
+        return 0
+    end,
+    ["--log-color"] = function(udx)
+        log.set({ color = true })
         return 0
     end,
     ["--debug"] = function(idx)

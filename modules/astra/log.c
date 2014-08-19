@@ -80,6 +80,11 @@ static int lua_log_set(lua_State *L)
             luaL_checktype(L, -1, LUA_TBOOLEAN);
             asc_log_set_stdout(lua_toboolean(L, -1));
         }
+        else if(!strcmp(var, "color"))
+        {
+            luaL_checktype(L, -1, LUA_TBOOLEAN);
+            asc_log_set_color(lua_toboolean(L, -1));
+        }
     }
 
     return 0;

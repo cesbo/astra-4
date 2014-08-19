@@ -1,17 +1,24 @@
 #!/usr/bin/astra
 
+log.set({ color = true })
+
 local dvb_list = dvbls()
 
 for _,dvb_info in pairs(dvb_list) do
-    log.info("adapter = " .. dvb_info.adapter .. ", device = " .. dvb_info.device)
     if dvb_info.error then
+        log.error("adapter = " .. dvb_info.adapter .. ", device = " .. dvb_info.device)
         log.error("    " .. dvb_info.error)
     else
         if dvb_info.busy == true then
-            log.info("    adapter in use")
+            log.warning("adapter = " .. dvb_info.adapter .. ", device = " .. dvb_info.device)
+            log.warning("    adapter in use")
+            log.warning("    mac = " .. dvb_info.mac)
+            log.warning("    frontend = " .. dvb_info.frontend)
+        else
+            log.info("adapter = " .. dvb_info.adapter .. ", device = " .. dvb_info.device)
+            log.info("    mac = " .. dvb_info.mac)
+            log.info("    frontend = " .. dvb_info.frontend)
         end
-        log.info("    mac = " .. dvb_info.mac)
-        log.info("    frontend = " .. dvb_info.frontend)
     end
 end
 
