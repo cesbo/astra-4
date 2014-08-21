@@ -259,7 +259,18 @@ static void on_websocket_read(void *arg)
         lua_rawgeti(lua, LUA_REGISTRYINDEX, response->mod->idx_callback);
         lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_server);
         lua_pushlightuserdata(lua, client);
-        lua_pushlstring(lua, (const char *)data, response->data_size);
+
+        if(client->content)
+        {
+            string_buffer_addlstring(client->content, (const char *)data, response->data_size);
+            string_buffer_push(lua, client->content);
+            client->content = NULL;
+        }
+        else
+        {
+            lua_pushlstring(lua, (const char *)data, response->data_size);
+        }
+
         lua_call(lua, 3, 0);
 
         response->header_size = 0;
