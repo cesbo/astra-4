@@ -166,8 +166,106 @@ end
 init_input_module = {}
 kill_input_module = {}
 
-init_input_extension = {}
-kill_input_extension = {}
+function init_input(conf)
+    local instance = { format = conf.format, }
+
+    if not init_input_module[conf.format] then
+        log.error("[" .. conf.name .. "] unknown input format")
+        astra.abort()
+    end
+    instance.input = init_input_module[conf.format](conf)
+    instance.tail = instance.input
+
+    if conf.pnr == nil then
+        local function check_dependent()
+            if conf.set_pnr ~= nil then return true end
+            if conf.no_sdt == true then return true end
+            if conf.no_eit == true then return true end
+            if conf.map then return true end
+            if conf.filter then return true end
+            return false
+        end
+        if check_dependent() then conf.pnr = 0 end
+    end
+
+    if conf.pnr ~= nil then
+        local demux_sdt = (conf.no_sdt ~= true)
+        local demux_eit = (conf.no_eit ~= true)
+        local demux_cas = (type(conf.cam) == "string" or conf.cas == true)
+        local pass_sdt = (demux_sdt == true and conf.pass_sdt == true)
+        local pass_eit = (demux_eit == true and conf.pass_eit == true)
+
+        instance.channel = channel({
+            upstream = instance.tail:stream(),
+            name = conf.name,
+            pnr = conf.pnr,
+            pid = conf.pid,
+            sdt = demux_sdt,
+            eit = demux_eit,
+            cas = demux_cas,
+            pass_sdt = pass_sdt,
+            pass_eit = pass_eit,
+            map = conf.map,
+            filter = conf.filter,
+        })
+        instance.tail = instance.channel
+    end
+
+    if conf.biss then
+        instance.decrypt = decrypt({
+            upstream = instance.tail:stream(),
+            name = conf.name,
+            biss = conf.biss,
+        })
+        instance.tail = instance.decrypt
+    elseif conf.cam then
+        local cam = nil
+        if type(conf.cam) == "table" then
+            cam = conf.cam
+        else
+            cam = _G["softcam_" .. tostring(conf.cam)]
+            if not cam then
+                cam = _G[tostring(conf.cam)]
+            end
+        end
+        if type(cam) ~= "table" or not cam.cam then
+            log.error("[" .. conf.name .. "] cam is not found")
+            astra.exit()
+        end
+        local cas_pnr = nil
+        if conf.pnr and conf.set_pnr then cas_pnr = conf.pnr end
+
+        instance.decrypt = decrypt({
+            upstream = instance.tail:stream(),
+            name = conf.name,
+            cam = cam:cam(),
+            cas_data = conf.cas_data,
+            cas_pnr = conf.cas_pnr,
+            disable_emm = conf.no_emm,
+            ecm_pid = conf.ecm_pid,
+            shift = conf.shift,
+        })
+        instance.tail = instance.decrypt
+    end
+
+    return instance
+end
+
+function kill_input(instance)
+    instance.tail = nil
+
+    kill_input_module[instance.format](instance.input)
+    instance.input = nil
+
+    instance.channel = nil
+    instance.decrypt = nil
+end
+
+-- ooooo         ooooo  oooo ooooooooo  oooooooooo
+--  888           888    88   888    88o 888    888
+--  888 ooooooooo 888    88   888    888 888oooo88
+--  888           888    88   888    888 888
+-- o888o           888oo88   o888ooo88  o888o
 
 udp_input_instance_list = {}
 
@@ -212,6 +310,12 @@ kill_input_module.rtp = function(module)
     kill_input_module.udp(module)
 end
 
+-- ooooo         ooooooooooo ooooo ooooo       ooooooooooo
+--  888           888    88   888   888         888    88
+--  888 ooooooooo 888oo8      888   888         888ooo8
+--  888           888         888   888      o  888    oo
+-- o888o         o888o       o888o o888ooooo88 o888ooo8888
+
 init_input_module.file = function(conf)
     return file_input(conf)
 end
@@ -219,6 +323,12 @@ end
 kill_input_module.file = function(module)
     --
 end
+
+-- ooooo         ooooo ooooo ooooooooooo ooooooooooo oooooooooo
+--  888           888   888  88  888  88 88  888  88  888    888
+--  888 ooooooooo 888ooo888      888         888      888oooo88
+--  888           888   888      888         888      888
+-- o888o         o888o o888o    o888o       o888o    o888o
 
 http_user_agent = "Astra"
 http_input_instance_list = {}
@@ -332,6 +442,12 @@ kill_input_module.http = function(module)
     end
 end
 
+-- ooooo         ooooooooo  ooooo  oooo oooooooooo
+--  888           888    88o 888    88   888    888
+--  888 ooooooooo 888    888  888  88    888oooo88
+--  888           888    888   88888     888    888
+-- o888o         o888ooo88      888     o888ooo888
+
 dvb_input_instance_list = {}
 dvb_list = nil
 
@@ -426,101 +542,6 @@ kill_input_module.dvb = function(module)
     end
 end
 
-function init_input(conf)
-    local instance = { format = conf.format, }
-
-    if not init_input_module[conf.format] then
-        log.error("[" .. conf.name .. "] unknown input format")
-        astra.abort()
-    end
-    instance.input = init_input_module[conf.format](conf)
-    instance.tail = instance.input
-
-    if conf.pnr == nil then
-        local function check_dependent()
-            if conf.set_pnr ~= nil then return true end
-            if conf.no_sdt == true then return true end
-            if conf.no_eit == true then return true end
-            if conf.map then return true end
-            if conf.filter then return true end
-            return false
-        end
-        if check_dependent() then conf.pnr = 0 end
-    end
-
-    if conf.pnr ~= nil then
-        local demux_sdt = (conf.no_sdt ~= true)
-        local demux_eit = (conf.no_eit ~= true)
-        local demux_cas = (type(conf.cam) == "string" or conf.cas == true)
-        local pass_sdt = (demux_sdt == true and conf.pass_sdt == true)
-        local pass_eit = (demux_eit == true and conf.pass_eit == true)
-
-        instance.channel = channel({
-            upstream = instance.tail:stream(),
-            name = conf.name,
-            pnr = conf.pnr,
-            pid = conf.pid,
-            sdt = demux_sdt,
-            eit = demux_eit,
-            cas = demux_cas,
-            pass_sdt = pass_sdt,
-            pass_eit = pass_eit,
-            map = conf.map,
-            filter = conf.filter,
-        })
-        instance.tail = instance.channel
-    end
-
-    if conf.biss then
-        instance.decrypt = decrypt({
-            upstream = instance.tail:stream(),
-            name = conf.name,
-            biss = conf.biss,
-        })
-        instance.tail = instance.decrypt
-    elseif conf.cam then
-        local cam = nil
-        if type(conf.cam) == "table" then
-            cam = conf.cam
-        else
-            cam = _G["softcam_" .. tostring(conf.cam)]
-            if not cam then
-                cam = _G[tostring(conf.cam)]
-            end
-        end
-        if type(cam) ~= "table" or not cam.cam then
-            log.error("[" .. conf.name .. "] cam is not found")
-            astra.exit()
-        end
-        local cas_pnr = nil
-        if conf.pnr and conf.set_pnr then cas_pnr = conf.pnr end
-
-        instance.decrypt = decrypt({
-            upstream = instance.tail:stream(),
-            name = conf.name,
-            cam = cam:cam(),
-            cas_data = conf.cas_data,
-            cas_pnr = conf.cas_pnr,
-            disable_emm = conf.no_emm,
-            ecm_pid = conf.ecm_pid,
-            shift = conf.shift,
-        })
-        instance.tail = instance.decrypt
-    end
-
-    return instance
-end
-
-function kill_input(instance)
-    instance.tail = nil
-
-    kill_input_module[instance.format](instance.input)
-    instance.input = nil
-
-    instance.channel = nil
-    instance.decrypt = nil
-end
-
 --   ooooooo  ooooo  oooo ooooooooooo oooooooooo ooooo  oooo ooooooooooo
 -- o888   888o 888    88  88  888  88  888    888 888    88  88  888  88
 -- 888     888 888    88      888      888oooo88  888    88      888
@@ -530,6 +551,32 @@ end
 
 init_output_module = {}
 kill_output_module = {}
+
+function init_output(conf, tail)
+    local instance = { format = conf.format, }
+
+    if not init_output_module[conf.format] then
+        log.error("[" .. conf.name .. "] unknown output format")
+        astra.abort()
+    end
+    instance.output = init_output_module[conf.format](conf, tail)
+    instance.tail = instance.output
+
+    return instance
+end
+
+function kill_output(instance)
+    instance.tail = nil
+
+    kill_output_module[instance.format](instance.output)
+    instance.output = nil
+end
+
+--   ooooooo            ooooo  oooo ooooooooo  oooooooooo
+-- o888   888o           888    88   888    88o 888    888
+-- 888     888 ooooooooo 888    88   888    888 888oooo88
+-- 888o   o888           888    88   888    888 888
+--   88ooo88              888oo88   o888ooo88  o888o
 
 init_output_module.udp = function(conf, tail)
     return udp_output({
@@ -557,6 +604,12 @@ kill_output_module.rtp = function(module)
     kill_output_module.udp(module)
 end
 
+--   ooooooo            ooooooooooo ooooo ooooo       ooooooooooo
+-- o888   888o           888    88   888   888         888    88
+-- 888     888 ooooooooo 888oo8      888   888         888ooo8
+-- 888o   o888           888         888   888      o  888    oo
+--   88ooo88            o888o       o888o o888ooooo88 o888ooo8888
+
 init_output_module.file = function(conf, tail)
     return file_output({
         upstream = tail:stream(),
@@ -571,6 +624,12 @@ end
 kill_output_module.file = function(module)
     --
 end
+
+--   ooooooo            ooooo ooooo ooooooooooo ooooooooooo oooooooooo
+-- o888   888o           888   888  88  888  88 88  888  88  888    888
+-- 888     888 ooooooooo 888ooo888      888         888      888oooo88
+-- 888o   o888           888   888      888         888      888
+--   88ooo88            o888o o888o    o888o       o888o    o888o
 
 http_output_instance_list = {}
 
@@ -670,26 +729,6 @@ kill_output_module.http = function(channel_data)
     instance.channel_list = nil
 
     http_output_instance_list[instance_id] = nil
-end
-
-function init_output(conf, tail)
-    local instance = { format = conf.format, }
-
-    if not init_output_module[conf.format] then
-        log.error("[" .. conf.name .. "] unknown output format")
-        astra.abort()
-    end
-    instance.output = init_output_module[conf.format](conf, tail)
-    instance.tail = instance.output
-
-    return instance
-end
-
-function kill_output(instance)
-    instance.tail = nil
-
-    kill_output_module[instance.format](instance.output)
-    instance.output = nil
 end
 
 -- ooooo         ooooooo      o      ooooooooo
