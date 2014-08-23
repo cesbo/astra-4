@@ -396,10 +396,9 @@ init_input_module.dvb = function(conf)
     if conf.addr.length == 0 then
         instance = dvb_tune(conf)
     else
-        if _G["dvb_" .. conf.addr] then
-            instance = _G["dvb_" .. conf.addr]
-        else
-            instance = _G[conf.addr]
+        instance = _G["dvb_" .. tostring(conf.addr)]
+        if not instance then
+            instance = _G[tostring(conf.addr)]
             local module_name = tostring(instance)
             if not (module_name == "dvb_input" or module_name == "asi_input") then
                 instance = nil
@@ -479,14 +478,27 @@ function init_input(conf)
             biss = conf.biss,
         })
         instance.tail = instance.decrypt
-    elseif type(conf.cam) == "string" then
+    elseif conf.cam then
+        local cam = nil
+        if type(conf.cam) == "table" then
+            cam = conf.cam
+        else
+            cam = _G["softcam_" .. tostring(conf.cam)]
+            if not cam then
+                cam = _G[tostring(conf.cam)]
+            end
+        end
+        if type(cam) ~= "table" or not cam.cam then
+            log.error("[" .. conf.name .. "] cam is not found")
+            astra.exit()
+        end
         local cas_pnr = nil
         if conf.pnr and conf.set_pnr then cas_pnr = conf.pnr end
 
         instance.decrypt = decrypt({
             upstream = instance.tail:stream(),
             name = conf.name,
-            cam = nil,
+            cam = cam:cam(),
             cas_data = conf.cas_data,
             cas_pnr = conf.cas_pnr,
             disable_emm = conf.no_emm,
