@@ -49,6 +49,10 @@ function split(s, d)
     end
 end
 
+-- TODO: use for udp-input, udp-output, http-output
+ifaddr_list = nil
+if utils.ifaddrs then ifaddr_list = utils.ifaddrs() end
+
 -- ooooo  oooo oooooooooo  ooooo
 --  888    88   888    888  888
 --  888    88   888oooo88   888
@@ -219,19 +223,24 @@ function init_input(conf)
         })
         instance.tail = instance.decrypt
     elseif conf.cam then
-        local cam = nil
-        if type(conf.cam) == "table" then
-            cam = conf.cam
-        else
-            cam = _G["softcam_" .. tostring(conf.cam)]
-            if not cam then
-                cam = _G[tostring(conf.cam)]
+        local function get_softcam()
+            if type(conf.cam) == "table" then
+                if conf.cam.cam then
+                    return conf.cam
+                end
+            else
+                if type(softcam_list) == "table" then
+                    for _, i in ipairs(softcam_list) do
+                        if i.__options.id == conf.cam then return i end
+                    end
+                end
+                local i = _G[tostring(conf.cam)]
+                if type(i) == "table" and i.cam then return i end
             end
-        end
-        if type(cam) ~= "table" or not cam.cam then
             log.error("[" .. conf.name .. "] cam is not found")
             astra.exit()
         end
+        local cam = get_softcam()
         local cas_pnr = nil
         if conf.pnr and conf.set_pnr then cas_pnr = conf.pnr end
 
@@ -448,6 +457,7 @@ end
 --  888           888    888   88888     888    888
 -- o888o         o888ooo88      888     o888ooo888
 
+dvb_tune_list = {}
 dvb_input_instance_list = {}
 dvb_list = nil
 
@@ -512,19 +522,21 @@ init_input_module.dvb = function(conf)
     if conf.addr.length == 0 then
         instance = dvb_tune(conf)
     else
-        instance = _G["dvb_" .. tostring(conf.addr)]
-        if not instance then
-            instance = _G[tostring(conf.addr)]
-            local module_name = tostring(instance)
-            if not (module_name == "dvb_input" or module_name == "asi_input") then
-                instance = nil
+        local function get_dvb_tune()
+            if type(dvb_tune_list) == "table" then
+                for _, i in ipairs(dvb_tune_list) do
+                    if i.__options.id == conf.addr then return i end
+                end
             end
+            local i = _G[tostring(conf.addr)]
+            local module_name = tostring(i)
+            if module_name == "dvb_input" or module_name == "asi_input") then
+                return i
+            end
+            log.error("[" .. conf.name .. "] dvb is not found")
+            astra.abort()
         end
-    end
-
-    if not instance then
-        log.error("[" .. conf.name .. "] dvb is not found")
-        astra.abort()
+        instance = get_dvb_tune()
     end
 
     if conf.cam == true and conf.pnr then
