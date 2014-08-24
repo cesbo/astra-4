@@ -754,22 +754,6 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
  *
  */
 
-static void __parse_map_item(module_data_t *mod, const char *item)
-{
-    map_item_t *map_item = calloc(1, sizeof(map_item_t));
-    uint8_t i = 0;
-    for(; i < sizeof(map_item->type) && item[i] && item[i] != '='; ++i)
-        map_item->type[i] = item[i];
-
-    asc_assert(item[i] == '=', "option 'map' has wrong format");
-
-    map_item->origin_pid = atoi(map_item->type);
-    ++i; // skip '='
-    map_item->custom_pid = atoi(&item[i]);
-
-    asc_list_insert_tail(mod->map, map_item);
-}
-
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, on_ts);
@@ -843,8 +827,26 @@ static void module_init(module_data_t *mod)
         mod->map = asc_list_init();
         lua_foreach(lua, -2)
         {
-            const char *map_item = lua_tostring(lua, -1);
-            __parse_map_item(mod, map_item);
+            asc_assert((lua_type(lua, -1) == LUA_TTABLE), "option 'map': wrong type");
+            asc_assert((luaL_len(lua, -1) == 2), "option 'map': wrong format");
+
+            lua_rawgeti(lua, -1, 1);
+            const char *key = lua_tostring(lua, -1);
+            asc_assert((luaL_len(lua, -1) <= 5), "option 'map': key is too large");
+            lua_pop(lua, 1);
+
+            lua_rawgeti(lua, -1, 2);
+            int val = lua_tonumber(lua, -1);
+            asc_assert((val > 0 && val < NULL_TS_PID), "option 'map': value is out of range");
+            lua_pop(lua, 1);
+
+            map_item_t *map_item = calloc(1, sizeof(map_item_t));
+            strcpy(map_item->type, key);
+
+            if(key[0] >= '1' && key[0] <= '9')
+                map_item->origin_pid = atoi(key);
+            map_item->custom_pid = val;
+            asc_list_insert_tail(mod->map, map_item);
         }
     }
     lua_pop(lua, 1); // map
