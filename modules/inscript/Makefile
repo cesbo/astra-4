@@ -6,8 +6,9 @@ LUA_BASE = $(SCRIPTS)/base.lua
 LUA_STREAM = $(SCRIPTS)/stream.lua
 LUA_XPROXY = $(SCRIPTS)/xproxy.lua
 LUA_ANALYZE = $(SCRIPTS)/analyze.lua
+LUA_DVBLS = $(SCRIPTS)/dvbls.lua
 
-LUA_ALL = $(LUA_BASE) $(LUA_STREAM) $(LUA_XPROXY) $(LUA_ANALYZE)
+LUA_ALL = $(LUA_BASE) $(LUA_STREAM) $(LUA_XPROXY) $(LUA_ANALYZE) $(LUA_DVBLS)
 
 .PHONY: all
 
@@ -20,4 +21,5 @@ inscript.h: $(LUA_ALL)
 	@./inscript stream $(LUA_STREAM) >>$@
 	@./inscript xproxy $(LUA_XPROXY) >>$@
 	@./inscript analyze $(LUA_ANALYZE) >>$@
+	@./inscript dvbls $(LUA_DVBLS) >>$@
 	@rm inscript

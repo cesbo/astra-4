@@ -567,10 +567,11 @@ function astra_usage()
 Usage: astra APP [OPTIONS]
 
 Available Applications:
-    --stream            Digital TV Streaming
+    --stream            MPEG-TS Streamer
     --analyze           MPEG-TS Analyzer
-    --xproxy            xProxy
-    SCRIPT              execute lua-script
+    --xproxy            MPEG-TS Relay server
+    --dvbls             DVB Adapters information list
+    SCRIPT              launch Astra script
 
 Astra Options:
     -h                  command line arguments

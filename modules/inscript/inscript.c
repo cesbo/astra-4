@@ -78,6 +78,11 @@ static int fn_inscript_callback(lua_State *L)
         load = load_inscript((const char *)xproxy, sizeof(xproxy), "=xproxy");
         argv_idx += 1;
     }
+    else if(!strcmp(script, "--dvbls"))
+    {
+        load = load_inscript((const char *)dvbls, sizeof(dvbls), "=dvbls");
+        argv_idx += 1;
+    }
     else
     {
         load = load_inscript((const char *)stream, sizeof(stream), "=stream");
