@@ -16,6 +16,8 @@
 -- You should have received a copy of the GNU General Public License
 -- along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+log.set({ color = true })
+
 arg_n = nil
 
 --      o      oooo   oooo     o      ooooo    ooooo  oooo ooooooooooo ooooooooooo
@@ -153,6 +155,23 @@ end
 function start_analyze(instance, addr)
     local conf = parse_url(addr)
     conf.name = "Analyze"
+
+    if conf.format == "file" then
+        if utils.stat(conf.filename).type ~= "file" then
+            log.error("[Analyze] file not found")
+            astra.exit()
+        end
+
+        conf.on_error = function()
+            astra.exit()
+        end
+
+    elseif conf.format == "http" then
+        conf.on_error = function(code, message)
+            astra.exit()
+        end
+    end
+
     instance.input = init_input(conf)
     instance.analyze = analyze({
         upstream = instance.input.tail:stream(),

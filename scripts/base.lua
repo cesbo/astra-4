@@ -333,6 +333,10 @@ end
 -- o888o         o888o       o888o o888ooooo88 o888ooo8888
 
 init_input_module.file = function(conf)
+    conf.callback = function()
+        log.error("[" .. conf.name .. "] end of file")
+        if conf.on_error then conf.on_error() end
+    end
     return file_input(conf)
 end
 
@@ -418,12 +422,17 @@ init_input_module.http = function(conf)
                     instance.request = http_request(http_conf)
                 else
                     log.error("[" .. conf.name .. "] Redirect failed")
+
+                    if conf.on_error then conf.on_error(0, "Redirect failed") end
+
                     instance.timeout = timer(timer_conf)
                 end
 
             else
                 log.error("[" .. conf.name .. "] " ..
                           "HTTP Error " .. response.code .. ":" .. response.message)
+
+                if conf.on_error then conf.on_error(response.code, response.message) end
 
                 instance.request:close()
                 instance.request = nil
