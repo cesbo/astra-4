@@ -108,7 +108,7 @@ function parse_url(url)
         url = url:sub(1, b - 1)
     end
 
-    if data.format == "udp" then
+    local function parse_udp_address()
         local b = url:find("@")
         if b then
             if b > 1 then
@@ -126,11 +126,9 @@ function parse_url(url)
             data.port = 1234
             data.addr = url
         end
-    elseif data.format == "file" then
-        data.filename = url
-    elseif data.format == "dvb" then
-        data.addr = url
-    elseif data.format == "http" then
+    end
+
+    local function parse_http_address()
         local b = url:find("@")
         if b then
             if b > 1 then
@@ -156,8 +154,24 @@ function parse_url(url)
             data.port = tonumber(url:sub(b + 1))
         else
             data.host = url
-            data.port = 80
+            data.port = nil
         end
+    end
+
+    if data.format == "udp" then
+        parse_udp_address()
+    elseif data.format == "rtp" then
+        parse_udp_address()
+    elseif data.format == "file" then
+        data.filename = url
+    elseif data.format == "dvb" then
+        data.addr = url
+    elseif data.format == "http" then
+        parse_http_address()
+        if data.port == nil then data.port = 80 end
+    elseif data.format == "rtsp" then
+        parse_http_address()
+        if data.port == nil then data.port = 554 end
     end
 
     return data
