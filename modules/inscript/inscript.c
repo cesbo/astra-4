@@ -86,6 +86,8 @@ static int fn_inscript_callback(lua_State *L)
     else
     {
         load = load_inscript((const char *)stream, sizeof(stream), "=stream");
+        if(load != 0)
+            luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
 
         if(!strcmp(script, "-"))
         {

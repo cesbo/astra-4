@@ -78,7 +78,7 @@ function parse_url(url)
                 local _k = k:sub(x + 1)
                 k = k:sub(1, x - 1)
                 if not r[k] then r[k] = {} end
-                r[k][_k] = v
+                table.insert(r[k], { _k, v })
             else
                 r[k] = v
             end
@@ -201,6 +201,9 @@ function init_input(conf)
         local pass_sdt = (demux_sdt == true and conf.pass_sdt == true)
         local pass_eit = (demux_eit == true and conf.pass_eit == true)
 
+        local filter = nil
+        if conf.filter then filter = split(conf.filter, ",") end
+
         instance.channel = channel({
             upstream = instance.tail:stream(),
             name = conf.name,
@@ -212,7 +215,7 @@ function init_input(conf)
             pass_sdt = pass_sdt,
             pass_eit = pass_eit,
             map = conf.map,
-            filter = conf.filter,
+            filter = filter,
         })
         instance.tail = instance.channel
     end
