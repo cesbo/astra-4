@@ -169,6 +169,9 @@ function parse_url(url)
     elseif data.format == "http" then
         parse_http_address()
         if data.port == nil then data.port = 80 end
+    elseif data.format == "https" then
+        parse_http_address()
+        if data.port == nil then data.port = 443 end
     elseif data.format == "rtsp" then
         parse_http_address()
         if data.port == nil then data.port = 554 end
@@ -375,20 +378,20 @@ init_input_module.http = function(conf)
         instance = { clients = 0, }
         http_input_instance_list[instance_id] = instance
 
-        local conf = { host = conf.host, port = conf.port, path = conf.path, stream = true, }
-        conf.headers = {
+        local http_conf = { host = conf.host, port = conf.port, path = conf.path, stream = true, }
+        http_conf.headers = {
             "User-Agent: " .. http_user_agent,
             "Host: " .. conf.host .. ":" .. conf.port,
             "Connection: close",
         }
         if conf.login and conf.password then
             local auth = base64.encode(conf.login .. ":" .. conf.password)
-            table.insert(conf.headers, "Authorization: Basic " .. auth)
+            table.insert(http_conf.headers, "Authorization: Basic " .. auth)
         end
-        if conf.sync then conf.sync = conf.sync end
-        if conf.buffer_size then conf.buffer_size = conf.buffer_size end
-        if conf.timeout then conf.timeout = conf.timeout end
-        if conf.sctp == true then conf.sctp = true end
+        if conf.sync then http_conf.sync = conf.sync end
+        if conf.buffer_size then http_conf.buffer_size = conf.buffer_size end
+        if conf.timeout then http_conf.timeout = conf.timeout end
+        if conf.sctp == true then http_conf.sctp = true end
 
         local timer_conf = {
             interval = 5,
@@ -401,7 +404,7 @@ init_input_module.http = function(conf)
             end
         }
 
-        conf.callback = function(self, response)
+        http_conf.callback = function(self, response)
             if not response then
                 instance.request:close()
                 instance.request = nil
@@ -426,13 +429,12 @@ init_input_module.http = function(conf)
 
                 local o = parse_url(response.headers['location'])
                 if o then
-                    conf.host = o.host
-                    conf.port = o.port
-                    conf.path = o.path
-                    conf.headers[2] = "Host: " .. o.host .. ":" .. o.port
+                    http_conf.host = o.host
+                    http_conf.port = o.port
+                    http_conf.path = o.path
+                    http_conf.headers[2] = "Host: " .. o.host .. ":" .. o.port
 
-                    log.info("[" .. conf.name .. "] Redirect to " ..
-                             "http://" .. o.host .. ":" .. o.port .. o.path)
+                    log.info("[" .. conf.name .. "] Redirect to http://" .. o.host .. ":" .. o.port .. o.path)
                     instance.request = http_request(http_conf)
                 else
                     log.error("[" .. conf.name .. "] Redirect failed")
@@ -443,19 +445,19 @@ init_input_module.http = function(conf)
                 end
 
             else
-                log.error("[" .. conf.name .. "] " ..
-                          "HTTP Error " .. response.code .. ":" .. response.message)
-
-                if conf.on_error then conf.on_error(response.code, response.message) end
+                log.error("[" .. conf.name .. "] HTTP Error " .. response.code .. ":" .. response.message)
 
                 instance.request:close()
                 instance.request = nil
+
+                if conf.on_error then conf.on_error(response.code, response.message) end
+
                 instance.timeout = timer(timer_conf)
             end
         end
 
         instance.transmit = transmit({ instance_id = instance_id })
-        instance.request = http_request(conf)
+        instance.request = http_request(http_conf)
     end
 
     instance.clients = instance.clients + 1
