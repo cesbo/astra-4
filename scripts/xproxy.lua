@@ -220,6 +220,7 @@ function on_request_udp(server, client, request)
 
     local allow_channel = function()
         local conf = parse_url(format .. "://" .. path)
+        conf.name = "xProxy " .. client_data.client_id
         conf.socket_size = 0x80000
         client_data.input = init_input(conf)
         server:send(client, client_data.input.tail:stream())
@@ -249,6 +250,7 @@ function on_request_http(server, client, request)
 
     local allow_channel = function()
         local conf = parse_url(url)
+        conf.name = "xProxy " .. client_data.client_id
         client_data.input = init_input(conf)
         server:send(client, client_data.input.tail:stream())
     end

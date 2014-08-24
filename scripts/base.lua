@@ -494,7 +494,7 @@ function dvb_tune(conf)
         if conf.tp then
             local a = split(conf.tp, ":")
             if #a ~= 3 then
-                log.error("[dvb_tune " .. conf.instance_id .. "] wrong format of tp value")
+                log.error("[dvb_tune " .. conf.instance_id .. "] option 'tp' has a wrong format")
                 astra.abort()
             end
             conf.frequency, conf.polarization, conf.symbolrate = a[1], a[2], a[3]
@@ -503,7 +503,7 @@ function dvb_tune(conf)
         if conf.lnb then
             local a = split(conf.lnb, ":")
             if #a ~= 3 then
-                log.error("[dvb_tune " .. conf.instance_id .. "] wrong format of lnb value")
+                log.error("[dvb_tune " .. conf.instance_id .. "] option 'lnb' has a wrong format")
                 astra.abort()
             end
             conf.lof1, conf.lof2, conf.slof = a[1], a[2], a[3]

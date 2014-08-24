@@ -152,10 +152,11 @@ end
 
 function start_analyze(instance, addr)
     local conf = parse_url(addr)
+    conf.name = "Analyze"
     instance.input = init_input(conf)
     instance.analyze = analyze({
         upstream = instance.input.tail:stream(),
-        name = "Analyze",
+        name = conf.name,
         callback = function(data)
             on_analyze(instance, data)
         end,
