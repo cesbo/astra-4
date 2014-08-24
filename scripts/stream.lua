@@ -189,7 +189,6 @@ function start_reserve(channel_data)
     end
 end
 
-
 -- ooooo oooo   oooo oooooooooo ooooo  oooo ooooooooooo
 --  888   8888o  88   888    888 888    88  88  888  88
 --  888   88 888o88   888oooo88  888    88      888
@@ -565,7 +564,7 @@ end
 -- o88oooo888    o888o    o888o  88o8 o888ooo8888 o88o  o888o o88o  8  o88o
 
 options_usage = [[
-    FILE                stream configuration file
+    FILE                Astra script
 ]]
 
 options = {
