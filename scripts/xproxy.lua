@@ -19,9 +19,7 @@
 client_list = {}
 localaddr = nil -- for -l option
 
-instance_list = {}
-
-function make_client_id(server, client, request, path)
+function xproxy_init_client(server, client, request, path)
     local client_data = server:data(client)
 
     local client_id = client_data.client_id
@@ -45,6 +43,14 @@ function make_client_id(server, client, request, path)
     }
 
     client_data.client_id = client_id
+end
+
+function xproxy_kill_client(server, client)
+    local client_data = server:data(client)
+    if not client_data.client_id then return nil end
+
+    client_list[client_data.client_id] = nil
+    client_data.client_id = nil
 end
 
 --  oooooooo8 ooooooooooo   o   ooooooooooo
@@ -113,7 +119,7 @@ table { width: 600px; margin: auto; }
 ]]
 end
 
-function on_http_stat(server, client, request)
+function on_request_stat(server, client, request)
     if not request then return nil end
 
     if request.query then
@@ -157,7 +163,7 @@ end
 --  888        888      o   8oooo88    888      888      o  888          888    888
 -- o888o      o888ooooo88 o88o  o888o o888o    o888ooooo88 o888o o88oooo888    o888o
 
-function on_http_playlist(server, client, request)
+function on_request_playlist(server, client, request)
     if not request then return nil end
 
     if not playlist_request then
@@ -189,99 +195,33 @@ end
 --  888    88   888    888 888
 --   888oo88   o888ooo88  o888o
 
-function on_http_udp(server, client, request)
+function on_request_udp(server, client, request)
     local client_data = server:data(client)
 
     if not request then -- on_close
-        if client_data.client_id then
-            if client_data.input_id then
-                local udp_instance = instance_list[client_data.input_id]
-                udp_instance.clients = udp_instance.clients - 1
-                if udp_instance.clients == 0 then
-                    udp_instance.instance = nil
-                    instance_list[client_data.input_id] = nil
-                    collectgarbage()
-                end
-            end
-            client_list[client_data.client_id] = nil
-            client_data.client_id = nil
-        end
-        return
+        kill_input(client_data.input)
+        xproxy_kill_client(server, client)
+        return nil
     end
 
     local format = request.path:sub(2, 4)
     local path = request.path:sub(6) -- skip '/udp/'
 
-    -- full path
-    local fpath = path
+    local query_path = ""
     if request.query then
-        local i = 0
         for k,v in pairs(request.query) do
-            if i == 0 then
-                fpath = fpath .. "?" .. k .. "=" .. v
-            else
-                fpath = fpath .. "&" .. k .. "=" .. v
-            end
-            i = i + 1
+            query_path = query_path .. "&" .. k .. "=" .. v
         end
+        query_path = "?" .. query_path:sub(2)
     end
 
-    make_client_id(server, client, request, format .. "://" .. fpath)
+    xproxy_init_client(server, client, request, format .. "://" .. path .. query_path)
 
     local allow_channel = function()
-        local udp_input_conf = { socket_size = 0x80000 }
-
-        if format == 'rtp' then udp_input_conf.rtp = true end
-
-        -- trim trailing slash
-        local b = path:find("/")
-        if b then
-            path = path:sub(1, b - 1)
-        end
-
-        local b = path:find("@")
-        if b then
-            udp_input_conf.localaddr = path:sub(1, b - 1)
-            path = path:sub(b + 1)
-        else
-            if localaddr then
-                udp_input_conf.localaddr = localaddr
-            end
-        end
-
-        local b = path:find(":")
-        if b then
-            udp_input_conf.port = tonumber(path:sub(b + 1))
-            if not udp_input_conf.port then
-                server:abort(client, 404)
-                return
-            end
-            udp_input_conf.addr = path:sub(1, b - 1)
-        else
-            udp_input_conf.port = 1234
-            udp_input_conf.addr = path
-        end
-
-        local _,_,o1,o2,o3,o4 = udp_input_conf.addr:find("(%d+)%.(%d+)%.(%d+)%.(%d+)")
-        if not o4 then
-            server:abort(client, 404)
-            return
-        end
-
-        local instance_id = udp_input_conf.addr .. ":" .. udp_input_conf.port
-        local udp_instance = instance_list[instance_id]
-        if not udp_instance then
-            udp_instance = {}
-            udp_instance.clients = 0
-            udp_instance.instance = udp_input(udp_input_conf)
-            instance_list[instance_id] = udp_instance
-        end
-
-        client_data.input_id = instance_id
-
-        udp_instance.clients = udp_instance.clients + 1
-
-        server:send(client, udp_instance.instance:stream())
+        local conf = parse_url(format .. "://" .. path)
+        conf.socket_size = 0x80000
+        client_data.input = init_input(conf)
+        server:send(client, client_data.input.tail:stream())
     end
 
     allow_channel()
@@ -293,188 +233,22 @@ end
 --  888   888      888         888      888
 -- o888o o888o    o888o       o888o    o888o
 
-function http_parse_url(url)
-    local host, port, path, auth
-    local b = url:find("://")
-    local p = url:sub(1, b - 1)
-    if p ~= "http" then
-        return nil
-    end
-    url = url:sub(b + 3)
-    b = url:find("@")
-    if b then
-        auth = base64.encode(url:sub(1, b - 1))
-        url = url:sub(b + 1)
-    end
-    b = url:find("/")
-    if b then
-        path = url:sub(b)
-        url = url:sub(1, b - 1)
-    else
-        path = "/"
-    end
-    b = url:find(":")
-    if b then
-        port = tonumber(url:sub(b + 1))
-        host = url:sub(1, b - 1)
-    else
-        port = 80
-        host = url
-    end
-    return host, port, path, auth
-end
-
-function http_parse_location(self, response)
-    if not response.headers then return nil end
-    local location = response.headers['location']
-    if not location then return nil end
-
-    local host = self.__options.host
-    local port = self.__options.port
-    local path
-
-    if location:find("://") then
-        host, port, path = http_parse_url(location)
-    else
-        path = location
-    end
-
-    return host, port, path
-end
-
-function on_http_http_callback(self, response)
-    local instance = self.__options.instance
-    local http_conf = self.__options
-
-    local timer_conf = {
-        interval = 5,
-        callback = function(self)
-            instance.timeout:close()
-            instance.timeout = nil
-
-            if instance.request then instance.request:close() end
-            instance.request = http_request(http_conf)
-        end
-    }
-
-    if not response then
-        instance.request:close()
-        instance.request = nil
-        instance.timeout = timer(timer_conf)
-
-    elseif response.code == 200 then
-        if instance.timeout then
-            instance.timeout:close()
-            instance.timeout = nil
-        end
-
-        instance.transmit:set_upstream(instance.request:stream())
-
-    elseif response.code == 301 or response.code == 302 then
-        if instance.timeout then
-            instance.timeout:close()
-            instance.timeout = nil
-        end
-
-        instance.request:close()
-        instance.request = nil
-
-        local host, port, path = http_parse_location(self, response)
-        if host then
-            http_conf.host = host
-            http_conf.port = port
-            http_conf.path = path
-            http_conf.headers[2] = "Host: " .. host .. ":" .. port
-
-            log.info("[xProxy] Redirect to http://" .. host .. ":" .. port .. path)
-            instance.request = http_request(http_conf)
-        else
-            log.error("[xProxy] Redirect failed")
-            instance.timeout = timer(timer_conf)
-        end
-
-    else
-        log.error("[xProxy] HTTP Error " .. response.code .. ":" .. response.message)
-
-        instance.request:close()
-        instance.request = nil
-        instance.timeout = timer(timer_conf)
-    end
-end
-
-function on_http_http(server, client, request)
+function on_request_http(server, client, request)
     local client_data = server:data(client)
 
     if not request then -- on_close
-        if client_data.client_id then
-            if client_data.input_id then
-                local instance = instance_list[client_data.input_id]
-                instance.clients = instance.clients - 1
-                if instance.clients == 0 then
-                    if instance.request then
-                        instance.request:close()
-                        instance.request = nil
-                    end
-                    if instance.timeout then
-                        instance.timeout:close()
-                        instance.timeout = nil
-                    end
-                    instance.transmit = nil
-                    instance_list[client_data.input_id] = nil
-                    collectgarbage()
-                end
-            end
-            client_list[client_data.client_id] = nil
-            client_data.client_id = nil
-        end
-        return
+        kill_input(client_data.input)
+        xproxy_kill_client(server, client)
+        return nil
     end
 
     local url = "http://" .. request.path:sub(7)
-    make_client_id(server, client, request, url)
+    xproxy_init_client(server, client, request, url)
 
     local allow_channel = function()
-        local http_input_conf = {}
-        local host, port, path, auth = http_parse_url(url)
-
-        if not port then
-            server:abort(client, 400)
-            return
-        end
-        http_input_conf.host = host
-        http_input_conf.port = port
-        http_input_conf.path = path
-
-        local instance_id = host .. ":" .. port .. path
-        local instance = instance_list[instance_id]
-        if not instance then
-            http_input_conf.headers =
-            {
-                "User-Agent: xProxy",
-                "Host: " .. host .. ":" .. port,
-                "Connection: close",
-            }
-            if auth then
-                table.insert(http_input_conf.headers, "Authorization: Basic " .. auth)
-            end
-            http_input_conf.stream = true
-            http_input_conf.callback = on_http_http_callback
-
-            instance = {}
-            http_input_conf.instance = instance
-
-            instance.clients = 0
-            instance.transmit = transmit()
-            instance.request = http_request(http_input_conf)
-
-            instance_list[instance_id] = instance
-        end
-
-        client_data.input_id = instance_id
-
-        instance.clients = instance.clients + 1
-
-        server:send(client, instance.transmit:stream())
+        local conf = parse_url(url)
+        client_data.input = init_input(conf)
+        server:send(client, client_data.input.tail:stream())
     end
 
     allow_channel()
@@ -486,7 +260,7 @@ end
 --   oo88oo
 --  o88  88o
 
-function on_http_channels(server, client, request)
+function on_request_channel(server, client, request)
     local client_data = server:data(client)
 
     if not request then -- on_close
@@ -516,7 +290,7 @@ function on_http_channels(server, client, request)
         return
     end
 
-    make_client_id(server, client, request, request.path)
+    xproxy_init_client(server, client, request, request.path)
 
     local allow_channel = function()
         local proto = channel:sub(1, b - 1)
@@ -524,11 +298,11 @@ function on_http_channels(server, client, request)
 
         request.path = "/" .. proto .. "/" .. url
         if proto == "udp" or proto == "rtp" then
-            client_data.callback = on_http_udp
-            on_http_udp(server, client, request)
+            client_data.callback = on_request_udp
+            on_request_udp(server, client, request)
         elseif proto == "http" then
-            client_data.callback = on_http_http
-            on_http_http(server, client, request)
+            client_data.callback = on_request_http
+            on_request_http(server, client, request)
         else
             server:abort(client, 404)
         end
@@ -635,42 +409,39 @@ function main()
     log.info("xProxy started on " .. xproxy_addr .. ":" .. xproxy_port)
 
     local route = {
-        { "/stat/", on_http_stat },
+        { "/stat/", on_request_stat },
         { "/stat", http_redirect({ location = "/stat/" }) },
     }
 
-    local init_http_upstream = function(callback)
-        local http_upstream_conf = { callback = callback }
-        if xproxy_buffer_size then
-            http_upstream_conf.buffer_size = xproxy_buffer_size
-        end
-        if xproxy_buffer_fill then
-            http_upstream_conf.buffer_fill = xproxy_buffer_fill
-        end
-        return http_upstream(http_upstream_conf)
+    local function init_http_upstream(callback)
+        return http_upstream({
+            callback = callback,
+            buffer_size = xproxy_buffer_size,
+            buffer_fill = xproxy_buffer_fill,
+        })
     end
 
     if xproxy_allow_udp then
-        table.insert(route, { "/udp/*", init_http_upstream(on_http_udp) })
+        table.insert(route, { "/udp/*", init_http_upstream(on_request_udp) })
     end
 
     if xproxy_allow_rtp then
-        table.insert(route, { "/rtp/*", init_http_upstream(on_http_udp) })
+        table.insert(route, { "/rtp/*", init_http_upstream(on_request_udp) })
     end
 
     if xproxy_allow_http then
-        table.insert(route, { "/http/*", init_http_upstream(on_http_http) })
+        table.insert(route, { "/http/*", init_http_upstream(on_request_http) })
     end
 
     if playlist_request then
-        table.insert(route, { "/playlist*", on_http_playlist })
+        table.insert(route, { "/playlist*", on_request_playlist })
     end
 
     if xproxy_route then
         for _,r in ipairs(xproxy_route) do table.insert(route, r) end
     end
 
-    table.insert(route, { "/*", init_http_upstream(on_http_channels) })
+    table.insert(route, { "/*", init_http_upstream(on_request_channel) })
 
     http_server({
         addr = xproxy_addr,
