@@ -116,6 +116,8 @@ function parse_url(url)
             end
             url = url:sub(b + 1)
         end
+        local b = url:find("/")
+        if b then url = url:sub(1, b - 1) end
         local b = url:find(":")
         if b then
             data.port = tonumber(url:sub(b + 1))
@@ -261,6 +263,8 @@ function init_input(conf)
 end
 
 function kill_input(instance)
+    if not instance then return nil end
+
     instance.tail = nil
 
     kill_input_module[instance.format](instance.input)
@@ -530,9 +534,7 @@ init_input_module.dvb = function(conf)
             end
             local i = _G[tostring(conf.addr)]
             local module_name = tostring(i)
-            if module_name == "dvb_input" or module_name == "asi_input") then
-                return i
-            end
+            if module_name == "dvb_input" or module_name == "asi_input" then return i end
             log.error("[" .. conf.name .. "] dvb is not found")
             astra.abort()
         end
@@ -560,7 +562,6 @@ end
 -- 888o   o888 888    88      888      888        888    88      888
 --   88ooo88    888oo88      o888o    o888o        888oo88      o888o
 
-
 init_output_module = {}
 kill_output_module = {}
 
@@ -578,6 +579,8 @@ function init_output(conf, tail)
 end
 
 function kill_output(instance)
+    if not instance then return nil end
+
     instance.tail = nil
 
     kill_output_module[instance.format](instance.output)
@@ -711,6 +714,7 @@ init_output_module.http = function(conf, tail)
             addr = conf.host,
             port = conf.port,
             sctp = conf.sctp,
+            server_name = conf.server_name,
             channels = instance.channel_list,
             route = {
                 { "/*", http_upstream({ callback = http_output_on_request }) },
