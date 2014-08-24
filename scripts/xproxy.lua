@@ -201,6 +201,7 @@ function on_request_udp(server, client, request)
     if not request then -- on_close
         kill_input(client_data.input)
         xproxy_kill_client(server, client)
+        collectgarbage()
         return nil
     end
 
@@ -239,6 +240,7 @@ function on_request_http(server, client, request)
     if not request then -- on_close
         kill_input(client_data.input)
         xproxy_kill_client(server, client)
+        collectgarbage()
         return nil
     end
 
