@@ -499,10 +499,15 @@ dvb_list = nil
 function dvb_tune(conf)
     if conf.mac then
         local function get_adapter()
-            if not dvbls then return false end
-            if not dvb_list then dvb_list = dvbls() end
+            if dvb_list == nil then
+                if dvbls then
+                    dvb_list = dvbls()
+                else
+                    dvb_list = {}
+                end
+            end
             local mac = conf.mac:upper()
-            for _, a in pairs(dvb_list) do if a.mac == mac then
+            for _, a in ipairs(dvb_list) do if a.mac == mac then
                 log.info("[dvb_tune] adapter: " .. a.adapter .. "." .. a.device .. ". " ..
                          "MAC address: " .. mac)
                 conf.adapter = a.adapter
