@@ -263,12 +263,17 @@ end
 
 init_output_module.udp = function(channel_data, output_id)
     local output_data = channel_data.output[output_id]
+    local localaddr = output_data.config.localaddr
+    if localaddr and ifaddr_list then
+        local ifaddr = ifaddr_list[localaddr]
+        if ifaddr and ifaddr.ipv4 then localaddr = ifaddr.ipv4[1] end
+    end
     output_data.output = udp_output({
         upstream = channel_data.transmit:stream(),
         addr = output_data.config.addr,
         port = output_data.config.port,
         ttl = output_data.config.ttl,
-        localaddr = output_data.config.localaddr,
+        localaddr = localaddr,
         socket_size = output_data.config.socket_size,
         rtp = (output_data.config.format == "rtp"),
         sync = output_data.config.sync,

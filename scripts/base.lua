@@ -49,7 +49,6 @@ function split(s, d)
     end
 end
 
--- TODO: use for udp-input, udp-output, http-output
 ifaddr_list = nil
 if utils.ifaddrs then ifaddr_list = utils.ifaddrs() end
 
@@ -113,6 +112,10 @@ function parse_url(url)
         if b then
             if b > 1 then
                 data.localaddr = url:sub(1, b - 1)
+                if ifaddr_list then
+                    local ifaddr = ifaddr_list[data.localaddr]
+                    if ifaddr and ifaddr.ipv4 then data.localaddr = ifaddr.ipv4[1] end
+                end
             end
             url = url:sub(b + 1)
         end
