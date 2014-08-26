@@ -554,7 +554,11 @@ const char * asc_socket_addr(asc_socket_t *sock)
 
 int asc_socket_port(asc_socket_t *sock)
 {
-    return ntohs(sock->addr.sin_port);
+    struct sockaddr_in s;
+    socklen_t slen = sizeof(s);
+    if(getsockname(sock->fd, (struct sockaddr *)&s, &slen) != -1)
+        return htons(s.sin_port);
+    return -1;
 }
 
 /*

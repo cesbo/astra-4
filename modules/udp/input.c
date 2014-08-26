@@ -34,7 +34,6 @@
 #include <astra.h>
 
 #define UDP_BUFFER_SIZE 1460
-#define TS_PACKET_SIZE 188
 #define RTP_HEADER_SIZE 12
 
 #define MSG(_msg) "[udp_input %s:%d] " _msg, mod->addr, mod->port
@@ -56,7 +55,7 @@ struct module_data_t
     uint8_t buffer[UDP_BUFFER_SIZE];
 };
 
-void on_close(void *arg)
+static void on_close(void *arg)
 {
     module_data_t *mod = (module_data_t *)arg;
 
@@ -74,7 +73,7 @@ void on_close(void *arg)
     }
 }
 
-void on_read(void *arg)
+static void on_read(void *arg)
 {
     module_data_t *mod = (module_data_t *)arg;
 
@@ -99,7 +98,7 @@ void on_read(void *arg)
     }
 }
 
-void timer_renew_callback(void *arg)
+static void timer_renew_callback(void *arg)
 {
     module_data_t *mod = arg;
     asc_socket_multicast_renew(mod->sock);
