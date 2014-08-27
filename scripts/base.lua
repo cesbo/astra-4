@@ -1,5 +1,5 @@
 -- Astra Script: Utils
--- http://cesbo.com/astra
+-- https://cesbo.com/astra
 --
 -- Copyright (C) 2014, Andrey Dyldin <and@cesbo.com>
 --
@@ -26,11 +26,11 @@ function dump_table(t, p, i)
     end
 
     for key,val in pairs(t) do
-        if type(val) == 'table' then
+        if type(val) == "table" then
             p(i .. tostring(key) .. " = {")
             dump_table(val, p, i .. "    ")
             p(i .. "}")
-        elseif type(val) == 'string' then
+        elseif type(val) == "string" then
             p(i .. tostring(key) .. " = \"" .. val .. "\"")
         else
             p(i .. tostring(key) .. " = " .. tostring(val))
@@ -381,6 +381,11 @@ init_input_module.http = function(conf)
         instance = { clients = 0, }
         http_input_instance_list[instance_id] = instance
 
+        instance.on_error = function(message)
+            log.error("[" .. conf.name .. "] " .. message)
+            if conf.on_error then conf.on_error(message) end
+        end
+
         local http_conf = { host = conf.host, port = conf.port, path = conf.path, stream = true, }
         http_conf.headers = {
             "User-Agent: " .. http_user_agent,
@@ -430,7 +435,7 @@ init_input_module.http = function(conf)
                 instance.request:close()
                 instance.request = nil
 
-                local o = parse_url(response.headers['location'])
+                local o = parse_url(response.headers["location"])
                 if o then
                     http_conf.host = o.host
                     http_conf.port = o.port
@@ -440,21 +445,14 @@ init_input_module.http = function(conf)
                     log.info("[" .. conf.name .. "] Redirect to http://" .. o.host .. ":" .. o.port .. o.path)
                     instance.request = http_request(http_conf)
                 else
-                    log.error("[" .. conf.name .. "] Redirect failed")
-
-                    if conf.on_error then conf.on_error(0, "Redirect failed") end
-
+                    instance.on_error("HTTP Error: Redirect failed")
                     instance.timeout = timer(timer_conf)
                 end
 
             else
-                log.error("[" .. conf.name .. "] HTTP Error " .. response.code .. ":" .. response.message)
-
                 instance.request:close()
                 instance.request = nil
-
-                if conf.on_error then conf.on_error(response.code, response.message) end
-
+                instance.on_error("HTTP Error: " .. response.code .. ":" .. response.message)
                 instance.timeout = timer(timer_conf)
             end
         end
@@ -672,7 +670,7 @@ function astra_parse_options(idx)
 
         if _G.options then c = _G.options[a] end
         if not c then c = astra_options[a] end
-        if not c and _G.options then c = _G.options['*'] end
+        if not c and _G.options then c = _G.options["*"] end
 
         if not c then return -1 end
         local ac = c(idx)
