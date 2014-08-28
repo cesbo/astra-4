@@ -233,16 +233,13 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
 
  #define PAT_INIT(_psi, _tsid, _version)                                                        \
     {                                                                                           \
-        _psi->type = MPEGTS_PACKET_PAT;                                                         \
-        _psi->pid = 0;                                                                          \
-        uint8_t *__buffer = _psi->buffer;                                                       \
-        __buffer[0] = 0x00;                         /* table_id */                              \
-        __buffer[1] = 0x80 | 0x30;                  /* section_syntax_indicator | reserved */   \
-        const uint16_t __stream_id = _tsid;                                                     \
-        __buffer[3] = __stream_id >> 8;                                                         \
-        __buffer[4] = __stream_id & 0xFF;                                                       \
-        __buffer[5] = ((_version << 1) & 0x3E) | 1; /* version | current_next_indicator */      \
-        __buffer[6] = __buffer[7] = 0x00;                                                       \
+        _psi->buffer[0] = 0x00;                                                                 \
+        _psi->buffer[1] = 0x80 | 0x30;                                                          \
+        PAT_SET_TSID(_psi, _tsid);                                                              \
+        _psi->buffer[5] = 0x01;                                                                 \
+        PAT_SET_VERSION(_psi, _version);                                                        \
+        _psi->buffer[6] = 0x00;                                                                 \
+        _psi->buffer[7] = 0x00;                                                                 \
         _psi->buffer_size = 8 + CRC32_SIZE;                                                     \
         PSI_SET_SIZE(_psi);                                                                     \
     }
@@ -258,14 +255,22 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
 #define PAT_GET_VERSION(_psi) ((_psi->buffer[5] & 0x3E) >> 1)
 #define PAT_SET_VERSION(_psi, _version)                                                         \
     {                                                                                           \
-        const uint8_t __version = (_version) & 0x0F;                                            \
-        _psi->buffer[5] = (_psi->buffer[5] & 0xC1) | (__version << 1);                          \
+        _psi->buffer[5] = 0xC0 | (((_version) << 1) & 0x3E) | (_psi->buffer[4] & 0x01);         \
     }
 
 #define PAT_ITEMS_FIRST(_psi) (&_psi->buffer[8])
 #define PAT_ITEMS_EOL(_psi, _pointer)                                                           \
     ((_pointer - _psi->buffer) >= (_psi->buffer_size - CRC32_SIZE))
 #define PAT_ITEMS_NEXT(_psi, _pointer) _pointer += 4
+
+#define PAT_ITEMS_APPEND(_psi, _pnr, _pid)                                                      \
+    {                                                                                           \
+        uint8_t *const __pointer_a = &_psi->buffer[_psi->buffer_size - CRC32_SIZE];             \
+        PAT_ITEM_SET_PNR(_psi, __pointer_a, _pnr);                                              \
+        PAT_ITEM_SET_PID(_psi, __pointer_a, _pid);                                              \
+        _psi->buffer_size += 4;                                                                 \
+        PSI_SET_SIZE(_psi);                                                                     \
+    }
 
 #define PAT_ITEMS_FOREACH(_psi, _ptr)                                                           \
     for(_ptr = PAT_ITEMS_FIRST(_psi)                                                            \
@@ -321,6 +326,34 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
  *
  */
 
+#define PMT_INIT(_psi, _pnr, _version, _pcr, _desc, _desc_size)                                 \
+    {                                                                                           \
+        _psi->buffer[0] = 0x02;                                                                 \
+        _psi->buffer[1] = 0x80 | 0x30;                                                          \
+        PMT_SET_PNR(_psi, _pnr);                                                                \
+        _psi->buffer[5] = 0x01;                                                                 \
+        PMT_SET_VERSION(_psi, _version);                                                        \
+        _psi->buffer[6] = 0x00;                                                                 \
+        _psi->buffer[7] = 0x00;                                                                 \
+        PMT_SET_PCR(_psi, _pcr);                                                                \
+        const uint16_t __desc_size = _desc_size;                                                \
+        _psi->buffer[10] = 0xF0 | ((__desc_size >> 8) & 0x0F);                                  \
+        _psi->buffer[11] = __desc_size & 0xFF;                                                  \
+        if(__desc_size > 0)                                                                     \
+        {                                                                                       \
+            uint16_t __desc_skip = 0;                                                           \
+            const uint8_t *const __desc = _desc;                                                \
+            while(__desc_skip < __desc_size)                                                    \
+            {                                                                                   \
+                memcpy(&_psi->buffer[12 + __desc_skip]                                          \
+                       , &__desc[__desc_skip]                                                   \
+                       , 2 + __desc[__desc_skip + 1]);                                          \
+            }                                                                                   \
+        }                                                                                       \
+        _psi->buffer_size = 12 + __desc_size + CRC32_SIZE;                                      \
+        PSI_SET_SIZE(_psi);                                                                     \
+    }
+
 #define PMT_GET_PNR(_psi) ((_psi->buffer[3] << 8) | _psi->buffer[4])
 #define PMT_SET_PNR(_psi, _pnr)                                                                 \
     {                                                                                           \
@@ -357,13 +390,25 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
 #define PMT_ITEMS_EOL(_psi, _pointer) PAT_ITEMS_EOL(_psi, _pointer)
 #define PMT_ITEMS_NEXT(_psi, _pointer) _pointer += 5 + __PMT_ITEM_DESC_SIZE(_pointer)
 
+#define PMT_ITEMS_APPEND(_psi, _type, _pid, _desc, _desc_size)                                  \
+    {                                                                                           \
+        uint8_t *const __pointer_a = &_psi->buffer[_psi->buffer_size - CRC32_SIZE];             \
+        PMT_ITEM_SET_TYPE(_psi, __pointer_a, _type);                                            \
+        PMT_ITEM_SET_PID(_psi, __pointer_a, _pid);                                              \
+        const uint16_t __desc_size = _desc_size;                                                \
+        __pointer_a[3] = 0xF0 | ((__desc_size >> 8) & 0x0F);                                    \
+        __pointer_a[4] = __desc_size & 0xFF;                                                    \
+        _psi->buffer_size += (__desc_size + 5);                                                 \
+        PSI_SET_SIZE(_psi);                                                                     \
+    }
+
 #define PMT_ITEMS_FOREACH(_psi, _ptr)                                                           \
     for(_ptr = PMT_ITEMS_FIRST(_psi)                                                            \
         ; !PMT_ITEMS_EOL(_psi, _ptr)                                                            \
         ; PMT_ITEMS_NEXT(_psi, _ptr))
 
 #define PMT_ITEM_GET_TYPE(_psi, _pointer) _pointer[0]
-#define PMT_ITEM_GET_PID(_psi, _pointer) (((_pointer[1] & 0x1F) << 8) | _pointer[2])
+#define PMT_ITEM_SET_TYPE(_psi, _pointer, _type) _pointer[0] = _type
 
 #define PMT_ITEM_DESC_FIRST(_pointer) (&_pointer[5])
 #define PMT_ITEM_DESC_EOL(_pointer, _desc_pointer) \
@@ -375,6 +420,7 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
         ; !PMT_ITEM_DESC_EOL(_ptr, _desc_ptr)                                                   \
         ; PMT_ITEM_DESC_NEXT(_ptr, _desc_ptr))
 
+#define PMT_ITEM_GET_PID(_psi, _pointer) (((_pointer[1] & 0x1F) << 8) | _pointer[2])
 #define PMT_ITEM_SET_PID(_psi, _pointer, _pid)                                                  \
     {                                                                                           \
         uint8_t *const __pointer = _pointer;                                                    \
