@@ -657,7 +657,6 @@ astra_options = {
         return 0
     end,
     ["--debug"] = function(idx)
-        _G.debug = true
         log.set({ debug = true })
         return 0
     end,
