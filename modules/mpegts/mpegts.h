@@ -210,6 +210,20 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
 
 void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_size);
 
+#define PES_INIT(_pes, _stream_id)                                                              \
+    {                                                                                           \
+        _pes->buffer[0] = 0x00;                                                                 \
+        _pes->buffer[1] = 0x00;                                                                 \
+        _pes->buffer[2] = 0x01;                                                                 \
+        _pes->buffer[3] = _stream_id;                                                           \
+        _pes->buffer[4] = 0x00;                                                                 \
+        _pes->buffer[5] = 0x00;                                                                 \
+        _pes->buffer_size = 6;                                                                  \
+    }
+
+#define PES_GET_HEADER(_pes)                                                                    \
+    ((uint32_t)((_pes->buffer[0] << 16) | (_pes->buffer[1] << 8) | (_pes->buffer[2])))
+
 /*
  * ooooooooo  ooooooooooo  oooooooo8    oooooooo8
  *  888    88o 888    88  888         o888     88

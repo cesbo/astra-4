@@ -55,6 +55,9 @@ void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callbac
     {
         pes->buffer_size = 0;
 
+        if(PES_GET_HEADER(pes) != 0x000001)
+            return;
+
         // TODO: PES length is 0
         const size_t pes_buffer_size = PES_SIZE(payload);
 
