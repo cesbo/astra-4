@@ -529,8 +529,6 @@ function dvb_tune(conf)
         end
     end
 
-    if conf.device == nil then conf.device = 0 end
-
     local instance_id = conf.adapter .. "." .. conf.device
     local instance = dvb_input_instance_list[instance_id]
     if not instance then
