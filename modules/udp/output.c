@@ -137,11 +137,11 @@ static bool seek_pcr(  module_data_t *mod
 
         ptr = &mod->sync.buffer[skip];
 
-        if(mpegts_pcr_check(ptr))
+        if(PCR_CHECK(ptr))
         {
             *block_size = count;
             *next_block = skip;
-            *pcr = mpegts_pcr(ptr);
+            *pcr = PCR_GET(ptr);
 
             return true;
         }

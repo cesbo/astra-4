@@ -42,8 +42,6 @@
 
 #define MAX_PID 8192
 #define NULL_TS_PID (MAX_PID - 1)
-#define PSI_MAX_SIZE 0x00000FFF
-#define PES_MAX_SIZE 0x0000FFFF
 #define DESC_MAX_SIZE 1024
 
 #define TS_PID(_ts) (((_ts[1] & 0x1f) << 8) | _ts[2])
@@ -51,13 +49,6 @@
 #define TS_SC(_ts) (_ts[3] & 0xC0)
 #define TS_AF(_ts) (_ts[3] & 0x30)
 #define TS_CC(_ts) (_ts[3] & 0x0f)
-#define TS_PTR(_ts) ((TS_AF(_ts) == 0x10)                                                       \
-                     ? &_ts[TS_HEADER_SIZE]                                                     \
-                     : ((TS_AF(_ts) == 0x30 && _ts[4] < (TS_BODY_SIZE - 1))                     \
-                        ? (&_ts[TS_HEADER_SIZE] + _ts[4] + 1)                                   \
-                        : NULL                                                                  \
-                       )                                                                        \
-                    )
 
 #define TS_SET_PID(_ts, _pid)                                                                   \
     {                                                                                           \
@@ -118,7 +109,11 @@ void mpegts_desc_to_lua(const uint8_t *desc);
  *
  */
 
-#define PSI_SIZE(_psi_buffer) (3 + (((_psi_buffer[1] & 0x0f) << 8) | _psi_buffer[2]))
+#define PSI_MAX_SIZE 0x00000FFF
+
+#define PSI_HEADER_SIZE 3
+
+#define PSI_BUFFER_GET_SIZE(_b) (PSI_HEADER_SIZE + (((_b[1] & 0x0f) << 8) | _b[2]))
 
 typedef struct
 {
@@ -165,7 +160,7 @@ void mpegts_psi_demux(mpegts_psi_t *psi, ts_callback_t callback, void *arg);
 
 #define PSI_SET_SIZE(_psi)                                                                      \
     {                                                                                           \
-        const uint16_t __size = _psi->buffer_size - 3;                                          \
+        const uint16_t __size = _psi->buffer_size - PSI_HEADER_SIZE;                            \
         _psi->buffer[1] = (_psi->buffer[1] & 0xF0) | ((__size >> 8) & 0x0F);                    \
         _psi->buffer[2] = (__size & 0xFF);                                                      \
     }
@@ -179,8 +174,12 @@ void mpegts_psi_demux(mpegts_psi_t *psi, ts_callback_t callback, void *arg);
  *
  */
 
-#define PES_SIZE(_pes) (((_pes[4] << 8) | _pes[5]) + 6)
-#define PES_HEADER(_pes) ((_pes[0] << 16) | (_pes[1] << 8) | (_pes[2]))
+#define PES_MAX_SIZE 0x00080000
+
+#define PES_HEADER_SIZE 6
+
+#define PES_BUFFER_GET_SIZE(_b) (((_b[4] << 8) | _b[5]) + 6)
+#define PES_BUFFER_GET_HEADER(_b) ((_b[0] << 16) | (_b[1] << 8) | (_b[2]))
 
 typedef struct
 {
@@ -189,7 +188,10 @@ typedef struct
     uint8_t cc;
 
     uint8_t stream_id;
-    uint8_t pts;
+
+    uint64_t pts;
+    uint64_t dts;
+    uint64_t pcr;
 
     // demux
     uint8_t ts[TS_PACKET_SIZE];
@@ -207,22 +209,81 @@ void mpegts_pes_destroy(mpegts_pes_t *pes);
 
 void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callback, void *arg);
 void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
+void mpegts_pes_demux_pcr(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
 
 void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_size);
 
 #define PES_INIT(_pes, _stream_id)                                                              \
     {                                                                                           \
+        const uint8_t __stream_id = _stream_id;                                                 \
         _pes->buffer[0] = 0x00;                                                                 \
         _pes->buffer[1] = 0x00;                                                                 \
         _pes->buffer[2] = 0x01;                                                                 \
-        _pes->buffer[3] = _stream_id;                                                           \
+        _pes->buffer[3] = __stream_id;                                                          \
         _pes->buffer[4] = 0x00;                                                                 \
         _pes->buffer[5] = 0x00;                                                                 \
-        _pes->buffer_size = 6;                                                                  \
+        _pes->buffer_size = PES_HEADER_SIZE;                                                    \
+        switch(__stream_id)                                                                     \
+        {                                                                                       \
+            case 0xBC: /* program_stream_map */                                                 \
+            case 0xBE: /* padding_stream */                                                     \
+            case 0xBF: /* private_stream_2 */                                                   \
+            case 0xF0: /* ECM */                                                                \
+            case 0xF1: /* EMM */                                                                \
+            case 0xF2: /* DSMCC_stream */                                                       \
+            case 0xF8: /* ITU-T Rec. H.222.1 type E */                                          \
+            case 0xFF: /* program_stream_directory */                                           \
+                break;                                                                          \
+            default:                                                                            \
+                _pes->buffer[6] = 0x80;                                                         \
+                _pes->buffer[7] = 0x00;                                                         \
+                _pes->buffer[8] = 0x00;                                                         \
+                _pes->buffer_size += 3;                                                         \
+                break;                                                                          \
+        }                                                                                       \
     }
 
-#define PES_GET_HEADER(_pes)                                                                    \
-    ((uint32_t)((_pes->buffer[0] << 16) | (_pes->buffer[1] << 8) | (_pes->buffer[2])))
+#define PES_SET_PTS_DTS(_pes)                                                                   \
+    {                                                                                           \
+        if(_pes->pts != 0)                                                                      \
+        {                                                                                       \
+            _pes->buffer[7] = (_pes->buffer[7] & 0x3F) | 0x80;                                  \
+            _pes->buffer[8] = _pes->buffer[8] + 5;                                              \
+            _pes->buffer[9] = 0x20 | ((_pes->pts >> 29) & 0xE0) | 0x01;                         \
+            _pes->buffer[10] = ((_pes->pts >> 22) & 0xFF);                                      \
+            _pes->buffer[11] = ((_pes->pts >> 14) & 0xFE) | 0x01;                               \
+            _pes->buffer[12] = ((_pes->pts >> 7 ) & 0xFF);                                      \
+            _pes->buffer[13] = ((_pes->pts << 1 ) & 0xFE) | 0x01;                               \
+            _pes->buffer_size += 5;                                                             \
+            if(_pes->dts != 0)                                                                  \
+            {                                                                                   \
+                _pes->buffer[7] = _pes->buffer[7] | 0x40;                                       \
+                _pes->buffer[8] = _pes->buffer[8] + 5;                                          \
+                _pes->buffer[9] = _pes->buffer[9] | 0x10;                                       \
+                _pes->buffer[14] = 0x10 | ((_pes->dst >> 29) & 0xE0) | 0x01;                    \
+                _pes->buffer[15] = ((_pes->dts >> 22) & 0xFF);                                  \
+                _pes->buffer[16] = ((_pes->dts >> 14) & 0xFE) | 0x01;                           \
+                _pes->buffer[17] = ((_pes->dts >> 7 ) & 0xFF);                                  \
+                _pes->buffer[18] = ((_pes->dts << 1 ) & 0xFE) | 0x01;                           \
+                _pes->buffer_size += 5;                                                         \
+            }                                                                                   \
+        }                                                                                       \
+    }
+
+#define PES_SET_SIZE(_pes)                                                                      \
+    {                                                                                           \
+        if(_pes->type != MPEGTS_PACKET_VIDEO)                                                   \
+        {                                                                                       \
+            const uint16_t __size = _pes->buffer_size - PES_HEADER_SIZE;                        \
+            _pes->buffer[4] = (__size >> 8) & 0xFF;                                             \
+            _pes->buffer[5] = (__size     ) & 0xFF;                                             \
+        }                                                                                       \
+        else                                                                                    \
+        {                                                                                       \
+            _pes->buffer[4] = 0x00;                                                             \
+            _pes->buffer[5] = 0x00;                                                             \
+        }                                                                                       \
+    }
 
 /*
  * ooooooooo  ooooooooooo  oooooooo8    oooooooo8
@@ -524,9 +585,21 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
  *
  */
 
-bool mpegts_pcr_check(const uint8_t *ts);
-uint64_t mpegts_pcr(const uint8_t *ts);
-double mpegts_pcr_block_ms(uint64_t pcr_last, uint64_t pcr_current);
+#define PCR_CHECK(_ts) (                                                                        \
+    (_ts[0] == 0x47) &&                                                                         \
+    ((_ts[3] & 0x30) == 0x20) &&    /* adaptation field without payload */                      \
+    (_ts[4] > 0) &&                 /* adaptation field length */                               \
+    (_ts[5] & 0x10))                /* PCR_flag */                                              \
+
+#define PCR_GET(_ts) ((uint64_t)(                                                               \
+        300 * ((_ts[6] << 25)  |                                                                \
+               (_ts[7] << 17)  |                                                                \
+               (_ts[8] << 9 )  |                                                                \
+               (_ts[9] << 1 )  |                                                                \
+               (_ts[10] >> 7)) +                                                                \
+        (((_ts[10] & 0x01) << 8) | _ts[11])                                                     \
+    ))
+
 uint64_t mpegts_pcr_block_us(uint64_t *pcr_last, const uint64_t *pcr_current);
 
 #endif /* _MPEGTS_H_ */

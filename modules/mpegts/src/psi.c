@@ -44,9 +44,20 @@ void mpegts_psi_destroy(mpegts_psi_t *psi)
 
 void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts, psi_callback_t callback, void *arg)
 {
-    const uint8_t *payload = TS_PTR(ts);
-    if(!payload)
-        return;
+    const uint8_t *payload;
+    switch(TS_AF(ts))
+    {
+        case 0x10:
+            payload = &ts[TS_HEADER_SIZE];
+            break;
+        case 0x30:
+            if(ts[4] >= TS_BODY_SIZE - 1)
+                return;
+            payload = &ts[TS_HEADER_SIZE + 1 + ts[4]];
+            break;
+        default:
+            return;
+    }
 
     const uint8_t cc = TS_CC(ts);
 
@@ -72,7 +83,7 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts, psi_callback_t callbac
                 memcpy(&psi->buffer[psi->buffer_skip], payload, ptr_field);
                 if(psi->buffer_size == 0)
                 { // incomplete PSI header
-                    const size_t psi_buffer_size = PSI_SIZE(psi->buffer);
+                    const size_t psi_buffer_size = PSI_BUFFER_GET_SIZE(psi->buffer);
                     if(psi_buffer_size <= 3 || psi_buffer_size > PSI_MAX_SIZE)
                     {
                         psi->buffer_skip = 0;
@@ -102,7 +113,7 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts, psi_callback_t callbac
                 break;
             }
 
-            const size_t psi_buffer_size = PSI_SIZE(payload);
+            const size_t psi_buffer_size = PSI_BUFFER_GET_SIZE(payload);
             if(psi_buffer_size <= 3 || psi_buffer_size > PSI_MAX_SIZE)
                 break;
 
@@ -143,7 +154,7 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts, psi_callback_t callbac
                 return;
             }
             memcpy(&psi->buffer[psi->buffer_skip], payload, 3 - psi->buffer_skip);
-            const size_t psi_buffer_size = PSI_SIZE(psi->buffer);
+            const size_t psi_buffer_size = PSI_BUFFER_GET_SIZE(psi->buffer);
             if(psi_buffer_size <= 3 || psi_buffer_size > PSI_MAX_SIZE)
             {
                 psi->buffer_skip = 0;

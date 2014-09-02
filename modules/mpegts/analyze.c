@@ -636,7 +636,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         if(af == 0x30)
             payload += (ts[4] + 1);
 
-        if(PES_HEADER(payload) != 0x000001)
+        if(PES_BUFFER_GET_HEADER(payload) != 0x000001)
             ++item->pes_error;
     }
 }

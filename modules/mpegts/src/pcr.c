@@ -18,27 +18,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stdlib.h>
+#include <string.h>
 #include "../mpegts.h"
-
-inline bool mpegts_pcr_check(const uint8_t *ts)
-{
-    return (   (ts[0] == 0x47)
-            && (ts[3] & 0x20)   /* adaptation field without payload */
-            && (ts[4] > 0)      /* adaptation field length */
-            && (ts[5] & 0x10)   /* PCR_flag */
-            );
-}
-
-inline uint64_t mpegts_pcr(const uint8_t *ts)
-{
-    const uint64_t pcr_base = (ts[6] << 25)
-                            | (ts[7] << 17)
-                            | (ts[8] << 9 )
-                            | (ts[9] << 1 )
-                            | (ts[10] >> 7);
-    const uint64_t pcr_ext = ((ts[10] & 1) << 8) | ts[11];
-    return (pcr_base * 300 + pcr_ext);
-}
 
 inline uint64_t mpegts_pcr_block_us(uint64_t *pcr_last, const uint64_t *pcr_current)
 {
