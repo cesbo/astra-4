@@ -187,12 +187,6 @@ typedef struct
     uint16_t pid;
     uint8_t cc;
 
-    uint8_t stream_id;
-
-    uint64_t pts;
-    uint64_t dts;
-    uint64_t pcr;
-
     // demux
     uint8_t ts[TS_PACKET_SIZE];
 
@@ -209,11 +203,23 @@ void mpegts_pes_destroy(mpegts_pes_t *pes);
 
 void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callback, void *arg);
 void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
-void mpegts_pes_demux_pcr(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
+void mpegts_pes_demux_pcr(mpegts_pes_t *pes, uint64_t pcr, ts_callback_t callback, void *arg);
 
 void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_size);
 
-#define PES_INIT(_pes, _stream_id)                                                              \
+#define PES_IS_SYNTAX_SPEC(_pes)                                                                \
+    (                                                                                           \
+        _pes->buffer[3] != 0xBC && /* program_stream_map */                                     \
+        _pes->buffer[3] != 0xBE && /* padding_stream */                                         \
+        _pes->buffer[3] != 0xBF && /* private_stream_2 */                                       \
+        _pes->buffer[3] != 0xF0 && /* ECM */                                                    \
+        _pes->buffer[3] != 0xF1 && /* EMM */                                                    \
+        _pes->buffer[3] != 0xF2 && /* DSMCC_stream */                                           \
+        _pes->buffer[3] != 0xF8 && /* ITU-T Rec. H.222.1 type E */                              \
+        _pes->buffer[3] != 0xFF    /* program_stream_directory */                               \
+    )
+
+#define PES_INIT(_pes, _stream_id, _is_pts, _is_dts)                                            \
     {                                                                                           \
         const uint8_t __stream_id = _stream_id;                                                 \
         _pes->buffer[0] = 0x00;                                                                 \
@@ -223,51 +229,70 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
         _pes->buffer[4] = 0x00;                                                                 \
         _pes->buffer[5] = 0x00;                                                                 \
         _pes->buffer_size = PES_HEADER_SIZE;                                                    \
-        switch(__stream_id)                                                                     \
+        if(PES_IS_SYNTAX_SPEC(_pes))                                                            \
         {                                                                                       \
-            case 0xBC: /* program_stream_map */                                                 \
-            case 0xBE: /* padding_stream */                                                     \
-            case 0xBF: /* private_stream_2 */                                                   \
-            case 0xF0: /* ECM */                                                                \
-            case 0xF1: /* EMM */                                                                \
-            case 0xF2: /* DSMCC_stream */                                                       \
-            case 0xF8: /* ITU-T Rec. H.222.1 type E */                                          \
-            case 0xFF: /* program_stream_directory */                                           \
-                break;                                                                          \
-            default:                                                                            \
-                _pes->buffer[6] = 0x80;                                                         \
-                _pes->buffer[7] = 0x00;                                                         \
-                _pes->buffer[8] = 0x00;                                                         \
-                _pes->buffer_size += 3;                                                         \
-                break;                                                                          \
+            _pes->buffer[6] = 0x80;                                                             \
+            _pes->buffer[7] = 0x00;                                                             \
+            _pes->buffer[8] = 0;                                                                \
+            _pes->buffer_size += 3;                                                             \
+            if(_is_pts)                                                                         \
+            {                                                                                   \
+                _pes->buffer[7] = _pes->buffer[7] | 0x80;                                       \
+                _pes->buffer[8] += 5;                                                           \
+                _pes->buffer_size += 5;                                                         \
+                if(_is_dts)                                                                     \
+                {                                                                               \
+                    _pes->buffer[7] = _pes->buffer[7] | 0x40;                                   \
+                    _pes->buffer[8] += 5;                                                       \
+                    _pes->buffer_size += 5;                                                     \
+                }                                                                               \
+            }                                                                                   \
         }                                                                                       \
     }
 
-#define PES_SET_PTS_DTS(_pes)                                                                   \
+#define __PES_IS_PTS(_pes) (PES_IS_SYNTAX_SPEC(_pes) && (_pes->buffer[7] & 0x80))
+
+#define PES_GET_PTS(_pes)                                                                       \
+    ((!__PES_IS_PTS(_pes)) ? (0) : (                                                            \
+        (uint64_t)((_pes->buffer[9 ] & 0x0E) << 29) |                                           \
+                  ((_pes->buffer[10]       ) << 22) |                                           \
+                  ((_pes->buffer[11] & 0xFE) << 14) |                                           \
+                  ((_pes->buffer[12]       ) << 7 ) |                                           \
+                  ((_pes->buffer[13]       ) >> 1 )                                             \
+    ))
+
+#define PES_SET_PTS(_pes, _pts)                                                                 \
     {                                                                                           \
-        if(_pes->pts != 0)                                                                      \
-        {                                                                                       \
-            _pes->buffer[7] = (_pes->buffer[7] & 0x3F) | 0x80;                                  \
-            _pes->buffer[8] = _pes->buffer[8] + 5;                                              \
-            _pes->buffer[9] = 0x20 | ((_pes->pts >> 29) & 0xE0) | 0x01;                         \
-            _pes->buffer[10] = ((_pes->pts >> 22) & 0xFF);                                      \
-            _pes->buffer[11] = ((_pes->pts >> 14) & 0xFE) | 0x01;                               \
-            _pes->buffer[12] = ((_pes->pts >> 7 ) & 0xFF);                                      \
-            _pes->buffer[13] = ((_pes->pts << 1 ) & 0xFE) | 0x01;                               \
-            _pes->buffer_size += 5;                                                             \
-            if(_pes->dts != 0)                                                                  \
-            {                                                                                   \
-                _pes->buffer[7] = _pes->buffer[7] | 0x40;                                       \
-                _pes->buffer[8] = _pes->buffer[8] + 5;                                          \
-                _pes->buffer[9] = _pes->buffer[9] | 0x10;                                       \
-                _pes->buffer[14] = 0x10 | ((_pes->dst >> 29) & 0xE0) | 0x01;                    \
-                _pes->buffer[15] = ((_pes->dts >> 22) & 0xFF);                                  \
-                _pes->buffer[16] = ((_pes->dts >> 14) & 0xFE) | 0x01;                           \
-                _pes->buffer[17] = ((_pes->dts >> 7 ) & 0xFF);                                  \
-                _pes->buffer[18] = ((_pes->dts << 1 ) & 0xFE) | 0x01;                           \
-                _pes->buffer_size += 5;                                                         \
-            }                                                                                   \
-        }                                                                                       \
+        asc_assert(__PES_IS_PTS(_pes), "PTS flag is not set");                                  \
+        const uint64_t __pts = _pts;                                                            \
+        _pes->buffer[9] = 0x20 | ((__pts >> 29) & 0x0E) | 0x01;                                 \
+        _pes->buffer[10] = ((__pts >> 22) & 0xFF);                                              \
+        _pes->buffer[11] = ((__pts >> 14) & 0xFE) | 0x01;                                       \
+        _pes->buffer[12] = ((__pts >> 7 ) & 0xFF);                                              \
+        _pes->buffer[13] = ((__pts << 1 ) & 0xFE) | 0x01;                                       \
+    }
+
+#define __PES_IS_DTS(_pes) (PES_IS_SYNTAX_SPEC(_pes) && (_pes->buffer[7] & 0x40))
+
+#define PES_GET_DTS(_pes)                                                                       \
+    ((!__PES_IS_DTS(_pes)) ? (0) : (                                                            \
+        (uint64_t)((_pes->buffer[14] & 0x0E) << 29) |                                           \
+                  ((_pes->buffer[15]       ) << 22) |                                           \
+                  ((_pes->buffer[16] & 0xFE) << 14) |                                           \
+                  ((_pes->buffer[17]       ) << 7 ) |                                           \
+                  ((_pes->buffer[18]       ) >> 1 )                                             \
+    ))
+
+#define PES_SET_DTS(_pes, _dts)                                                                 \
+    {                                                                                           \
+        asc_assert(__PES_IS_DTS(_pes), "DTS flag is not set");                                  \
+        const uint64_t __dts = _dts;                                                            \
+        _pes->buffer[9] = _pes->buffer[9] | 0x10;                                               \
+        _pes->buffer[14] = 0x10 | ((__dts >> 29) & 0x0E) | 0x01;                                \
+        _pes->buffer[15] = ((__dts >> 22) & 0xFF);                                              \
+        _pes->buffer[16] = ((__dts >> 14) & 0xFE) | 0x01;                                       \
+        _pes->buffer[17] = ((__dts >> 7 ) & 0xFF);                                              \
+        _pes->buffer[18] = ((__dts << 1 ) & 0xFE) | 0x01;                                       \
     }
 
 #define PES_SET_SIZE(_pes)                                                                      \
@@ -585,20 +610,37 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
  *
  */
 
-#define PCR_CHECK(_ts) (                                                                        \
-    (_ts[0] == 0x47) &&                                                                         \
-    ((_ts[3] & 0x30) == 0x20) &&    /* adaptation field without payload */                      \
-    (_ts[4] > 0) &&                 /* adaptation field length */                               \
-    (_ts[5] & 0x10))                /* PCR_flag */                                              \
+#define PCR_CHECK(_ts)                                                                          \
+    (                                                                                           \
+        (_ts[0] == 0x47) &&                                                                     \
+        ((_ts[3] & 0x30) == 0x20) &&    /* adaptation field without payload */                  \
+        (_ts[4] > 0) &&                 /* adaptation field length */                           \
+        (_ts[5] & 0x10)                 /* PCR_flag */                                          \
+    )
 
-#define PCR_GET(_ts) ((uint64_t)(                                                               \
-        300 * ((_ts[6] << 25)  |                                                                \
-               (_ts[7] << 17)  |                                                                \
-               (_ts[8] << 9 )  |                                                                \
-               (_ts[9] << 1 )  |                                                                \
-               (_ts[10] >> 7)) +                                                                \
-        (((_ts[10] & 0x01) << 8) | _ts[11])                                                     \
+#define PCR_GET(_ts)                                                                            \
+    ((uint64_t)(                                                                                \
+        300 * (((_ts)[6] << 25)  |                                                              \
+               ((_ts)[7] << 17)  |                                                              \
+               ((_ts)[8] << 9 )  |                                                              \
+               ((_ts)[9] << 1 )  |                                                              \
+               ((_ts)[10] >> 7)) +                                                              \
+        ((((_ts)[10] & 0x01) << 8) | (_ts)[11])                                                 \
     ))
+
+#define PCR_SET(_ts, _pcr)                                                                      \
+    {                                                                                           \
+        uint8_t *const __ts = _ts;                                                              \
+        const uint64_t __pcr = _pcr;                                                            \
+        const uint64_t __pcr_base = __pcr / 300;                                                \
+        const uint64_t __pcr_ext = __pcr % 300;                                                 \
+        __ts[6] = (__pcr_base >> 25) & 0xFF;                                                    \
+        __ts[7] = (__pcr_base >> 17) & 0xFF;                                                    \
+        __ts[8] = (__pcr_base >> 9 ) & 0xFF;                                                    \
+        __ts[9] = (__pcr_base >> 1 ) & 0xFF;                                                    \
+        __ts[10] = ((__pcr_base << 7) & 0x80) | 0x7E | ((__pcr_ext >> 8) & 0x01);              \
+        __ts[11] = __pcr_ext & 0xFF;                                                            \
+    }
 
 uint64_t mpegts_pcr_block_us(uint64_t *pcr_last, const uint64_t *pcr_current);
 
