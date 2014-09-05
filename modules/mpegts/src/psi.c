@@ -2,7 +2,7 @@
  * Astra Module: MPEG-TS (PSI processing)
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,8 +18,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdlib.h>
-#include <string.h>
 #include "../mpegts.h"
 
 mpegts_psi_t * mpegts_psi_init(mpegts_packet_type_t type, uint16_t pid)

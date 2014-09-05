@@ -2,7 +2,7 @@
  * Astra Module: MPEG-TS
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,9 +21,7 @@
 #ifndef _MPEGTS_H_
 #define _MPEGTS_H_ 1
 
-#include <stdint.h>
-#include <modules/astra/base.h> /* crc32b, hex_to_str */
-#include <modules/astra/module_lua.h>
+#include <astra.h>
 
 /*
  * ooooooooooo  oooooooo8
@@ -189,6 +187,9 @@ typedef struct
 
     // demux
     uint8_t ts[TS_PACKET_SIZE];
+
+    uint64_t block_time_begin;
+    uint64_t block_time_end;
 
     // mux
     uint32_t buffer_size;

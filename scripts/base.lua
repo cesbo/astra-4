@@ -495,15 +495,6 @@ dvb_input_instance_list = {}
 dvb_list = nil
 
 function dvb_tune(conf)
-    local a = split(conf.adapter, "%.")
-    if #a == 1 then
-        conf.adapter = tonumber(a[1])
-        if conf.device == nil then conf.device = 0 end
-    elseif #a == 2 then
-        conf.adapter = tonumber(a[1])
-        conf.device = tonumber(a[2])
-    end
-
     if conf.mac then
         local function get_adapter()
             if dvb_list == nil then
@@ -524,8 +515,22 @@ function dvb_tune(conf)
             return false
         end
         if get_adapter() == false then
-            log.error("[dvb_tune] failed to find an adapter. MAC address: " .. mac)
+            log.error("[dvb_tune] failed to get an adapter. MAC address: " .. mac)
             astra.abort()
+        end
+    else
+        if conf.adapter == nil then
+            log.error("[dvb_tune] option 'adapter' or 'mac' is required")
+            astra.abort()
+        end
+
+        local a = split(tostring(conf.adapter), "%.")
+        if #a == 1 then
+            conf.adapter = tonumber(a[1])
+            if conf.device == nil then conf.device = 0 end
+        elseif #a == 2 then
+            conf.adapter = tonumber(a[1])
+            conf.device = tonumber(a[2])
         end
     end
 

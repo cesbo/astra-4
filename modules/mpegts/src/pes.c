@@ -2,7 +2,7 @@
  * Astra Module: MPEG-TS (PES processing)
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,11 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdlib.h>
-#include <string.h>
 #include "../mpegts.h"
-
-#include <core/log.h>
 
 mpegts_pes_t * mpegts_pes_init(mpegts_packet_type_t type, uint16_t pid)
 {
@@ -78,6 +74,7 @@ void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callbac
             return;
 
         pes->buffer_size = PES_BUFFER_GET_SIZE(payload);
+        pes->block_time_begin = asc_utime();
 
         memcpy(pes->buffer, payload, payload_len);
         pes->buffer_skip = payload_len;
@@ -134,7 +131,7 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg)
             memcpy(&pes->ts[TS_HEADER_SIZE], &pes->buffer[buffer_skip], TS_BODY_SIZE);
             buffer_skip += TS_BODY_SIZE;
         }
-        else if(buffer_tail >= TS_BODY_SIZE - 2)
+        else if(buffer_tail >= TS_BODY_SIZE - 2) /* 2 - adaptation field size */
         {
             pes->ts[3] = pes->ts[3] | 0x20; /* adaptation field */
             pes->ts[4] = 1;
