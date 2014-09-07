@@ -220,11 +220,14 @@ static void mux_pes(void *arg, mpegts_pes_t *pes)
 {
     module_data_t *mod = arg;
 
-    const size_t pes_hdr = 6 + 3 + pes->buffer[8];
-    const size_t es_size = pes->buffer_size - pes_hdr;
+    const uint8_t *ptr;
+    if(PES_IS_SYNTAX_SPEC(pes))
+        ptr = &pes->buffer[PES_HEADER_SIZE + 3 + pes->buffer[8]];
+    else
+        ptr = &pes->buffer[PES_HEADER_SIZE];
 
-    const uint8_t *ptr = &pes->buffer[pes_hdr];
-    const uint8_t *const ptr_end = ptr + es_size;
+    const uint8_t *const ptr_end = pes->buffer + pes->buffer_size;
+    const size_t es_size = ptr_end - ptr;
 
     if(!mod->fbuffer_skip)
     {
@@ -342,7 +345,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         return;
     }
 
-    const uint16_t pid = TS_PID(ts);
+    const uint16_t pid = TS_GET_PID(ts);
     if(pid == mod->pid)
         mpegts_pes_mux(mod->pes_i, ts, mux_pes, mod);
     else
@@ -422,9 +425,8 @@ static void module_init(module_data_t *mod)
 
         av_init_packet(&mod->davpkt);
 
-        mod->pes_i = mpegts_pes_init(MPEGTS_PACKET_AUDIO, mod->pid);
-        mod->pes_o = mpegts_pes_init(MPEGTS_PACKET_AUDIO, mod->pid);
-        mod->pes_o->pts = 1;
+        mod->pes_i = mpegts_pes_init(MPEGTS_PACKET_AUDIO, mod->pid, 0);
+        mod->pes_o = mpegts_pes_init(MPEGTS_PACKET_AUDIO, mod->pid, 0);
     } while(0);
 }
 
