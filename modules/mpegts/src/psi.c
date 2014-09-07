@@ -42,24 +42,13 @@ void mpegts_psi_destroy(mpegts_psi_t *psi)
 
 void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts, psi_callback_t callback, void *arg)
 {
-    const uint8_t *payload;
-    switch(TS_AF(ts))
-    {
-        case 0x10:
-            payload = &ts[TS_HEADER_SIZE];
-            break;
-        case 0x30:
-            if(ts[4] >= TS_BODY_SIZE - 1)
-                return;
-            payload = &ts[TS_HEADER_SIZE + 1 + ts[4]];
-            break;
-        default:
-            return;
-    }
+    const uint8_t *payload = TS_GET_PAYLOAD(ts);
+    if(!payload)
+        return;
 
-    const uint8_t cc = TS_CC(ts);
+    const uint8_t cc = TS_GET_CC(ts);
 
-    if(TS_PUSI(ts))
+    if(TS_IS_PAYLOAD_START(ts))
     {
         const uint8_t ptr_field = *payload;
         ++payload; // skip pointer field

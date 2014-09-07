@@ -42,12 +42,13 @@
 #define NULL_TS_PID (MAX_PID - 1)
 #define DESC_MAX_SIZE 1024
 
-#define TS_PID(_ts) (((_ts[1] & 0x1f) << 8) | _ts[2])
-#define TS_PUSI(_ts) (_ts[1] & 0x40)
-#define TS_SC(_ts) (_ts[3] & 0xC0)
-#define TS_AF(_ts) (_ts[3] & 0x30)
-#define TS_CC(_ts) (_ts[3] & 0x0f)
+#define TS_IS_SYNC(_ts) (_ts[0] == 0x47)
+#define TS_IS_PAYLOAD(_ts) (_ts[3] & 0x10)
+#define TS_IS_PAYLOAD_START(_ts) (TS_IS_PAYLOAD(_ts) && (_ts[1] & 0x40))
+#define TS_IS_AF(_ts) (_ts[3] & 0x20)
+#define TS_IS_SCRAMBLED(_ts) (_ts[3] & 0xC0)
 
+#define TS_GET_PID(_ts) ((uint16_t)(((_ts[1] & 0x1F) << 8) | _ts[2]))
 #define TS_SET_PID(_ts, _pid)                                                                   \
     {                                                                                           \
         uint8_t *__ts = _ts;                                                                    \
@@ -55,6 +56,16 @@
         __ts[1] = (__ts[1] & ~0x1F) | ((__pid >> 8) & 0x1F);                                    \
         __ts[2] = __pid & 0xFF;                                                                 \
     }
+
+#define TS_GET_CC(_ts) (_ts[3] & 0x0F)
+#define TS_SET_CC(_ts, _cc) { _ts[3] = (_ts[3] & 0xF0) | ((_cc) & 0x0F); }
+
+#define TS_GET_PAYLOAD(_ts) (                                                                   \
+    (!TS_IS_PAYLOAD(_ts)) ? (NULL) : (                                                          \
+        (!TS_IS_AF(_ts)) ? (&_ts[TS_HEADER_SIZE]) : (                                           \
+            (_ts[4] > TS_BODY_SIZE - 1) ? (NULL) : (&_ts[TS_HEADER_SIZE + 1 + _ts[4]]))         \
+        )                                                                                       \
+    )
 
 typedef void (*ts_callback_t)(void *, const uint8_t *);
 
@@ -614,15 +625,15 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
  *
  */
 
-#define PCR_CHECK(_ts)                                                                          \
+#define TS_IS_PCR(_ts)                                                                          \
     (                                                                                           \
         (_ts[0] == 0x47) &&                                                                     \
-        (_ts[3] & 0x20) &&              /* adaptation field */                                  \
+        (TS_IS_AF(_ts)) &&              /* adaptation field */                                  \
         (_ts[4] > 0) &&                 /* adaptation field length */                           \
         (_ts[5] & 0x10)                 /* PCR_flag */                                          \
     )
 
-#define PCR_GET(_ts)                                                                            \
+#define TS_GET_PCR(_ts)                                                                         \
     ((uint64_t)(                                                                                \
         300 * (((_ts)[6] << 25)  |                                                              \
                ((_ts)[7] << 17)  |                                                              \
@@ -632,7 +643,7 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
         ((((_ts)[10] & 0x01) << 8) | (_ts)[11])                                                 \
     ))
 
-#define PCR_SET(_ts, _pcr)                                                                      \
+#define TS_SET_PCR(_ts, _pcr)                                                                   \
     {                                                                                           \
         uint8_t *const __ts = _ts;                                                              \
         const uint64_t __pcr = _pcr;                                                            \
@@ -642,7 +653,7 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
         __ts[7] = (__pcr_base >> 17) & 0xFF;                                                    \
         __ts[8] = (__pcr_base >> 9 ) & 0xFF;                                                    \
         __ts[9] = (__pcr_base >> 1 ) & 0xFF;                                                    \
-        __ts[10] = ((__pcr_base << 7) & 0x80) | 0x7E | ((__pcr_ext >> 8) & 0x01);              \
+        __ts[10] = ((__pcr_base << 7) & 0x80) | 0x7E | ((__pcr_ext >> 8) & 0x01);               \
         __ts[11] = __pcr_ext & 0xFF;                                                            \
     }
 

@@ -332,11 +332,11 @@ static bool seek_pcr(  module_data_t *mod
             ptr = ts;
         }
 
-        if(PCR_CHECK(ptr))
+        if(TS_IS_PCR(ptr))
         {
             *block_size = count;
             *next_block = skip;
-            *pcr = PCR_GET(ptr);
+            *pcr = TS_GET_PCR(ptr);
 
             return true;
         }

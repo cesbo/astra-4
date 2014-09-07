@@ -743,7 +743,7 @@ static void decrypt(module_data_t *mod)
 
 static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
-    const uint16_t pid = TS_PID(ts);
+    const uint16_t pid = TS_GET_PID(ts);
 
     if(pid == 0)
     {

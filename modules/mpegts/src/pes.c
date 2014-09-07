@@ -50,24 +50,14 @@ void mpegts_pes_destroy(mpegts_pes_t *pes)
 
 void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callback, void *arg)
 {
-    const uint8_t *payload;
-    switch(TS_AF(ts))
-    {
-        case 0x10:
-            payload = &ts[TS_HEADER_SIZE];
-            break;
-        case 0x30:
-            if(ts[4] >= TS_BODY_SIZE - 1)
-                return;
-            payload = &ts[TS_HEADER_SIZE + 1 + ts[4]];
-            break;
-        default:
-            return;
-    }
-    const uint8_t payload_len = ts + TS_PACKET_SIZE - payload;
-    const uint8_t cc = TS_CC(ts);
+    const uint8_t *payload = TS_GET_PAYLOAD(ts);
+    if(!payload)
+        return;
 
-    if(TS_PUSI(ts))
+    const uint8_t payload_len = ts + TS_PACKET_SIZE - payload;
+    const uint8_t cc = TS_GET_CC(ts);
+
+    if(TS_IS_PAYLOAD_START(ts))
     {
         if(pes->buffer_skip > 0)
         {
@@ -155,7 +145,7 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg)
             const uint64_t pcr_base = pes->pcr_time * 90 / 1000;
             const uint64_t pcr_ext = pes->pcr_time * 27000 / 1000;
             const uint64_t pcr = (pcr_base * 300) + (pcr_ext % 300);
-            PCR_SET(pes->ts, pcr);
+            TS_SET_PCR(pes->ts, pcr);
             memset(&pes->ts[12], 0xFF, TS_PACKET_SIZE - 12);
 
             callback(arg, pes->ts);
@@ -194,7 +184,7 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg)
         callback(arg, pes->ts);
 
         pes->cc = (pes->cc + 1) & 0x0F;
-        if(TS_PUSI(pes->ts))
+        if(TS_IS_PAYLOAD_START(pes->ts))
             pes->ts[1] = pes->ts[1] & ~0x40; /* unset PUSI */
     } while(pes->buffer_skip != pes->buffer_size);
 }

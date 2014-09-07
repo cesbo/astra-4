@@ -691,7 +691,7 @@ static void on_eit(void *arg, mpegts_psi_t *psi)
 
 static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
-    const uint16_t pid = TS_PID(ts);
+    const uint16_t pid = TS_GET_PID(ts);
     if(!module_stream_demux_check_pid(mod, pid))
         return;
 
