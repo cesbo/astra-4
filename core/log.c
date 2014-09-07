@@ -114,20 +114,19 @@ static void _log(int type, const char *msg, va_list ap)
             switch(type)
             {
                 case LOG_TYPE_WARNING:
-                    reset_color = true;
-                    write(STDOUT_FILENO, "\x1b[33m", 5);
+                    if(write(STDOUT_FILENO, "\x1b[33m", 5) != -1)
+                        reset_color = true;
                     break;
                 case LOG_TYPE_ERROR:
-                    reset_color = true;
-                    write(STDOUT_FILENO, "\x1b[31m", 5);
+                    if(write(STDOUT_FILENO, "\x1b[31m", 5) != -1)
+                        reset_color = true;
                     break;
                 default:
                     break;
             }
         }
         const int r = write(1, buffer, len_2);
-        if(reset_color)
-            write(STDOUT_FILENO, "\x1b[0m", 4);
+        if(reset_color && write(STDOUT_FILENO, "\x1b[0m", 4) != -1) {};
         if(r == -1)
             fprintf(stderr, "[log] failed to write to the stdout [%s]\n", strerror(errno));
     }
