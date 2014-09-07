@@ -185,11 +185,15 @@ typedef struct
     uint16_t pid;
     uint8_t cc;
 
+    uint64_t block_time_begin;
+    uint64_t block_time_total;
+
     // demux
     uint8_t ts[TS_PACKET_SIZE];
 
-    uint64_t block_time_begin;
-    uint64_t block_time_end;
+    uint32_t pcr_interval;
+    uint64_t pcr_time;
+    uint64_t pcr_time_offset;
 
     // mux
     uint32_t buffer_size;
@@ -199,12 +203,11 @@ typedef struct
 
 typedef void (*pes_callback_t)(void *, mpegts_pes_t *);
 
-mpegts_pes_t * mpegts_pes_init(mpegts_packet_type_t type, uint16_t pid);
+mpegts_pes_t * mpegts_pes_init(mpegts_packet_type_t type, uint16_t pid, uint32_t pcr_interval);
 void mpegts_pes_destroy(mpegts_pes_t *pes);
 
 void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callback, void *arg);
 void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
-void mpegts_pes_demux_pcr(mpegts_pes_t *pes, uint64_t pcr, ts_callback_t callback, void *arg);
 
 void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_size);
 
@@ -614,7 +617,7 @@ void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_s
 #define PCR_CHECK(_ts)                                                                          \
     (                                                                                           \
         (_ts[0] == 0x47) &&                                                                     \
-        ((_ts[3] & 0x30) == 0x20) &&    /* adaptation field without payload */                  \
+        (_ts[3] & 0x20) &&              /* adaptation field */                                  \
         (_ts[4] > 0) &&                 /* adaptation field length */                           \
         (_ts[5] & 0x10)                 /* PCR_flag */                                          \
     )

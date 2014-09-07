@@ -20,7 +20,7 @@
 
 #include "../mpegts.h"
 
-mpegts_pes_t * mpegts_pes_init(mpegts_packet_type_t type, uint16_t pid)
+mpegts_pes_t * mpegts_pes_init(mpegts_packet_type_t type, uint16_t pid, uint32_t pcr_interval)
 {
     mpegts_pes_t *pes = malloc(sizeof(mpegts_pes_t));
     pes->type = type;
@@ -28,6 +28,15 @@ mpegts_pes_t * mpegts_pes_init(mpegts_packet_type_t type, uint16_t pid)
     pes->cc = 0;
     pes->buffer_size = 0;
     pes->buffer_skip = 0;
+
+    pes->pcr_interval = pcr_interval * 1000;
+    pes->pcr_time = 0;
+    pes->pcr_time_offset = 0;
+
+    pes->ts[0] = 0x47;
+    pes->ts[1] = 0x00;
+    TS_SET_PID(pes->ts, pes->pid);
+
     return pes;
 }
 
@@ -64,6 +73,7 @@ void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callbac
         {
             pes->buffer_size = pes->buffer_skip;
             pes->buffer_skip = 0;
+            pes->block_time_total = asc_utime() - pes->block_time_begin;
             callback(arg, pes);
         }
 
@@ -82,6 +92,7 @@ void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callbac
         if(pes->buffer_size == pes->buffer_skip)
         {
             pes->buffer_skip = 0;
+            pes->block_time_total = 0;
             callback(arg, pes);
         }
     }
@@ -102,10 +113,26 @@ void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callbac
         if(pes->buffer_size == pes->buffer_skip)
         {
             pes->buffer_skip = 0;
+            pes->block_time_total = asc_utime() - pes->block_time_begin;
             callback(arg, pes);
         }
     }
     pes->cc = cc;
+}
+
+static inline bool check_pcr_time(mpegts_pes_t *pes)
+{
+    const uint64_t offset = (pes->buffer_skip * pes->block_time_total) / (pes->buffer_size);
+    const uint64_t block_time_offset = pes->pcr_time_offset + pes->block_time_begin + offset;
+    const uint64_t pcr_time_next = pes->pcr_time + pes->pcr_interval;
+    if(block_time_offset >= pcr_time_next)
+    {
+        pes->pcr_time = pcr_time_next;
+        pes->pcr_time_offset = block_time_offset - pcr_time_next;
+        return true;
+    }
+
+    return false;
 }
 
 void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg)
@@ -113,64 +140,61 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg)
     if(pes->buffer_size == 0)
         return;
 
-    PES_SET_SIZE(pes);
-
-    pes->ts[0] = 0x47;
-    pes->ts[1] = 0x40; /* PUSI */
-    TS_SET_PID(pes->ts, pes->pid);
-    pes->ts[3] = 0x10; /* payload only */
-
-    size_t buffer_tail, buffer_skip = 0;
+    pes->buffer_skip = 0;
+    pes->cc = pes->cc & 0x0F; /* check cc */
 
     do
     {
-        buffer_tail = pes->buffer_size - buffer_skip;
+        if(pes->pcr_interval && check_pcr_time(pes))
+        {
+            pes->ts[1] = pes->ts[1] & ~0x40; /* unset PUSI */
+            pes->ts[3] = 0x20 | pes->cc; /* adaptation field only */
+            pes->ts[4] = 1 + 6 + 176; /* 1 - ts[5]; 6 - PCR field; 176 - stuff */
+            pes->ts[5] = 0x10; /* PCR flag */
+
+            const uint64_t pcr_base = pes->pcr_time * 90 / 1000;
+            const uint64_t pcr_ext = pes->pcr_time * 27000 / 1000;
+            const uint64_t pcr = (pcr_base * 300) + (pcr_ext % 300);
+            PCR_SET(pes->ts, pcr);
+            memset(&pes->ts[12], 0xFF, TS_PACKET_SIZE - 12);
+
+            callback(arg, pes->ts);
+        }
+
+        if(pes->buffer_skip == 0)
+            pes->ts[1] = pes->ts[1] | 0x40; /* set PUSI */
+
+        const size_t buffer_tail = pes->buffer_size - pes->buffer_skip;
 
         if(buffer_tail >= TS_BODY_SIZE)
         {
-            memcpy(&pes->ts[TS_HEADER_SIZE], &pes->buffer[buffer_skip], TS_BODY_SIZE);
-            buffer_skip += TS_BODY_SIZE;
+            pes->ts[3] = 0x10 | pes->cc; /* payload only */
+            memcpy(&pes->ts[TS_HEADER_SIZE], &pes->buffer[pes->buffer_skip], TS_BODY_SIZE);
+            pes->buffer_skip += TS_BODY_SIZE;
         }
-        else if(buffer_tail >= TS_BODY_SIZE - 2) /* 2 - adaptation field size */
+        else if(buffer_tail >= TS_BODY_SIZE - 2) /* 2 - adaptation field */
         {
-            pes->ts[3] = pes->ts[3] | 0x20; /* adaptation field */
+            pes->ts[3] = 0x30 | pes->cc; /* payload with adaptation field */
             pes->ts[4] = 1;
             pes->ts[5] = 0x00;
-            memcpy(&pes->ts[TS_HEADER_SIZE + 2], &pes->buffer[buffer_skip], TS_BODY_SIZE - 2);
-            buffer_skip += TS_BODY_SIZE - 2;
+            memcpy(&pes->ts[6], &pes->buffer[pes->buffer_skip], TS_BODY_SIZE - 2);
+            pes->buffer_skip += TS_BODY_SIZE - 2;
         }
         else
         {
             const uint8_t stuff_size = TS_BODY_SIZE - buffer_tail - 2;
-            pes->ts[3] = pes->ts[3] | 0x20; /* adaptation field */
+            pes->ts[3] = 0x30 | pes->cc; /* payload with adaptation field */
             pes->ts[4] = 1 + stuff_size; /* 1 - ts[5] */
             pes->ts[5] = 0x00;
             memset(&pes->ts[6], 0xFF, stuff_size);
-            memcpy(&pes->ts[6 + stuff_size], &pes->buffer[buffer_skip], buffer_tail);
-            buffer_skip += buffer_tail;
+            memcpy(&pes->ts[6 + stuff_size], &pes->buffer[pes->buffer_skip], buffer_tail);
+            pes->buffer_skip += buffer_tail;
         }
-
-        pes->ts[3] = (pes->ts[3] & 0xF0) | (pes->cc & 0x0F);
-        pes->cc = (pes->cc + 1) & 0x0F;
 
         callback(arg, pes->ts);
 
+        pes->cc = (pes->cc + 1) & 0x0F;
         if(TS_PUSI(pes->ts))
             pes->ts[1] = pes->ts[1] & ~0x40; /* unset PUSI */
-    } while(buffer_skip != pes->buffer_size);
-}
-
-void mpegts_pes_demux_pcr(mpegts_pes_t *pes, uint64_t pcr, ts_callback_t callback, void *arg)
-{
-    pes->ts[0] = 0x47;
-    pes->ts[1] = 0x00;
-    TS_SET_PID(pes->ts, pes->pid);
-    pes->ts[3] = 0x20 | (pes->cc & 0x0F); /* adaptation field only */
-    pes->ts[4] = 1 + 6; /* 1 - ts[5]; 6 - PCR field size */
-    pes->ts[5] = 0x10; /* PCR flag */
-
-    PCR_SET(pes->ts, pcr);
-    memset(&pes->ts[12], 0xFF, TS_PACKET_SIZE - 12);
-
-    callback(arg, pes->ts);
+    } while(pes->buffer_skip != pes->buffer_size);
 }
