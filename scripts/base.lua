@@ -537,6 +537,11 @@ function dvb_tune(conf)
     local instance_id = conf.adapter .. "." .. conf.device
     local instance = dvb_input_instance_list[instance_id]
     if not instance then
+        if not conf.type then
+            log.error("[dvb_tune " .. conf.instance_id .. "] option 'type' is required")
+            astra.abort()
+        end
+
         if conf.tp then
             local a = split(conf.tp, ":")
             if #a ~= 3 then

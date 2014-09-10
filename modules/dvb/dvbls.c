@@ -172,6 +172,22 @@ static void check_device_fe(void)
     close(fd);
     lua_setfield(lua, -2, "frontend");
 
+    switch(feinfo.type)
+    {
+        case FE_QPSK:
+            lua_pushstring(lua, "S");
+            break;
+        case FE_OFDM:
+            lua_pushstring(lua, "T");
+            break;
+        case FE_QAM:
+            lua_pushstring(lua, "C");
+            break;
+        default:
+            break;
+    }
+    lua_setfield(lua, -2, "type");
+
     check_device_net();
 }
 

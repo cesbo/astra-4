@@ -575,7 +575,7 @@ options_usage = [[
 options = {
     ["*"] = function(idx)
         local filename = argv[idx]
-        if utils.stat(filename).type == 'file' then
+        if utils.stat(filename).type == "file" then
             dofile(filename)
             return 0
         end
