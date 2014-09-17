@@ -2,7 +2,7 @@
  * Astra Module: SoftCAM
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -79,9 +79,13 @@ static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
 
 static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
 {
+    __uarg(mod);
+    __uarg(desc);
+
+#if 0
     const int length = desc[1] - 4;
     if(length < 2)
-        return 0;
+        return false;
 
     asc_list_for(mod->__cas.decrypt->cam->prov_list)
     {
@@ -91,6 +95,9 @@ static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
     }
 
     return false;
+#endif
+
+    return true;
 }
 
 static bool cas_check_caid(uint16_t caid)

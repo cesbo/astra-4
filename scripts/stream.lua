@@ -480,6 +480,10 @@ function make_channel(channel_config)
             if type(url) == "string" then
                 item.config = parse_url(url)
             elseif type(url) == "table" then
+                if url.url then
+                    local u = parse_url(url.url)
+                    for k,v in pairs(u) do url[k] = v end
+                end
                 item.config = url
             end
             if not check_module(item.config) then
