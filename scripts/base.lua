@@ -495,6 +495,15 @@ dvb_input_instance_list = {}
 dvb_list = nil
 
 function dvb_tune(conf)
+    local a = split(tostring(conf.adapter), "%.")
+    if #a == 1 then
+        conf.adapter = tonumber(a[1])
+        if conf.device == nil then conf.device = 0 end
+    elseif #a == 2 then
+        conf.adapter = tonumber(a[1])
+        conf.device = tonumber(a[2])
+    end
+
     if conf.mac then
         local function get_adapter()
             if dvb_list == nil then
