@@ -54,6 +54,9 @@ struct module_data_t
 
     uint32_t dvr_read;
 
+    mpegts_psi_t *pat;
+    int pat_error;
+
     /* DMX config */
     bool dmx_budget;
 
@@ -77,6 +80,38 @@ struct module_data_t
 static void dvr_open(module_data_t *mod);
 static void dvr_close(module_data_t *mod);
 
+static void on_pat(void *arg, mpegts_psi_t *psi)
+{
+    module_data_t *mod = arg;
+
+    // check changes
+    const uint32_t crc32 = PSI_GET_CRC32(psi);
+    if(crc32 == psi->crc32)
+    {
+        mod->pat_error = 0;
+        return;
+    }
+
+    // check crc
+    if(crc32 != PSI_CALC_CRC32(psi))
+    {
+        if(mod->pat_error >= 3)
+        {
+            asc_log_error(MSG("dvr checksum error, try to reopen"));
+            dvr_close(mod);
+            dvr_open(mod);
+            mod->pat_error = 0;
+        }
+        else
+        {
+            mod->pat_error = mod->pat_error + 1;
+        }
+        return;
+    }
+
+    psi->crc32 = crc32;
+}
+
 static void dvr_on_error(void *arg)
 {
     module_data_t *mod = arg;
@@ -99,10 +134,15 @@ static void dvr_on_read(void *arg)
 
     for(int i = 0; i < len; i += TS_PACKET_SIZE)
     {
-        if(mod->ca->ca_fd > 0)
-            ca_on_ts(mod->ca, &mod->dvr_buffer[i]);
+        const uint8_t *ts = &mod->dvr_buffer[i];
 
-        module_stream_send(mod, &mod->dvr_buffer[i]);
+        if(mod->ca->ca_fd > 0)
+            ca_on_ts(mod->ca, ts);
+
+        module_stream_send(mod, ts);
+
+        if(TS_IS_SYNC(ts) && TS_GET_PID(ts) == 0)
+            mpegts_psi_mux(mod->pat, ts, on_pat, mod);
     }
 }
 
@@ -131,6 +171,15 @@ static void dvr_open(module_data_t *mod)
     mod->dvr_event = asc_event_init(mod->dvr_fd, mod);
     asc_event_set_on_read(mod->dvr_event, dvr_on_read);
     asc_event_set_on_error(mod->dvr_event, dvr_on_error);
+
+    // send empty PAT to all modules
+    mpegts_psi_t *pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
+    pat->cc = mod->pat->cc;
+    PAT_INIT(pat, 0, 1);
+    PSI_SET_SIZE(pat);
+    PSI_SET_CRC32(pat);
+    mpegts_psi_demux(pat, (ts_callback_t)__module_stream_send, &mod->__stream);
+    mpegts_psi_destroy(pat);
 }
 
 static void dvr_close(module_data_t *mod)
@@ -749,6 +798,8 @@ static void module_init(module_data_t *mod)
     else
         lua_pop(lua, 1);
 
+    mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
+
     dvr_open(mod);
     if(mod->dvr_fd == 0)
         return;
@@ -766,6 +817,12 @@ static void module_init(module_data_t *mod)
 static void module_destroy(module_data_t *mod)
 {
     dvr_close(mod);
+
+    if(mod->pat)
+    {
+        mpegts_psi_destroy(mod->pat);
+        mod->pat = NULL;
+    }
 
     if(mod->thread)
         on_thread_close(mod);
