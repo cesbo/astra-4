@@ -68,6 +68,8 @@ struct module_data_t
     dvb_ca_t *ca;
 };
 
+void dmx_bounce(module_data_t *mod);
+
 /*
  * ooooooooo  ooooo  oooo oooooooooo
  *  888    88o 888    88   888    888
@@ -98,9 +100,10 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         if(mod->pat_error >= 3)
         {
             asc_log_error(MSG("dvr checksum error, try to reopen"));
+            mod->fe->do_retune = 1;
+            mod->pat_error = 0;
             dvr_close(mod);
             dvr_open(mod);
-            mod->pat_error = 0;
         }
         else
         {
@@ -172,14 +175,7 @@ static void dvr_open(module_data_t *mod)
     asc_event_set_on_read(mod->dvr_event, dvr_on_read);
     asc_event_set_on_error(mod->dvr_event, dvr_on_error);
 
-    // send empty PAT to all modules
-    mpegts_psi_t *pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
-    pat->cc = mod->pat->cc;
-    PAT_INIT(pat, 0, 1);
-    PSI_SET_SIZE(pat);
-    PSI_SET_CRC32(pat);
-    mpegts_psi_demux(pat, (ts_callback_t)__module_stream_send, &mod->__stream);
-    mpegts_psi_destroy(pat);
+    dmx_bounce(mod);
 }
 
 static void dvr_close(module_data_t *mod)
