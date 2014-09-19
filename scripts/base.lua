@@ -497,15 +497,6 @@ dvb_input_instance_list = {}
 dvb_list = nil
 
 function dvb_tune(conf)
-    local a = split(tostring(conf.adapter), "%.")
-    if #a == 1 then
-        conf.adapter = tonumber(a[1])
-        if conf.device == nil then conf.device = 0 end
-    elseif #a == 2 then
-        conf.adapter = tonumber(a[1])
-        conf.device = tonumber(a[2])
-    end
-
     if conf.mac then
         local function get_adapter()
             if dvb_list == nil then
@@ -571,6 +562,9 @@ function dvb_tune(conf)
             conf.lof1, conf.lof2, conf.slof = a[1], a[2], a[3]
         end
 
+        if conf.type == "S" and conf.s2 == true then conf.type = "S2" end
+        if conf.type == "T" and conf.t2 == true then conf.type = "T2" end
+
         if conf.type:lower() == "asi" then
             instance = asi_input(conf)
         else
@@ -585,7 +579,9 @@ end
 init_input_module.dvb = function(conf)
     local instance = nil
 
-    if conf.addr.length == 0 then
+    local adapter_addr = tostring(conf.addr)
+
+    if #adapter_addr == 0 then
         instance = dvb_tune(conf)
     else
         local function get_dvb_tune()
@@ -594,7 +590,7 @@ init_input_module.dvb = function(conf)
                     if i.__options.id == conf.addr then return i end
                 end
             end
-            local i = _G[tostring(conf.addr)]
+            local i = _G[adapter_addr]
             local module_name = tostring(i)
             if module_name == "dvb_input" or module_name == "asi_input" then return i end
             log.error("[" .. conf.name .. "] dvb is not found")
