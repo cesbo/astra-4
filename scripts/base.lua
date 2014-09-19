@@ -178,6 +178,8 @@ function parse_url(url)
     elseif data.format == "rtsp" then
         parse_http_address()
         if data.port == nil then data.port = 554 end
+    else
+        data.addr = url
     end
 
     return data
@@ -614,6 +616,28 @@ kill_input_module.dvb = function(module)
     if conf.cam == true and conf.pnr then
         module:ca_set_pnr(conf.pnr, false)
     end
+end
+
+-- ooooo         oooooooooo  ooooooooooo ooooo         ooooooo      o      ooooooooo
+--  888           888    888  888    88   888        o888   888o   888      888    88o
+--  888 ooooooooo 888oooo88   888ooo8     888        888     888  8  88     888    888
+--  888           888  88o    888    oo   888      o 888o   o888 8oooo88    888    888
+-- o888o         o888o  88o8 o888ooo8888 o888ooooo88   88ooo88 o88o  o888o o888ooo88
+
+init_input_module.reload = function(conf)
+    return transmit({
+        timer = timer({
+            interval = tonumber(conf.addr),
+            callback = function(self)
+                self:close()
+                astra.reload()
+            end,
+        })
+    })
+end
+
+kill_input_module.reload = function(module)
+    module.__options.timer:close()
 end
 
 -- ooooo         ooooooo      o      ooooooooo
