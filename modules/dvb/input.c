@@ -64,11 +64,11 @@ struct module_data_t
     char dmx_dev_name[32];
     int *dmx_fd_list;
 
+    int do_bounce;
+
     dvb_fe_t *fe;
     dvb_ca_t *ca;
 };
-
-void dmx_bounce(module_data_t *mod);
 
 /*
  * ooooooooo  ooooo  oooo oooooooooo
@@ -175,7 +175,7 @@ static void dvr_open(module_data_t *mod)
     asc_event_set_on_read(mod->dvr_event, dvr_on_read);
     asc_event_set_on_error(mod->dvr_event, dvr_on_error);
 
-    dmx_bounce(mod);
+    mod->do_bounce = 1;
 }
 
 static void dvr_close(module_data_t *mod)
@@ -682,6 +682,12 @@ static void thread_loop(void *arg)
         {
             fe_check_timeout = current_time;
             fe_loop(mod->fe, 0);
+        }
+
+        if(mod->do_bounce)
+        {
+            dmx_bounce(mod);
+            mod->do_bounce = 0;
         }
 
         if(!mod->dmx_budget && (current_time - dmx_check_timeout) >= DMX_TIMEOUT)
