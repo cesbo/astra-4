@@ -101,6 +101,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         {
             asc_log_error(MSG("dvr checksum error, try to reopen"));
             mod->fe->do_retune = 1;
+            mod->do_bounce = 1;
             mod->pat_error = 0;
             dvr_close(mod);
             dvr_open(mod);
@@ -174,8 +175,6 @@ static void dvr_open(module_data_t *mod)
     mod->dvr_event = asc_event_init(mod->dvr_fd, mod);
     asc_event_set_on_read(mod->dvr_event, dvr_on_read);
     asc_event_set_on_error(mod->dvr_event, dvr_on_error);
-
-    mod->do_bounce = 1;
 }
 
 static void dvr_close(module_data_t *mod)
