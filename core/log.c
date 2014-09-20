@@ -34,7 +34,7 @@ typedef struct
     bool sout;
     char *filename;
 #ifndef _WIN32
-    bool syslog;
+    char *syslog;
 #endif
 } log_t;
 
@@ -44,9 +44,9 @@ static log_t __log =
     false,
     false,
     true,
-    NULL
+    NULL,
 #ifndef _WIN32
-    , false
+    NULL,
 #endif
 };
 
@@ -193,24 +193,29 @@ void asc_log_hup(void)
                     , S_IRUSR | S_IWUSR);
 #endif
 
-    if(__log.fd <= 0)
+    if(__log.fd == -1)
     {
         __log.fd = 0;
-        __log.sout = 1;
+        __log.sout = true;
         asc_log_error("[core/log] failed to open %s (%s)", __log.filename, strerror(errno));
     }
 }
 
 void asc_log_core_destroy(void)
 {
-    if(__log.fd > 1)
+    if(__log.fd != 1)
+    {
         close(__log.fd);
-    __log.fd = 0;
+        __log.fd = 0;
+    }
 
 #ifndef _WIN32
     if(__log.syslog)
+    {
         closelog();
-    __log.syslog = false;
+        free(__log.syslog);
+        __log.syslog = NULL;
+    }
 #endif
 
     __log.color = false;
@@ -258,13 +263,14 @@ void asc_log_set_syslog(const char *val)
     if(__log.syslog)
     {
         closelog();
-        __log.syslog = false;
+        free(__log.syslog);
+        __log.syslog = NULL;
     }
 
     if(!val)
         return;
 
-    openlog(val, LOG_PID | LOG_CONS, LOG_USER);
-    __log.syslog = true;
+    __log.syslog = strdup(val);
+    openlog(__log.syslog, LOG_PID | LOG_CONS, LOG_USER);
 }
 #endif
