@@ -56,8 +56,8 @@ struct module_data_t
         const char *name;
         int pnr;
         int set_pnr;
-        bool sdt;
-        bool eit;
+        bool no_sdt;
+        bool no_eit;
         bool cas;
 
         bool pass_sdt;
@@ -118,7 +118,7 @@ static void stream_reload(module_data_t *mod)
         module_stream_demux_join_pid(mod, 0x01);
     }
 
-    if(mod->config.sdt)
+    if(mod->config.no_sdt == false)
     {
         mod->stream[0x11] = MPEGTS_PACKET_SDT;
         module_stream_demux_join_pid(mod, 0x11);
@@ -129,7 +129,7 @@ static void stream_reload(module_data_t *mod)
         }
     }
 
-    if(mod->config.eit)
+    if(mod->config.no_eit == false)
     {
         mod->stream[0x12] = MPEGTS_PACKET_EIT;
         module_stream_demux_join_pid(mod, 0x12);
@@ -782,8 +782,8 @@ static void module_init(module_data_t *mod)
             module_stream_demux_join_pid(mod, 1);
         }
 
-        module_option_boolean("sdt", &mod->config.sdt);
-        if(mod->config.sdt)
+        module_option_boolean("no_sdt", &mod->config.no_sdt);
+        if(mod->config.no_sdt == false)
         {
             mod->sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
             mod->custom_sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
@@ -793,8 +793,8 @@ static void module_init(module_data_t *mod)
             module_option_boolean("pass_sdt", &mod->config.pass_sdt);
         }
 
-        module_option_boolean("eit", &mod->config.eit);
-        if(mod->config.eit)
+        module_option_boolean("no_eit", &mod->config.no_eit);
+        if(mod->config.no_eit == false)
         {
             mod->eit = mpegts_psi_init(MPEGTS_PACKET_EIT, 0x12);
             mod->stream[0x12] = MPEGTS_PACKET_EIT;

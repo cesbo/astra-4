@@ -39,6 +39,17 @@ function dump_table(t, p, i)
 end
 
 function split(s, d)
+    if s == nil then
+        return nil
+    elseif type(s) == "string" then
+        --
+    elseif type(s) == "number" then
+        s = tostring(s)
+    else
+        log.error("[split] string required")
+        astra.abort()
+    end
+
     local p = 1
     local t = {}
     while true do
@@ -217,27 +228,18 @@ function init_input(conf)
     end
 
     if conf.pnr ~= nil then
-        local demux_sdt = (conf.no_sdt ~= true)
-        local demux_eit = (conf.no_eit ~= true)
-        local demux_cas = (type(conf.cam) == "string" or conf.cas == true)
-        local pass_sdt = (demux_sdt == true and conf.pass_sdt == true)
-        local pass_eit = (demux_eit == true and conf.pass_eit == true)
-
-        local filter = nil
-        if conf.filter then filter = split(conf.filter, ",") end
-
         instance.channel = channel({
             upstream = instance.tail:stream(),
             name = conf.name,
             pnr = conf.pnr,
             pid = conf.pid,
-            sdt = demux_sdt,
-            eit = demux_eit,
-            cas = demux_cas,
-            pass_sdt = pass_sdt,
-            pass_eit = pass_eit,
+            no_sdt = conf.no_sdt,
+            no_eit = conf.no_eit,
+            cas = conf.cas,
+            pass_sdt = conf.pass_sdt,
+            pass_eit = conf.pass_eit,
             map = conf.map,
-            filter = filter,
+            filter = split(conf.filter, ","),
         })
         instance.tail = instance.channel
     end
