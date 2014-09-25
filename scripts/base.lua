@@ -240,6 +240,7 @@ function init_input(conf)
             pass_eit = conf.pass_eit,
             map = conf.map,
             filter = split(conf.filter, ","),
+            no_reload = conf.no_reload,
         })
         instance.tail = instance.channel
     end

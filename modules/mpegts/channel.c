@@ -27,8 +27,8 @@
  *      name        - string, channel name
  *      pnr         - number, join PID related to the program number
  *      pid         - list, join PID in list
- *      sdt         - boolean, join SDT table
- *      eit         - boolean, join EIT table
+ *      no_sdt      - boolean, do not join SDT table
+ *      no_eit      - boolean, do not join EIT table
  *      cas         - boolean, join CAT, ECM, EMM tables
  *      map         - list, map PID by stream type, item format: "type=pid"
  *                    type: video, audio, rus, eng... and other languages code
@@ -58,6 +58,7 @@ struct module_data_t
         int set_pnr;
         bool no_sdt;
         bool no_eit;
+        bool no_reload;
         bool cas;
 
         bool pass_sdt;
@@ -91,6 +92,7 @@ struct module_data_t
     uint8_t eit_cc;
 
     uint8_t pat_version;
+    asc_timer_t *si_timer;
 };
 
 #define MSG(_msg) "[channel %s] " _msg, mod->config.name
@@ -146,6 +148,23 @@ static void stream_reload(module_data_t *mod)
             map_item->is_set = false;
         }
     }
+}
+
+static void on_si_timer(void *arg)
+{
+    module_data_t *mod = arg;
+
+    if(mod->custom_pat)
+        mpegts_psi_demux(mod->custom_pat, (ts_callback_t)__module_stream_send, &mod->__stream);
+
+    if(mod->custom_cat)
+        mpegts_psi_demux(mod->custom_cat, (ts_callback_t)__module_stream_send, &mod->__stream);
+
+    if(mod->custom_pmt)
+        mpegts_psi_demux(mod->custom_pmt, (ts_callback_t)__module_stream_send, &mod->__stream);
+
+    if(mod->custom_sdt)
+        mpegts_psi_demux(mod->custom_sdt, (ts_callback_t)__module_stream_send, &mod->__stream);
 }
 
 /*
@@ -259,6 +278,9 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     PSI_SET_CRC32(mod->custom_pat);
 
     mpegts_psi_demux(mod->custom_pat, (ts_callback_t)__module_stream_send, &mod->__stream);
+
+    if(mod->config.no_reload)
+        mod->stream[psi->pid] = MPEGTS_PACKET_UNKNOWN;
 }
 
 /*
@@ -319,6 +341,9 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
     mod->custom_cat->cc = 0;
 
     mpegts_psi_demux(mod->custom_cat, (ts_callback_t)__module_stream_send, &mod->__stream);
+
+    if(mod->config.no_reload)
+        mod->stream[psi->pid] = MPEGTS_PACKET_UNKNOWN;
 }
 
 /*
@@ -553,6 +578,9 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     PSI_SET_SIZE(mod->custom_pmt);
     PSI_SET_CRC32(mod->custom_pmt);
     mpegts_psi_demux(mod->custom_pmt, (ts_callback_t)__module_stream_send, &mod->__stream);
+
+    if(mod->config.no_reload)
+        mod->stream[psi->pid] = MPEGTS_PACKET_UNKNOWN;
 }
 
 /*
@@ -644,6 +672,9 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
     PSI_SET_CRC32(mod->custom_sdt);
 
     mpegts_psi_demux(mod->custom_sdt, (ts_callback_t)__module_stream_send, &mod->__stream);
+
+    if(mod->config.no_reload)
+        mod->stream[psi->pid] = MPEGTS_PACKET_UNKNOWN;
 }
 
 /*
@@ -805,6 +836,10 @@ static void module_init(module_data_t *mod)
 
             module_option_boolean("pass_eit", &mod->config.pass_eit);
         }
+
+        module_option_boolean("no_reload", &mod->config.no_reload);
+        if(mod->config.no_reload)
+            mod->si_timer = asc_timer_init(500, on_si_timer, mod);
     }
     else
     {
@@ -898,6 +933,9 @@ static void module_destroy(module_data_t *mod)
         }
         asc_list_destroy(mod->map);
     }
+
+    if(mod->si_timer)
+        asc_timer_destroy(mod->si_timer);
 }
 
 MODULE_STREAM_METHODS()
