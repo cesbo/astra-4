@@ -252,6 +252,8 @@ function init_input(conf)
             biss = conf.biss,
         })
         instance.tail = instance.decrypt
+    elseif conf.cam == true then
+        -- DVB-CI
     elseif conf.cam then
         local function get_softcam()
             if type(conf.cam) == "table" then
