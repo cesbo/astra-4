@@ -287,7 +287,7 @@ kill_output_module.udp = function(channel_data, output_id)
 end
 
 init_output_module.rtp = function(channel_data, output_id)
-    return init_output_module.udp(channel_data, output_id)
+    init_output_module.udp(channel_data, output_id)
 end
 
 kill_output_module.rtp = function(channel_data, output_id)
