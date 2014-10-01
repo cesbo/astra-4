@@ -155,6 +155,7 @@ function start_reserve(channel_data)
     local active_input_id = 0
     for input_id, input_data in ipairs(channel_data.input) do
         if input_data.on_air == true then
+            channel_data.transmit:set_upstream(input_data.input.tail:stream())
             log.info("[" .. channel_data.config.name .. "] Active input #" .. input_id)
             active_input_id = input_id
             break
