@@ -458,6 +458,11 @@ static void module_options_t(module_data_t *mod)
         else if(!strcasecmp(string_val, "2K")) mod->fe->transmitmode = TRANSMISSION_MODE_2K;
         else if(!strcasecmp(string_val, "8K")) mod->fe->transmitmode = TRANSMISSION_MODE_8K;
         else if(!strcasecmp(string_val, "4K")) mod->fe->transmitmode = TRANSMISSION_MODE_4K;
+#if DVB_API >= 503
+        else if(!strcasecmp(string_val, "1K")) mod->fe->transmitmode = TRANSMISSION_MODE_1K;
+        else if(!strcasecmp(string_val, "16K")) mod->fe->transmitmode = TRANSMISSION_MODE_16K;
+        else if(!strcasecmp(string_val, "32K")) mod->fe->transmitmode = TRANSMISSION_MODE_32K;
+#endif
         else
             option_unknown_type(mod, __transmitmode, string_val);
     }
