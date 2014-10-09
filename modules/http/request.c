@@ -44,6 +44,8 @@
                                   , mod->config.port    \
                                   , mod->config.path
 
+typedef void (*receiver_callback_t)(void *, void *, size_t);
+
 struct module_data_t
 {
     MODULE_STREAM_DATA();
@@ -96,6 +98,13 @@ struct module_data_t
     string_buffer_t *content;
 
     bool is_active;
+
+    // receiver
+    struct
+    {
+        void *arg;
+        receiver_callback_t callback;
+    } receiver;
 
     // stream
     bool is_thread_started;
@@ -190,6 +199,14 @@ static void on_close(void *arg)
 
     if(!mod->sock)
         return;
+
+    if(mod->receiver.callback)
+    {
+        mod->receiver.callback(mod->receiver.arg, NULL, 0);
+
+        mod->receiver.arg = NULL;
+        mod->receiver.callback = NULL;
+    }
 
     asc_socket_close(mod->sock);
     mod->sock = NULL;
@@ -650,6 +667,12 @@ static void on_read(void *arg)
     if(size <= 0)
     {
         on_close(mod);
+        return;
+    }
+
+    if(mod->receiver.callback)
+    {
+        mod->receiver.callback(mod->receiver.arg, &mod->buffer[mod->buffer_skip], size);
         return;
     }
 
@@ -1157,6 +1180,21 @@ static void on_connect(void *arg)
  *
  */
 
+static int method_set_receiver(module_data_t *mod)
+{
+    if(lua_isnil(lua, -1))
+    {
+        mod->receiver.arg = NULL;
+        mod->receiver.callback = NULL;
+    }
+    else
+    {
+        mod->receiver.arg = lua_touserdata(lua, -2);
+        mod->receiver.callback = (receiver_callback_t)lua_touserdata(lua, -1);
+    }
+    return 0;
+}
+
 static int method_send(module_data_t *mod)
 {
     mod->status = 0;
@@ -1250,7 +1288,8 @@ MODULE_LUA_METHODS()
 {
     MODULE_STREAM_METHODS_REF(),
     { "send", method_send },
-    { "close", method_close }
+    { "close", method_close },
+    { "set_receiver", method_set_receiver },
 };
 
 MODULE_LUA_REGISTER(http_request)

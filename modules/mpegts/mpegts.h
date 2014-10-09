@@ -183,7 +183,7 @@ void mpegts_psi_demux(mpegts_psi_t *psi, ts_callback_t callback, void *arg);
  *
  */
 
-#define PES_MAX_SIZE 0x00080000
+#define PES_MAX_SIZE 0x000A0000
 
 #define PES_HEADER_SIZE 6
 
