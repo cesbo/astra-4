@@ -20,10 +20,12 @@ function main()
                 log.warning("    adapter in use")
                 log.warning("    mac = " .. dvb_info.mac)
                 log.warning("    frontend = " .. dvb_info.frontend)
+                log.warning("    type = " .. dvb_info.type)
             else
                 log.info("adapter = " .. dvb_info.adapter .. ", device = " .. dvb_info.device)
                 log.info("    mac = " .. dvb_info.mac)
                 log.info("    frontend = " .. dvb_info.frontend)
+                log.info("    type = " .. dvb_info.type)
             end
         end
     end
