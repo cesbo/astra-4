@@ -726,6 +726,7 @@ static void on_read(void *arg)
  *
  */
 
+        m[0].eo = eoh; // end of buffer
         if(!http_parse_response(mod->buffer, m))
         {
             call_error(mod, "failed to parse response line");
@@ -769,6 +770,7 @@ static void on_read(void *arg)
 
         while(skip < eoh)
         {
+            m[0].eo = eoh - skip; // end of buffer
             if(!http_parse_header(&mod->buffer[skip], m))
             {
                 call_error(mod, "failed to parse response headers");
@@ -909,6 +911,7 @@ static void on_read(void *arg)
         {
             if(!mod->chunk_left)
             {
+                m[0].eo = mod->buffer_skip - skip;
                 if(!http_parse_chunk(&mod->buffer[skip], m))
                 {
                     call_error(mod, "invalid chunk");
