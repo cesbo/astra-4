@@ -417,7 +417,7 @@ init_input_module.http = function(conf)
                 instance.timeout = nil
 
                 if instance.request then instance.request:close() end
-                instance.request = http_request(conf)
+                instance.request = http_request(http_conf)
             end
         }
 
