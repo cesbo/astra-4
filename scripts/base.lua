@@ -119,6 +119,10 @@ function parse_url(url)
     end
 
     local function parse_udp_address()
+        local b = url:find("/")
+        if b then
+            url = url:sub(1, b - 1)
+        end
         local b = url:find("@")
         if b then
             if b > 1 then
@@ -130,8 +134,6 @@ function parse_url(url)
             end
             url = url:sub(b + 1)
         end
-        local b = url:find("/")
-        if b then url = url:sub(1, b - 1) end
         local b = url:find(":")
         if b then
             data.port = tonumber(url:sub(b + 1))
@@ -143,6 +145,13 @@ function parse_url(url)
     end
 
     local function parse_http_address()
+        local b = url:find("/")
+        if b then
+            data.path = url:sub(b)
+            url = url:sub(1, b - 1)
+        else
+            data.path = "/"
+        end
         local b = url:find("@")
         if b then
             if b > 1 then
@@ -154,13 +163,6 @@ function parse_url(url)
                 end
             end
             url = url:sub(b + 1)
-        end
-        local b = url:find("/")
-        if b then
-            data.path = url:sub(b)
-            url = url:sub(1, b - 1)
-        else
-            data.path = "/"
         end
         local b = url:find(":")
         if b then
@@ -667,7 +669,7 @@ Astra Options:
     --syslog NAME       send log messages to syslog
     --log FILE          write log to file
     --no-stdout         do not print log messages into console
-    --log-color         colored log messages in console
+    --color             colored log messages in console
     --debug             print debug messages
 ]])
 
@@ -705,7 +707,7 @@ astra_options = {
         log.set({ stdout = false })
         return 0
     end,
-    ["--log-color"] = function(udx)
+    ["--color"] = function(udx)
         log.set({ color = true })
         return 0
     end,
