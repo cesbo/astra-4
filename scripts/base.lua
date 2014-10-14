@@ -191,6 +191,9 @@ function parse_url(url)
     elseif data.format == "rtsp" then
         parse_http_address()
         if data.port == nil then data.port = 554 end
+    elseif data.format == "np" then
+        parse_http_address()
+        if data.port == nil then data.port = 80 end
     else
         data.addr = url
     end
@@ -209,6 +212,11 @@ kill_input_module = {}
 
 function init_input(conf)
     local instance = { format = conf.format, }
+
+    if not conf.name then
+        log.error("[init_input] option 'name' is required")
+        astra.abort()
+    end
 
     if not init_input_module[conf.format] then
         log.error("[" .. conf.name .. "] unknown input format")
@@ -397,20 +405,26 @@ init_input_module.http = function(conf)
             if conf.on_error then conf.on_error(message) end
         end
 
-        local http_conf = { host = conf.host, port = conf.port, path = conf.path, stream = true, }
-        http_conf.headers = {
-            "User-Agent: " .. http_user_agent,
-            "Host: " .. conf.host .. ":" .. conf.port,
-            "Connection: close",
+        local http_conf = {
+            host = conf.host,
+            port = conf.port,
+            path = conf.path,
+            stream = true,
+            sync = conf.sync,
+            buffer_size = conf.buffer_size,
+            timeout = conf.timeout,
+            sctp = conf.sctp,
+            headers = {
+                "User-Agent: " .. http_user_agent,
+                "Host: " .. conf.host .. ":" .. conf.port,
+                "Connection: close",
+            }
         }
+
         if conf.login and conf.password then
             local auth = base64.encode(conf.login .. ":" .. conf.password)
             table.insert(http_conf.headers, "Authorization: Basic " .. auth)
         end
-        if conf.sync then http_conf.sync = conf.sync end
-        if conf.buffer_size then http_conf.buffer_size = conf.buffer_size end
-        if conf.timeout then http_conf.timeout = conf.timeout end
-        if conf.sctp == true then http_conf.sctp = true end
 
         local timer_conf = {
             interval = 5,

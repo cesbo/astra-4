@@ -35,6 +35,7 @@
  *      sctp        - boolean, use sctp instead of tcp
  *      timeout     - number, request timeout
  *      callback    - function,
+ *      upstream    - object, stream instance returned by module_instance:stream()
  */
 
 #include "http.h"
@@ -43,8 +44,6 @@
     "[http_request %s:%d%s] " _msg, mod->config.host    \
                                   , mod->config.port    \
                                   , mod->config.path
-
-typedef void (*receiver_callback_t)(void *, void *, size_t);
 
 struct module_data_t
 {
@@ -65,6 +64,8 @@ struct module_data_t
 
     asc_socket_t *sock;
     asc_timer_t *timeout;
+
+    bool is_socket_busy;
 
     // request
     struct
@@ -103,7 +104,11 @@ struct module_data_t
     struct
     {
         void *arg;
-        receiver_callback_t callback;
+        union
+        {
+            void (*fn)(void *, void *, size_t);
+            void *ptr;
+        } callback;
     } receiver;
 
     // stream
@@ -118,6 +123,7 @@ struct module_data_t
         size_t buffer_count;
         size_t buffer_read;
         size_t buffer_write;
+        size_t buffer_fill;
     } sync;
 
     uint64_t pcr;
@@ -200,12 +206,12 @@ static void on_close(void *arg)
     if(!mod->sock)
         return;
 
-    if(mod->receiver.callback)
+    if(mod->receiver.callback.ptr)
     {
-        mod->receiver.callback(mod->receiver.arg, NULL, 0);
+        mod->receiver.callback.fn(mod->receiver.arg, NULL, 0);
 
         mod->receiver.arg = NULL;
-        mod->receiver.callback = NULL;
+        mod->receiver.callback.ptr = NULL;
     }
 
     asc_socket_close(mod->sock);
@@ -249,14 +255,19 @@ static void on_close(void *arg)
         callback(mod);
     }
 
-    if(mod->is_stream && mod->status == 3)
+    if(mod->__stream.self)
     {
-        /* stream on_close */
-        mod->status = -1;
-        mod->request.status = -1;
+        module_stream_destroy(mod);
 
-        lua_pushnil(lua);
-        callback(mod);
+        if(mod->status == 3)
+        {
+            /* stream on_close */
+            mod->status = -1;
+            mod->request.status = -1;
+
+            lua_pushnil(lua);
+            callback(mod);
+        }
     }
 
     if(mod->sync.buffer)
@@ -670,9 +681,9 @@ static void on_read(void *arg)
         return;
     }
 
-    if(mod->receiver.callback)
+    if(mod->receiver.callback.ptr)
     {
-        mod->receiver.callback(mod->receiver.arg, &mod->buffer[mod->buffer_skip], size);
+        mod->receiver.callback.fn(mod->receiver.arg, &mod->buffer[mod->buffer_skip], size);
         return;
     }
 
@@ -1174,6 +1185,93 @@ static void on_connect(void *arg)
     asc_socket_set_on_ready(mod->sock, on_ready_send_request);
 }
 
+static void on_upstream_ready(void *arg)
+{
+    module_data_t *mod = arg;
+
+    if(mod->sync.buffer_count > 0)
+    {
+        size_t block_size = (mod->sync.buffer_write > mod->sync.buffer_read)
+                          ? (mod->sync.buffer_write - mod->sync.buffer_read)
+                          : (mod->sync.buffer_size - mod->sync.buffer_read);
+
+        if(block_size > mod->sync.buffer_count)
+            block_size = mod->sync.buffer_count;
+
+        const ssize_t send_size = asc_socket_send(  mod->sock
+                                                  , &mod->sync.buffer[mod->sync.buffer_read]
+                                                  , block_size);
+
+        if(send_size > 0)
+        {
+            mod->sync.buffer_count -= send_size;
+            mod->sync.buffer_read += send_size;
+            if(mod->sync.buffer_read >= mod->sync.buffer_size)
+                mod->sync.buffer_read = 0;
+        }
+        else if(send_size == -1)
+        {
+            asc_log_error(  MSG("failed to send ts (%d bytes) [%s]")
+                          , block_size, asc_socket_error());
+            on_close(mod);
+            return;
+        }
+    }
+
+    if(mod->sync.buffer_count == 0)
+    {
+        asc_socket_set_on_ready(mod->sock, NULL);
+        mod->is_socket_busy = false;
+    }
+}
+
+static void on_ts(module_data_t *mod, const uint8_t *ts)
+{
+    if(mod->status != 3 || mod->status_code != 200)
+        return;
+
+    if(mod->sync.buffer_count + TS_PACKET_SIZE >= mod->sync.buffer_size)
+    {
+        // overflow
+        mod->sync.buffer_count = 0;
+        mod->sync.buffer_read = 0;
+        mod->sync.buffer_write = 0;
+        if(mod->is_socket_busy)
+        {
+            asc_socket_set_on_ready(mod->sock, NULL);
+            mod->is_socket_busy = false;
+        }
+        return;
+    }
+
+    const size_t buffer_write = mod->sync.buffer_write + TS_PACKET_SIZE;
+    if(buffer_write < mod->sync.buffer_size)
+    {
+        memcpy(&mod->sync.buffer[mod->sync.buffer_write], ts, TS_PACKET_SIZE);
+        mod->sync.buffer_write = buffer_write;
+    }
+    else if(buffer_write > mod->sync.buffer_size)
+    {
+        const size_t ts_head = mod->sync.buffer_size - mod->sync.buffer_write;
+        memcpy(&mod->sync.buffer[mod->sync.buffer_write], ts, ts_head);
+        mod->sync.buffer_write = TS_PACKET_SIZE - ts_head;
+        memcpy(mod->sync.buffer, &ts[ts_head], mod->sync.buffer_write);
+    }
+    else
+    {
+        memcpy(&mod->sync.buffer[mod->sync.buffer_write], ts, TS_PACKET_SIZE);
+        mod->sync.buffer_write = 0;
+    }
+    mod->sync.buffer_count += TS_PACKET_SIZE;
+
+    if(   mod->is_socket_busy == false
+       && mod->sync.buffer_count >= mod->sync.buffer_fill)
+    {
+        asc_socket_set_on_ready(mod->sock, on_upstream_ready);
+        mod->is_socket_busy = true;
+    }
+}
+
 /*
  * oooo     oooo  ooooooo  ooooooooo  ooooo  oooo ooooo       ooooooooooo
  *  8888o   888 o888   888o 888    88o 888    88   888         888    88
@@ -1188,12 +1286,12 @@ static int method_set_receiver(module_data_t *mod)
     if(lua_isnil(lua, -1))
     {
         mod->receiver.arg = NULL;
-        mod->receiver.callback = NULL;
+        mod->receiver.callback.ptr = NULL;
     }
     else
     {
         mod->receiver.arg = lua_touserdata(lua, -2);
-        mod->receiver.callback = (receiver_callback_t)lua_touserdata(lua, -1);
+        mod->receiver.callback.ptr = lua_touserdata(lua, -1);
     }
     return 0;
 }
@@ -1260,6 +1358,24 @@ static void module_init(module_data_t *mod)
         mod->sync.buffer_size = value * 1024 * 1024;
     }
 
+    lua_getfield(lua, MODULE_OPTIONS_IDX, "upstream");
+    if(lua_type(lua, -1) == LUA_TLIGHTUSERDATA)
+    {
+        asc_assert(mod->is_stream != true, MSG("option 'upstream' is not allowed in stream mode"));
+
+        module_stream_init(mod, on_ts);
+
+        int value = 1024;
+        module_option_number("buffer_size", &value);
+        mod->sync.buffer_size = value * 1024;
+        mod->sync.buffer = malloc(mod->sync.buffer_size);
+
+        value = 128;
+        module_option_number("buffer_fill", &value);
+        mod->sync.buffer_fill = value * 1024;
+    }
+    lua_pop(lua, 1);
+
     mod->timeout_ms = 10;
     module_option_number("timeout", &mod->timeout_ms);
     mod->timeout_ms *= 1000;
@@ -1277,9 +1393,6 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    if(mod->is_stream)
-        module_stream_destroy(mod);
-
     mod->status = -1;
     mod->request.status = -1;
 

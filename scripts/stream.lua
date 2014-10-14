@@ -430,6 +430,101 @@ kill_output_module.http = function(channel_data, output_id)
     http_output_instance_list[instance_id] = nil
 end
 
+--   ooooooo            oooo   oooo oooooooooo
+-- o888   888o           8888o  88   888    888
+-- 888     888 ooooooooo 88 888o88   888oooo88
+-- 888o   o888           88   8888   888
+--   88ooo88            o88o    88  o888o
+
+init_output_module.np = function(channel_data, output_id)
+    local output_data = channel_data.output[output_id]
+    local conf = output_data.config
+
+    local http_conf = {
+        host = conf.host,
+        port = conf.port,
+        path = conf.path,
+        upstream = channel_data.transmit:stream(),
+        buffer_size = conf.buffer_size,
+        buffer_fill = conf.buffer_size,
+        timeout = conf.timeout,
+        sctp = conf.sctp,
+        headers = {
+            "User-Agent: " .. http_user_agent,
+            "Host: " .. conf.host,
+            "Connection: keep-alive",
+        },
+    }
+
+    local timer_conf = {
+        interval = 5,
+        callback = function(self)
+            output_data.timeout:close()
+            output_data.timeout = nil
+
+            if output_data.request then output_data.request:close() end
+            output_data.request = http_request(http_conf)
+        end
+    }
+
+    http_conf.callback = function(self, response)
+        if not response then
+            output_data.request:close()
+            output_data.request = nil
+            output_data.timeout = timer(timer_conf)
+
+        elseif response.code == 200 then
+            if output_data.timeout then
+                output_data.timeout:close()
+                output_data.timeout = nil
+            end
+
+        elseif response.code == 301 or response.code == 302 then
+            if output_data.timeout then
+                output_data.timeout:close()
+                output_data.timeout = nil
+            end
+
+            output_data.request:close()
+            output_data.request = nil
+
+            local o = parse_url(response.headers["location"])
+            if o then
+                http_conf.host = o.host
+                http_conf.port = o.port
+                http_conf.path = o.path
+                http_conf.headers[2] = "Host: " .. o.host
+
+                log.info("[" .. conf.name .. "] Redirect to http://" .. o.host .. ":" .. o.port .. o.path)
+                output_data.request = http_request(http_conf)
+            else
+                log.error("[" .. conf.name .. "] NP Error: Redirect failed")
+                output_data.timeout = timer(timer_conf)
+            end
+
+        else
+            output_data.request:close()
+            output_data.request = nil
+            log.error("[" .. conf.name .. "] NP Error: " .. response.code .. ":" .. response.message)
+            output_data.timeout = timer(timer_conf)
+        end
+    end
+
+    output_data.request = http_request(http_conf)
+end
+
+kill_output_module.np = function(channel_data, output_id)
+    local output_data = channel_data.output[output_id]
+    if output_data.timeout then
+        output_data.timeout:close()
+        output_data.timeout = nil
+    end
+    if output_data.request then
+        output_data.request:close()
+        output_data.request = nil
+    end
+end
+
 --   oooooooo8 ooooo ooooo      o      oooo   oooo oooo   oooo ooooooooooo ooooo
 -- o888     88  888   888      888      8888o  88   8888o  88   888    88   888
 -- 888          888ooo888     8  88     88 888o88   88 888o88   888ooo8     888
