@@ -16,11 +16,11 @@
 -- You should have received a copy of the GNU General Public License
 -- along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-function dump_table(t, p, i)
+table.dump = function(t, p, i)
     if not p then p = print end
     if not i then
         p("{")
-        dump_table(t, p, "    ")
+        table.dump(t, p, "    ")
         p("}")
         return
     end
@@ -28,7 +28,7 @@ function dump_table(t, p, i)
     for key,val in pairs(t) do
         if type(val) == "table" then
             p(i .. tostring(key) .. " = {")
-            dump_table(val, p, i .. "    ")
+            table.dump(val, p, i .. "    ")
             p(i .. "}")
         elseif type(val) == "string" then
             p(i .. tostring(key) .. " = \"" .. val .. "\"")
@@ -38,7 +38,13 @@ function dump_table(t, p, i)
     end
 end
 
-function split(s, d)
+-- Deprecated
+function dump_table(t, p, i)
+    log.error("dump_table() method deprecated. use table.dump() instead")
+    return table.dump(t, p, i)
+end
+
+string.split = function(s, d)
     if s == nil then
         return nil
     elseif type(s) == "string" then
@@ -58,6 +64,12 @@ function split(s, d)
         table.insert(t, s:sub(p, b - 1))
         p = b + 1
     end
+end
+
+-- Deprecated
+function split(s, d)
+    log.error("split() method deprecated. use string.split() instead")
+    return string.split(s, d)
 end
 
 ifaddr_list = nil
@@ -251,7 +263,7 @@ function init_input(conf)
             pass_sdt = conf.pass_sdt,
             pass_eit = conf.pass_eit,
             map = conf.map,
-            filter = split(conf.filter, ","),
+            filter = string.split(conf.filter, ","),
             no_reload = conf.no_reload,
         })
         instance.tail = instance.channel
@@ -549,7 +561,7 @@ function dvb_tune(conf)
             astra.abort()
         end
 
-        local a = split(tostring(conf.adapter), "%.")
+        local a = string.split(tostring(conf.adapter), "%.")
         if #a == 1 then
             conf.adapter = tonumber(a[1])
             if conf.device == nil then conf.device = 0 end
@@ -568,7 +580,7 @@ function dvb_tune(conf)
         end
 
         if conf.tp then
-            local a = split(conf.tp, ":")
+            local a = string.split(conf.tp, ":")
             if #a ~= 3 then
                 log.error("[dvb_tune " .. instance_id .. "] option 'tp' has a wrong format")
                 astra.abort()
@@ -577,7 +589,7 @@ function dvb_tune(conf)
         end
 
         if conf.lnb then
-            local a = split(conf.lnb, ":")
+            local a = string.split(conf.lnb, ":")
             if #a ~= 3 then
                 log.error("[dvb_tune " .. instance_id .. "] option 'lnb' has a wrong format")
                 astra.abort()

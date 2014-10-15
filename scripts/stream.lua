@@ -106,7 +106,7 @@ function on_analyze(channel_data, input_id, data)
             log.error("[" .. input_data.config.name .. "] Unknown PSI: " .. data.psi)
         end
 
-    elseif data.analyze and input_id > 0 then
+    elseif data.analyze then
 
         if data.on_air ~= input_data.on_air then
             local analyze_message = "[" .. input_data.config.name .. "] Bitrate:" .. data.total.bitrate .. "Kbit/s"
