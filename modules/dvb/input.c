@@ -163,7 +163,7 @@ static void dvr_open(module_data_t *mod)
 
     if(mod->dvr_buffer_size > 0)
     {
-        const uint64_t buffer_size = mod->dvr_buffer_size * 188 * 1024;
+        const uint64_t buffer_size = mod->dvr_buffer_size * 10 * 188 * 1024;
         if(ioctl(mod->dvr_fd, DMX_SET_BUFFER_SIZE, buffer_size) < 0)
         {
             asc_log_error(MSG("DMX_SET_BUFFER_SIZE failed [%s]"), strerror(errno));
@@ -558,7 +558,7 @@ static void module_options(module_data_t *mod)
     module_option_boolean("budget", &mod->dmx_budget);
 
     module_option_number("buffer_size", &mod->dvr_buffer_size);
-    if(mod->dvr_buffer_size > 1000)
+    if(mod->dvr_buffer_size > 200)
         asc_log_warning(MSG("buffer_size value is too large"));
 
     static const char __modulation[] = "modulation";
