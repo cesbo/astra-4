@@ -357,7 +357,6 @@ static void module_options_s(module_data_t *mod)
     const char *string_val;
 
     /* Transponder options */
-    mod->fe->frequency *= 1000;
 
     static const char __polarization[] = "polarization";
     if(!module_option_string(__polarization, &string_val, NULL))
@@ -372,14 +371,32 @@ static void module_options_s(module_data_t *mod)
     static const char __symbolrate[] = "symbolrate";
     if(!module_option_number(__symbolrate, &mod->fe->symbolrate))
         option_required(mod, __symbolrate);
-    mod->fe->symbolrate *= 1000;
 
     /* LNB options */
-    static const char __lof1[] = "lof1";
-    if(!module_option_number(__lof1, &mod->fe->lnb_lof1))
-        option_required(mod, __lof1);
-    module_option_number("lof2", &mod->fe->lnb_lof2);
-    module_option_number("slof", &mod->fe->lnb_slof);
+    module_option_number("lof1", &mod->fe->lnb_lof1);
+    if(mod->fe->lnb_lof1)
+    {
+        module_option_number("lof2", &mod->fe->lnb_lof2);
+        module_option_number("slof", &mod->fe->lnb_slof);
+    }
+    else
+    {
+        if(mod->fe->frequency <= 2150)
+            ;
+        else if(mod->fe->frequency <= 2700)
+            mod->fe->lnb_lof1 = 3650;
+        else if(mod->fe->frequency <= 4200)
+            mod->fe->lnb_lof1 = 5150;
+        else if(mod->fe->frequency <= 4800)
+            mod->fe->lnb_lof1 = 5950;
+        else if(mod->fe->frequency < 11700)
+            mod->fe->lnb_lof1 = 9750;
+        else if(mod->fe->frequency < 13250)
+            mod->fe->lnb_lof1 = 10600;
+    }
+
+    mod->fe->frequency *= 1000;
+    mod->fe->symbolrate *= 1000;
 
     mod->fe->lnb_lof1 *= 1000;
     mod->fe->lnb_lof2 *= 1000;

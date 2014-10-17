@@ -263,12 +263,12 @@ static void fe_tune_s(dvb_fe_t *fe)
 {
     int freq = fe->frequency;
 
-    int hiband = 0;
-    if(fe->lnb_slof && fe->lnb_lof2 && freq >= fe->lnb_slof)
-        hiband = 1;
+    bool hiband = (fe->lnb_slof > 0 && fe->lnb_lof2 > 0 && freq >= fe->lnb_slof);
 
     if(hiband)
+    {
         freq = freq - fe->lnb_lof2;
+    }
     else
     {
         if(freq < fe->lnb_lof1)
