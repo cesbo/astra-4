@@ -671,6 +671,20 @@ kill_input_module.reload = function(module)
     module.__options.timer:close()
 end
 
+-- ooooo          oooooooo8 ooooooooooo   ooooooo  oooooooooo
+--  888          888        88  888  88 o888   888o 888    888
+--  888 ooooooooo 888oooooo     888     888     888 888oooo88
+--  888                  888    888     888o   o888 888
+-- o888o         o88oooo888    o888o      88ooo88  o888o
+
+init_input_module.stop = function(conf)
+    return transmit({})
+end
+
+kill_input_module.stop = function(module)
+    --
+end
+
 -- ooooo         ooooooo      o      ooooooooo
 --  888        o888   888o   888      888    88o
 --  888        888     888  8  88     888    888
