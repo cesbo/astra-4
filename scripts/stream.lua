@@ -583,7 +583,7 @@ function make_channel(channel_config)
                 item.config = url
             end
             if not check_module(item.config) then
-                log.error("[" .. channel_config.name .. "] wrong " .. obj .. "#" .. n .. " format")
+                log.error("[" .. channel_config.name .. "] wrong " .. obj .. " #" .. n .. " format")
                 astra.abort()
             end
             item.config.name = channel_config.name .. " #" .. n

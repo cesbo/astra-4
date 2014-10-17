@@ -28,7 +28,6 @@
 #define MSG(_msg) "[dvb_input %d:%d] " _msg, mod->adapter, mod->device
 
 #define DVB_API ((DVB_API_VERSION * 100) + DVB_API_VERSION_MINOR)
-#define DVR_BUFFER_SIZE (1022 * TS_PACKET_SIZE)
 
 struct module_data_t
 {
@@ -50,7 +49,7 @@ struct module_data_t
     /* DVR Base */
     int dvr_fd;
     asc_event_t *dvr_event;
-    uint8_t dvr_buffer[DVR_BUFFER_SIZE];
+    uint8_t dvr_buffer[1022 * TS_PACKET_SIZE];
 
     uint32_t dvr_read;
 
@@ -128,7 +127,7 @@ static void dvr_on_read(void *arg)
 {
     module_data_t *mod = arg;
 
-    const ssize_t len = read(mod->dvr_fd, mod->dvr_buffer, DVR_BUFFER_SIZE);
+    const ssize_t len = read(mod->dvr_fd, mod->dvr_buffer, sizeof(mod->dvr_buffer));
     if(len <= 0)
     {
         dvr_on_error(mod);
@@ -164,7 +163,7 @@ static void dvr_open(module_data_t *mod)
 
     if(mod->dvr_buffer_size > 0)
     {
-        const uint64_t buffer_size = mod->dvr_buffer_size * 4096;
+        const uint64_t buffer_size = mod->dvr_buffer_size * 188 * 1024;
         if(ioctl(mod->dvr_fd, DMX_SET_BUFFER_SIZE, buffer_size) < 0)
         {
             asc_log_error(MSG("DMX_SET_BUFFER_SIZE failed [%s]"), strerror(errno));
@@ -557,7 +556,10 @@ static void module_options(module_data_t *mod)
 
     module_option_boolean("raw_signal", &mod->fe->raw_signal);
     module_option_boolean("budget", &mod->dmx_budget);
+
     module_option_number("buffer_size", &mod->dvr_buffer_size);
+    if(mod->dvr_buffer_size > 1000)
+        asc_log_warning(MSG("buffer_size value is too large"));
 
     static const char __modulation[] = "modulation";
     if(module_option_string(__modulation, &string_val, NULL))
