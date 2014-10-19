@@ -220,8 +220,6 @@ void mpegts_pes_destroy(mpegts_pes_t *pes);
 void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callback, void *arg);
 void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
 
-void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t data_size);
-
 #define PES_IS_SYNTAX_SPEC(_pes)                                                                \
     (                                                                                           \
         _pes->buffer[3] != 0xBC && /* program_stream_map */                                     \

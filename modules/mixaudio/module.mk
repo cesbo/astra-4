@@ -27,3 +27,5 @@ ffmpeg_configure()
 if ! ffmpeg_configure ; then
     ERROR="libavcodec is not found. use contrib/ffmpeg.sh"
 fi
+
+ERROR="module is under development"
