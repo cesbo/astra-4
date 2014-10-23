@@ -129,7 +129,7 @@ function on_request_stat(server, client, request)
                 server:close(client_list[client_id].client)
             end
             server:redirect(client, "/stat/")
-            return
+            return nil
         end
     end
 
@@ -168,7 +168,7 @@ function on_request_playlist(server, client, request)
 
     if not playlist_request then
         server:abort(client, 404)
-        return
+        return nil
     end
 
     local playlist_callback = function(content_type, content)
@@ -278,16 +278,15 @@ function on_request_channel(server, client, request)
     local client_data = server:data(client)
 
     if not request then -- on_close
-        if client_data.callback then
-            client_data.callback(server, client, nil)
-            client_data.callback = nil
-        end
-        return
+        kill_input(client_data.input)
+        xproxy_kill_client(server, client)
+        collectgarbage()
+        return nil
     end
 
     if not channels then
         server:abort(client, 404)
-        return
+        return nil
     end
 
     local path = request.path:sub(2) -- skip '/'
@@ -295,31 +294,21 @@ function on_request_channel(server, client, request)
 
     if not channel then
         server:abort(client, 404)
-        return
+        return nil
     end
 
-    local b = channel:find("://")
-    if not b then
-        server:abort(client, 500)
-        return
+    local conf = parse_url(channel)
+    if not conf then
+        server:abort(client, 404)
+        return nil
     end
 
     xproxy_init_client(server, client, request, request.path)
 
     local allow_channel = function()
-        local proto = channel:sub(1, b - 1)
-        local url = channel:sub(b + 3)
-
-        request.path = "/" .. proto .. "/" .. url
-        if proto == "udp" or proto == "rtp" then
-            client_data.callback = on_request_udp
-            on_request_udp(server, client, request)
-        elseif proto == "http" then
-            client_data.callback = on_request_http
-            on_request_http(server, client, request)
-        else
-            server:abort(client, 404)
-        end
+        conf.name = "xProxy " .. client_data.client_id
+        client_data.input = init_input(conf)
+        server:send(client, client_data.input.tail:stream())
     end
 
     allow_channel()
