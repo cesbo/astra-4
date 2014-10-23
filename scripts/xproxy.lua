@@ -207,6 +207,12 @@ function on_request_udp(server, client, request)
 
     local format = request.path:sub(2, 4)
     local path = request.path:sub(6) -- skip '/udp/'
+    local url = format .. "://" .. path
+    local conf = parse_url(url)
+    if not conf then
+        server:abort(client, 404)
+        return nil
+    end
 
     local query_path = ""
     if request.query then
@@ -216,10 +222,9 @@ function on_request_udp(server, client, request)
         query_path = "?" .. query_path:sub(2)
     end
 
-    xproxy_init_client(server, client, request, format .. "://" .. path .. query_path)
+    xproxy_init_client(server, client, request, url .. query_path)
 
     local allow_channel = function()
-        local conf = parse_url(format .. "://" .. path)
         conf.name = "xProxy " .. client_data.client_id
         conf.socket_size = 0x80000
         client_data.input = init_input(conf)
@@ -246,10 +251,15 @@ function on_request_http(server, client, request)
     end
 
     local url = "http://" .. request.path:sub(7)
+    local conf = parse_url(url)
+    if not conf then
+        server:abort(client, 404)
+        return nil
+    end
+
     xproxy_init_client(server, client, request, url)
 
     local allow_channel = function()
-        local conf = parse_url(url)
         conf.name = "xProxy " .. client_data.client_id
         client_data.input = init_input(conf)
         server:send(client, client_data.input.tail:stream())

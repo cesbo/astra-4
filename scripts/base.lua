@@ -154,6 +154,24 @@ function parse_url(url)
             data.port = 1234
             data.addr = url
         end
+
+        -- check address
+        if data.port < 0 or data.port > 65535 then
+            return false
+        end
+
+        local o = { data.addr:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$") }
+        if #o ~= 4 then
+            return false
+        end
+        for _,i in ipairs(o) do
+            local n = tonumber(i)
+            if n < 0 or n > 255 then
+                return false
+            end
+        end
+
+        return true
     end
 
     local function parse_http_address()
@@ -187,9 +205,13 @@ function parse_url(url)
     end
 
     if data.format == "udp" then
-        parse_udp_address()
+        if not parse_udp_address() then
+            return nil
+        end
     elseif data.format == "rtp" then
-        parse_udp_address()
+        if not parse_udp_address() then
+            return nil
+        end
     elseif data.format == "file" then
         data.filename = url
     elseif data.format == "dvb" then
