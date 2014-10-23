@@ -357,6 +357,8 @@ static void module_options_s(module_data_t *mod)
     const char *string_val;
 
     /* Transponder options */
+    mod->fe->tone = SEC_TONE_OFF;
+    mod->fe->voltage = SEC_VOLTAGE_OFF;
 
     static const char __polarization[] = "polarization";
     if(!module_option_string(__polarization, &string_val, NULL))
@@ -364,47 +366,82 @@ static void module_options_s(module_data_t *mod)
 
     const char pol = (string_val[0] > 'Z') ? (string_val[0] - ('z' - 'Z')) : string_val[0];
     if(pol == 'V' || pol == 'R')
-        mod->fe->polarization = SEC_VOLTAGE_13;
+        mod->fe->voltage = SEC_VOLTAGE_13;
     else if(pol == 'H' || pol == 'L')
-        mod->fe->polarization = SEC_VOLTAGE_18;
+        mod->fe->voltage = SEC_VOLTAGE_18;
+
+    /* LNB options */
+    int lof1 = 0, lof2 = 0, slof = 0;
+
+    module_option_number("lof1", &lof1);
+    if(lof1 > 0)
+    {
+        module_option_number("lof2", &lof2);
+        module_option_number("slof", &slof);
+
+        if(slof > 0 && lof2 > 0 && mod->fe->frequency >= slof)
+        {
+            // hiband
+            mod->fe->frequency = mod->fe->frequency - lof2;
+            mod->fe->tone = SEC_TONE_ON;
+        }
+        else
+        {
+            if(mod->fe->frequency < lof1)
+                mod->fe->frequency = lof1 - mod->fe->frequency;
+            else
+                mod->fe->frequency = mod->fe->frequency - lof1;
+        }
+    }
+    else
+    {
+        if(mod->fe->frequency >= 950 && mod->fe->frequency <= 2150)
+            ;
+        else if(mod->fe->frequency >= 2500 && mod->fe->frequency <= 2700)
+            mod->fe->frequency = 3650 - mod->fe->frequency;
+        else if(mod->fe->frequency >= 3400 && mod->fe->frequency <= 4200)
+            mod->fe->frequency = 5150 - mod->fe->frequency;
+        else if(mod->fe->frequency >= 4500 && mod->fe->frequency <= 4800)
+            mod->fe->frequency = 5950 - mod->fe->frequency;
+        else if(mod->fe->frequency >= 10700 && mod->fe->frequency < 11700)
+            mod->fe->frequency = mod->fe->frequency - 9750;
+        else if(mod->fe->frequency >= 11700 && mod->fe->frequency < 13250)
+        {
+            mod->fe->frequency = mod->fe->frequency - 10600;
+            mod->fe->tone = SEC_TONE_ON;
+        }
+        else
+        {
+            asc_log_error(MSG("option 'frequency' has wrong value"));
+            astra_abort();
+        }
+    }
+    mod->fe->frequency *= 1000;
 
     static const char __symbolrate[] = "symbolrate";
     if(!module_option_number(__symbolrate, &mod->fe->symbolrate))
         option_required(mod, __symbolrate);
-
-    /* LNB options */
-    module_option_number("lof1", &mod->fe->lnb_lof1);
-    if(mod->fe->lnb_lof1)
-    {
-        module_option_number("lof2", &mod->fe->lnb_lof2);
-        module_option_number("slof", &mod->fe->lnb_slof);
-    }
-    else
-    {
-        if(mod->fe->frequency <= 2150)
-            ;
-        else if(mod->fe->frequency <= 2700)
-            mod->fe->lnb_lof1 = 3650;
-        else if(mod->fe->frequency <= 4200)
-            mod->fe->lnb_lof1 = 5150;
-        else if(mod->fe->frequency <= 4800)
-            mod->fe->lnb_lof1 = 5950;
-        else if(mod->fe->frequency < 11700)
-            mod->fe->lnb_lof1 = 9750;
-        else if(mod->fe->frequency < 13250)
-            mod->fe->lnb_lof1 = 10600;
-    }
-
-    mod->fe->frequency *= 1000;
     mod->fe->symbolrate *= 1000;
 
-    mod->fe->lnb_lof1 *= 1000;
-    mod->fe->lnb_lof2 *= 1000;
-    mod->fe->lnb_slof *= 1000;
+    bool force_tone = false;
+    module_option_boolean("tone", &force_tone);
+    if(force_tone)
+    {
+        mod->fe->tone = SEC_TONE_ON;
+    }
 
-    module_option_boolean("lnb_sharing", &mod->fe->lnb_sharing);
+    bool lnb_sharing = false;
+    module_option_boolean("lnb_sharing", &lnb_sharing);
+    if(lnb_sharing)
+    {
+        mod->fe->tone = SEC_TONE_OFF;
+        mod->fe->voltage = SEC_VOLTAGE_OFF;
+    }
+
     module_option_number("diseqc", &mod->fe->diseqc);
-    module_option_boolean("tone", &mod->fe->force_tone);
+
+    module_option_number("uni_frequency", &mod->fe->uni_frequency);
+    module_option_number("uni_scr", &mod->fe->uni_scr);
 
     static const char __rolloff[] = "rolloff";
     if(module_option_string(__rolloff, &string_val, NULL))
