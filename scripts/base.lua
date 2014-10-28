@@ -284,6 +284,7 @@ function init_input(conf)
             cas = conf.cas,
             pass_sdt = conf.pass_sdt,
             pass_eit = conf.pass_eit,
+            set_pnr = conf.set_pnr,
             map = conf.map,
             filter = string.split(conf.filter, ","),
             no_reload = conf.no_reload,

@@ -30,6 +30,7 @@
  *      no_sdt      - boolean, do not join SDT table
  *      no_eit      - boolean, do not join EIT table
  *      cas         - boolean, join CAT, ECM, EMM tables
+ *      set_pnr     - number, replace original PNR
  *      map         - list, map PID by stream type, item format: "type=pid"
  *                    type: video, audio, rus, eng... and other languages code
  *                     pid: number identifier in range 32-8190
