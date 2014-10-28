@@ -29,6 +29,9 @@
  *      socket_size - number, socket buffer size
  *      renew       - number, renewing multicast subscription interval in seconds
  *      rtp         - boolean, use RTP instad RAW UDP
+ *
+ * Module Methods:
+ *      port()      - return number, random port number
  */
 
 #include <astra.h>
@@ -104,6 +107,13 @@ static void timer_renew_callback(void *arg)
     asc_socket_multicast_renew(mod->sock);
 }
 
+static int method_port(module_data_t *mod)
+{
+    const int port = asc_socket_port(mod->sock);
+    lua_pushnumber(lua, port);
+    return 1;
+}
+
 static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, NULL);
@@ -116,8 +126,6 @@ static void module_init(module_data_t *mod)
     }
 
     module_option_number("port", &mod->port);
-    if(!mod->port)
-        mod->port = 1234;
 
     mod->sock = asc_socket_open_udp4(mod);
     asc_socket_set_reuseaddr(mod->sock, 1);
@@ -158,6 +166,7 @@ MODULE_STREAM_METHODS()
 
 MODULE_LUA_METHODS()
 {
-    MODULE_STREAM_METHODS_REF()
+    MODULE_STREAM_METHODS_REF(),
+    { "port", method_port },
 };
 MODULE_LUA_REGISTER(udp_input)
