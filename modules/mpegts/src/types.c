@@ -174,8 +174,8 @@ void mpegts_desc_to_lua(const uint8_t *desc)
             lua_pushstring(lua, __lang);
             lua_setfield(lua, -2, __type_name);
 
-            sprintf(data, "%c%c%c", desc[2], desc[3], desc[4]);
-            lua_pushstring(lua, data);
+            const char lang[] = { desc[2], desc[3], desc[4], 0x00 };
+            lua_pushstring(lua, lang);
             lua_setfield(lua, -2, __lang);
             break;
         }
@@ -205,6 +205,80 @@ void mpegts_desc_to_lua(const uint8_t *desc)
 
             break;
         }
+        case 0x4D:
+        { /* Short Even */
+            lua_pushstring(lua, "short_event_descriptor");
+            lua_setfield(lua, -2, __type_name);
+
+            const char lang[] = { desc[2], desc[3], desc[4], 0x00 };
+            lua_pushstring(lua, lang);
+            lua_setfield(lua, -2, "lang");
+
+            desc += 5; // skip 1:tag + 1:length + 3:lang
+            push_description_text(desc);
+            lua_setfield(lua, -2, "event_name");
+
+            desc += desc[0] + 1;
+            push_description_text(desc);
+            lua_setfield(lua, -2, "text_char");
+
+            break;
+        }
+        case 0x4E:
+        { /* Extended Event */
+            lua_pushstring(lua, "extended_event_descriptor");
+            lua_setfield(lua, -2, __type_name);
+
+            lua_pushnumber(lua, desc[2] >> 4);
+            lua_setfield(lua, -2, "desc_num");
+
+            lua_pushnumber(lua, desc[2] & 0x0F);
+            lua_setfield(lua, -2, "last_desc_num");
+
+            const char lang[] = { desc[3], desc[4], desc[5], 0x00 };
+            lua_pushstring(lua, lang);
+            lua_setfield(lua, -2, "lang");
+
+            desc += 6; // skip 1:tag + 1:length + 1:desc_num:last_desc_num + 3:lang
+
+            if(desc[0] > 0)
+            {
+                lua_newtable(lua); // items[]
+
+                const uint8_t *_item_ptr = &desc[1];
+                const uint8_t *const _item_ptr_end = _item_ptr + desc[0];
+
+                while(_item_ptr < _item_ptr_end)
+                {
+                    const int item_count = luaL_len(lua, -1) + 1;
+                    lua_pushnumber(lua, item_count);
+
+                    lua_newtable(lua);
+
+                    push_description_text(_item_ptr);
+                    lua_setfield(lua, -2, "item_desc");
+                    _item_ptr += _item_ptr[0] + 1;
+
+                    push_description_text(_item_ptr);
+                    lua_setfield(lua, -2, "item");
+                    _item_ptr += _item_ptr[0] + 1;
+
+                    lua_settable(lua, -3);
+               }
+
+               lua_setfield(lua, -2, "items");
+            }
+
+            desc += desc[0] + 1;
+            // text
+            if(desc[0] > 0)
+                 push_description_text(desc);
+            else
+                 lua_pushstring(lua, "");
+            lua_setfield(lua, -2, "text");
+
+            break;
+        }
         case 0x52:
         { /* Stream Identifier */
             static const char __stream_id[] = "stream_id";
@@ -213,6 +287,68 @@ void mpegts_desc_to_lua(const uint8_t *desc)
 
             lua_pushnumber(lua, desc[2]);
             lua_setfield(lua, -2, __stream_id);
+            break;
+        }
+        case 0x54:
+        { /* Content [category] */
+            lua_pushstring(lua, "content_descriptor");
+            lua_setfield(lua, -2, __type_name);
+
+            lua_newtable(lua); // items[]
+
+            const uint8_t *_item_ptr = &desc[2];
+            const uint8_t *const _item_ptr_end = _item_ptr + desc[1];
+
+            while(_item_ptr < _item_ptr_end)
+            {
+                const int item_count = luaL_len(lua, -1) + 1;
+                lua_pushnumber(lua, item_count);
+
+                lua_newtable(lua);
+
+                lua_pushnumber(lua, _item_ptr[0] >> 4);
+                lua_setfield(lua, -2, "cn_l1");
+                lua_pushnumber(lua, _item_ptr[0] & 0xF);
+                lua_setfield(lua, -2, "cn_l2");
+                lua_pushnumber(lua, _item_ptr[1] >> 4);
+                lua_setfield(lua, -2, "un_l1");
+                lua_pushnumber(lua, _item_ptr[1] & 0xF);
+                lua_setfield(lua, -2, "un_l2");
+
+                lua_settable(lua, -3);
+                _item_ptr += 2;
+            }
+            lua_setfield(lua, -2, "items");
+
+            break;
+        }
+        case 0x55: // Parental Rating Descriptor [rating]
+        {
+            lua_pushstring(lua, "parental_rating_descriptor");
+            lua_setfield(lua, -2, __type_name);
+
+            lua_newtable(lua); // items[]
+
+            const uint8_t *_item_ptr = &desc[2];
+            const uint8_t *const _item_ptr_end = _item_ptr + desc[1];
+
+            while(_item_ptr < _item_ptr_end)
+            {
+                const int item_count = luaL_len(lua, -1) + 1;
+                lua_pushnumber(lua, item_count);
+
+                const char country[] = { _item_ptr[0], _item_ptr[1], _item_ptr[2], 0x00 };
+                lua_pushstring(lua, country);
+                lua_setfield(lua, -2, "country");
+
+                lua_pushnumber(lua, _item_ptr[3]);
+                lua_setfield(lua, -2, "rating");
+
+                lua_settable(lua, -3);
+                _item_ptr += 4;
+            }
+            lua_setfield(lua, -2, "items");
+
             break;
         }
         default:
