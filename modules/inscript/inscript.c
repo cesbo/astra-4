@@ -63,9 +63,18 @@ static int fn_inscript_callback(lua_State *L)
     const char *script = luaL_checkstring(lua, -1);
     lua_pop(lua, 2); // script + argv
 
-    if(!strcmp(script, "--stream"))
+    load = load_inscript((const char *)stream, sizeof(stream), "=stream");
+    if(load != 0)
+        luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
+
+    if(!strcmp(script, "-"))
     {
-        load = load_inscript((const char *)stream, sizeof(stream), "=stream");
+        load = luaL_dofile(lua, NULL);
+        argv_idx += 1;
+    }
+    else if(!strcmp(script, "--stream"))
+    {
+        load = 0;
         argv_idx += 1;
     }
     else if(!strcmp(script, "--analyze"))
@@ -83,24 +92,11 @@ static int fn_inscript_callback(lua_State *L)
         load = load_inscript((const char *)dvbls, sizeof(dvbls), "=dvbls");
         argv_idx += 1;
     }
-    else
+    else if(!access(script, R_OK))
     {
-        load = load_inscript((const char *)stream, sizeof(stream), "=stream");
-        if(load != 0)
-            luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
-
-        if(!strcmp(script, "-"))
-        {
-            load = luaL_dofile(lua, NULL);
-            argv_idx += 1;
-        }
-        else if(!access(script, R_OK))
-        {
-            load = luaL_dofile(lua, script);
-            argv_idx += 1;
-        }
+        load = luaL_dofile(lua, script);
+        argv_idx += 1;
     }
-
     if(load != 0)
         luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
 
