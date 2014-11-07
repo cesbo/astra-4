@@ -368,7 +368,7 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
 #define PAT_GET_VERSION(_psi) ((_psi->buffer[5] & 0x3E) >> 1)
 #define PAT_SET_VERSION(_psi, _version)                                                         \
     {                                                                                           \
-        _psi->buffer[5] = 0xC0 | (((_version) << 1) & 0x3E) | (_psi->buffer[4] & 0x01);         \
+        _psi->buffer[5] = 0xC0 | (((_version) << 1) & 0x3E) | (_psi->buffer[5] & 0x01);         \
     }
 
 #define PAT_ITEMS_FIRST(_psi) (&_psi->buffer[8])

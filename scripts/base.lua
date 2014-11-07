@@ -272,7 +272,7 @@ function init_input(conf)
     end
 
     if conf.pnr ~= nil then
-        if type(conf.cam) == "string" then conf.cas = true end
+        if conf.cam and conf.cam ~= true then conf.cas = true end
 
         instance.channel = channel({
             upstream = instance.tail:stream(),
