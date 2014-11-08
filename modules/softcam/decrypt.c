@@ -822,27 +822,19 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 
 #elif LIBDVBCSA == 1
 
-    const uint8_t sc = TS_SC(dst);
+    const uint8_t sc = TS_IS_SCRAMBLED(dst);
     if(sc)
     {
         dst[3] &= ~0xC0;
 
         int hdr_size = 0;
 
-        switch(TS_AF(ts))
+        if(TS_IS_PAYLOAD(ts))
         {
-            case 0x10:
-                hdr_size = 4;
-                break;
-            case 0x30:
-            {
+            if(TS_IS_AF(ts))
                 hdr_size = 4 + dst[4] + 1;
-                if(hdr_size >= TS_PACKET_SIZE)
-                    hdr_size = 0;
-                break;
-            }
-            default:
-                break;
+            else
+                hdr_size = 4;
         }
 
         if(hdr_size)
