@@ -1,5 +1,5 @@
--- Astra Script: Utils
--- https://cesbo.com/astra
+-- Astra Base Script
+-- https://cesbo.com/astra/
 --
 -- Copyright (C) 2014, Andrey Dyldin <and@cesbo.com>
 --
@@ -728,9 +728,12 @@ function astra_usage()
 Usage: astra APP [OPTIONS]
 
 Available Applications:
-    --stream            MPEG-TS Streamer
-    --analyze           MPEG-TS Analyzer
-    --xproxy            MPEG-TS Relay server
+    --stream            Astra Stream is a main application for
+                        the digital television streaming
+    --relay             Astra Relay  is an application for
+                        the digital television relaying
+                        via the HTTP protocol
+    --analyze           Astra Analyze is a MPEG-TS stream analyzer
     --dvbls             DVB Adapters information list
     SCRIPT              launch Astra script
 

@@ -23,13 +23,19 @@
 #include <astra.h>
 #include "inscript.h"
 
+static const char __module_name[] = "inscript";
+
 static int load_inscript(const char *buffer, size_t size, const char *name)
 {
-    if(   luaL_loadbuffer(lua, buffer, size, name) != 0
-       || lua_pcall(lua, 0, LUA_MULTRET, 0) != 0)
-    {
+    int load;
+
+    load = luaL_loadbuffer(lua, &((const char *)buffer)[4], size - 20, name);
+    if(load != 0)
         return -1;
-    }
+
+    load = lua_pcall(lua, 0, LUA_MULTRET, 0);
+    if(load != 0)
+        return -1;
 
     return 0;
 }
@@ -79,17 +85,22 @@ static int fn_inscript_callback(lua_State *L)
     }
     else if(!strcmp(script, "--analyze"))
     {
-        load = load_inscript((const char *)analyze, sizeof(analyze), "=analyze");
+        load = load_inscript((const char *)analyze, sizeof(analyze), "=app");
         argv_idx += 1;
     }
     else if(!strcmp(script, "--xproxy"))
     {
-        load = load_inscript((const char *)xproxy, sizeof(xproxy), "=xproxy");
+        load = load_inscript((const char *)relay, sizeof(relay), "=app");
+        argv_idx += 1;
+    }
+    else if(!strcmp(script, "--relay"))
+    {
+        load = load_inscript((const char *)relay, sizeof(relay), "=app");
         argv_idx += 1;
     }
     else if(!strcmp(script, "--dvbls"))
     {
-        load = load_inscript((const char *)dvbls, sizeof(dvbls), "=dvbls");
+        load = load_inscript((const char *)dvbls, sizeof(dvbls), "=app");
         argv_idx += 1;
     }
     else if(!access(script, R_OK))
@@ -116,10 +127,8 @@ static int fn_inscript_callback(lua_State *L)
 
 LUA_API int luaopen_inscript(lua_State *L)
 {
-    __uarg(L);
-
-    lua_pushcclosure(lua, fn_inscript_callback, 0);
-    lua_setglobal(lua, "inscript");
+    lua_pushcclosure(L, fn_inscript_callback, 0);
+    lua_setglobal(L, __module_name);
 
     return 1;
 }

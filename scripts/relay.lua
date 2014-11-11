@@ -1,5 +1,5 @@
--- xProxy
--- https://cesbo.com/solutions/xproxy/
+-- Astra Relay
+-- https://cesbo.com/astra/
 --
 -- Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
 --
@@ -83,7 +83,7 @@ function render_stat_html()
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <title>xProxy : Statistics</title>
+    <title>Astra Relay : Statistics</title>
     <style type="text/css">
 body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333333; }
 table { width: 600px; margin: auto; }
@@ -95,7 +95,7 @@ table { width: 600px; margin: auto; }
     <table border="0">
         <tbody>
             <tr>
-                <td class="brand">xProxy</td>
+                <td class="brand">Astra Relay</td>
                 <td class="version">Astra v.]] .. astra.version .. [[</td>
             </tr>
         </tbody>
@@ -138,7 +138,7 @@ function on_request_stat(server, client, request)
             server:send(client, {
                 code = 401,
                 headers = {
-                    "WWW-Authenticate: Basic realm=\"xProxy\"",
+                    "WWW-Authenticate: Basic realm=\"Astra Relay\"",
                     "Content-Length: 0",
                     "Connection: close",
                 }
@@ -225,7 +225,7 @@ function on_request_udp(server, client, request)
     xproxy_init_client(server, client, request, url .. query_path)
 
     local allow_channel = function()
-        conf.name = "xProxy " .. client_data.client_id
+        conf.name = "Relay " .. client_data.client_id
         conf.socket_size = 0x80000
         client_data.input = init_input(conf)
         server:send(client, client_data.input.tail:stream())
@@ -260,7 +260,7 @@ function on_request_http(server, client, request)
     xproxy_init_client(server, client, request, url)
 
     local allow_channel = function()
-        conf.name = "xProxy " .. client_data.client_id
+        conf.name = "Relay " .. client_data.client_id
         client_data.input = init_input(conf)
         server:send(client, client_data.input.tail:stream())
     end
@@ -306,7 +306,7 @@ function on_request_channel(server, client, request)
     xproxy_init_client(server, client, request, request.path)
 
     local allow_channel = function()
-        conf.name = "xProxy " .. client_data.client_id
+        conf.name = "Relay " .. client_data.client_id
         client_data.input = init_input(conf)
         server:send(client, client_data.input.tail:stream())
     end
@@ -348,7 +348,7 @@ options_usage = [[
     --no-rtp            disable direct access the to RTP source
     --no-http           disable direct access the to HTTP source
     --pass              basic authentication for statistics. login:password
-    FILE                xProxy configuration file
+    FILE                full path to the Lua-script
 ]]
 
 options = {
@@ -359,7 +359,7 @@ options = {
     ["-p"] = function(idx)
         xproxy_port = tonumber(argv[idx + 1])
         if not xproxy_port then
-            log.error("[xProxy] wrong port value")
+            log.error("[Relay] wrong port value")
             astra.abort()
         end
         return 1
@@ -408,8 +408,12 @@ options = {
 }
 
 function main()
+    if argv[1] == "--xproxy" then
+        log.error("--xproxy option is deprecated. use --relay instead")
+    end
+
     log.info("Starting Astra " .. astra.version)
-    log.info("xProxy started on " .. xproxy_addr .. ":" .. xproxy_port)
+    log.info("Astra Relay started on " .. xproxy_addr .. ":" .. xproxy_port)
 
     local route = {
         { "/stat/", on_request_stat },
@@ -449,7 +453,7 @@ function main()
     http_server({
         addr = xproxy_addr,
         port = xproxy_port,
-        server_name = "xProxy",
+        server_name = "Astra Relay",
         route = route
     })
 end
