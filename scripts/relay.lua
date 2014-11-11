@@ -327,7 +327,6 @@ xproxy_buffer_size = nil
 xproxy_buffer_fill = nil
 
 xproxy_allow_udp = true
-xproxy_allow_rtp = true
 xproxy_allow_http = true
 
 xproxy_pass = nil
@@ -344,8 +343,7 @@ options_usage = [[
     -l ADDR             source interface for UDP/RTP streams
     --buffer-size       buffer size in Kb (default: 1024)
     --buffer-fill       minimal packet size in Kb (default: 128)
-    --no-udp            disable direct access the to UDP source
-    --no-rtp            disable direct access the to RTP source
+    --no-udp            disable direct access the to UDP/RTP source
     --no-http           disable direct access the to HTTP source
     --pass              basic authentication for statistics. login:password
     FILE                full path to the Lua-script
@@ -386,7 +384,7 @@ options = {
         return 0
     end,
     ["--no-rtp"] = function(idx)
-        xproxy_allow_rtp = false
+        log.error("--no-rtp option is deprecated")
         return 0
     end,
     ["--no-http"] = function(idx)
@@ -430,9 +428,6 @@ function main()
 
     if xproxy_allow_udp then
         table.insert(route, { "/udp/*", init_http_upstream(on_request_udp) })
-    end
-
-    if xproxy_allow_rtp then
         table.insert(route, { "/rtp/*", init_http_upstream(on_request_udp) })
     end
 
