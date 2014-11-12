@@ -285,7 +285,7 @@ static void on_client_read(void *arg)
             if(client->buffer[path_skip + 1] != '/' || client->buffer[path_skip + 2] != '/')
             {
                 asc_log_error(MSG("failed to parse request URI"));
-                lua_pop(lua, 2); // query + request
+                lua_pop(lua, 1); // request
                 on_client_close(client);
                 return;
             }
