@@ -29,7 +29,7 @@ static int load_inscript(const char *buffer, size_t size, const char *name)
 {
     int load;
 
-    load = luaL_loadbuffer(lua, &((const char *)buffer)[4], size - 20, name);
+    load = luaL_loadbuffer(lua, buffer, size, name);
     if(load != 0)
         return -1;
 
