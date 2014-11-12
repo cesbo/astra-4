@@ -47,7 +47,10 @@ static void on_downstream_read(void *arg)
 
     ssize_t size = asc_socket_recv(client->sock, client->buffer, HTTP_BUFFER_SIZE);
     if(size <= 0)
+    {
         http_client_close(client);
+        return;
+    }
 
     ssize_t skip = 0;
 
