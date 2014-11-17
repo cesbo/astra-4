@@ -115,7 +115,7 @@ static void on_ts(void *arg, const uint8_t *ts)
     if(buffer_write < response->mod->buffer_size)
     {
         memcpy(&response->buffer[response->buffer_write], ts, TS_PACKET_SIZE);
-        response->buffer_write += TS_PACKET_SIZE;
+        response->buffer_write = buffer_write;
     }
     else if(buffer_write > response->mod->buffer_size)
     {

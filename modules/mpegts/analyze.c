@@ -576,7 +576,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         }
     }
 
-    const uint16_t pid = TS_PID(ts);
+    const uint16_t pid = TS_GET_PID(ts);
     analyze_item_t *item = NULL;
     if(ts[0] == 0x47 && pid < MAX_PID)
         item = mod->stream[pid];
@@ -612,31 +612,27 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 
     // Analyze
 
-    const uint8_t af = TS_AF(ts);
     // skip packets without payload
-    if(!(af & 0x10))
+    if(!TS_IS_PAYLOAD(ts))
         return;
 
-    const uint8_t cc = TS_CC(ts);
+    const uint8_t cc = TS_GET_CC(ts);
     const uint8_t last_cc = (item->cc + 1) & 0x0F;
     item->cc = cc;
 
     if(cc != last_cc)
         ++item->cc_error;
 
-    if(TS_SC(ts))
+    if(TS_IS_SCRAMBLED(ts))
         ++item->sc_error;
 
     if(!(item->type & MPEGTS_PACKET_PES))
         return;
 
-    if(TS_PUSI(ts))
+    if(item->type == MPEGTS_PACKET_VIDEO && TS_IS_PAYLOAD_START(ts))
     {
-        const uint8_t *payload = ts + 4;
-        if(af == 0x30)
-            payload += (ts[4] + 1);
-
-        if(PES_HEADER(payload) != 0x000001)
+        const uint8_t *payload = TS_GET_PAYLOAD(ts);
+        if(payload && PES_BUFFER_GET_HEADER(payload) != 0x000001)
             ++item->pes_error;
     }
 }

@@ -134,13 +134,7 @@ astra_reload_entry:
 #   define ASC_PATH_SEP "\\"
 #endif
 
-#if !defined(_WIN32) && defined(ASC_SPATH)
-    static const char *asc_spath = ";" ASC_SPATH ASC_PATH_SEP "?.lua";
-#else
-    static const char *asc_spath = "";
-#endif
-
-    lua_pushfstring(lua, "." ASC_PATH_SEP "?.lua%s", asc_spath);
+    lua_pushfstring(lua, "." ASC_PATH_SEP "?.lua");
     lua_setfield(lua, -2, "path");
     lua_pushstring(lua, "");
     lua_setfield(lua, -2, "cpath");

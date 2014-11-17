@@ -2,7 +2,7 @@
  * Astra Module: MPEG-TS (PES processing)
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,13 +18,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdlib.h>
-#include <string.h>
 #include "../mpegts.h"
 
-#include <core/log.h>
-
-mpegts_pes_t * mpegts_pes_init(mpegts_packet_type_t type, uint16_t pid)
+mpegts_pes_t * mpegts_pes_init(mpegts_packet_type_t type, uint16_t pid, uint32_t pcr_interval)
 {
     mpegts_pes_t *pes = malloc(sizeof(mpegts_pes_t));
     pes->type = type;
@@ -32,6 +28,15 @@ mpegts_pes_t * mpegts_pes_init(mpegts_packet_type_t type, uint16_t pid)
     pes->cc = 0;
     pes->buffer_size = 0;
     pes->buffer_skip = 0;
+
+    pes->pcr_interval = pcr_interval * 1000;
+    pes->pcr_time = 0;
+    pes->pcr_time_offset = 0;
+
+    pes->ts[0] = 0x47;
+    pes->ts[1] = 0x00;
+    TS_SET_PID(pes->ts, pes->pid);
+
     return pes;
 }
 
@@ -45,43 +50,39 @@ void mpegts_pes_destroy(mpegts_pes_t *pes)
 
 void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callback, void *arg)
 {
-    const uint8_t *payload = TS_PTR(ts);
+    const uint8_t *payload = TS_GET_PAYLOAD(ts);
     if(!payload)
         return;
 
-    const uint8_t cc = TS_CC(ts);
+    const uint8_t payload_len = ts + TS_PACKET_SIZE - payload;
+    const uint8_t cc = TS_GET_CC(ts);
 
-    if(TS_PUSI(ts))
+    if(TS_IS_PAYLOAD_START(ts))
     {
-        pes->buffer_size = 0;
-
-        // TODO: PES length is 0
-        const size_t pes_buffer_size = PES_SIZE(payload);
-
-        const uint8_t remain = (ts + TS_PACKET_SIZE) - payload;
-        if(remain < 6)
+        if(pes->buffer_skip > 0)
         {
-            asc_log_error("BUG? %s:%d\n", __FILE__, __LINE__);
-            abort();
-        }
-
-        if(pes_buffer_size <= 6 || pes_buffer_size > PES_MAX_SIZE)
-            return;
-
-        const size_t cpy_len = (ts + TS_PACKET_SIZE) - payload;
-        if(cpy_len > TS_BODY_SIZE)
-            return;
-
-        pes->buffer_size = pes_buffer_size;
-        if(pes_buffer_size > cpy_len)
-        {
-            memcpy(pes->buffer, payload, cpy_len);
-            pes->buffer_skip = cpy_len;
-        }
-        else
-        {
-            memcpy(pes->buffer, payload, pes_buffer_size);
+            pes->buffer_size = pes->buffer_skip;
             pes->buffer_skip = 0;
+            pes->block_time_total = asc_utime() - pes->block_time_begin;
+            callback(arg, pes);
+        }
+
+        if(payload_len < PES_HEADER_SIZE)
+            return;
+
+        if(PES_BUFFER_GET_HEADER(payload) != 0x000001)
+            return;
+
+        pes->buffer_size = PES_BUFFER_GET_SIZE(payload);
+        pes->block_time_begin = asc_utime();
+
+        memcpy(pes->buffer, payload, payload_len);
+        pes->buffer_skip = payload_len;
+
+        if(pes->buffer_size == pes->buffer_skip)
+        {
+            pes->buffer_skip = 0;
+            pes->block_time_total = 0;
             callback(arg, pes);
         }
     }
@@ -89,112 +90,101 @@ void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callbac
     { // !TS_PUSI(ts)
         if(!pes->buffer_skip)
             return;
+
         if(((pes->cc + 1) & 0x0f) != cc)
         { // discontinuity error
             pes->buffer_skip = 0;
             return;
         }
-        const size_t remain = pes->buffer_size - pes->buffer_skip;
-        if(remain <= TS_BODY_SIZE)
+
+        memcpy(&pes->buffer[pes->buffer_skip], payload, payload_len);
+        pes->buffer_skip += payload_len;
+
+        if(pes->buffer_size == pes->buffer_skip)
         {
-            memcpy(&pes->buffer[pes->buffer_skip], payload, remain);
             pes->buffer_skip = 0;
+            pes->block_time_total = asc_utime() - pes->block_time_begin;
             callback(arg, pes);
-        }
-        else
-        {
-            memcpy(&pes->buffer[pes->buffer_skip], payload, TS_BODY_SIZE);
-            pes->buffer_skip += TS_BODY_SIZE;
         }
     }
     pes->cc = cc;
 }
 
-void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg)
+static inline bool check_pcr_time(mpegts_pes_t *pes)
 {
-    const size_t buffer_size = pes->buffer_size;
-    if(!buffer_size)
-        return;
-
-    // PES length
-    uint8_t *b = pes->buffer;
-    const uint16_t pes_size = pes->buffer_size - 6;
-    b[4] = (pes_size >> 8) & 0xFF;
-    b[5] = (pes_size     ) & 0xFF;
-    // TODO: PTS
-
-    uint8_t *ts = pes->ts;
-
-    ts[0] = 0x47;
-    ts[1] = 0x40 /* PUSI */ | pes->pid >> 8;
-    ts[2] = pes->pid & 0xff;
-
-    const uint8_t ts_3_10 = 0x10; /* payload without adaptation field */
-    const uint8_t ts_3_30 = 0x30; /* payload after adaptation field */
-
-    size_t ts_skip = TS_HEADER_SIZE;
-    size_t ts_size = TS_BODY_SIZE;
-    size_t buffer_skip = 0;
-
-    while(buffer_skip < buffer_size)
+    const uint64_t offset = (pes->buffer_skip * pes->block_time_total) / (pes->buffer_size);
+    const uint64_t block_time_offset = pes->pcr_time_offset + pes->block_time_begin + offset;
+    const uint64_t pcr_time_next = pes->pcr_time + pes->pcr_interval;
+    if(block_time_offset >= pcr_time_next)
     {
-        const size_t buffer_tail = buffer_size - buffer_skip;
-        if(buffer_tail < ts_size)
-        {
-            const uint8_t af_size = ts_size - buffer_tail;
-            ts[3] = ts_3_30 | pes->cc;
-            ts[4] = af_size - 1;
-            ts[5] = 0x00;
-
-            // 2 - adaptation field size + adaptation descriptors
-            memset(&ts[TS_HEADER_SIZE + 2], 0xFF, af_size - 2);
-            ts_skip = TS_HEADER_SIZE + af_size;
-            ts_size = buffer_tail;
-        }
-        else
-            ts[3] = ts_3_10 | pes->cc;
-
-        memcpy(&ts[ts_skip], &pes->buffer[buffer_skip], ts_size);
-
-        buffer_skip += ts_size;
-        pes->cc = (pes->cc + 1) & 0x0F;
-
-        callback(arg, ts);
-
-        if(TS_PUSI(ts))
-            ts[1] &= ~0x40; /* turn off pusi bit */
+        pes->pcr_time = pcr_time_next;
+        pes->pcr_time_offset = block_time_offset - pcr_time_next;
+        return true;
     }
+
+    return false;
 }
 
-void mpegts_pes_add_data(mpegts_pes_t *pes, const uint8_t *data, uint32_t size)
+void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg)
 {
-    if(!pes->buffer_size)
-    {
-        uint8_t *b = pes->buffer;
-        // PES header
-        b[0] = 0x00;
-        b[1] = 0x00;
-        b[2] = 0x01;
-        //
-        b[3] = pes->stream_id;
-        //
-        b[6] = 0x00;
-        b[7] = 0x00;
-        // PES header length
-        b[8] = 0;
-        pes->buffer_size = 9;
-
-        if(pes->pts)
-        {
-            b[7] |= 0x80;
-            pes->buffer_size += 5;
-        }
-    }
-
-    const size_t nsize = pes->buffer_size + size;
-    if(nsize > PES_MAX_SIZE)
+    if(pes->buffer_size == 0)
         return;
 
-    memcpy(&pes->buffer[pes->buffer_size], data, size);
-    pes->buffer_size = nsize;
+    pes->buffer_skip = 0;
+    pes->cc = pes->cc & 0x0F; /* check cc */
+
+    do
+    {
+        if(pes->pcr_interval && check_pcr_time(pes))
+        {
+            pes->ts[1] = pes->ts[1] & ~0x40; /* unset PUSI */
+            pes->ts[3] = 0x20 | pes->cc; /* adaptation field only */
+            pes->ts[4] = 1 + 6 + 176; /* 1 - ts[5]; 6 - PCR field; 176 - stuff */
+            pes->ts[5] = 0x10; /* PCR flag */
+
+            const uint64_t pcr_base = pes->pcr_time * 90 / 1000;
+            const uint64_t pcr_ext = pes->pcr_time * 27000 / 1000;
+            const uint64_t pcr = (pcr_base * 300) + (pcr_ext % 300);
+            TS_SET_PCR(pes->ts, pcr);
+            memset(&pes->ts[12], 0xFF, TS_PACKET_SIZE - 12);
+
+            callback(arg, pes->ts);
+        }
+
+        if(pes->buffer_skip == 0)
+            pes->ts[1] = pes->ts[1] | 0x40; /* set PUSI */
+
+        const size_t buffer_tail = pes->buffer_size - pes->buffer_skip;
+
+        if(buffer_tail >= TS_BODY_SIZE)
+        {
+            pes->ts[3] = 0x10 | pes->cc; /* payload only */
+            memcpy(&pes->ts[TS_HEADER_SIZE], &pes->buffer[pes->buffer_skip], TS_BODY_SIZE);
+            pes->buffer_skip += TS_BODY_SIZE;
+        }
+        else if(buffer_tail >= TS_BODY_SIZE - 2) /* 2 - adaptation field */
+        {
+            pes->ts[3] = 0x30 | pes->cc; /* payload with adaptation field */
+            pes->ts[4] = 1;
+            pes->ts[5] = 0x00;
+            memcpy(&pes->ts[6], &pes->buffer[pes->buffer_skip], TS_BODY_SIZE - 2);
+            pes->buffer_skip += TS_BODY_SIZE - 2;
+        }
+        else
+        {
+            const uint8_t stuff_size = TS_BODY_SIZE - buffer_tail - 2;
+            pes->ts[3] = 0x30 | pes->cc; /* payload with adaptation field */
+            pes->ts[4] = 1 + stuff_size; /* 1 - ts[5] */
+            pes->ts[5] = 0x00;
+            memset(&pes->ts[6], 0xFF, stuff_size);
+            memcpy(&pes->ts[6 + stuff_size], &pes->buffer[pes->buffer_skip], buffer_tail);
+            pes->buffer_skip += buffer_tail;
+        }
+
+        callback(arg, pes->ts);
+
+        pes->cc = (pes->cc + 1) & 0x0F;
+        if(TS_IS_PAYLOAD_START(pes->ts))
+            pes->ts[1] = pes->ts[1] & ~0x40; /* unset PUSI */
+    } while(pes->buffer_skip != pes->buffer_size);
 }

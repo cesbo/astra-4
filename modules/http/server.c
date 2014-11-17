@@ -239,6 +239,8 @@ static void on_client_read(void *arg)
     {
         parse_match_t m[4];
 
+        skip = 0;
+
 /*
  *     oooooooooo  ooooooooooo  ooooooo  ooooo  oooo ooooooooooo  oooooooo8 ooooooooooo
  *      888    888  888    88 o888   888o 888    88   888    88  888        88  888  88
@@ -248,6 +250,7 @@ static void on_client_read(void *arg)
  *                                   88o8
  */
 
+        m[0].eo = eoh;
         if(!http_parse_request(client->buffer, m))
         {
             asc_log_error(MSG("failed to parse request line"));
@@ -282,7 +285,7 @@ static void on_client_read(void *arg)
             if(client->buffer[path_skip + 1] != '/' || client->buffer[path_skip + 2] != '/')
             {
                 asc_log_error(MSG("failed to parse request URI"));
-                lua_pop(lua, 2); // query + request
+                lua_pop(lua, 1); // request
                 on_client_close(client);
                 return;
             }
@@ -345,6 +348,7 @@ static void on_client_read(void *arg)
 
         while(skip < eoh)
         {
+            m[0].eo = eoh - skip; // end of buffer
             if(!http_parse_header(&client->buffer[skip], m))
             {
                 asc_log_error(MSG("failed to parse request headers"));
@@ -630,6 +634,7 @@ static const char * http_code(int code)
         case 403: return "Forbidden";
         case 404: return "Not Found";
         case 405: return "Method Not Allowed";
+        case 429: return "Too Many Requests";
 
         case 500: return "Internal Server Error";
         case 501: return "Not Implemented";

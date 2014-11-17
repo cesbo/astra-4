@@ -2,7 +2,7 @@
  * Astra Module: MPEG-TS (PSI processing)
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,8 +18,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdlib.h>
-#include <string.h>
 #include "../mpegts.h"
 
 mpegts_psi_t * mpegts_psi_init(mpegts_packet_type_t type, uint16_t pid)
@@ -44,13 +42,13 @@ void mpegts_psi_destroy(mpegts_psi_t *psi)
 
 void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts, psi_callback_t callback, void *arg)
 {
-    const uint8_t *payload = TS_PTR(ts);
+    const uint8_t *payload = TS_GET_PAYLOAD(ts);
     if(!payload)
         return;
 
-    const uint8_t cc = TS_CC(ts);
+    const uint8_t cc = TS_GET_CC(ts);
 
-    if(TS_PUSI(ts))
+    if(TS_IS_PAYLOAD_START(ts))
     {
         const uint8_t ptr_field = *payload;
         ++payload; // skip pointer field
@@ -72,7 +70,7 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts, psi_callback_t callbac
                 memcpy(&psi->buffer[psi->buffer_skip], payload, ptr_field);
                 if(psi->buffer_size == 0)
                 { // incomplete PSI header
-                    const size_t psi_buffer_size = PSI_SIZE(psi->buffer);
+                    const size_t psi_buffer_size = PSI_BUFFER_GET_SIZE(psi->buffer);
                     if(psi_buffer_size <= 3 || psi_buffer_size > PSI_MAX_SIZE)
                     {
                         psi->buffer_skip = 0;
@@ -102,7 +100,7 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts, psi_callback_t callbac
                 break;
             }
 
-            const size_t psi_buffer_size = PSI_SIZE(payload);
+            const size_t psi_buffer_size = PSI_BUFFER_GET_SIZE(payload);
             if(psi_buffer_size <= 3 || psi_buffer_size > PSI_MAX_SIZE)
                 break;
 
@@ -143,7 +141,7 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts, psi_callback_t callbac
                 return;
             }
             memcpy(&psi->buffer[psi->buffer_skip], payload, 3 - psi->buffer_skip);
-            const size_t psi_buffer_size = PSI_SIZE(psi->buffer);
+            const size_t psi_buffer_size = PSI_BUFFER_GET_SIZE(psi->buffer);
             if(psi_buffer_size <= 3 || psi_buffer_size > PSI_MAX_SIZE)
             {
                 psi->buffer_skip = 0;

@@ -156,7 +156,7 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
 
             em->buffer[2] = size + 4;
             sort_nanos(&em->buffer[7], emm, size);
-            em->buffer_size = PSI_SIZE(em->buffer);
+            em->buffer_size = PSI_BUFFER_GET_SIZE(em->buffer);
 
             mod->shared.size = 0;
             return true;

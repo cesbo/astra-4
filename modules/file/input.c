@@ -79,15 +79,15 @@ static bool seek_pcr(module_data_t *mod, size_t *block_size, uint64_t *pcr)
     while(count < mod->buffer_end)
     {
         const uint8_t *ts = &mod->buffer[mod->m2ts_header + count];
-        if(mpegts_pcr_check(ts))
+        if(TS_IS_PCR(ts))
         {
-            const uint16_t pid = TS_PID(ts);
+            const uint16_t pid = TS_GET_PID(ts);
             if(mod->pcr_pid == 0)
                 mod->pcr_pid = pid;
 
             if(mod->pcr_pid == pid)
             {
-                *pcr = mpegts_pcr(ts);
+                *pcr = TS_GET_PCR(ts);
                 *block_size = count - mod->buffer_skip;
                 return true;
             }

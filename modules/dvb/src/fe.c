@@ -199,7 +199,7 @@ static void fe_event(dvb_fe_t *fe)
  *                                                888o
  */
 
-static void diseqc_setup(dvb_fe_t *fe, int voltage, int tone)
+static void diseqc_setup(dvb_fe_t *fe)
 {
     if(ioctl(fe->fe_fd, FE_SET_TONE, SEC_TONE_OFF) != 0)
     {
@@ -207,7 +207,7 @@ static void diseqc_setup(dvb_fe_t *fe, int voltage, int tone)
         astra_abort();
     }
 
-    if(ioctl(fe->fe_fd, FE_SET_VOLTAGE, voltage) != 0)
+    if(ioctl(fe->fe_fd, FE_SET_VOLTAGE, fe->voltage) != 0)
     {
         asc_log_error(MSG("diseqc: FE_SET_VOLTAGE failed [%s]"), strerror(errno));
         astra_abort();
@@ -215,16 +215,16 @@ static void diseqc_setup(dvb_fe_t *fe, int voltage, int tone)
 
     asc_usleep(15000);
 
-    const int data0 = 0xF0
-                    | ((fe->diseqc - 1) << 2)
-                    | ((voltage == SEC_VOLTAGE_18) << 1)
-                    | (tone == SEC_TONE_ON);
-
     struct dvb_diseqc_master_cmd cmd =
     {
-        .msg = { 0xE0, 0x10, 0x38, data0, 0x00, 0x00 },
+        .msg = { 0xE0, 0x10, 0x38, 0x00, 0x00, 0x00 },
         .msg_len = 4
     };
+
+    cmd.msg[3] = 0xF0
+               | ((fe->diseqc - 1) << 2)
+               | ((fe->voltage == SEC_VOLTAGE_18) << 1)
+               | (fe->tone == SEC_TONE_ON);
 
     if(ioctl(fe->fe_fd, FE_DISEQC_SEND_MASTER_CMD, &cmd) != 0)
     {
@@ -243,12 +243,59 @@ static void diseqc_setup(dvb_fe_t *fe, int voltage, int tone)
 
     asc_usleep(15000);
 
-    if(ioctl(fe->fe_fd, FE_SET_TONE, tone) != 0)
+    if(ioctl(fe->fe_fd, FE_SET_TONE, fe->tone) != 0)
     {
         asc_log_error(MSG("diseqc: FE_SET_TONE failed [%s]"), strerror(errno));
         astra_abort();
     }
 } /* diseqc_setup */
+
+/*
+ * ooooo  oooo            o88                        oooo       o888
+ *  888    88 oo oooooo   oooo   ooooooo   ooooooo    888ooooo   888  ooooooooo8
+ *  888    88  888   888   888 888     888 ooooo888   888    888 888 888oooooo8
+ *  888    88  888   888   888 888       888    888   888    888 888 888
+ *   888oo88  o888o o888o o888o  88ooo888 88ooo88 8o o888ooo88  o888o  88oooo888
+ *
+ */
+
+static void unicable_setup(dvb_fe_t *fe)
+{
+    struct dvb_diseqc_master_cmd cmd =
+    {
+        .msg = { 0xE0, 0x10, 0x5A, 0x00, 0x00, 0x00 },
+        .msg_len = 5
+    };
+
+    const int t = (fe->frequency / 1000 + fe->uni_frequency + 2) / 4 - 350;
+    cmd.msg[3] = (t >> 8)
+               | ((fe->uni_scr - 1) << 5)
+               | ((fe->voltage == SEC_VOLTAGE_18) << 3)
+               | ((fe->tone == SEC_TONE_ON) << 2);
+    cmd.msg[4] = t & 0xFF;
+
+    if(ioctl(fe->fe_fd, FE_SET_VOLTAGE, SEC_VOLTAGE_18) != 0)
+    {
+        asc_log_error(MSG("unicable: FE_SET_VOLTAGE 18 failed [%s]"), strerror(errno));
+        astra_abort();
+    }
+
+    asc_usleep(15000);
+
+    if(ioctl(fe->fe_fd, FE_DISEQC_SEND_MASTER_CMD, &cmd) != 0)
+    {
+        asc_log_error(MSG("unicable: FE_DISEQC_SEND_MASTER_CMD failed [%s]"), strerror(errno));
+        astra_abort();
+    }
+
+    asc_usleep(50000);
+
+    if(ioctl(fe->fe_fd, FE_SET_VOLTAGE, SEC_VOLTAGE_13) != 0)
+    {
+        asc_log_error(MSG("unicable: FE_SET_VOLTAGE 13 failed [%s]"), strerror(errno));
+        astra_abort();
+    }
+} /* unicable_setup */
 
 /*
  * ooooooooo  ooooo  oooo oooooooooo           oooooooo8
@@ -261,33 +308,18 @@ static void diseqc_setup(dvb_fe_t *fe, int voltage, int tone)
 
 static void fe_tune_s(dvb_fe_t *fe)
 {
-    int freq = fe->frequency;
+    int frequency = fe->frequency;
 
-    int hiband = 0;
-    if(fe->lnb_slof && fe->lnb_lof2 && freq >= fe->lnb_slof)
-        hiband = 1;
+    if(fe->voltage != SEC_VOLTAGE_OFF && fe->diseqc > 0)
+        diseqc_setup(fe);
 
-    if(hiband)
-        freq = freq - fe->lnb_lof2;
-    else
+    if(fe->uni_scr > 0)
     {
-        if(freq < fe->lnb_lof1)
-            freq = fe->lnb_lof1 - freq;
-        else
-            freq = freq - fe->lnb_lof1;
+        unicable_setup(fe);
+        const int t = (fe->frequency / 1000 + fe->uni_frequency + 2) / 4;
+        frequency = t * 4000 - fe->frequency;
     }
 
-    int voltage = SEC_VOLTAGE_OFF;
-    int tone = SEC_TONE_OFF;
-    if(!fe->lnb_sharing)
-    {
-        voltage = fe->polarization;
-        if(hiband || fe->force_tone)
-            tone = SEC_TONE_ON;
-
-        if(fe->diseqc)
-            diseqc_setup(fe, voltage, tone);
-    }
 
     struct dtv_properties cmdseq;
     struct dtv_property cmdlist[13];
@@ -296,7 +328,7 @@ static void fe_tune_s(dvb_fe_t *fe)
 
     DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   dvb_sys);
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_FREQUENCY,         freq);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_FREQUENCY,         frequency);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_SYMBOL_RATE,       fe->symbolrate);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INNER_FEC,         fe->fec);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INVERSION,         INVERSION_AUTO);
@@ -312,10 +344,10 @@ static void fe_tune_s(dvb_fe_t *fe)
     {
         DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_STREAM_ID,     fe->stream_id);
     }
-    if(!fe->diseqc)
+    if(fe->diseqc == 0 && fe->uni_scr == 0)
     {
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_VOLTAGE,       voltage);
-        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TONE,          tone);
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_VOLTAGE,       fe->voltage);
+        DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TONE,          fe->tone);
     }
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_PILOT,             PILOT_AUTO);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TUNE,              0);

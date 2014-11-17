@@ -1569,7 +1569,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
 void ca_on_ts(dvb_ca_t *ca, const uint8_t *ts)
 {
-    const uint16_t pid = TS_PID(ts);
+    const uint16_t pid = TS_GET_PID(ts);
     switch(ca->stream[pid])
     {
         case MPEGTS_PACKET_PAT:

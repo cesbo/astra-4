@@ -28,7 +28,6 @@
 #define MSG(_msg) "[dvb_input %d:%d] " _msg, mod->adapter, mod->device
 
 #define DVB_API ((DVB_API_VERSION * 100) + DVB_API_VERSION_MINOR)
-#define DVR_BUFFER_SIZE (1022 * TS_PACKET_SIZE)
 
 struct module_data_t
 {
@@ -50,9 +49,12 @@ struct module_data_t
     /* DVR Base */
     int dvr_fd;
     asc_event_t *dvr_event;
-    uint8_t dvr_buffer[DVR_BUFFER_SIZE];
+    uint8_t dvr_buffer[1022 * TS_PACKET_SIZE];
 
     uint32_t dvr_read;
+
+    mpegts_psi_t *pat;
+    int pat_error;
 
     /* DMX config */
     bool dmx_budget;
@@ -60,6 +62,8 @@ struct module_data_t
     /* DMX Base */
     char dmx_dev_name[32];
     int *dmx_fd_list;
+
+    int do_bounce;
 
     dvb_fe_t *fe;
     dvb_ca_t *ca;
@@ -77,6 +81,40 @@ struct module_data_t
 static void dvr_open(module_data_t *mod);
 static void dvr_close(module_data_t *mod);
 
+static void on_pat(void *arg, mpegts_psi_t *psi)
+{
+    module_data_t *mod = arg;
+
+    // check changes
+    const uint32_t crc32 = PSI_GET_CRC32(psi);
+    if(crc32 == psi->crc32)
+    {
+        mod->pat_error = 0;
+        return;
+    }
+
+    // check crc
+    if(crc32 != PSI_CALC_CRC32(psi))
+    {
+        if(mod->pat_error >= 3)
+        {
+            asc_log_error(MSG("dvr checksum error, try to reopen"));
+            mod->fe->do_retune = 1;
+            mod->do_bounce = 1;
+            mod->pat_error = 0;
+            dvr_close(mod);
+            dvr_open(mod);
+        }
+        else
+        {
+            mod->pat_error = mod->pat_error + 1;
+        }
+        return;
+    }
+
+    psi->crc32 = crc32;
+}
+
 static void dvr_on_error(void *arg)
 {
     module_data_t *mod = arg;
@@ -89,7 +127,7 @@ static void dvr_on_read(void *arg)
 {
     module_data_t *mod = arg;
 
-    const ssize_t len = read(mod->dvr_fd, mod->dvr_buffer, DVR_BUFFER_SIZE);
+    const ssize_t len = read(mod->dvr_fd, mod->dvr_buffer, sizeof(mod->dvr_buffer));
     if(len <= 0)
     {
         dvr_on_error(mod);
@@ -99,10 +137,15 @@ static void dvr_on_read(void *arg)
 
     for(int i = 0; i < len; i += TS_PACKET_SIZE)
     {
-        if(mod->ca->ca_fd > 0)
-            ca_on_ts(mod->ca, &mod->dvr_buffer[i]);
+        const uint8_t *ts = &mod->dvr_buffer[i];
 
-        module_stream_send(mod, &mod->dvr_buffer[i]);
+        if(mod->ca->ca_fd > 0)
+            ca_on_ts(mod->ca, ts);
+
+        module_stream_send(mod, ts);
+
+        if(TS_IS_SYNC(ts) && TS_GET_PID(ts) == 0)
+            mpegts_psi_mux(mod->pat, ts, on_pat, mod);
     }
 }
 
@@ -120,7 +163,7 @@ static void dvr_open(module_data_t *mod)
 
     if(mod->dvr_buffer_size > 0)
     {
-        const uint64_t buffer_size = mod->dvr_buffer_size * 4096;
+        const uint64_t buffer_size = mod->dvr_buffer_size * 10 * 188 * 1024;
         if(ioctl(mod->dvr_fd, DMX_SET_BUFFER_SIZE, buffer_size) < 0)
         {
             asc_log_error(MSG("DMX_SET_BUFFER_SIZE failed [%s]"), strerror(errno));
@@ -314,7 +357,8 @@ static void module_options_s(module_data_t *mod)
     const char *string_val;
 
     /* Transponder options */
-    mod->fe->frequency *= 1000;
+    mod->fe->tone = SEC_TONE_OFF;
+    mod->fe->voltage = SEC_VOLTAGE_OFF;
 
     static const char __polarization[] = "polarization";
     if(!module_option_string(__polarization, &string_val, NULL))
@@ -322,29 +366,82 @@ static void module_options_s(module_data_t *mod)
 
     const char pol = (string_val[0] > 'Z') ? (string_val[0] - ('z' - 'Z')) : string_val[0];
     if(pol == 'V' || pol == 'R')
-        mod->fe->polarization = SEC_VOLTAGE_13;
+        mod->fe->voltage = SEC_VOLTAGE_13;
     else if(pol == 'H' || pol == 'L')
-        mod->fe->polarization = SEC_VOLTAGE_18;
+        mod->fe->voltage = SEC_VOLTAGE_18;
+
+    /* LNB options */
+    int lof1 = 0, lof2 = 0, slof = 0;
+
+    module_option_number("lof1", &lof1);
+    if(lof1 > 0)
+    {
+        module_option_number("lof2", &lof2);
+        module_option_number("slof", &slof);
+
+        if(slof > 0 && lof2 > 0 && mod->fe->frequency >= slof)
+        {
+            // hiband
+            mod->fe->frequency = mod->fe->frequency - lof2;
+            mod->fe->tone = SEC_TONE_ON;
+        }
+        else
+        {
+            if(mod->fe->frequency < lof1)
+                mod->fe->frequency = lof1 - mod->fe->frequency;
+            else
+                mod->fe->frequency = mod->fe->frequency - lof1;
+        }
+    }
+    else
+    {
+        if(mod->fe->frequency >= 950 && mod->fe->frequency <= 2150)
+            ;
+        else if(mod->fe->frequency >= 2500 && mod->fe->frequency <= 2700)
+            mod->fe->frequency = 3650 - mod->fe->frequency;
+        else if(mod->fe->frequency >= 3400 && mod->fe->frequency <= 4200)
+            mod->fe->frequency = 5150 - mod->fe->frequency;
+        else if(mod->fe->frequency >= 4500 && mod->fe->frequency <= 4800)
+            mod->fe->frequency = 5950 - mod->fe->frequency;
+        else if(mod->fe->frequency >= 10700 && mod->fe->frequency < 11700)
+            mod->fe->frequency = mod->fe->frequency - 9750;
+        else if(mod->fe->frequency >= 11700 && mod->fe->frequency < 13250)
+        {
+            mod->fe->frequency = mod->fe->frequency - 10600;
+            mod->fe->tone = SEC_TONE_ON;
+        }
+        else
+        {
+            asc_log_error(MSG("option 'frequency' has wrong value"));
+            astra_abort();
+        }
+    }
+    mod->fe->frequency *= 1000;
 
     static const char __symbolrate[] = "symbolrate";
     if(!module_option_number(__symbolrate, &mod->fe->symbolrate))
         option_required(mod, __symbolrate);
     mod->fe->symbolrate *= 1000;
 
-    /* LNB options */
-    static const char __lof1[] = "lof1";
-    if(!module_option_number(__lof1, &mod->fe->lnb_lof1))
-        option_required(mod, __lof1);
-    module_option_number("lof2", &mod->fe->lnb_lof2);
-    module_option_number("slof", &mod->fe->lnb_slof);
+    bool force_tone = false;
+    module_option_boolean("tone", &force_tone);
+    if(force_tone)
+    {
+        mod->fe->tone = SEC_TONE_ON;
+    }
 
-    mod->fe->lnb_lof1 *= 1000;
-    mod->fe->lnb_lof2 *= 1000;
-    mod->fe->lnb_slof *= 1000;
+    bool lnb_sharing = false;
+    module_option_boolean("lnb_sharing", &lnb_sharing);
+    if(lnb_sharing)
+    {
+        mod->fe->tone = SEC_TONE_OFF;
+        mod->fe->voltage = SEC_VOLTAGE_OFF;
+    }
 
-    module_option_boolean("lnb_sharing", &mod->fe->lnb_sharing);
     module_option_number("diseqc", &mod->fe->diseqc);
-    module_option_boolean("tone", &mod->fe->force_tone);
+
+    module_option_number("uni_frequency", &mod->fe->uni_frequency);
+    module_option_number("uni_scr", &mod->fe->uni_scr);
 
     static const char __rolloff[] = "rolloff";
     if(module_option_string(__rolloff, &string_val, NULL))
@@ -414,6 +511,11 @@ static void module_options_t(module_data_t *mod)
         else if(!strcasecmp(string_val, "2K")) mod->fe->transmitmode = TRANSMISSION_MODE_2K;
         else if(!strcasecmp(string_val, "8K")) mod->fe->transmitmode = TRANSMISSION_MODE_8K;
         else if(!strcasecmp(string_val, "4K")) mod->fe->transmitmode = TRANSMISSION_MODE_4K;
+#if DVB_API >= 503
+        else if(!strcasecmp(string_val, "1K")) mod->fe->transmitmode = TRANSMISSION_MODE_1K;
+        else if(!strcasecmp(string_val, "16K")) mod->fe->transmitmode = TRANSMISSION_MODE_16K;
+        else if(!strcasecmp(string_val, "32K")) mod->fe->transmitmode = TRANSMISSION_MODE_32K;
+#endif
         else
             option_unknown_type(mod, __transmitmode, string_val);
     }
@@ -508,7 +610,10 @@ static void module_options(module_data_t *mod)
 
     module_option_boolean("raw_signal", &mod->fe->raw_signal);
     module_option_boolean("budget", &mod->dmx_budget);
+
     module_option_number("buffer_size", &mod->dvr_buffer_size);
+    if(mod->dvr_buffer_size > 200)
+        asc_log_warning(MSG("buffer_size value is too large"));
 
     static const char __modulation[] = "modulation";
     if(module_option_string(__modulation, &string_val, NULL))
@@ -639,6 +744,12 @@ static void thread_loop(void *arg)
             fe_loop(mod->fe, 0);
         }
 
+        if(mod->do_bounce)
+        {
+            dmx_bounce(mod);
+            mod->do_bounce = 0;
+        }
+
         if(!mod->dmx_budget && (current_time - dmx_check_timeout) >= DMX_TIMEOUT)
         {
             dmx_check_timeout = current_time;
@@ -749,6 +860,8 @@ static void module_init(module_data_t *mod)
     else
         lua_pop(lua, 1);
 
+    mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
+
     dvr_open(mod);
     if(mod->dvr_fd == 0)
         return;
@@ -766,6 +879,12 @@ static void module_init(module_data_t *mod)
 static void module_destroy(module_data_t *mod)
 {
     dvr_close(mod);
+
+    if(mod->pat)
+    {
+        mpegts_psi_destroy(mod->pat);
+        mod->pat = NULL;
+    }
 
     if(mod->thread)
         on_thread_close(mod);

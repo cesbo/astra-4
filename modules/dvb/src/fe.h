@@ -50,18 +50,18 @@ struct dvb_fe_t
     int timeout;
 
     /* FE Config */
-    int frequency;
     fe_modulation_t modulation;
 
-    fe_sec_voltage_t polarization;
+    int frequency;
     int symbolrate;
-    int lnb_lof1;
-    int lnb_lof2;
-    int lnb_slof;
-    bool lnb_sharing;
+
+    int tone;
+    int voltage;
 
     int diseqc;
-    bool force_tone;
+
+    int uni_frequency;
+    int uni_scr;
 
     fe_code_rate_t fec;
     fe_rolloff_t rolloff;

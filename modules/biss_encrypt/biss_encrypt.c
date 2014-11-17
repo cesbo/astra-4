@@ -131,7 +131,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
 static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
-    const uint16_t pid = TS_PID(ts);
+    const uint16_t pid = TS_GET_PID(ts);
     switch(mod->stream[pid])
     {
         case MPEGTS_PACKET_PES:
@@ -149,23 +149,8 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
             return;
     }
 
-    uint8_t hdr_size = 4;
-    switch(TS_AF(ts))
-    {
-        case 0x10:
-            break;
-        case 0x30:
-        {
-            hdr_size += ts[4] + 1;
-            if(hdr_size < TS_PACKET_SIZE)
-                break;
-        }
-        default:
-            process_ts(mod, ts, 0);
-            return;
-    }
-
-    process_ts(mod, ts, hdr_size);
+    const uint8_t *payload = TS_GET_PAYLOAD(ts);
+    process_ts(mod, ts, (payload != NULL) ? (payload - ts) : (0));
 }
 
 static void module_init(module_data_t *mod)
