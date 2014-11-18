@@ -245,9 +245,10 @@ LUA_API int luaopen_utils(lua_State *L)
     };
 
     luaL_newlib(L, api);
+    lua_pushvalue(L, -1);
+    lua_setglobal(L, "utils");
 
     /* readdir */
-    lua_pushvalue(L, -1);
     const int table = lua_gettop(L);
     luaL_newmetatable(L, __utils_readdir);
     lua_pushcfunction(L, utils_readder_gc);
@@ -257,8 +258,5 @@ LUA_API int luaopen_utils(lua_State *L)
     lua_setfield(L, table, "readdir");
     lua_pop(L, 1); // table
 
-    /* utils */
-    lua_setglobal(L, "utils");
-
-    return 1;
+    return 0;
 }

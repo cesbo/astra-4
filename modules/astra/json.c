@@ -573,5 +573,5 @@ LUA_API int luaopen_json(lua_State *L)
     luaL_newlib(L, api);
     lua_setglobal(L, "json");
 
-    return 1;
+    return 0;
 }

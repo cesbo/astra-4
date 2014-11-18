@@ -159,5 +159,5 @@ LUA_API int luaopen_base64(lua_State *L)
     luaL_newlib(L, api);
     lua_setglobal(L, "base64");
 
-    return 1;
+    return 0;
 }

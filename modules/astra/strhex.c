@@ -79,15 +79,30 @@ static int lua_hex(lua_State *L)
     return 1;
 }
 
+static int lua_bin(lua_State *L)
+{
+    const char *data = luaL_checkstring(L, 1);
+    const int data_size = luaL_len(L, 1) / 2;
+
+    luaL_Buffer b;
+    char *p = luaL_buffinitsize(L, &b, data_size);
+    str_to_hex(data, (uint8_t *)p, data_size);
+    luaL_addsize(&b, data_size);
+    luaL_pushresult(&b);
+
+    return 1;
+}
+
 LUA_API int luaopen_str2hex(lua_State *L)
 {
     lua_getglobal(L, "string");
 
-    lua_pushvalue(L, -1);
     lua_pushcfunction(L, lua_hex);
     lua_setfield(L, -2, "hex");
+    lua_pushcfunction(L, lua_bin);
+    lua_setfield(L, -2, "bin");
 
     lua_pop(L, 1); // string
 
-    return 1;
+    return 0;
 }

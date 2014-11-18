@@ -135,5 +135,5 @@ LUA_API int luaopen_log(lua_State *L)
     luaL_newlib(L, api);
     lua_setglobal(L, "log");
 
-    return 1;
+    return 0;
 }

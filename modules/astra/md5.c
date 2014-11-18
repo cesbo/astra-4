@@ -451,11 +451,10 @@ LUA_API int luaopen_md5(lua_State *L)
 {
     lua_getglobal(L, "string");
 
-    lua_pushvalue(L, -1);
     lua_pushcfunction(L, lua_md5);
     lua_setfield(L, -2, "md5");
 
     lua_pop(L, 1); // string
 
-    return 1;
+    return 0;
 }

@@ -374,5 +374,5 @@ LUA_API int luaopen_iso8859(lua_State *L)
     luaL_newlib(L, api);
     lua_setglobal(L, "iso8859");
 
-    return 1;
+    return 0;
 }
