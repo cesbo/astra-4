@@ -149,6 +149,15 @@ static int lua_base64_decode(lua_State *L)
 
 LUA_API int luaopen_base64(lua_State *L)
 {
+    lua_getglobal(L, "string");
+
+    lua_pushcfunction(L, lua_base64_encode);
+    lua_setfield(L, -2, "b64e");
+    lua_pushcfunction(L, lua_base64_decode);
+    lua_setfield(L, -2, "b64d");
+
+    lua_pop(L, 1); // string
+
     static const luaL_Reg api[] =
     {
         { "encode", lua_base64_encode },
