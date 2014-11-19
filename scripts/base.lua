@@ -725,6 +725,8 @@ end
 
 function astra_usage()
     print([[
+
+Astra ]] .. astra.version .. [[
 Usage: astra APP [OPTIONS]
 
 Available Applications:
@@ -738,8 +740,8 @@ Available Applications:
     SCRIPT              launch Astra script
 
 Astra Options:
-    -h                  command line arguments
-    -v                  version number
+    -h, --help          command line arguments
+    -v, --version       version number
     --pid FILE          create PID-file
     --syslog NAME       send log messages to syslog
     --log FILE          write log to file
@@ -755,15 +757,29 @@ Astra Options:
     astra.exit()
 end
 
+function astra_version()
+    print([[
+
+Astra ]] .. astra.version .. [[
+]])
+    astra.exit()
+end
+
 astra_options = {
     ["-h"] = function(idx)
-        log.info("Starting Astra " .. astra.version)
+        astra_usage()
+        return 0
+    end,
+    ["--help"] = function(idx)
         astra_usage()
         return 0
     end,
     ["-v"] = function(idx)
-        log.info("Starting Astra " .. astra.version)
-        astra.exit()
+        astra_version()
+        return 0
+    end,
+    ["--version"] = function(idx)
+        astra_version()
         return 0
     end,
     ["--pid"] = function(idx)
