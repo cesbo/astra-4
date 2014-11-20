@@ -156,7 +156,7 @@ function parse_url(url)
         end
 
         -- check address
-        if data.port < 0 or data.port > 65535 then
+        if not data.port or data.port < 0 or data.port > 65535 then
             return false
         end
 
