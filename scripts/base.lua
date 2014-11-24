@@ -93,7 +93,7 @@ function parse_url(url)
                 v = o:sub(x + 1)
             else
                 k = o
-                v = true
+                v = 1
             end
             local x = k:find("%.")
             if x then
@@ -446,7 +446,6 @@ init_input_module.http = function(conf)
             path = conf.path,
             stream = true,
             sync = conf.sync,
-            buffer_size = conf.buffer_size,
             timeout = conf.timeout,
             sctp = conf.sctp,
             headers = {

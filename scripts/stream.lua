@@ -397,7 +397,11 @@ init_output_module.http = function(channel_data, output_id)
             port = output_data.config.port,
             sctp = output_data.config.sctp,
             route = {
-                { "/*", http_upstream({ callback = http_output_on_request }) },
+                { "/*", http_upstream({
+                    callback = http_output_on_request,
+                    buffer_size = output_data.config.buffer_size,
+                    buffer_fill = output_data.config.buffer_fill,
+                    }) },
             },
             channel_list = {},
         })
