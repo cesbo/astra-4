@@ -93,7 +93,7 @@ function parse_url(url)
                 v = o:sub(x + 1)
             else
                 k = o
-                v = 1
+                v = true
             end
             local x = k:find("%.")
             if x then

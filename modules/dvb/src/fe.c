@@ -106,6 +106,29 @@ static void fe_check_status(dvb_fe_t *fe)
     }
 
     fe_read_status(fe);
+
+    if(fe->log_signal)
+    {
+        const char ss = (fe_status & FE_HAS_SIGNAL) ? 'S' : '_';
+        const char sc = (fe_status & FE_HAS_CARRIER) ? 'C' : '_';
+        const char sv = (fe_status & FE_HAS_VITERBI) ? 'V' : '_';
+        const char sy = (fe_status & FE_HAS_SYNC) ? 'Y' : '_';
+        const char sl = (fe_status & FE_HAS_LOCK) ? 'L' : '_';
+
+        if(!fe->raw_signal)
+        {
+            asc_log_info(  MSG("fe has lock. status:%c%c%c%c%c signal:%d%% snr:%d%%")
+                         , ss, sc, sv, sy, sl
+                         , (fe->signal * 100) / 0xFFFF
+                         , (fe->snr * 100) / 0xFFFF);
+        }
+        else
+        {
+            asc_log_info(  MSG("fe has lock. status:%c%c%c%c%c signal:-%ddBm snr:%d.%ddB")
+                         , ss, sc, sv, sy, sl
+                         , fe->signal, fe->snr / 10, fe->snr % 10);
+        }
+    }
 }
 
 /*

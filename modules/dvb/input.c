@@ -610,6 +610,7 @@ static void module_options(module_data_t *mod)
 
     module_option_boolean("raw_signal", &mod->fe->raw_signal);
     module_option_boolean("budget", &mod->dmx_budget);
+    module_option_boolean("log_signal", &mod->fe->log_signal);
 
     module_option_number("buffer_size", &mod->dvr_buffer_size);
     if(mod->dvr_buffer_size > 200)

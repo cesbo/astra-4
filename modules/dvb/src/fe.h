@@ -73,6 +73,7 @@ struct dvb_fe_t
     fe_hierarchy_t hierarchy;
 
     bool raw_signal;
+    bool log_signal;
 
     /* FE Base */
     int fe_fd;
