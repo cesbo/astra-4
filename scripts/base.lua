@@ -723,9 +723,9 @@ end
 -- o888ooooo88   88ooo88 o88o  o888o o888ooo88
 
 function astra_usage()
+    log.info("Astra " .. astra.version)
     print([[
 
-Astra ]] .. astra.version .. [[
 Usage: astra APP [OPTIONS]
 
 Available Applications:
@@ -757,10 +757,7 @@ Astra Options:
 end
 
 function astra_version()
-    print([[
-
-Astra ]] .. astra.version .. [[
-]])
+    log.info("Astra " .. astra.version)
     astra.exit()
 end
 

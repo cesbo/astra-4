@@ -236,13 +236,41 @@ end
 -- 888o   o888 888    88      888      888        888    88      888
 --   88ooo88    888oo88      o888o    o888o        888oo88      o888o
 
+init_output_option = {}
+kill_output_option = {}
+
+init_output_option.biss = function(channel_data, output_id)
+    local output_data = channel_data.output[output_id]
+
+    if biss_encrypt == nil then
+        log.error("[" .. output_data.config.name .. "] biss_encrypt module is not found")
+        return nil
+    end
+
+    output_data.biss = biss_encrypt({
+        upstream = channel_data.tail:stream(),
+        key = output_data.config.biss
+    })
+    channel_data.tail = output_data.biss
+end
+
+kill_output_option.biss = function(channel_data, output_id)
+    local output_data = channel_data.output[output_id]
+
+    output_data.tail = nil
+end
+
 init_output_module = {}
 kill_output_module = {}
 
 function channel_init_output(channel_data, output_id)
     local output_data = channel_data.output[output_id]
 
-    -- TODO: init additional modules
+    for key,_ in pairs(output_data.config) do
+        if init_output_option[key] then
+            init_output_option[key](channel_data, output_id)
+        end
+    end
 
     init_output_module[output_data.config.format](channel_data, output_id)
 end
@@ -250,7 +278,11 @@ end
 function channel_kill_output(channel_data, output_id)
     local output_data = channel_data.output[output_id]
 
-    -- TODO: kill additions modules
+    for key,_ in pairs(output_data.config) do
+        if kill_output_option[key] then
+            kill_output_option[key](channel_data, output_id)
+        end
+    end
 
     kill_output_module[output_data.config.format](channel_data, output_id)
     channel_data.output[output_id] = { config = output_data.config, }
@@ -270,7 +302,7 @@ init_output_module.udp = function(channel_data, output_id)
         if ifaddr and ifaddr.ipv4 then localaddr = ifaddr.ipv4[1] end
     end
     output_data.output = udp_output({
-        upstream = channel_data.transmit:stream(),
+        upstream = channel_data.tail:stream(),
         addr = output_data.config.addr,
         port = output_data.config.port,
         ttl = output_data.config.ttl,
@@ -304,7 +336,7 @@ end
 init_output_module.file = function(channel_data, output_id)
     local output_data = channel_data.output[output_id]
     output_data.output = file_output({
-        upstream = channel_data.transmit:stream(),
+        upstream = channel_data.tail:stream(),
         filename = output_data.config.filename,
         m2ts = output_data.config.m2ts,
         buffer_size = output_data.config.buffer_size,
@@ -379,7 +411,7 @@ function http_output_on_request(server, client, request)
         end
         channel_data.clients = channel_data.clients + 1
 
-        server:send(client, channel_data.transmit:stream())
+        server:send(client, channel_data.tail:stream())
     end
 
     http_allow_client()
@@ -448,7 +480,7 @@ init_output_module.np = function(channel_data, output_id)
         host = conf.host,
         port = conf.port,
         path = conf.path,
-        upstream = channel_data.transmit:stream(),
+        upstream = channel_data.tail:stream(),
         buffer_size = conf.buffer_size,
         buffer_fill = conf.buffer_size,
         timeout = conf.timeout,
@@ -610,6 +642,7 @@ function make_channel(channel_config)
 
     channel_data.active_input_id = 0
     channel_data.transmit = transmit()
+    channel_data.tail = channel_data.transmit
 
     if channel_data.clients > 0 then
         channel_init_input(channel_data, 1)
@@ -651,6 +684,7 @@ function kill_channel(channel_data)
     end
     channel_data.output = nil
 
+    channel_data.tail = nil
     channel_data.transmit = nil
     channel_data.config = nil
 
