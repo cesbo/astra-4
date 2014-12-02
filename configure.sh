@@ -125,6 +125,10 @@ fi
 
 CFLAGS="$CFLAGS_DEBUG -I$SRCDIR -Wall -Wextra -pedantic -fno-builtin"
 
+if [ -n "$ARG_CFLAGS" ] ; then
+    CFLAGS="$CFLAGS $ARG_CFLAGS"
+fi
+
 MACHINE=`$APP_C -dumpmachine`
 ARCH=`echo $MACHINE | sed "s|-.*\$||"`
 
@@ -227,10 +231,6 @@ case "$MACHINE" in
     exit 1
     ;;
 esac
-
-if [ -n "$ARG_CFLAGS" ] ; then
-    CFLAGS="$CFLAGS $ARG_CFLAGS"
-fi
 
 if [ $ARG_BUILD_STATIC -eq 1 ] ; then
     LDFLAGS="$LDFLAGS -static"
