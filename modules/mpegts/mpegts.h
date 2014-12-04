@@ -42,11 +42,11 @@
 #define NULL_TS_PID (MAX_PID - 1)
 #define DESC_MAX_SIZE 1024
 
-#define TS_IS_SYNC(_ts) (_ts[0] == 0x47)
-#define TS_IS_PAYLOAD(_ts) (_ts[3] & 0x10)
-#define TS_IS_PAYLOAD_START(_ts) (TS_IS_PAYLOAD(_ts) && (_ts[1] & 0x40))
-#define TS_IS_AF(_ts) (_ts[3] & 0x20)
-#define TS_IS_SCRAMBLED(_ts) (_ts[3] & 0xC0)
+#define TS_IS_SYNC(_ts) ((_ts[0] == 0x47))
+#define TS_IS_PAYLOAD(_ts) ((_ts[3] & 0x10))
+#define TS_IS_PAYLOAD_START(_ts) ((TS_IS_PAYLOAD(_ts) && (_ts[1] & 0x40)))
+#define TS_IS_AF(_ts) ((_ts[3] & 0x20))
+#define TS_IS_SCRAMBLED(_ts) ((_ts[3] & 0xC0))
 
 #define TS_GET_PID(_ts) ((uint16_t)(((_ts[1] & 0x1F) << 8) | _ts[2]))
 #define TS_SET_PID(_ts, _pid)                                                                   \
@@ -613,6 +613,48 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
     }
 
 #define EIT_GET_TSID(_psi) ((_psi->buffer[8] << 8) | _psi->buffer[9])
+#define EIT_GET_ONID(_psi) ((_psi->buffer[10] << 8) | _psi->buffer[11])
+
+#define EIT_ITEMS_FIRST(_psi) (&_psi->buffer[14])
+#define EIT_ITEMS_EOL(_psi, _pointer)                                                           \
+     ((_pointer - _psi->buffer) >= (_psi->buffer_size - CRC32_SIZE))
+#define EIT_ITEMS_NEXT(_psi, _pointer) _pointer += 12 + EIT_ITEM_DESC_SIZE(_pointer)
+
+#define EIT_ITEMS_FOREACH(_psi, _ptr)                                                           \
+    for(_ptr = EIT_ITEMS_FIRST(_psi)                                                            \
+        ; !EIT_ITEMS_EOL(_psi, _ptr)                                                            \
+        ; EIT_ITEMS_NEXT(_psi, _ptr))
+
+#define EIT_ITEM_GET_EID(_pointer) ((_pointer[0] << 8) | _pointer[1])
+#define EIT_ITEM_START_TM_MJD(_pointer) ((_pointer[2] << 8) | _pointer[3])
+#define EIT_ITEM_START_TM_UTC(_pointer) ((_pointer[4] << 16) | (_pointer[5] << 8) | _pointer[6])
+#define EIT_ITEM_DURATION(_pointer) ((_pointer[7] << 16) | (_pointer[8] << 8) | _pointer[9])
+#define EIT_GET_RUN_STAT(_pointer) (_pointer[10] >> 5)
+#define EIT_GET_FREE_CA(_pointer) ((_pointer[10] & 0x10) >> 4)
+#define EIT_ITEM_DESC_SIZE(_pointer)    (((_pointer[10] & 0x0F) << 8) | _pointer[11])
+
+#define EIT_ITEM_DURATION_SEC(_pointer)                                                         \
+    ((_pointer[7] >> 4) * 10 + (_pointer[7] & 0x0F)) * 3600 +                                   \
+    ((_pointer[8] >> 4) * 10 + (_pointer[8] & 0x0F)) * 60 +                                     \
+    ((_pointer[9] >> 4) * 10 + (_pointer[9] & 0x0F))
+
+#define EIT_ITEM_START_UT(_pointer)                                                             \
+    (EIT_ITEM_START_TM_MJD(_pointer) - 40587) * 86400 +                                         \
+    ((_pointer[4] >> 4) * 10 + (_pointer[4] & 0x0F)) * 3600 +                                   \
+    ((_pointer[5] >> 4) * 10 + (_pointer[5] & 0x0F)) * 60 +                                     \
+    ((_pointer[6] >> 4) * 10 + (_pointer[6] & 0x0F))
+
+#define EIT_ITEM_STOP_UT(_pointer) EIT_ITEM_START_UT(_pointer) + EIT_ITEM_DURATION_SEC(_pointer)
+
+#define EIT_ITEM_DESC_FIRST(_pointer) (&_pointer[12])
+#define EIT_ITEM_DESC_EOL(_pointer, _desc_pointer)                                              \
+    (_desc_pointer >= EIT_ITEM_DESC_FIRST(_pointer) + EIT_ITEM_DESC_SIZE(_pointer))
+#define EIT_ITEM_DESC_NEXT(_pointer, _desc_pointer) _desc_pointer += 2 + _desc_pointer[1]
+
+#define EIT_ITEM_DESC_FOREACH(_ptr, _desc_ptr)                                                  \
+     for(_desc_ptr = EIT_ITEM_DESC_FIRST(_ptr)                                                  \
+         ; !EIT_ITEM_DESC_EOL(_ptr, _desc_ptr)                                                  \
+         ; EIT_ITEM_DESC_NEXT(_ptr, _desc_ptr))
 
 /*
  * oooooooooo    oooooooo8 oooooooooo
