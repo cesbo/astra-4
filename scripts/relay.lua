@@ -227,6 +227,7 @@ function on_request_udp(server, client, request)
     local allow_channel = function()
         conf.name = "Relay " .. client_data.client_id
         conf.socket_size = 0x80000
+        if localaddr then conf.localaddr = localaddr end
         client_data.input = init_input(conf)
         server:send(client, client_data.input.tail:stream())
     end
