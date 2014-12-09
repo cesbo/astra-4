@@ -76,6 +76,7 @@ struct module_data_t
     } sync;
 
     uint64_t pcr;
+    uint16_t pcr_pid;
 };
 
 static const uint8_t null_ts[TS_PACKET_SIZE] = { 0x47, 0x1F, 0xFF, 0x10, 0x00 };
@@ -139,11 +140,18 @@ static bool seek_pcr(  module_data_t *mod
 
         if(TS_IS_PCR(ptr))
         {
-            *block_size = count;
-            *next_block = skip;
-            *pcr = TS_GET_PCR(ptr);
+            const uint16_t pid = TS_GET_PID(ptr);
+            if(mod->pcr_pid == 0)
+                mod->pcr_pid = pid;
 
-            return true;
+            if(mod->pcr_pid == pid)
+            {
+                *block_size = count;
+                *next_block = skip;
+                *pcr = TS_GET_PCR(ptr);
+
+                return true;
+            }
         }
     }
 
