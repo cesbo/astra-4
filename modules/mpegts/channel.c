@@ -332,6 +332,8 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
             if(mod->stream[ca_pid] == MPEGTS_PACKET_UNKNOWN && ca_pid != NULL_TS_PID)
             {
                 mod->stream[ca_pid] = MPEGTS_PACKET_CA;
+                if(mod->pid_map[ca_pid] == MAX_PID)
+                    mod->pid_map[ca_pid] = 0;
                 module_stream_demux_join_pid(mod, ca_pid);
             }
         }
@@ -432,6 +434,8 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
             if(mod->stream[ca_pid] == MPEGTS_PACKET_UNKNOWN && ca_pid != NULL_TS_PID)
             {
                 mod->stream[ca_pid] = MPEGTS_PACKET_CA;
+                if(mod->pid_map[ca_pid] == MAX_PID)
+                    mod->pid_map[ca_pid] = 0;
                 module_stream_demux_join_pid(mod, ca_pid);
             }
         }
@@ -488,6 +492,8 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
                 if(mod->stream[ca_pid] == MPEGTS_PACKET_UNKNOWN && ca_pid != NULL_TS_PID)
                 {
                     mod->stream[ca_pid] = MPEGTS_PACKET_CA;
+                    if(mod->pid_map[ca_pid] == MAX_PID)
+                        mod->pid_map[ca_pid] = 0;
                     module_stream_demux_join_pid(mod, ca_pid);
                 }
             }
@@ -567,6 +573,8 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
     if(join_pcr)
     {
         mod->stream[pcr_pid] = MPEGTS_PACKET_PES;
+        if(mod->pid_map[pcr_pid] == MAX_PID)
+            mod->pid_map[pcr_pid] = 0;
         module_stream_demux_join_pid(mod, pcr_pid);
     }
 
