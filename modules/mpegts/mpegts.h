@@ -669,18 +669,19 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
     (                                                                                           \
         (_ts[0] == 0x47) &&                                                                     \
         (TS_IS_AF(_ts)) &&              /* adaptation field */                                  \
-        (_ts[4] > 0) &&                 /* adaptation field length */                           \
+        (_ts[4] >= 7) &&                /* adaptation field length */                           \
         (_ts[5] & 0x10)                 /* PCR_flag */                                          \
     )
 
-#define TS_GET_PCR(_ts)                                                                         \
-    ((uint64_t)(                                                                                \
-        300 * (((_ts)[6] << 25)  |                                                              \
-               ((_ts)[7] << 17)  |                                                              \
-               ((_ts)[8] << 9 )  |                                                              \
-               ((_ts)[9] << 1 )  |                                                              \
-               ((_ts)[10] >> 7)) +                                                              \
-        ((((_ts)[10] & 0x01) << 8) | (_ts)[11])                                                 \
+#define TS_GET_PCR(_ts) \
+    (( \
+        ((uint64_t)(_ts)[6] << 25) | \
+        ((uint64_t)(_ts)[7] << 17) | \
+        ((uint64_t)(_ts)[8] << 9 ) | \
+        ((uint64_t)(_ts)[9] << 1 ) | \
+        ((uint64_t)(_ts)[10] >> 7) \
+    ) * 300 + ( \
+        (((uint64_t)(_ts)[10] & 0x01) << 8) | ((uint64_t)(_ts)[11]) \
     ))
 
 #define TS_SET_PCR(_ts, _pcr)                                                                   \
