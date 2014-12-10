@@ -897,6 +897,20 @@ static void module_init(module_data_t *mod)
         }
     }
     lua_pop(lua, 1); // filter
+
+    lua_getfield(lua, MODULE_OPTIONS_IDX, "filter~");
+    if(lua_istable(lua, -1))
+    {
+        for(uint32_t i = 0; i < ASC_ARRAY_SIZE(mod->pid_map); ++i)
+            mod->pid_map[i] = MAX_PID;
+
+        lua_foreach(lua, -2)
+        {
+            const int pid = lua_tonumber(lua, -1);
+            mod->pid_map[pid] = 0;
+        }
+    }
+    lua_pop(lua, 1); // filter~
 }
 
 static void module_destroy(module_data_t *mod)

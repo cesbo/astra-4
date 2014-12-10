@@ -266,6 +266,7 @@ function init_input(conf)
             if conf.no_eit == true then return true end
             if conf.map then return true end
             if conf.filter then return true end
+            if conf["filter~"] then return true end
             return false
         end
         if check_dependent() then conf.pnr = 0 end
@@ -287,6 +288,7 @@ function init_input(conf)
             set_pnr = conf.set_pnr,
             map = conf.map,
             filter = string.split(conf.filter, ","),
+            ["filter~"] = string.split(conf["filter~"], ","),
             no_reload = conf.no_reload,
         })
         instance.tail = instance.channel
