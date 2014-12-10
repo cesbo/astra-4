@@ -65,7 +65,7 @@ end
 
 dump_psi_info["pmt"] = function(name, info)
     log.info(name .. ("PMT: pnr: %d"):format(info.pnr))
-    log.info(name .. ("PCR: pid: %d"):format(info.pcr))
+    log.info(name .. ("PMT: pid: %d PCR"):format(info.pcr))
 
     for _, descriptor_info in pairs(info.descriptors) do
         dump_descriptor(name .. "PMT: ", descriptor_info)
