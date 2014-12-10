@@ -294,6 +294,10 @@ function on_request_channel(server, client, request)
     local channel = channels[path]
 
     if not channel then
+        channel = channels["*"]
+    end
+
+    if not channel then
         server:abort(client, 404)
         return nil
     end
