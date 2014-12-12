@@ -217,7 +217,7 @@ case "$MACHINE" in
     ;;
 *"darwin"*)
     OS="darwin"
-    CFLAGS="$CFLAGS -pthread"
+    CFLAGS="$CFLAGS -pthread -Wno-deprecated-declarations"
     LDFLAGS=""
     ;;
 *"mingw"*)
