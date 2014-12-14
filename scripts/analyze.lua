@@ -155,6 +155,7 @@ end
 function start_analyze(instance, addr)
     local conf = parse_url(addr)
     conf.name = "Analyze"
+    if conf.pnr == 0 then conf.pnr = nil end
 
     if conf.format == "file" then
         if utils.stat(conf.filename).type ~= "file" then
@@ -170,6 +171,10 @@ function start_analyze(instance, addr)
         conf.on_error = function(code, message)
             astra.exit()
         end
+
+    elseif conf.format == "dvb" then
+        if conf.pnr == nil then conf.budget = true end
+
     end
 
     instance.input = init_input(conf)
