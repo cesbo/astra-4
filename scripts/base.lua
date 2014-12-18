@@ -330,7 +330,7 @@ function init_input(conf)
             name = conf.name,
             cam = cam:cam(),
             cas_data = conf.cas_data,
-            cas_pnr = conf.cas_pnr,
+            cas_pnr = cas_pnr,
             disable_emm = conf.no_emm,
             ecm_pid = conf.ecm_pid,
             shift = conf.shift,
