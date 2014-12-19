@@ -34,12 +34,12 @@ EOF
 
 check_libssl()
 {
-    libssl_test_c | $APP_C -Werror $APP_CFLAGS -c -o .link-test.o -x c - &>/dev/null
+    libssl_test_c | $APP_C -Werror $APP_CFLAGS -c -o .link-test.o -x c - >/dev/null 2>&1
     if [ $? -ne 0 ] ; then
         return 1
     fi
 
-    $APP_C .link-test.o -o .link-test $APP_LDFLAGS $1 &>/dev/null
+    $APP_C .link-test.o -o .link-test $APP_LDFLAGS $1 >/dev/null 2>&1
     if [ $? -ne 0 ] ; then
         rm -f .link-test.o
         return 1
@@ -85,7 +85,7 @@ EOF
 
 check_sse2()
 {
-    sse2_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o .link-test -x c - &>/dev/null
+    sse2_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o .link-test -x c - >/dev/null 2>&1
     if [ $? -eq 0 ] ; then
         rm -f .link-test
         return 0
