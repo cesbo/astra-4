@@ -13,6 +13,7 @@ getifaddrs_test_c()
 {
     cat <<EOF
 #include <stdio.h>
+#include <sys/types.h>
 #include <ifaddrs.h>
 int main(void) {
     struct ifaddrs *ifaddr;

@@ -404,7 +404,7 @@ function http_output_on_request(server, client, request)
         st     = os.time(),
     }
 
-    local function http_allow_client()
+    local allow_channel = function()
         local channel_data = client_data.output_data.channel_data
         if channel_data.clients == 0 then
             channel_init_input(channel_data, 1)
@@ -414,7 +414,7 @@ function http_output_on_request(server, client, request)
         server:send(client, channel_data.tail:stream())
     end
 
-    http_allow_client()
+    allow_channel()
 end
 
 init_output_module.http = function(channel_data, output_id)

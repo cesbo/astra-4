@@ -38,6 +38,7 @@
 
 #ifndef _WIN32
 #   include <sys/socket.h>
+#   include <netinet/in.h>
 #   include <ifaddrs.h>
 #   include <netdb.h>
 #endif
