@@ -312,7 +312,7 @@ function init_input(conf)
             else
                 if type(softcam_list) == "table" then
                     for _, i in ipairs(softcam_list) do
-                        if i.__options.id == conf.cam then return i end
+                        if tostring(i.__options.id) == conf.cam then return i end
                     end
                 end
                 local i = _G[tostring(conf.cam)]
@@ -551,31 +551,33 @@ end
 --  888           888    888   88888     888    888
 -- o888o         o888ooo88      888     o888ooo888
 
-dvb_tune_list = {}
 dvb_input_instance_list = {}
 dvb_list = nil
 
 function dvb_tune(conf)
     if conf.mac then
-        local function get_adapter()
-            if dvb_list == nil then
-                if dvbls then
-                    dvb_list = dvbls()
-                else
-                    dvb_list = {}
-                end
+        conf.adapter = nil
+        conf.device = nil
+
+        if dvb_list == nil then
+            if dvbls then
+                dvb_list = dvbls()
+            else
+                dvb_list = {}
             end
-            local mac = conf.mac:upper()
-            for _, a in ipairs(dvb_list) do if a.mac == mac then
+        end
+        local mac = conf.mac:upper()
+        for _, a in ipairs(dvb_list) do
+            if a.mac == mac then
                 log.info("[dvb_tune] adapter: " .. a.adapter .. "." .. a.device .. ". " ..
                          "MAC address: " .. mac)
                 conf.adapter = a.adapter
                 conf.device = a.device
-                return true
-            end end
-            return false
+                break
+            end
         end
-        if get_adapter() == false then
+
+        if conf.adapter == nil then
             log.error("[dvb_tune] failed to get an adapter. MAC address: " .. mac)
             astra.abort()
         end
@@ -653,14 +655,19 @@ init_input_module.dvb = function(conf)
         instance = dvb_tune(conf)
     else
         local function get_dvb_tune()
-            if type(dvb_tune_list) == "table" then
-                for _, i in ipairs(dvb_tune_list) do
-                    if i.__options.id == conf.addr then return i end
+            for _, i in pairs(dvb_input_instance_list) do
+                if tostring(i.__options.id) == adapter_addr then
+                    return i
                 end
             end
             local i = _G[adapter_addr]
             local module_name = tostring(i)
-            if module_name == "dvb_input" or module_name == "asi_input" then return i end
+            if  module_name == "dvb_input" or
+                module_name == "asi_input" or
+                module_name == "ddci"
+            then
+                return i
+            end
             log.error("[" .. conf.name .. "] dvb is not found")
             astra.abort()
         end
