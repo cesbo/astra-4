@@ -35,6 +35,14 @@ function xproxy_init_client(server, client, request, path)
     local client_addr = request.headers['x-real-ip']
     if not client_addr then client_addr = request.addr end
 
+    if request.query then
+        local query_path = ""
+        for k,v in pairs(request.query) do
+            query_path = query_path .. "&" .. k .. "=" .. v
+        end
+        path = path .. "?" .. query_path:sub(2)
+    end
+
     client_list[client_id] = {
         client = client,
         addr = client_addr,
@@ -143,7 +151,7 @@ function on_request_stat(server, client, request)
                     "Connection: close",
                 }
             })
-            return
+            return nil
         end
     end
 
@@ -206,23 +214,14 @@ function on_request_udp(server, client, request)
     end
 
     local format = request.path:sub(2, 4)
-    local path = request.path:sub(6) -- skip '/udp/'
-    local url = format .. "://" .. path
+    local url = format .. "://" .. request.path:sub(6)
     local conf = parse_url(url)
     if not conf then
         server:abort(client, 404)
         return nil
     end
 
-    local query_path = ""
-    if request.query then
-        for k,v in pairs(request.query) do
-            query_path = query_path .. "&" .. k .. "=" .. v
-        end
-        query_path = "?" .. query_path:sub(2)
-    end
-
-    xproxy_init_client(server, client, request, url .. query_path)
+    xproxy_init_client(server, client, request, url)
 
     local allow_channel = function()
         conf.name = "Relay " .. client_data.client_id
