@@ -652,7 +652,9 @@ init_input_module.dvb = function(conf)
     local adapter_addr = tostring(conf.addr)
 
     if #adapter_addr == 0 then
+        conf.channels = 0
         instance = dvb_tune(conf)
+        instance.__options.channels = instance.__options.channels + 1
     else
         local function get_dvb_tune()
             for _, i in pairs(dvb_input_instance_list) do
@@ -686,6 +688,15 @@ kill_input_module.dvb = function(module)
 
     if conf.cam == true and conf.pnr then
         module:ca_set_pnr(conf.pnr, false)
+    end
+
+    if conf.channels ~= nil then
+        conf.channels = conf.channels - 1
+        if conf.channels == 0 then
+            module:close()
+            local instance_id = conf.adapter .. "." .. conf.device
+            dvb_input_instance_list[instance_id] = nil
+        end
     end
 end
 

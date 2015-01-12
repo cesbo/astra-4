@@ -832,6 +832,48 @@ static int method_ca_set_pnr(module_data_t *mod)
     return 0;
 }
 
+static int method_close(module_data_t *mod)
+{
+    dvr_close(mod);
+
+    if(mod->pat)
+    {
+        mpegts_psi_destroy(mod->pat);
+        mod->pat = NULL;
+    }
+
+    if(mod->thread)
+        on_thread_close(mod);
+
+    if(mod->fe)
+    {
+        free(mod->fe);
+        mod->fe = NULL;
+    }
+
+    if(mod->ca)
+    {
+        free(mod->ca);
+        mod->ca = NULL;
+    }
+
+    if(mod->status_timer)
+    {
+        asc_timer_destroy(mod->status_timer);
+        mod->status_timer = NULL;
+    }
+
+    if(mod->idx_callback)
+    {
+        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_callback);
+        mod->idx_callback = 0;
+    }
+
+    module_stream_destroy(mod);
+
+    return 0;
+}
+
 static void join_pid(module_data_t *mod, uint16_t pid)
 {
     ++mod->__stream.pid_list[pid];
@@ -879,39 +921,14 @@ static void module_init(module_data_t *mod)
 
 static void module_destroy(module_data_t *mod)
 {
-    dvr_close(mod);
-
-    if(mod->pat)
-    {
-        mpegts_psi_destroy(mod->pat);
-        mod->pat = NULL;
-    }
-
-    if(mod->thread)
-        on_thread_close(mod);
-
-    free(mod->fe);
-    free(mod->ca);
-
-    if(mod->status_timer)
-    {
-        asc_timer_destroy(mod->status_timer);
-        mod->status_timer = NULL;
-    }
-
-    if(mod->idx_callback)
-    {
-        luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_callback);
-        mod->idx_callback = 0;
-    }
-
-    module_stream_destroy(mod);
+    method_close(mod);
 }
 
 MODULE_STREAM_METHODS()
 MODULE_LUA_METHODS()
 {
     { "ca_set_pnr", method_ca_set_pnr },
+    { "close", method_close },
     MODULE_STREAM_METHODS_REF()
 };
 MODULE_LUA_REGISTER(dvb_input)
