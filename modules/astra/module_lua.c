@@ -91,7 +91,7 @@ bool module_option_boolean(const char *name, bool *boolean)
     else if(type == LUA_TSTRING)
     {
         const char *str = lua_tostring(lua, -1);
-        *boolean = (strncmp(str, "true", 4) == 0);
+        *boolean = (!strcmp(str, "true") || !strcmp(str, "on") || !strcmp(str, "1"));
         result = true;
     }
     else if(type == LUA_TBOOLEAN)

@@ -3,6 +3,7 @@
 #define _HTTP_H_ 1
 
 #include <astra.h>
+#include "parser.h"
 
 #define HTTP_BUFFER_SIZE (16 * 1024)
 
@@ -59,19 +60,5 @@ void lua_string_to_lower(const char *str, size_t size);
 void lua_url_decode(const char *str, size_t size);
 bool lua_parse_query(const char *str, size_t size);
 bool lua_safe_path(const char *str, size_t size);
-
-// Parser
-
-typedef struct
-{
-    size_t so;
-    size_t eo;
-} parse_match_t;
-
-bool http_parse_request(const char *, parse_match_t *);
-bool http_parse_response(const char *, parse_match_t *);
-bool http_parse_header(const char *, parse_match_t *);
-bool http_parse_chunk(const char *, parse_match_t *);
-bool http_parse_query(const char *, parse_match_t *);
 
 #endif /* _HTTP_H_ */
