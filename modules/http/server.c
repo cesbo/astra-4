@@ -277,6 +277,9 @@ static void on_client_read(void *arg)
 
         client->is_head = (strcmp(method, "HEAD") == 0);
 
+        lua_pushlstring(lua, &client->buffer[m[2].so], m[2].eo - m[2].so);
+        lua_setfield(lua, request, "request_uri");
+
         size_t path_skip = m[2].so;
         if(client->buffer[path_skip] != '/' && client->buffer[path_skip] != '*')
         {
