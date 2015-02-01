@@ -154,12 +154,17 @@ end
 
 function start_analyze(instance, addr)
     local conf = parse_url(addr)
-    conf.name = "Analyze"
+    if not conf then
+        log.error("[analyze] wrong url format")
+        astra.exit()
+    end
+
+    conf.name = "analyze"
     if conf.pnr == 0 then conf.pnr = nil end
 
     if conf.format == "file" then
         if utils.stat(conf.filename).type ~= "file" then
-            log.error("[Analyze] file not found")
+            log.error("[analyze] file not found")
             astra.exit()
         end
 
