@@ -437,12 +437,16 @@ char * http_authorization(  const char *auth_header
             if(!strncmp(auth_header, "realm", m[1].eo))
             {
                 realm_len = m[2].eo - m[2].so;
-                realm = strndup(&auth_header[m[2].so], realm_len);
+                realm = malloc(realm_len + 1);
+                memcpy(realm, &auth_header[m[2].so], realm_len);
+                realm[realm_len] = 0;
             }
             else if(!strncmp(auth_header, "nonce", m[1].eo))
             {
                 nonce_len = m[2].eo - m[2].so;
-                nonce = strndup(&auth_header[m[2].so], nonce_len);
+                nonce = malloc(nonce_len + 1);
+                memcpy(nonce, &auth_header[m[2].so], nonce_len);
+                nonce[nonce_len] = 0;
             }
             auth_header += m[0].eo;
         }
@@ -634,9 +638,9 @@ bool http_parse_query(const char *str, parse_match_t *match)
         match[0].eo = skip;
         return true;
     }
+    skip += 1; // skip '='
 
-    ++skip; // skip '='
-
+    // parse value
     match[2].so = skip;
     while(1)
     {
