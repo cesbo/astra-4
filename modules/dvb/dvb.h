@@ -40,4 +40,6 @@
 	#define NO_STREAM_ID_FILTER	(~0U)
 #endif
 
+#define DVB_API ((DVB_API_VERSION * 100) + DVB_API_VERSION_MINOR)
+
 #endif /* _DVB_H_ */

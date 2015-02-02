@@ -98,7 +98,7 @@ static bool WINAPI signal_handler(DWORD signum)
 }
 #endif
 
-static void asc_srand()
+static void asc_srand(void)
 {
     unsigned long a = clock();
     unsigned long b = time(NULL);
