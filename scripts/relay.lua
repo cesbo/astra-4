@@ -32,9 +32,6 @@ function xproxy_init_client(server, client, request, path)
         client_id = math.random(10000000, 99000000)
     until not client_list[client_id]
 
-    local client_addr = request.headers['x-real-ip']
-    if not client_addr then client_addr = request.addr end
-
     if request.query then
         local query_path = ""
         for k,v in pairs(request.query) do
@@ -45,7 +42,7 @@ function xproxy_init_client(server, client, request, path)
 
     client_list[client_id] = {
         client = client,
-        addr = client_addr,
+        addr = request.addr,
         path = path,
         st   = os.time(),
     }

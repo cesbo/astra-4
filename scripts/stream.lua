@@ -393,13 +393,10 @@ function http_output_on_request(server, client, request)
         client_data.client_id = math.random(10000000, 99000000)
     until not client_data.output_data.client_list[client_data.client_id]
 
-    local client_addr = request.headers["x-real-ip"]
-    if not client_addr then client_addr = request.addr end
-
     client_data.output_data.client_list[client_data.client_id] = {
         server = server,
         client = client,
-        addr   = client_addr,
+        addr   = request.addr,
         path   = request.path,
         st     = os.time(),
     }
