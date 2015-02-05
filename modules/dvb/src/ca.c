@@ -867,7 +867,6 @@ static void mmi_menu_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 
 static void mmi_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
 {
-    asc_log_debug(MSG("CA: MMI: event"));
     const uint32_t tag = ca_apdu_get_tag(ca, slot_id);
     switch(tag)
     {
