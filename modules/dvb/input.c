@@ -584,6 +584,15 @@ static void module_options(module_data_t *mod)
     mod->fe->timeout = 5;
     module_option_number("timeout", &mod->fe->timeout);
 
+    int ca_pmt_delay = 3;
+    module_option_number("ca_pmt_delay", &ca_pmt_delay);
+    if(ca_pmt_delay > 120)
+    {
+        asc_log_error(MSG("ca_pmt_delay value is too large"));
+        astra_abort();
+    }
+    mod->ca->pmt_delay = ca_pmt_delay * 1000 * 1000;
+
     const char *string_val = NULL;
 
     static const char __type[] = "type";
@@ -737,7 +746,7 @@ static void thread_loop(void *arg)
 
         current_time = asc_utime();
 
-        if((current_time - fe_check_timeout) >= FE_TIMEOUT)
+        if(current_time >= fe_check_timeout + FE_TIMEOUT)
         {
             fe_check_timeout = current_time;
             fe_loop(mod->fe, 0);
@@ -749,7 +758,7 @@ static void thread_loop(void *arg)
             mod->do_bounce = 0;
         }
 
-        if(!mod->dmx_budget && (current_time - dmx_check_timeout) >= DMX_TIMEOUT)
+        if(!mod->dmx_budget && current_time >= dmx_check_timeout + DMX_TIMEOUT)
         {
             dmx_check_timeout = current_time;
 
@@ -762,13 +771,13 @@ static void thread_loop(void *arg)
             }
         }
 
-        if(mod->ca->ca_fd > 0 && (current_time - ca_check_timeout) >= CA_TIMEOUT)
+        if(mod->ca->ca_fd > 0 && current_time >= ca_check_timeout + CA_TIMEOUT)
         {
             ca_check_timeout = current_time;
             ca_loop(mod->ca, 0);
         }
 
-        if((current_time - dvr_check_timeout) >= DVR_TIMEOUT)
+        if(current_time >= dvr_check_timeout + DVR_TIMEOUT)
         {
             dvr_check_timeout = current_time;
             if(mod->fe->fe_event_status & FE_HAS_LOCK)

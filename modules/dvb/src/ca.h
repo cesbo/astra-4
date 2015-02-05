@@ -105,6 +105,9 @@ struct dvb_ca_t
     asc_list_t *ca_pmt_list;
     asc_list_t *ca_pmt_list_new;
     pthread_mutex_t ca_mutex;
+
+    uint64_t pmt_delay;
+    uint64_t pmt_check_delay;
 };
 
 void ca_on_ts(dvb_ca_t *ca, const uint8_t *ts);

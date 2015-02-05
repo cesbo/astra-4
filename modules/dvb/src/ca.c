@@ -429,6 +429,13 @@ static void ca_pmt_send(  dvb_ca_t *ca, ca_pmt_t *ca_pmt
                         , uint8_t slot_id, uint8_t session_id
                         , uint8_t list_manage, uint8_t cmd)
 {
+    if(asc_log_is_debug())
+    {
+        const char *lm_str = (list_manage == CA_PMT_LM_ADD) ? "add" : "update";
+        const char *cmd_str = (cmd == CA_PMT_CMD_OK_DESCRAMBLING) ? "select" : "deselect";
+        asc_log_debug(MSG("CA_PMT: pnr:%d %s:%s"), ca_pmt->pnr, lm_str, cmd_str);
+    }
+
     ca_slot_t *slot = &ca->slots[slot_id];
     ca_session_t *session = &slot->sessions[session_id];
     if(session->resource_id != RI_CONDITIONAL_ACCESS_SUPPORT)
@@ -489,12 +496,7 @@ static void conditional_access_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t ses
                              , caid, slot_id, session_id);
             }
 
-            asc_list_for(ca->ca_pmt_list)
-            {
-                ca_pmt_t *ca_pmt = asc_list_data(ca->ca_pmt_list);
-                ca_pmt_send(  ca, ca_pmt, slot_id, session_id
-                            , CA_PMT_LM_ADD, CA_PMT_CMD_OK_DESCRAMBLING);
-            }
+            ca->pmt_check_delay = asc_utime();
             break;
         }
         case AOT_CA_UPDATE:
@@ -1560,6 +1562,17 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         ca_pmt->psi = mpegts_psi_init(MPEGTS_PACKET_PMT, psi->pid);
         memcpy(ca_pmt->psi, psi, sizeof(mpegts_psi_t));
 
+        asc_list_for(ca->ca_pmt_list_new)
+        {
+            ca_pmt_t *ca_pmt_check = asc_list_data(ca->ca_pmt_list_new);
+            if(ca_pmt_check->pnr == pnr)
+            {
+                free(ca_pmt_check);
+                asc_list_remove_current(ca->ca_pmt_list_new);
+                break;
+            }
+        }
+
         asc_list_insert_tail(ca->ca_pmt_list_new, ca_pmt);
         break;
     }
@@ -1722,7 +1735,6 @@ void ca_open(dvb_ca_t *ca)
 
     ca->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0x00);
     ca->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
-    ca->stream[0] = MPEGTS_PACKET_PAT;
 }
 
 void ca_close(dvb_ca_t *ca)
@@ -1799,16 +1811,40 @@ void ca_loop(dvb_ca_t *ca, int is_data)
 
     ca_slot_loop(ca);
 
+    if(ca->pmt_check_delay == 0)
+        return;
+
+    if(ca->stream[0] != MPEGTS_PACKET_PAT)
+    {
+        const uint64_t current_time = asc_utime();
+        if(current_time >= ca->pmt_check_delay + ca->pmt_delay)
+            ca->stream[0] = MPEGTS_PACKET_PAT;
+        return;
+    }
+
     if(asc_list_size(ca->ca_pmt_list_new) > 0)
     {
-        pthread_mutex_lock(&ca->ca_mutex);
-
-        for(asc_list_first(ca->ca_pmt_list_new)
-            ; !asc_list_eol(ca->ca_pmt_list_new)
-            ; asc_list_first(ca->ca_pmt_list_new))
+        const uint64_t current_time = asc_utime();
+        if(current_time >= ca->pmt_check_delay + ca->pmt_delay)
         {
-            ca_pmt_t *ca_pmt = asc_list_data(ca->ca_pmt_list_new);
-            asc_list_remove_current(ca->ca_pmt_list_new);
+            ca->pmt_check_delay = current_time;
+
+            pthread_mutex_lock(&ca->ca_mutex);
+
+            ca_pmt_t *ca_pmt = NULL;
+            asc_list_for(ca->ca_pmt_list_new)
+            {
+                ca_pmt_t *ca_pmt_check = asc_list_data(ca->ca_pmt_list_new);
+                if(ca_pmt == NULL)
+                {
+                    ca_pmt = ca_pmt_check;
+                }
+                else
+                {
+                    if(ca_pmt_check->pnr < ca_pmt->pnr)
+                        ca_pmt = ca_pmt_check;
+                }
+            }
 
             bool is_update = false;
             asc_list_for(ca->ca_pmt_list)
@@ -1838,9 +1874,10 @@ void ca_loop(dvb_ca_t *ca, int is_data)
                 }
             }
 
+            asc_list_remove_item(ca->ca_pmt_list_new, ca_pmt);
             asc_list_insert_tail(ca->ca_pmt_list, ca_pmt);
-        }
 
-        pthread_mutex_unlock(&ca->ca_mutex);
+            pthread_mutex_unlock(&ca->ca_mutex);
+        }
     }
 }
