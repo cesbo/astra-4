@@ -283,6 +283,73 @@ static uint8_t * iso8859_7_decode(const uint8_t *data, size_t size)
     return text;
 }
 
+static uint8_t * iso8859_9_decode(const uint8_t *data, size_t size)
+{
+    uint8_t *text = malloc(size * 2 + 1);
+    uint8_t c;
+    size_t i = 0, j = 0;
+
+    while(i < size)
+    {
+        c = data[i++];
+
+        if(c <= 0xCF)
+        {
+            if(!c) break;
+            text[j++] = c;
+        }
+        else if(c == 0xD0)
+        {
+            text[j++] = 0x01;
+            text[j++] = 0x1E;
+        }
+        else if(c <= 0xDC)
+        {
+            text[j++] = c;
+        }
+        else if(c == 0xDD)
+        {
+            text[j++] = 0x01;
+            text[j++] = 0x30;
+        }
+        else if(c == 0xDE)
+        {
+            text[j++] = 0x01;
+            text[j++] = 0x5E;
+        }
+        else if(c <= 0xEF)
+        {
+            text[j++] = c;
+        }
+        else if(c == 0xF0)
+        {
+            text[j++] = 0x01;
+            text[j++] = 0x1F;
+        }
+        else if(c <= 0xFC)
+        {
+            text[j++] = c;
+        }
+        else if(c == 0xFD)
+        {
+            text[j++] = 0x01;
+            text[j++] = 0x31;
+        }
+        else if(c == 0xFE)
+        {
+            text[j++] = 0x01;
+            text[j++] = 0x5F;
+        }
+        else if(c == 0xFF)
+        {
+            text[j++] = 0xFF;
+        }
+    }
+
+    text[j] = '\0';
+    return text;
+}
+
 char * iso8859_decode(const uint8_t *data, size_t size)
 {
     if(size == 0)
@@ -301,6 +368,7 @@ char * iso8859_decode(const uint8_t *data, size_t size)
             case 0x04: return (char *)iso8859_4_decode(&data[3], size - 3); // North European
             case 0x05: return (char *)iso8859_5_decode(&data[3], size - 3); // Cyrillic
             case 0x07: return (char *)iso8859_7_decode(&data[3], size - 3); // Greek
+            case 0x09: return (char *)iso8859_9_decode(&data[3], size - 3); // Turkish
             default: break;
         }
     }
@@ -310,6 +378,7 @@ char * iso8859_decode(const uint8_t *data, size_t size)
         {
             case 0x01: return (char *)iso8859_5_decode(&data[1], size - 1); // Cyrillic
             case 0x03: return (char *)iso8859_7_decode(&data[1], size - 1); // Greek
+            case 0x05: return (char *)iso8859_9_decode(&data[1], size - 1); // Turkish
             default: break;
         }
     }
