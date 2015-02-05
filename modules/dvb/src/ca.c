@@ -170,7 +170,7 @@ static uint8_t asn_1_encode(uint8_t *data, uint16_t size)
     }
 }
 
-static uint8_t asc_1_decode(const uint8_t *data, uint16_t *size)
+static uint8_t asn_1_decode(const uint8_t *data, uint16_t *size)
 {
     if(data[0] < SIZE_INDICATOR)
     {
@@ -267,7 +267,7 @@ static void application_information_event(dvb_ca_t *ca, uint8_t slot_id, uint16_
             const uint16_t product = (buffer[3] << 8) | (buffer[4]);
             buffer += 1 + 2 + 2;
 
-            buffer += asc_1_decode(buffer, &size);
+            buffer += asn_1_decode(buffer, &size);
             char *name = malloc(size + 1);
             memcpy(name, buffer, size);
             name[size] = '\0';
@@ -736,6 +736,19 @@ static void mmi_free(mmi_data_t *mmi)
         default:
             break;
     }
+
+    mmi->object_type = EN50221_MMI_NONE;
+}
+
+static void mmi_send_menu_answer(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id, int choice)
+{
+    uint8_t answer[5];
+    answer[0] = (AOT_MENU_ANSW >> 16) & 0xFF;
+    answer[1] = (AOT_MENU_ANSW >>  8) & 0xFF;
+    answer[2] = (AOT_MENU_ANSW      ) & 0xFF;
+    answer[3] = 1;
+    answer[4] = choice;
+    ca_tpdu_send(ca, slot_id, TT_DATA_LAST, answer, sizeof(answer));
 }
 
 static void mmi_display_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
@@ -796,13 +809,9 @@ static uint16_t mmi_get_text(  dvb_ca_t *ca
     }
 
     uint8_t skip = 3;
-    uint16_t length;
-    skip += asc_1_decode(&buffer[3], &length);
-    skip += length;
-
     *text = iso8859_decode(&buffer[skip + 1], buffer[skip]);
 
-    return skip;
+    return skip + 1 + buffer[skip];
 }
 
 static void mmi_menu_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
@@ -816,37 +825,44 @@ static void mmi_menu_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
     mmi_free(mmi);
 
     const uint32_t tag = ca_apdu_get_tag(ca, slot_id);
-    mmi->object_type = (tag == AOT_MENU_LAST) ? EN50221_MMI_MENU : EN50221_MMI_LIST;
+    if(tag == AOT_MENU_LAST)
+    {
+        mmi->object_type = EN50221_MMI_MENU;
+        asc_log_debug(MSG("CA: MMI: Menu"));
+    }
+    else
+    {
+        mmi->object_type = EN50221_MMI_LIST;
+        asc_log_debug(MSG("CA: MMI: List"));
+    }
 
     uint16_t skip = 1; /* choice_nb */
 
-    if(skip < size)
-    {
-        skip += mmi_get_text(ca, &buffer[skip], size - skip, &mmi->object.menu.title);
-        asc_log_debug(MSG("CA: MMI: Title: %s"), mmi->object.menu.title);
-    }
+    skip += mmi_get_text(ca, &buffer[skip], size - skip, &mmi->object.menu.title);
+    skip += mmi_get_text(ca, &buffer[skip], size - skip, &mmi->object.menu.subtitle);
+    skip += mmi_get_text(ca, &buffer[skip], size - skip, &mmi->object.menu.bottom);
 
-    if(skip < size)
-    {
-        skip += mmi_get_text(ca, &buffer[skip], size - skip, &mmi->object.menu.subtitle);
-        asc_log_debug(MSG("CA: MMI: Subtitle: %s"), mmi->object.menu.subtitle);
-    }
-
-    if(skip < size)
-    {
-        skip += mmi_get_text(ca, &buffer[skip], size - skip, &mmi->object.menu.bottom);
-        asc_log_debug(MSG("CA: MMI: Bottom: %s"), mmi->object.menu.bottom);
-    }
-
+    asc_log_debug(MSG("CA: MMI: Title: %s"), mmi->object.menu.title);
+    asc_log_debug(MSG("CA: MMI: Subtitle: %s"), mmi->object.menu.subtitle);
+    asc_log_debug(MSG("CA: MMI: Choice #0: Return"));
     mmi->object.menu.choices = asc_list_init();
     while(skip < size)
     {
-        char *text;
-        skip += mmi_get_text(ca, &buffer[skip], size - skip, &text);
-        asc_log_debug(MSG("CA: MMI: Choice: %s"), mmi->object.menu.title);
-
+        char *text = NULL;
+        size_t choice_size = mmi_get_text(ca, &buffer[skip], size - skip, &text);
+        asc_log_debug(MSG("CA: MMI: Choice #%d: %s"),
+                      asc_list_size(mmi->object.menu.choices) + 1,
+                      text);
         asc_list_insert_tail(mmi->object.menu.choices, text);
+        skip += choice_size;
+
+        if(choice_size == 0)
+            break;
     }
+    asc_log_debug(MSG("CA: MMI: Bottom: %s"), mmi->object.menu.bottom);
+
+    mmi_send_menu_answer(ca, slot_id, session_id, 0);
+    asc_log_debug(MSG("CA: MMI: Select #0"));
 }
 
 static void mmi_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
@@ -872,7 +888,7 @@ static void mmi_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
             response[1] = 0x02;
             response[2] = (session_id >> 8) & 0xFF;
             response[3] = (session_id     ) & 0xFF;
-            ca_tpdu_send(ca, slot_id, TT_DATA_LAST, response, 4);
+            ca_tpdu_send(ca, slot_id, TT_DATA_LAST, response, sizeof(response));
             break;
         }
         default:
@@ -927,7 +943,7 @@ static uint8_t * ca_apdu_get_buffer(dvb_ca_t *ca, uint8_t slot_id, uint16_t *siz
         return NULL;
     }
     uint8_t *buffer = &slot->buffer[SPDU_HEADER_SIZE + APDU_TAG_SIZE];
-    const uint8_t skip = asc_1_decode(buffer, size);
+    const uint8_t skip = asn_1_decode(buffer, size);
     return &buffer[skip];
 }
 
@@ -1300,7 +1316,7 @@ static void ca_tpdu_event(dvb_ca_t *ca)
         {
             uint16_t buffer_skip = 3;
             uint16_t message_size = 0;
-            buffer_skip += asc_1_decode(&ca->ca_buffer[3], &message_size);
+            buffer_skip += asn_1_decode(&ca->ca_buffer[3], &message_size);
             if(message_size <= 1)
                 break;
 
