@@ -30,6 +30,14 @@ typedef struct dvb_ca_t dvb_ca_t;
 #define MAX_SESSIONS (32 + 1)
 #define MAX_TPDU_SIZE 2048
 
+typedef enum
+{
+    CA_MODULE_STATUS_NONE = 0x00,
+    CA_MODULE_STATUS_APP_INFO = 0x01,
+    CA_MODULE_STATUS_CA_INFO = 0x02,
+    CA_MODULE_STATUS_READY = 0x03,
+} ca_module_status_t;
+
 typedef struct
 {
     uint8_t buffer[MAX_TPDU_SIZE];
@@ -105,6 +113,10 @@ struct dvb_ca_t
     asc_list_t *ca_pmt_list;
     asc_list_t *ca_pmt_list_new;
     pthread_mutex_t ca_mutex;
+
+    /* */
+
+    ca_module_status_t status;
 
     uint64_t pmt_delay;
     uint64_t pmt_check_delay;

@@ -274,6 +274,8 @@ static void application_information_event(dvb_ca_t *ca, uint8_t slot_id, uint16_
             asc_log_info(  MSG("CA: Module %s. 0x%02X 0x%04X 0x%04X")
                          , name, type, manufacturer, product);
             free(name);
+
+            ca->status = CA_MODULE_STATUS_APP_INFO;
             break;
         }
         default:
@@ -496,6 +498,7 @@ static void conditional_access_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t ses
                              , caid, slot_id, session_id);
             }
 
+            ca->status = CA_MODULE_STATUS_CA_INFO;
             ca->pmt_check_delay = asc_utime();
             break;
         }
@@ -1750,6 +1753,8 @@ void ca_open(dvb_ca_t *ca)
 
     ca->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0x00);
     ca->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
+
+    ca->stream[0] = MPEGTS_PACKET_PAT;
 }
 
 void ca_close(dvb_ca_t *ca)
@@ -1826,15 +1831,22 @@ void ca_loop(dvb_ca_t *ca, int is_data)
 
     ca_slot_loop(ca);
 
-    if(ca->pmt_check_delay == 0)
-        return;
-
-    if(ca->stream[0] != MPEGTS_PACKET_PAT)
+    switch(ca->status)
     {
-        const uint64_t current_time = asc_utime();
-        if(current_time >= ca->pmt_check_delay + ca->pmt_delay)
-            ca->stream[0] = MPEGTS_PACKET_PAT;
-        return;
+        case CA_MODULE_STATUS_READY:
+            break;
+        case CA_MODULE_STATUS_CA_INFO:
+        {
+            const uint64_t current_time = asc_utime();
+            if(current_time >= ca->pmt_check_delay + ca->pmt_delay)
+            {
+                ca->pmt_check_delay = current_time;
+                ca->status = CA_MODULE_STATUS_READY;
+            }
+            return;
+        }
+        default:
+            return;
     }
 
     if(asc_list_size(ca->ca_pmt_list_new) > 0)
