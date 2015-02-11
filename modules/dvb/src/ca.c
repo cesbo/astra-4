@@ -449,21 +449,36 @@ static void ca_pmt_send(  dvb_ca_t *ca, ca_pmt_t *ca_pmt
     ca_apdu_send(ca, slot_id, session_id, AOT_CA_PMT, ca_pmt->buffer, ca_pmt->buffer_size);
 }
 
+static void ca_pmt_send_one(dvb_ca_t *ca, ca_pmt_t *ca_pmt, uint8_t list_manage, uint8_t cmd)
+{
+    for(int slot_id = 0; slot_id < ca->slots_num; ++slot_id)
+    {
+        ca_slot_t *slot = &ca->slots[slot_id];
+        for(int session_id = 0; session_id < MAX_SESSIONS; ++session_id)
+        {
+            ca_session_t *session = &slot->sessions[session_id];
+            if(session->resource_id != RI_CONDITIONAL_ACCESS_SUPPORT)
+                continue;
+
+            ca_pmt_send(ca, ca_pmt, slot_id, session_id, list_manage, cmd);
+        }
+    }
+}
+
 static void ca_pmt_send_all(dvb_ca_t *ca, uint8_t list_manage, uint8_t cmd)
 {
-    asc_list_for(ca->ca_pmt_list)
+    for(int slot_id = 0; slot_id < ca->slots_num; ++slot_id)
     {
-        ca_pmt_t *ca_pmt = asc_list_data(ca->ca_pmt_list);
-
-        for(int slot_id = 0; slot_id < ca->slots_num; ++slot_id)
+        ca_slot_t *slot = &ca->slots[slot_id];
+        for(int session_id = 0; session_id < MAX_SESSIONS; ++session_id)
         {
-            ca_slot_t *slot = &ca->slots[slot_id];
-            for(int session_id = 0; session_id < MAX_SESSIONS; ++session_id)
-            {
-                ca_session_t *session = &slot->sessions[session_id];
-                if(session->resource_id != RI_CONDITIONAL_ACCESS_SUPPORT)
-                    continue;
+            ca_session_t *session = &slot->sessions[session_id];
+            if(session->resource_id != RI_CONDITIONAL_ACCESS_SUPPORT)
+                continue;
 
+            asc_list_for(ca->ca_pmt_list)
+            {
+                ca_pmt_t *ca_pmt = asc_list_data(ca->ca_pmt_list);
                 ca_pmt_send(ca, ca_pmt, slot_id, session_id, list_manage, cmd);
             }
         }
@@ -1661,7 +1676,7 @@ void ca_remove_pnr(dvb_ca_t *ca, uint16_t pnr)
     {
         pmt_checksum_t *pmt_checksum_list = calloc(ca->pmt_count - 1, sizeof(pmt_checksum_t));
         int i = 0, j = 0;
-        while(i < ca->pmt_count)
+        for(int i = 0, j = 0; i < ca->pmt_count; ++i)
         {
             if(ca->pmt_checksum_list[i].pnr != pnr)
             {
@@ -1669,14 +1684,15 @@ void ca_remove_pnr(dvb_ca_t *ca, uint16_t pnr)
                        , sizeof(pmt_checksum_t));
                 ++j;
             }
-            ++i;
         }
-        --ca->pmt_count;
+        ca->pmt_count = j;
         free(ca->pmt_checksum_list);
         ca->pmt_checksum_list = pmt_checksum_list;
     }
 
-    // TODO: remove PMT
+    pthread_mutex_lock(&ca->ca_mutex);
+    asc_list_insert_tail(ca->ca_pmt_list_del, ((void*)(intptr_t)(pnr)));
+    pthread_mutex_unlock(&ca->ca_mutex);
 }
 
 void ca_open(dvb_ca_t *ca)
@@ -1750,6 +1766,7 @@ void ca_open(dvb_ca_t *ca)
     pthread_mutex_init(&ca->ca_mutex, NULL);
     ca->ca_pmt_list = asc_list_init();
     ca->ca_pmt_list_new = asc_list_init();
+    ca->ca_pmt_list_del = asc_list_init();
 
     ca->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0x00);
     ca->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
@@ -1762,9 +1779,16 @@ void ca_close(dvb_ca_t *ca)
     memset(ca->stream, 0, sizeof(ca->stream));
 
     if(ca->pat)
+    {
         mpegts_psi_destroy(ca->pat);
+        ca->pat = NULL;
+    }
+
     if(ca->pmt)
+    {
         mpegts_psi_destroy(ca->pmt);
+        ca->pmt = NULL;
+    }
 
     if(ca->ca_pmt_list)
     {
@@ -1778,6 +1802,7 @@ void ca_close(dvb_ca_t *ca)
             asc_list_remove_current(ca->ca_pmt_list);
         }
         asc_list_destroy(ca->ca_pmt_list);
+        ca->ca_pmt_list = NULL;
     }
 
     if(ca->ca_pmt_list_new)
@@ -1791,6 +1816,21 @@ void ca_close(dvb_ca_t *ca)
         }
 
         asc_list_destroy(ca->ca_pmt_list_new);
+        ca->ca_pmt_list_new = NULL;
+    }
+
+    if(ca->ca_pmt_list_del)
+    {
+        for(asc_list_first(ca->ca_pmt_list_del)
+            ; !asc_list_eol(ca->ca_pmt_list_del)
+            ; asc_list_first(ca->ca_pmt_list_del))
+        {
+            free(asc_list_data(ca->ca_pmt_list_del));
+            asc_list_remove_current(ca->ca_pmt_list_del);
+        }
+
+        asc_list_destroy(ca->ca_pmt_list_del);
+        ca->ca_pmt_list_del = NULL;
     }
 
     pthread_mutex_destroy(&ca->ca_mutex);
@@ -1847,6 +1887,37 @@ void ca_loop(dvb_ca_t *ca, int is_data)
         }
         default:
             return;
+    }
+
+    if(asc_list_size(ca->ca_pmt_list_del) > 0)
+    {
+        const uint64_t current_time = asc_utime();
+        if(current_time >= ca->pmt_check_delay + ca->pmt_delay)
+        {
+            ca->pmt_check_delay = current_time;
+
+            pthread_mutex_lock(&ca->ca_mutex);
+            asc_list_first(ca->ca_pmt_list_del);
+            uint16_t pnr = (uint16_t)(intptr_t)asc_list_data(ca->ca_pmt_list_del);
+            asc_list_remove_current(ca->ca_pmt_list_del);
+
+            ca_pmt_t *ca_pmt = NULL;
+            asc_list_for(ca->ca_pmt_list)
+            {
+                ca_pmt_t *p = asc_list_data(ca->ca_pmt_list);
+                if(p->pnr == pnr)
+                {
+                    asc_list_remove_current(ca->ca_pmt_list);
+                    ca_pmt = p;
+                    break;
+                }
+            }
+
+            if(ca_pmt)
+                ca_pmt_send_one(ca, ca_pmt, CA_PMT_LM_UPDATE, CA_PMT_CMD_NOT_SELECTED);
+
+            pthread_mutex_unlock(&ca->ca_mutex);
+        }
     }
 
     if(asc_list_size(ca->ca_pmt_list_new) > 0)

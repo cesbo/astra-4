@@ -245,7 +245,7 @@ init_input_module = {}
 kill_input_module = {}
 
 function init_input(conf)
-    local instance = { format = conf.format, }
+    local instance = { config = conf, }
 
     if not conf.name then
         log.error("[init_input] option 'name' is required")
@@ -346,8 +346,9 @@ function kill_input(instance)
 
     instance.tail = nil
 
-    kill_input_module[instance.format](instance.input)
+    kill_input_module[instance.config.format](instance.input, instance.config)
     instance.input = nil
+    instance.config = nil
 
     instance.channel = nil
     instance.decrypt = nil
@@ -381,8 +382,7 @@ init_input_module.udp = function(conf)
     return instance.input
 end
 
-kill_input_module.udp = function(module)
-    local conf = module.__options
+kill_input_module.udp = function(module, conf)
     local instance_id = tostring(conf.localaddr) .. "@" .. conf.addr .. ":" .. conf.port
     local instance = udp_input_instance_list[instance_id]
 
@@ -683,18 +683,16 @@ init_input_module.dvb = function(conf)
     return instance
 end
 
-kill_input_module.dvb = function(module)
-    local conf = module.__options
-
+kill_input_module.dvb = function(module, conf)
     if conf.cam == true and conf.pnr then
         module:ca_set_pnr(conf.pnr, false)
     end
 
-    if conf.channels ~= nil then
-        conf.channels = conf.channels - 1
-        if conf.channels == 0 then
+    if module.__options.channels ~= nil then
+        module.__options.channels = module.__options.channels - 1
+        if module.__options.channels == 0 then
             module:close()
-            local instance_id = conf.adapter .. "." .. conf.device
+            local instance_id = module.__options.adapter .. "." .. module.__options.device
             dvb_input_instance_list[instance_id] = nil
         end
     end

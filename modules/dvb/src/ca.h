@@ -112,6 +112,7 @@ struct dvb_ca_t
 
     asc_list_t *ca_pmt_list;
     asc_list_t *ca_pmt_list_new;
+    asc_list_t *ca_pmt_list_del;
     pthread_mutex_t ca_mutex;
 
     /* */
