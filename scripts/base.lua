@@ -160,13 +160,10 @@ function parse_url(url)
             return false
         end
 
-        local o = { data.addr:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$") }
-        if #o ~= 4 then
-            return false
-        end
+        local o = data.addr:split("%.")
         for _,i in ipairs(o) do
             local n = tonumber(i)
-            if n < 0 or n > 255 then
+            if n == nil or n < 0 or n > 255 then
                 return false
             end
         end
