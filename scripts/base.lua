@@ -395,8 +395,8 @@ init_input_module.rtp = function(conf)
     return init_input_module.udp(conf)
 end
 
-kill_input_module.rtp = function(module)
-    kill_input_module.udp(module)
+kill_input_module.rtp = function(module, conf)
+    kill_input_module.udp(module, conf)
 end
 
 -- ooooo         ooooooooooo ooooo ooooo       ooooooooooo

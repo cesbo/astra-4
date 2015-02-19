@@ -367,7 +367,7 @@ function http_output_on_request(server, client, request)
 
             local channel_data = client_data.output_data.channel_data
             channel_data.clients = channel_data.clients - 1
-            if channel_data.clients == 0 then
+            if channel_data.clients == 0 and channel_data.input ~= nil then
                 for input_id, input_data in ipairs(channel_data.input) do
                     if input_data.input then
                         channel_kill_input(channel_data, input_id)
