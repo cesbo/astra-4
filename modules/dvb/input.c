@@ -473,7 +473,8 @@ static void module_options_t(module_data_t *mod)
 {
     const char *string_val;
 
-    mod->fe->frequency *= 1000000;
+    if(mod->fe->frequency < 1000)
+        mod->fe->frequency *= 1000000;
 
     static const char __bandwidth[] = "bandwidth";
     if(module_option_string(__bandwidth, &string_val, NULL))
@@ -550,7 +551,8 @@ static void module_options_t(module_data_t *mod)
 
 static void module_options_c(module_data_t *mod)
 {
-    mod->fe->frequency *= 1000000;
+    if(mod->fe->frequency < 1000)
+        mod->fe->frequency *= 1000000;
 
     static const char __symbolrate[] = "symbolrate";
     if(!module_option_number(__symbolrate, &mod->fe->symbolrate))
@@ -601,7 +603,11 @@ static void module_options(module_data_t *mod)
 
     if(!strcasecmp(string_val, "S")) mod->fe->type = DVB_TYPE_S;
     else if(!strcasecmp(string_val, "T")) mod->fe->type = DVB_TYPE_T;
-    else if(!strcasecmp(string_val, "C")) mod->fe->type = DVB_TYPE_C;
+    else if(!strcasecmp(string_val, "C")) mod->fe->type = DVB_TYPE_CAC;
+    else if(!strcasecmp(string_val, "C/AC")) mod->fe->type = DVB_TYPE_CAC;
+    else if(!strcasecmp(string_val, "C/B")) mod->fe->type = DVB_TYPE_CB;
+    else if(!strcasecmp(string_val, "C/A")) mod->fe->type = DVB_TYPE_CA;
+    else if(!strcasecmp(string_val, "C/C")) mod->fe->type = DVB_TYPE_CC;
     else if(!strcasecmp(string_val, "S2")) mod->fe->type = DVB_TYPE_S2;
 #if DVB_API >= 503
     else if(!strcasecmp(string_val, "T2")) mod->fe->type = DVB_TYPE_T2;
@@ -656,7 +662,10 @@ static void module_options(module_data_t *mod)
         case DVB_TYPE_T2:
             module_options_t(mod);
             break;
-        case DVB_TYPE_C:
+        case DVB_TYPE_CAC:
+        case DVB_TYPE_CB:
+        case DVB_TYPE_CA:
+        case DVB_TYPE_CC:
             module_options_c(mod);
             break;
         default:

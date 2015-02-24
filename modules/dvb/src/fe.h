@@ -36,7 +36,7 @@ typedef enum
     DVB_TYPE_UNKNOWN = 0,
     DVB_TYPE_S, DVB_TYPE_S2,
     DVB_TYPE_T, DVB_TYPE_T2,
-    DVB_TYPE_C
+    DVB_TYPE_CAC, DVB_TYPE_CB, DVB_TYPE_CA, DVB_TYPE_CC,
 } dvb_type_t;
 
 #define FE_MODULATION_NONE 0xFFFF

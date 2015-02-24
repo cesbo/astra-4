@@ -760,6 +760,8 @@ static void mmi_free(mmi_data_t *mmi)
 
 static void mmi_send_menu_answer(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id, int choice)
 {
+    __uarg(session_id);
+
     uint8_t answer[5];
     answer[0] = (AOT_MENU_ANSW >> 16) & 0xFF;
     answer[1] = (AOT_MENU_ANSW >>  8) & 0xFF;
@@ -1675,13 +1677,12 @@ void ca_remove_pnr(dvb_ca_t *ca, uint16_t pnr)
     else
     {
         pmt_checksum_t *pmt_checksum_list = calloc(ca->pmt_count - 1, sizeof(pmt_checksum_t));
-        int i = 0, j = 0;
-        for(int i = 0, j = 0; i < ca->pmt_count; ++i)
+        int j = 0;
+        for(int i = 0; i < ca->pmt_count; ++i)
         {
             if(ca->pmt_checksum_list[i].pnr != pnr)
             {
-                memcpy(&pmt_checksum_list[j], &ca->pmt_checksum_list[i]
-                       , sizeof(pmt_checksum_t));
+                memcpy(&pmt_checksum_list[j], &ca->pmt_checksum_list[i], sizeof(pmt_checksum_t));
                 ++j;
             }
         }

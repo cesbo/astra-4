@@ -132,6 +132,24 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg)
 
     pes->buffer_skip = 0;
 
+    if(pes->pcr_interval && check_pcr_time(pes))
+    {
+        pes->ts[1] = pes->ts[1] & ~0x40; /* unset PUSI */
+        pes->ts[3] = 0x20 | pes->cc; /* adaptation field only */
+        pes->ts[4] = 1 + 6 + 176; /* 1 - ts[5]; 6 - PCR field; 176 - stuff */
+        pes->ts[5] = 0x10; /* PCR flag */
+
+        // TODO: random access indicator
+
+        const uint64_t pcr_base = pes->pcr_time * 90 / 1000;
+        const uint64_t pcr_ext = pes->pcr_time * 27000 / 1000;
+        const uint64_t pcr = (pcr_base * 300) + (pcr_ext % 300);
+        TS_SET_PCR(pes->ts, pcr);
+        memset(&pes->ts[12], 0xFF, TS_PACKET_SIZE - 12);
+
+        callback(arg, pes->ts);
+    }
+
     do
     {
         if(pes->buffer_skip == 0)
@@ -170,20 +188,4 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg)
         if(TS_IS_PAYLOAD_START(pes->ts))
             pes->ts[1] = pes->ts[1] & ~0x40; /* unset PUSI */
     } while(pes->buffer_skip != pes->buffer_size);
-
-    if(pes->pcr_interval && check_pcr_time(pes))
-    {
-        pes->ts[1] = pes->ts[1] & ~0x40; /* unset PUSI */
-        pes->ts[3] = 0x20 | pes->cc; /* adaptation field only */
-        pes->ts[4] = 1 + 6 + 176; /* 1 - ts[5]; 6 - PCR field; 176 - stuff */
-        pes->ts[5] = 0x10; /* PCR flag */
-
-        const uint64_t pcr_base = pes->pcr_time * 90 / 1000;
-        const uint64_t pcr_ext = pes->pcr_time * 27000 / 1000;
-        const uint64_t pcr = (pcr_base * 300) + (pcr_ext % 300);
-        TS_SET_PCR(pes->ts, pcr);
-        memset(&pes->ts[12], 0xFF, TS_PACKET_SIZE - 12);
-
-        callback(arg, pes->ts);
-    }
 }
