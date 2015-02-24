@@ -31,15 +31,15 @@
 
 typedef struct dvb_fe_t dvb_fe_t;
 
+#define FE_MODULATION_NONE 0xFFFF
+
 typedef enum
 {
     DVB_TYPE_UNKNOWN = 0,
-    DVB_TYPE_S, DVB_TYPE_S2,
-    DVB_TYPE_T, DVB_TYPE_T2,
-    DVB_TYPE_CAC, DVB_TYPE_CB, DVB_TYPE_CA, DVB_TYPE_CC,
+    DVB_TYPE_S,
+    DVB_TYPE_T,
+    DVB_TYPE_C,
 } dvb_type_t;
-
-#define FE_MODULATION_NONE 0xFFFF
 
 struct dvb_fe_t
 {
@@ -50,6 +50,7 @@ struct dvb_fe_t
     int timeout;
 
     /* FE Config */
+    fe_delivery_system_t delivery_system;
     fe_modulation_t modulation;
 
     int frequency;

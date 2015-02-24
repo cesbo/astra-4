@@ -50,12 +50,6 @@ static void fe_clear(dvb_fe_t *fe)
         ;
 }
 
-static void fe_tune_wrong_type(dvb_fe_t *fe, const char *f)
-{
-    asc_log_error(MSG("%s(): wrong fe->type value %d"), f, fe->type);
-    astra_abort();
-}
-
 /*
  *  oooooooo8 ooooooooooo   o   ooooooooooo ooooo  oooo oooooooo8
  * 888        88  888  88  888  88  888  88  888    88 888
@@ -353,21 +347,8 @@ static void fe_tune_s(dvb_fe_t *fe)
     struct dtv_properties cmdseq;
     struct dtv_property cmdlist[13];
 
-    fe_delivery_system_t dvb_sys;
-    switch(fe->type)
-    {
-        case DVB_TYPE_S:
-            dvb_sys = SYS_DVBS;
-            break;
-        case DVB_TYPE_S2:
-            dvb_sys = SYS_DVBS2;
-            break;
-        default:
-            fe_tune_wrong_type(fe, __FUNCTION__);
-    }
-
     DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   dvb_sys);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   fe->delivery_system);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_FREQUENCY,         frequency);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_SYMBOL_RATE,       fe->symbolrate);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INNER_FEC,         fe->fec);
@@ -376,7 +357,7 @@ static void fe_tune_s(dvb_fe_t *fe)
     {
         DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,    fe->modulation);
     }
-    if(fe->type == DVB_TYPE_S2)
+    if(fe->delivery_system == SYS_DVBS2)
     {
         DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_ROLLOFF,       fe->rolloff);
     }
@@ -413,23 +394,8 @@ static void fe_tune_t(dvb_fe_t *fe)
     struct dtv_properties cmdseq;
     struct dtv_property cmdlist[13];
 
-    fe_delivery_system_t dvb_sys;
-    switch(fe->type)
-    {
-        case DVB_TYPE_T:
-            dvb_sys = SYS_DVBT;
-            break;
-#if DVB_API >= 503
-        case DVB_TYPE_T2:
-            dvb_sys = SYS_DVBT2;
-            break;
-#endif
-        default:
-            fe_tune_wrong_type(fe, __FUNCTION__);
-    }
-
     DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   dvb_sys);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   fe->delivery_system);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_FREQUENCY,         fe->frequency);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,        fe->modulation);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INVERSION,         INVERSION_AUTO);
@@ -482,36 +448,8 @@ static void fe_tune_c(dvb_fe_t *fe)
     struct dtv_properties cmdseq;
     struct dtv_property cmdlist[13];
 
-    fe_delivery_system_t dvb_sys;
-    switch(fe->type)
-    {
-        case DVB_TYPE_CAC:
-            dvb_sys = SYS_DVBC_ANNEX_AC;
-            break;
-        case DVB_TYPE_CB:
-            dvb_sys = SYS_DVBC_ANNEX_B;
-            break;
-#if DVB_API >= 506
-        case DVB_TYPE_CA:
-            dvb_sys = SYS_DVBC_ANNEX_A;
-            break;
-        case DVB_TYPE_CC:
-            dvb_sys = SYS_DVBC_ANNEX_C;
-            break;
-#else
-        case DVB_TYPE_CA:
-            dvb_sys = SYS_DVBC_ANNEX_AC;
-            break;
-        case DVB_TYPE_CC:
-            dvb_sys = SYS_DVBC_ANNEX_AC;
-            break;
-#endif
-        default:
-            fe_tune_wrong_type(fe, __FUNCTION__);
-    }
-
     DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
-    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   dvb_sys);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   fe->delivery_system);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_FREQUENCY,         fe->frequency);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,        fe->modulation);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INVERSION,         INVERSION_AUTO);
@@ -545,17 +483,12 @@ static void fe_tune(dvb_fe_t *fe)
     switch(fe->type)
     {
         case DVB_TYPE_S:
-        case DVB_TYPE_S2:
             fe_tune_s(fe);
             break;
         case DVB_TYPE_T:
-        case DVB_TYPE_T2:
             fe_tune_t(fe);
             break;
-        case DVB_TYPE_CAC:
-        case DVB_TYPE_CB:
-        case DVB_TYPE_CA:
-        case DVB_TYPE_CC:
+        case DVB_TYPE_C:
             fe_tune_c(fe);
             break;
         default:

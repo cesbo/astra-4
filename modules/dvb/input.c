@@ -601,21 +601,70 @@ static void module_options(module_data_t *mod)
     if(!module_option_string(__type, &string_val, NULL))
         option_required(mod, __type);
 
-    if(!strcasecmp(string_val, "S")) mod->fe->type = DVB_TYPE_S;
-    else if(!strcasecmp(string_val, "T")) mod->fe->type = DVB_TYPE_T;
-    else if(!strcasecmp(string_val, "C")) mod->fe->type = DVB_TYPE_CAC;
-    else if(!strcasecmp(string_val, "C/AC")) mod->fe->type = DVB_TYPE_CAC;
-    else if(!strcasecmp(string_val, "C/B")) mod->fe->type = DVB_TYPE_CB;
-    else if(!strcasecmp(string_val, "C/A")) mod->fe->type = DVB_TYPE_CA;
-    else if(!strcasecmp(string_val, "C/C")) mod->fe->type = DVB_TYPE_CC;
-    else if(!strcasecmp(string_val, "S2")) mod->fe->type = DVB_TYPE_S2;
+    if(!strcasecmp(string_val, "S"))
+    {
+        mod->fe->type = DVB_TYPE_S;
+        mod->fe->delivery_system = SYS_DVBS;
+    }
+    else if(!strcasecmp(string_val, "S2"))
+    {
+        mod->fe->type = DVB_TYPE_S;
+        mod->fe->delivery_system = SYS_DVBS2;
+    }
+    else if(!strcasecmp(string_val, "T"))
+    {
+        mod->fe->type = DVB_TYPE_T;
+        mod->fe->delivery_system = SYS_DVBT;
+    }
 #if DVB_API >= 503
-    else if(!strcasecmp(string_val, "T2")) mod->fe->type = DVB_TYPE_T2;
+    else if(!strcasecmp(string_val, "T2"))
+    {
+        mod->fe->type = DVB_TYPE_T;
+        mod->fe->delivery_system = SYS_DVBT2;
+    }
 #else
 #   warning "DVB-T2 Disabled. DVB-API < 5.3"
 #endif
+    else if(!strcasecmp(string_val, "C"))
+    {
+        mod->fe->type = DVB_TYPE_C;
+        mod->fe->delivery_system = SYS_DVBC_ANNEX_AC;
+    }
+    else if(!strcasecmp(string_val, "C/AC"))
+    {
+        mod->fe->type = DVB_TYPE_C;
+        mod->fe->delivery_system = SYS_DVBC_ANNEX_AC;
+    }
+    else if(!strcasecmp(string_val, "C/B"))
+    {
+        mod->fe->type = DVB_TYPE_C;
+        mod->fe->delivery_system = SYS_DVBC_ANNEX_B;
+    }
+#if DVB_API >= 506
+    else if(!strcasecmp(string_val, "C/A"))
+    {
+        mod->fe->type = DVB_TYPE_C;
+        mod->fe->delivery_system = SYS_DVBC_ANNEX_A;
+    }
+    else if(!strcasecmp(string_val, "C/C"))
+    {
+        mod->fe->type = DVB_TYPE_C;
+        mod->fe->delivery_system = SYS_DVBC_ANNEX_C;
+    }
+#else
+    else if(!strcasecmp(string_val, "C/A"))
+    {
+        mod->fe->type = DVB_TYPE_C;
+        mod->fe->delivery_system = SYS_DVBC_ANNEX_AC;
+    }
+    else if(!strcasecmp(string_val, "C/C"))
+    {
+        mod->fe->type = DVB_TYPE_C;
+        mod->fe->delivery_system = SYS_DVBC_ANNEX_AC;
+    }
+#endif
     else
-        option_unknown_type(mod, __adapter, string_val);
+        option_unknown_type(mod, __type, string_val);
 
     static const char __frequency[] = "frequency";
     if(!module_option_number(__frequency, &mod->fe->frequency))
@@ -655,17 +704,12 @@ static void module_options(module_data_t *mod)
     switch(mod->fe->type)
     {
         case DVB_TYPE_S:
-        case DVB_TYPE_S2:
             module_options_s(mod);
             break;
         case DVB_TYPE_T:
-        case DVB_TYPE_T2:
             module_options_t(mod);
             break;
-        case DVB_TYPE_CAC:
-        case DVB_TYPE_CB:
-        case DVB_TYPE_CA:
-        case DVB_TYPE_CC:
+        case DVB_TYPE_C:
             module_options_c(mod);
             break;
         default:
