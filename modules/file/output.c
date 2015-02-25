@@ -261,7 +261,7 @@ static void module_init(module_data_t *mod)
 #endif
        )
     {
-        if(posix_memalign((void *)&mod->buffer, ALIGN, mod->buffer_size))
+        if(posix_memalign((void **)&mod->buffer, ALIGN, mod->buffer_size))
         {
             asc_log_error(MSG("cannot malloc aligned memory"));
             astra_abort();

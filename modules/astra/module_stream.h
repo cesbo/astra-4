@@ -2,7 +2,7 @@
  * Astra Module: Stream API
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -56,10 +56,10 @@ void __module_stream_send(module_stream_t *stream, const uint8_t *ts);
     {                                                                                           \
         _mod->__stream.self = _mod;                                                             \
         _mod->__stream.on_ts = _on_ts;                                                          \
-        __module_stream_init(&mod->__stream);                                                   \
+        __module_stream_init(&_mod->__stream);                                                  \
         lua_getfield(lua, MODULE_OPTIONS_IDX, "upstream");                                      \
         if(lua_type(lua, -1) == LUA_TLIGHTUSERDATA)                                             \
-            __module_stream_attach(lua_touserdata(lua, -1), &mod->__stream);                    \
+            __module_stream_attach(lua_touserdata(lua, -1), &_mod->__stream);                   \
         lua_pop(lua, 1);                                                                        \
     }
 
