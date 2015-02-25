@@ -39,6 +39,7 @@ typedef enum
     DVB_TYPE_S,
     DVB_TYPE_T,
     DVB_TYPE_C,
+    DVB_TYPE_ATSC,
 } dvb_type_t;
 
 struct dvb_fe_t

@@ -663,6 +663,11 @@ static void module_options(module_data_t *mod)
         mod->fe->delivery_system = SYS_DVBC_ANNEX_AC;
     }
 #endif
+    else if(!strcasecmp(string_val, "ATSC"))
+    {
+        mod->fe->type = DVB_TYPE_ATSC;
+        mod->fe->delivery_system = SYS_ATSC;
+    }
     else
         option_unknown_type(mod, __type, string_val);
 

@@ -446,7 +446,7 @@ static void fe_tune_t(dvb_fe_t *fe)
 static void fe_tune_c(dvb_fe_t *fe)
 {
     struct dtv_properties cmdseq;
-    struct dtv_property cmdlist[13];
+    struct dtv_property cmdlist[7];
 
     DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   fe->delivery_system);
@@ -456,6 +456,35 @@ static void fe_tune_c(dvb_fe_t *fe)
 
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_SYMBOL_RATE,       fe->symbolrate);
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INNER_FEC,         fe->fec);
+
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TUNE,              0);
+
+    if(ioctl(fe->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
+    {
+        asc_log_error(MSG("FE_SET_PROPERTY DTV_TUNE failed [%s]"), strerror(errno));
+        astra_abort();
+    }
+}
+
+/*
+ *      o   ooooooooooo  oooooooo8    oooooooo8
+ *     888  88  888  88 888         o888     88
+ *    8  88     888      888oooooo  888
+ *   8oooo88    888             888 888o     oo
+ * o88o  o888o o888o    o88oooo888   888oooo88
+ *
+ */
+
+static void fe_tune_atsc(dvb_fe_t *fe)
+{
+    struct dtv_properties cmdseq;
+    struct dtv_property cmdlist[5];
+
+    DTV_PROPERTY_BEGIN(cmdseq, cmdlist);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_DELIVERY_SYSTEM,   fe->delivery_system);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_FREQUENCY,         fe->frequency);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_MODULATION,        fe->modulation);
+    DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_INVERSION,         INVERSION_AUTO);
 
     DTV_PROPERTY_SET(cmdseq, cmdlist, DTV_TUNE,              0);
 
@@ -491,6 +520,8 @@ static void fe_tune(dvb_fe_t *fe)
         case DVB_TYPE_C:
             fe_tune_c(fe);
             break;
+        case DVB_TYPE_ATSC:
+            fe_tune_atsc(fe);
         default:
             astra_abort();
     }
