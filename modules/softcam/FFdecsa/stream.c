@@ -1,6 +1,7 @@
 /* FFdecsa -- fast decsa algorithm
  *
  * Copyright (C) 2003-2004  fatih89r
+ *                    2013  NoSFeRaTU
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -44,8 +45,13 @@ static inline void trasp64_32_88ccw(unsigned char *data){
     for(i=0;i<16;i++){
       t=row[j+i];
       b=row[j+16+i];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      row[j+i]   = (t&0xffff0000)      | ((b           )>>16);
+      row[j+16+i]=((t           )<<16) |  (b&0x0000ffff) ;
+#else
       row[j+i]   = (t&0x0000ffff)      | ((b           )<<16);
       row[j+16+i]=((t           )>>16) |  (b&0xffff0000) ;
+#endif
     }
   }
   for(j=0;j<64;j+=16){
@@ -53,8 +59,13 @@ static inline void trasp64_32_88ccw(unsigned char *data){
     for(i=0;i<8;i++){
       t=row[j+i];
       b=row[j+8+i];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      row[j+i]   = (t&0xff00ff00)     | ((b&0xff00ff00)>>8);
+      row[j+8+i] =((t&0x00ff00ff)<<8) |  (b&0x00ff00ff);
+#else
       row[j+i]   = (t&0x00ff00ff)     | ((b&0x00ff00ff)<<8);
       row[j+8+i] =((t&0xff00ff00)>>8) |  (b&0xff00ff00);
+#endif
     }
   }
   for(j=0;j<64;j+=8){
@@ -96,8 +107,13 @@ static inline void trasp64_32_88cw(unsigned char *data){
     for(i=0;i<16;i++){
       t=row[j+i];
       b=row[j+16+i];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      row[j+i]   = (t&0xffff0000)      | ((b           )>>16);
+      row[j+16+i]=((t           )<<16) |  (b&0x0000ffff) ;
+#else
       row[j+i]   = (t&0x0000ffff)      | ((b           )<<16);
       row[j+16+i]=((t           )>>16) |  (b&0xffff0000) ;
+#endif
     }
   }
   for(j=0;j<64;j+=16){
@@ -105,8 +121,13 @@ static inline void trasp64_32_88cw(unsigned char *data){
     for(i=0;i<8;i++){
       t=row[j+i];
       b=row[j+8+i];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      row[j+i]   = (t&0xff00ff00)     | ((b&0xff00ff00)>>8);
+      row[j+8+i] =((t&0x00ff00ff)<<8) |  (b&0x00ff00ff);
+#else
       row[j+i]   = (t&0x00ff00ff)     | ((b&0x00ff00ff)<<8);
       row[j+8+i] =((t&0xff00ff00)>>8) |  (b&0xff00ff00);
+#endif
     }
   }
   for(j=0;j<64;j+=8){
@@ -149,8 +170,13 @@ static inline void trasp64_64_88ccw(unsigned char *data){
     for(i=0;i<32;i++){
       t=row[j+i];
       b=row[j+32+i];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      row[j+i]   = (t&0xffffffff00000000ULL)      | ((b                      )>>32);
+      row[j+32+i]=((t                      )<<32) |  (b&0x00000000ffffffffULL) ;
+#else
       row[j+i]   = (t&0x00000000ffffffffULL)      | ((b                      )<<32);
       row[j+32+i]=((t                      )>>32) |  (b&0xffffffff00000000ULL) ;
+#endif
     }
   }
   for(j=0;j<64;j+=32){
@@ -158,8 +184,13 @@ static inline void trasp64_64_88ccw(unsigned char *data){
     for(i=0;i<16;i++){
       t=row[j+i];
       b=row[j+16+i];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      row[j+i]   = (t&0xffff0000ffff0000ULL)      | ((b&0xffff0000ffff0000ULL)>>16);
+      row[j+16+i]=((t&0x0000ffff0000ffffULL)<<16) |  (b&0x0000ffff0000ffffULL) ;
+#else
       row[j+i]   = (t&0x0000ffff0000ffffULL)      | ((b&0x0000ffff0000ffffULL)<<16);
       row[j+16+i]=((t&0xffff0000ffff0000ULL)>>16) |  (b&0xffff0000ffff0000ULL) ;
+#endif
     }
   }
   for(j=0;j<64;j+=16){
@@ -167,8 +198,13 @@ static inline void trasp64_64_88ccw(unsigned char *data){
     for(i=0;i<8;i++){
       t=row[j+i];
       b=row[j+8+i];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      row[j+i]   = (t&0xff00ff00ff00ff00ULL)     | ((b&0xff00ff00ff00ff00ULL)>>8);
+      row[j+8+i] =((t&0x00ff00ff00ff00ffULL)<<8) |  (b&0x00ff00ff00ff00ffULL);
+#else
       row[j+i]   = (t&0x00ff00ff00ff00ffULL)     | ((b&0x00ff00ff00ff00ffULL)<<8);
       row[j+8+i] =((t&0xff00ff00ff00ff00ULL)>>8) |  (b&0xff00ff00ff00ff00ULL);
+#endif
     }
   }
   for(j=0;j<64;j+=8){
@@ -210,8 +246,13 @@ static inline void trasp64_64_88cw(unsigned char *data){
     for(i=0;i<32;i++){
       t=row[j+i];
       b=row[j+32+i];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      row[j+i]   = (t&0xffffffff00000000ULL)      | ((b                      )>>32);
+      row[j+32+i]=((t                      )<<32) |  (b&0x00000000ffffffffULL) ;
+#else
       row[j+i]   = (t&0x00000000ffffffffULL)      | ((b                      )<<32);
       row[j+32+i]=((t                      )>>32) |  (b&0xffffffff00000000ULL) ;
+#endif
     }
   }
   for(j=0;j<64;j+=32){
@@ -219,8 +260,13 @@ static inline void trasp64_64_88cw(unsigned char *data){
     for(i=0;i<16;i++){
       t=row[j+i];
       b=row[j+16+i];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      row[j+i]   = (t&0xffff0000ffff0000ULL)      | ((b&0xffff0000ffff0000ULL)>>16);
+      row[j+16+i]=((t&0x0000ffff0000ffffULL)<<16) |  (b&0x0000ffff0000ffffULL) ;
+#else
       row[j+i]   = (t&0x0000ffff0000ffffULL)      | ((b&0x0000ffff0000ffffULL)<<16);
       row[j+16+i]=((t&0xffff0000ffff0000ULL)>>16) |  (b&0xffff0000ffff0000ULL) ;
+#endif
     }
   }
   for(j=0;j<64;j+=16){
@@ -228,8 +274,13 @@ static inline void trasp64_64_88cw(unsigned char *data){
     for(i=0;i<8;i++){
       t=row[j+i];
       b=row[j+8+i];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      row[j+i]   = (t&0xff00ff00ff00ff00ULL)     | ((b&0xff00ff00ff00ff00ULL)>>8);
+      row[j+8+i] =((t&0x00ff00ff00ff00ffULL)<<8) |  (b&0x00ff00ff00ff00ffULL);
+#else
       row[j+i]   = (t&0x00ff00ff00ff00ffULL)     | ((b&0x00ff00ff00ff00ffULL)<<8);
       row[j+8+i] =((t&0xff00ff00ff00ff00ULL)>>8) |  (b&0xff00ff00ff00ff00ULL);
+#endif
     }
   }
   for(j=0;j<64;j+=8){
@@ -272,12 +323,22 @@ static inline void trasp64_128_88ccw(unsigned char *data){
     for(i=0;i<32;i++){
       t=halfrow[2*(j+i)];
       b=halfrow[2*(j+32+i)];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      halfrow[2*(j+i)]   = (t&0xffffffff00000000ULL)      | ((b                      )>>32);
+      halfrow[2*(j+32+i)]=((t                      )<<32) |  (b&0x00000000ffffffffULL) ;
+#else
       halfrow[2*(j+i)]   = (t&0x00000000ffffffffULL)      | ((b                      )<<32);
       halfrow[2*(j+32+i)]=((t                      )>>32) |  (b&0xffffffff00000000ULL) ;
+#endif
       t=halfrow[2*(j+i)+1];
       b=halfrow[2*(j+32+i)+1];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      halfrow[2*(j+i)+1]   = (t&0xffffffff00000000ULL)      | ((b                      )>>32);
+      halfrow[2*(j+32+i)+1]=((t                      )<<32) |  (b&0x00000000ffffffffULL) ;
+#else
       halfrow[2*(j+i)+1]   = (t&0x00000000ffffffffULL)      | ((b                      )<<32);
       halfrow[2*(j+32+i)+1]=((t                      )>>32) |  (b&0xffffffff00000000ULL) ;
+#endif
     }
   }
   for(j=0;j<64;j+=32){
@@ -285,12 +346,22 @@ static inline void trasp64_128_88ccw(unsigned char *data){
     for(i=0;i<16;i++){
       t=halfrow[2*(j+i)];
       b=halfrow[2*(j+16+i)];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      halfrow[2*(j+i)]   = (t&0xffff0000ffff0000ULL)      | ((b&0xffff0000ffff0000ULL)>>16);
+      halfrow[2*(j+16+i)]=((t&0x0000ffff0000ffffULL)<<16) |  (b&0x0000ffff0000ffffULL) ;
+#else
       halfrow[2*(j+i)]   = (t&0x0000ffff0000ffffULL)      | ((b&0x0000ffff0000ffffULL)<<16);
       halfrow[2*(j+16+i)]=((t&0xffff0000ffff0000ULL)>>16) |  (b&0xffff0000ffff0000ULL) ;
+#endif
       t=halfrow[2*(j+i)+1];
       b=halfrow[2*(j+16+i)+1];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      halfrow[2*(j+i)+1]   = (t&0xffff0000ffff0000ULL)      | ((b&0xffff0000ffff0000ULL)>>16);
+      halfrow[2*(j+16+i)+1]=((t&0x0000ffff0000ffffULL)<<16) |  (b&0x0000ffff0000ffffULL) ;
+#else
       halfrow[2*(j+i)+1]   = (t&0x0000ffff0000ffffULL)      | ((b&0x0000ffff0000ffffULL)<<16);
       halfrow[2*(j+16+i)+1]=((t&0xffff0000ffff0000ULL)>>16) |  (b&0xffff0000ffff0000ULL) ;
+#endif
     }
   }
   for(j=0;j<64;j+=16){
@@ -298,12 +369,22 @@ static inline void trasp64_128_88ccw(unsigned char *data){
     for(i=0;i<8;i++){
       t=halfrow[2*(j+i)];
       b=halfrow[2*(j+8+i)];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      halfrow[2*(j+i)]   = (t&0xff00ff00ff00ff00ULL)     | ((b&0xff00ff00ff00ff00ULL)>>8);
+      halfrow[2*(j+8+i)] =((t&0x00ff00ff00ff00ffULL)<<8) |  (b&0x00ff00ff00ff00ffULL);
+#else
       halfrow[2*(j+i)]   = (t&0x00ff00ff00ff00ffULL)     | ((b&0x00ff00ff00ff00ffULL)<<8);
       halfrow[2*(j+8+i)] =((t&0xff00ff00ff00ff00ULL)>>8) |  (b&0xff00ff00ff00ff00ULL);
+#endif
       t=halfrow[2*(j+i)+1];
       b=halfrow[2*(j+8+i)+1];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      halfrow[2*(j+i)+1]   = (t&0xff00ff00ff00ff00ULL)     | ((b&0xff00ff00ff00ff00ULL)>>8);
+      halfrow[2*(j+8+i)+1] =((t&0x00ff00ff00ff00ffULL)<<8) |  (b&0x00ff00ff00ff00ffULL);
+#else
       halfrow[2*(j+i)+1]   = (t&0x00ff00ff00ff00ffULL)     | ((b&0x00ff00ff00ff00ffULL)<<8);
       halfrow[2*(j+8+i)+1] =((t&0xff00ff00ff00ff00ULL)>>8) |  (b&0xff00ff00ff00ff00ULL);
+#endif
     }
   }
   for(j=0;j<64;j+=8){
@@ -357,12 +438,22 @@ static inline void trasp64_128_88cw(unsigned char *data){
     for(i=0;i<32;i++){
       t=halfrow[2*(j+i)];
       b=halfrow[2*(j+32+i)];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      halfrow[2*(j+i)]   = (t&0xffffffff00000000ULL)      | ((b                      )>>32);
+      halfrow[2*(j+32+i)]=((t                      )<<32) |  (b&0x00000000ffffffffULL) ;
+#else
       halfrow[2*(j+i)]   = (t&0x00000000ffffffffULL)      | ((b                      )<<32);
       halfrow[2*(j+32+i)]=((t                      )>>32) |  (b&0xffffffff00000000ULL) ;
+#endif
       t=halfrow[2*(j+i)+1];
       b=halfrow[2*(j+32+i)+1];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      halfrow[2*(j+i)+1]   = (t&0xffffffff00000000ULL)      | ((b                      )>>32);
+      halfrow[2*(j+32+i)+1]=((t                      )<<32) |  (b&0x00000000ffffffffULL) ;
+#else
       halfrow[2*(j+i)+1]   = (t&0x00000000ffffffffULL)      | ((b                      )<<32);
       halfrow[2*(j+32+i)+1]=((t                      )>>32) |  (b&0xffffffff00000000ULL) ;
+#endif
     }
   }
   for(j=0;j<64;j+=32){
@@ -370,12 +461,22 @@ static inline void trasp64_128_88cw(unsigned char *data){
     for(i=0;i<16;i++){
       t=halfrow[2*(j+i)];
       b=halfrow[2*(j+16+i)];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      halfrow[2*(j+i)]   = (t&0xffff0000ffff0000ULL)      | ((b&0xffff0000ffff0000ULL)>>16);
+      halfrow[2*(j+16+i)]=((t&0x0000ffff0000ffffULL)<<16) |  (b&0x0000ffff0000ffffULL) ;
+#else
       halfrow[2*(j+i)]   = (t&0x0000ffff0000ffffULL)      | ((b&0x0000ffff0000ffffULL)<<16);
       halfrow[2*(j+16+i)]=((t&0xffff0000ffff0000ULL)>>16) |  (b&0xffff0000ffff0000ULL) ;
+#endif
       t=halfrow[2*(j+i)+1];
       b=halfrow[2*(j+16+i)+1];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      halfrow[2*(j+i)+1]   = (t&0xffff0000ffff0000ULL)      | ((b&0xffff0000ffff0000ULL)>>16);
+      halfrow[2*(j+16+i)+1]=((t&0x0000ffff0000ffffULL)<<16) |  (b&0x0000ffff0000ffffULL) ;
+#else
       halfrow[2*(j+i)+1]   = (t&0x0000ffff0000ffffULL)      | ((b&0x0000ffff0000ffffULL)<<16);
       halfrow[2*(j+16+i)+1]=((t&0xffff0000ffff0000ULL)>>16) |  (b&0xffff0000ffff0000ULL) ;
+#endif
     }
   }
   for(j=0;j<64;j+=16){
@@ -383,12 +484,22 @@ static inline void trasp64_128_88cw(unsigned char *data){
     for(i=0;i<8;i++){
       t=halfrow[2*(j+i)];
       b=halfrow[2*(j+8+i)];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      halfrow[2*(j+i)]   = (t&0xff00ff00ff00ff00ULL)     | ((b&0xff00ff00ff00ff00ULL)>>8);
+      halfrow[2*(j+8+i)] =((t&0x00ff00ff00ff00ffULL)<<8) |  (b&0x00ff00ff00ff00ffULL);
+#else
       halfrow[2*(j+i)]   = (t&0x00ff00ff00ff00ffULL)     | ((b&0x00ff00ff00ff00ffULL)<<8);
       halfrow[2*(j+8+i)] =((t&0xff00ff00ff00ff00ULL)>>8) |  (b&0xff00ff00ff00ff00ULL);
+#endif
       t=halfrow[2*(j+i)+1];
       b=halfrow[2*(j+8+i)+1];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      halfrow[2*(j+i)+1]   = (t&0xff00ff00ff00ff00ULL)     | ((b&0xff00ff00ff00ff00ULL)>>8);
+      halfrow[2*(j+8+i)+1] =((t&0x00ff00ff00ff00ffULL)<<8) |  (b&0x00ff00ff00ff00ffULL);
+#else
       halfrow[2*(j+i)+1]   = (t&0x00ff00ff00ff00ffULL)     | ((b&0x00ff00ff00ff00ffULL)<<8);
       halfrow[2*(j+8+i)+1] =((t&0xff00ff00ff00ff00ULL)>>8) |  (b&0xff00ff00ff00ff00ULL);
+#endif
     }
   }
   for(j=0;j<64;j+=8){
@@ -431,6 +542,391 @@ static inline void trasp64_128_88cw(unsigned char *data){
     }
   }
 #undef halfrow
+}
+
+//64-256----------------------------------------------------------
+static inline void trasp64_256_88ccw(unsigned char *data){
+#define quarterrow ((unsigned long long int *)data)
+  int i,j;
+  for(j=0;j<64;j+=64){
+    unsigned long long int t,b;
+    for(i=0;i<32;i++){
+      t=quarterrow[4*(j+i)];
+      b=quarterrow[4*(j+32+i)];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)]   = (t&0xffffffff00000000ULL)      | ((b                      )>>32);
+      quarterrow[4*(j+32+i)]=((t                      )<<32) |  (b&0x00000000ffffffffULL) ;
+#else
+      quarterrow[4*(j+i)]   = (t&0x00000000ffffffffULL)      | ((b                      )<<32);
+      quarterrow[4*(j+32+i)]=((t                      )>>32) |  (b&0xffffffff00000000ULL) ;
+#endif
+      t=quarterrow[4*(j+i)+1];
+      b=quarterrow[4*(j+32+i)+1];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+1]   = (t&0xffffffff00000000ULL)      | ((b                      )>>32);
+      quarterrow[4*(j+32+i)+1]=((t                      )<<32) |  (b&0x00000000ffffffffULL) ;
+#else
+      quarterrow[4*(j+i)+1]   = (t&0x00000000ffffffffULL)      | ((b                      )<<32);
+      quarterrow[4*(j+32+i)+1]=((t                      )>>32) |  (b&0xffffffff00000000ULL) ;
+#endif
+      t=quarterrow[4*(j+i)+2];
+      b=quarterrow[4*(j+32+i)+2];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+2]   = (t&0xffffffff00000000ULL)      | ((b                      )>>32);
+      quarterrow[4*(j+32+i)+2]=((t                      )<<32) |  (b&0x00000000ffffffffULL) ;
+#else
+      quarterrow[4*(j+i)+2]   = (t&0x00000000ffffffffULL)      | ((b                      )<<32);
+      quarterrow[4*(j+32+i)+2]=((t                      )>>32) |  (b&0xffffffff00000000ULL) ;
+#endif
+      t=quarterrow[4*(j+i)+3];
+      b=quarterrow[4*(j+32+i)+3];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+3]   = (t&0xffffffff00000000ULL)      | ((b                      )>>32);
+      quarterrow[4*(j+32+i)+3]=((t                      )<<32) |  (b&0x00000000ffffffffULL) ;
+#else
+      quarterrow[4*(j+i)+3]   = (t&0x00000000ffffffffULL)      | ((b                      )<<32);
+      quarterrow[4*(j+32+i)+3]=((t                      )>>32) |  (b&0xffffffff00000000ULL) ;
+#endif
+    }
+  }
+  for(j=0;j<64;j+=32){
+    unsigned long long int t,b;
+    for(i=0;i<16;i++){
+      t=quarterrow[4*(j+i)];
+      b=quarterrow[4*(j+16+i)];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)]   = (t&0xffff0000ffff0000ULL)      | ((b&0xffff0000ffff0000ULL)>>16);
+      quarterrow[4*(j+16+i)]=((t&0x0000ffff0000ffffULL)<<16) |  (b&0x0000ffff0000ffffULL) ;
+#else
+      quarterrow[4*(j+i)]   = (t&0x0000ffff0000ffffULL)      | ((b&0x0000ffff0000ffffULL)<<16);
+      quarterrow[4*(j+16+i)]=((t&0xffff0000ffff0000ULL)>>16) |  (b&0xffff0000ffff0000ULL) ;
+#endif
+      t=quarterrow[4*(j+i)+1];
+      b=quarterrow[4*(j+16+i)+1];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+1]   = (t&0xffff0000ffff0000ULL)      | ((b&0xffff0000ffff0000ULL)>>16);
+      quarterrow[4*(j+16+i)+1]=((t&0x0000ffff0000ffffULL)<<16) |  (b&0x0000ffff0000ffffULL) ;
+#else
+      quarterrow[4*(j+i)+1]   = (t&0x0000ffff0000ffffULL)      | ((b&0x0000ffff0000ffffULL)<<16);
+      quarterrow[4*(j+16+i)+1]=((t&0xffff0000ffff0000ULL)>>16) |  (b&0xffff0000ffff0000ULL) ;
+#endif
+      t=quarterrow[4*(j+i)+2];
+      b=quarterrow[4*(j+16+i)+2];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+2]   = (t&0xffff0000ffff0000ULL)      | ((b&0xffff0000ffff0000ULL)>>16);
+      quarterrow[4*(j+16+i)+2]=((t&0x0000ffff0000ffffULL)<<16) |  (b&0x0000ffff0000ffffULL) ;
+#else
+      quarterrow[4*(j+i)+2]   = (t&0x0000ffff0000ffffULL)      | ((b&0x0000ffff0000ffffULL)<<16);
+      quarterrow[4*(j+16+i)+2]=((t&0xffff0000ffff0000ULL)>>16) |  (b&0xffff0000ffff0000ULL) ;
+#endif
+      t=quarterrow[4*(j+i)+3];
+      b=quarterrow[4*(j+16+i)+3];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+3]   = (t&0xffff0000ffff0000ULL)      | ((b&0xffff0000ffff0000ULL)>>16);
+      quarterrow[4*(j+16+i)+3]=((t&0x0000ffff0000ffffULL)<<16) |  (b&0x0000ffff0000ffffULL) ;
+#else
+      quarterrow[4*(j+i)+3]   = (t&0x0000ffff0000ffffULL)      | ((b&0x0000ffff0000ffffULL)<<16);
+      quarterrow[4*(j+16+i)+3]=((t&0xffff0000ffff0000ULL)>>16) |  (b&0xffff0000ffff0000ULL) ;
+#endif
+    }
+  }
+  for(j=0;j<64;j+=16){
+    unsigned long long int t,b;
+    for(i=0;i<8;i++){
+      t=quarterrow[4*(j+i)];
+      b=quarterrow[4*(j+8+i)];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)]   = (t&0xff00ff00ff00ff00ULL)     | ((b&0xff00ff00ff00ff00ULL)>>8);
+      quarterrow[4*(j+8+i)] =((t&0x00ff00ff00ff00ffULL)<<8) |  (b&0x00ff00ff00ff00ffULL);
+#else
+      quarterrow[4*(j+i)]   = (t&0x00ff00ff00ff00ffULL)     | ((b&0x00ff00ff00ff00ffULL)<<8);
+      quarterrow[4*(j+8+i)] =((t&0xff00ff00ff00ff00ULL)>>8) |  (b&0xff00ff00ff00ff00ULL);
+#endif
+      t=quarterrow[4*(j+i)+1];
+      b=quarterrow[4*(j+8+i)+1];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+1]   = (t&0xff00ff00ff00ff00ULL)     | ((b&0xff00ff00ff00ff00ULL)>>8);
+      quarterrow[4*(j+8+i)+1] =((t&0x00ff00ff00ff00ffULL)<<8) |  (b&0x00ff00ff00ff00ffULL);
+#else
+      quarterrow[4*(j+i)+1]   = (t&0x00ff00ff00ff00ffULL)     | ((b&0x00ff00ff00ff00ffULL)<<8);
+      quarterrow[4*(j+8+i)+1] =((t&0xff00ff00ff00ff00ULL)>>8) |  (b&0xff00ff00ff00ff00ULL);
+#endif
+      t=quarterrow[4*(j+i)+2];
+      b=quarterrow[4*(j+8+i)+2];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+2]   = (t&0xff00ff00ff00ff00ULL)     | ((b&0xff00ff00ff00ff00ULL)>>8);
+      quarterrow[4*(j+8+i)+2] =((t&0x00ff00ff00ff00ffULL)<<8) |  (b&0x00ff00ff00ff00ffULL);
+#else
+      quarterrow[4*(j+i)+2]   = (t&0x00ff00ff00ff00ffULL)     | ((b&0x00ff00ff00ff00ffULL)<<8);
+      quarterrow[4*(j+8+i)+2] =((t&0xff00ff00ff00ff00ULL)>>8) |  (b&0xff00ff00ff00ff00ULL);
+#endif
+      t=quarterrow[4*(j+i)+3];
+      b=quarterrow[4*(j+8+i)+3];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+3]   = (t&0xff00ff00ff00ff00ULL)     | ((b&0xff00ff00ff00ff00ULL)>>8);
+      quarterrow[4*(j+8+i)+3] =((t&0x00ff00ff00ff00ffULL)<<8) |  (b&0x00ff00ff00ff00ffULL);
+#else
+      quarterrow[4*(j+i)+3]   = (t&0x00ff00ff00ff00ffULL)     | ((b&0x00ff00ff00ff00ffULL)<<8);
+      quarterrow[4*(j+8+i)+3] =((t&0xff00ff00ff00ff00ULL)>>8) |  (b&0xff00ff00ff00ff00ULL);
+#endif
+    }
+  }
+  for(j=0;j<64;j+=8){
+    unsigned long long int t,b;
+    for(i=0;i<4;i++){
+      t=quarterrow[4*(j+i)];
+      b=quarterrow[4*(j+4+i)];
+      quarterrow[4*(j+i)]   =((t&0x0f0f0f0f0f0f0f0fULL)<<4) |  (b&0x0f0f0f0f0f0f0f0fULL);
+      quarterrow[4*(j+4+i)] = (t&0xf0f0f0f0f0f0f0f0ULL)     | ((b&0xf0f0f0f0f0f0f0f0ULL)>>4);
+      t=quarterrow[4*(j+i)+1];
+      b=quarterrow[4*(j+4+i)+1];
+      quarterrow[4*(j+i)+1]   =((t&0x0f0f0f0f0f0f0f0fULL)<<4) |  (b&0x0f0f0f0f0f0f0f0fULL);
+      quarterrow[4*(j+4+i)+1] = (t&0xf0f0f0f0f0f0f0f0ULL)     | ((b&0xf0f0f0f0f0f0f0f0ULL)>>4);
+      t=quarterrow[4*(j+i)+2];
+      b=quarterrow[4*(j+4+i)+2];
+      quarterrow[4*(j+i)+2]   =((t&0x0f0f0f0f0f0f0f0fULL)<<4) |  (b&0x0f0f0f0f0f0f0f0fULL);
+      quarterrow[4*(j+4+i)+2] = (t&0xf0f0f0f0f0f0f0f0ULL)     | ((b&0xf0f0f0f0f0f0f0f0ULL)>>4);
+      t=quarterrow[4*(j+i)+3];
+      b=quarterrow[4*(j+4+i)+3];
+      quarterrow[4*(j+i)+3]   =((t&0x0f0f0f0f0f0f0f0fULL)<<4) |  (b&0x0f0f0f0f0f0f0f0fULL);
+      quarterrow[4*(j+4+i)+3] = (t&0xf0f0f0f0f0f0f0f0ULL)     | ((b&0xf0f0f0f0f0f0f0f0ULL)>>4);
+    }
+  }
+  for(j=0;j<64;j+=4){
+    unsigned long long int t,b;
+    for(i=0;i<2;i++){
+      t=quarterrow[4*(j+i)];
+      b=quarterrow[4*(j+2+i)];
+      quarterrow[4*(j+i)]   =((t&0x3333333333333333ULL)<<2) |  (b&0x3333333333333333ULL);
+      quarterrow[4*(j+2+i)] = (t&0xccccccccccccccccULL)     | ((b&0xccccccccccccccccULL)>>2);
+      t=quarterrow[4*(j+i)+1];
+      b=quarterrow[4*(j+2+i)+1];
+      quarterrow[4*(j+i)+1]   =((t&0x3333333333333333ULL)<<2) |  (b&0x3333333333333333ULL);
+      quarterrow[4*(j+2+i)+1] = (t&0xccccccccccccccccULL)     | ((b&0xccccccccccccccccULL)>>2);
+      t=quarterrow[4*(j+i)+2];
+      b=quarterrow[4*(j+2+i)+2];
+      quarterrow[4*(j+i)+2]   =((t&0x3333333333333333ULL)<<2) |  (b&0x3333333333333333ULL);
+      quarterrow[4*(j+2+i)+2] = (t&0xccccccccccccccccULL)     | ((b&0xccccccccccccccccULL)>>2);
+      t=quarterrow[4*(j+i)+3];
+      b=quarterrow[4*(j+2+i)+3];
+      quarterrow[4*(j+i)+3]   =((t&0x3333333333333333ULL)<<2) |  (b&0x3333333333333333ULL);
+      quarterrow[4*(j+2+i)+3] = (t&0xccccccccccccccccULL)     | ((b&0xccccccccccccccccULL)>>2);
+    }
+  }
+  for(j=0;j<64;j+=2){
+    unsigned long long int t,b;
+    for(i=0;i<1;i++){
+      t=quarterrow[4*(j+i)];
+      b=quarterrow[4*(j+1+i)];
+      quarterrow[4*(j+i)]   =((t&0x5555555555555555ULL)<<1) |  (b&0x5555555555555555ULL);
+      quarterrow[4*(j+1+i)] = (t&0xaaaaaaaaaaaaaaaaULL)     | ((b&0xaaaaaaaaaaaaaaaaULL)>>1);
+      t=quarterrow[4*(j+i)+1];
+      b=quarterrow[4*(j+1+i)+1];
+      quarterrow[4*(j+i)+1]   =((t&0x5555555555555555ULL)<<1) |  (b&0x5555555555555555ULL);
+      quarterrow[4*(j+1+i)+1] = (t&0xaaaaaaaaaaaaaaaaULL)     | ((b&0xaaaaaaaaaaaaaaaaULL)>>1);
+      t=quarterrow[4*(j+i)+2];
+      b=quarterrow[4*(j+1+i)+2];
+      quarterrow[4*(j+i)+2]   =((t&0x5555555555555555ULL)<<1) |  (b&0x5555555555555555ULL);
+      quarterrow[4*(j+1+i)+2] = (t&0xaaaaaaaaaaaaaaaaULL)     | ((b&0xaaaaaaaaaaaaaaaaULL)>>1);
+      t=quarterrow[4*(j+i)+3];
+      b=quarterrow[4*(j+1+i)+3];
+      quarterrow[4*(j+i)+3]   =((t&0x5555555555555555ULL)<<1) |  (b&0x5555555555555555ULL);
+      quarterrow[4*(j+1+i)+3] = (t&0xaaaaaaaaaaaaaaaaULL)     | ((b&0xaaaaaaaaaaaaaaaaULL)>>1);
+    }
+  }
+#undef quarterrow
+}
+
+static inline void trasp64_256_88cw(unsigned char *data){
+#define quarterrow ((unsigned long long int *)data)
+  int i,j;
+  for(j=0;j<64;j+=64){
+    unsigned long long int t,b;
+    for(i=0;i<32;i++){
+      t=quarterrow[4*(j+i)];
+      b=quarterrow[4*(j+32+i)];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)]   = (t&0xffffffff00000000ULL)      | ((b                      )>>32);
+      quarterrow[4*(j+32+i)]=((t                      )<<32) |  (b&0x00000000ffffffffULL) ;
+#else
+      quarterrow[4*(j+i)]   = (t&0x00000000ffffffffULL)      | ((b                      )<<32);
+      quarterrow[4*(j+32+i)]=((t                      )>>32) |  (b&0xffffffff00000000ULL) ;
+#endif
+      t=quarterrow[4*(j+i)+1];
+      b=quarterrow[4*(j+32+i)+1];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+1]   = (t&0xffffffff00000000ULL)      | ((b                      )>>32);
+      quarterrow[4*(j+32+i)+1]=((t                      )<<32) |  (b&0x00000000ffffffffULL) ;
+#else
+      quarterrow[4*(j+i)+1]   = (t&0x00000000ffffffffULL)      | ((b                      )<<32);
+      quarterrow[4*(j+32+i)+1]=((t                      )>>32) |  (b&0xffffffff00000000ULL) ;
+#endif
+      t=quarterrow[4*(j+i)+2];
+      b=quarterrow[4*(j+32+i)+2];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+2]   = (t&0xffffffff00000000ULL)      | ((b                      )>>32);
+      quarterrow[4*(j+32+i)+2]=((t                      )<<32) |  (b&0x00000000ffffffffULL) ;
+#else
+      quarterrow[4*(j+i)+2]   = (t&0x00000000ffffffffULL)      | ((b                      )<<32);
+      quarterrow[4*(j+32+i)+2]=((t                      )>>32) |  (b&0xffffffff00000000ULL) ;
+#endif
+      t=quarterrow[4*(j+i)+3];
+      b=quarterrow[4*(j+32+i)+3];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+3]   = (t&0xffffffff00000000ULL)      | ((b                      )>>32);
+      quarterrow[4*(j+32+i)+3]=((t                      )<<32) |  (b&0x00000000ffffffffULL) ;
+#else
+      quarterrow[4*(j+i)+3]   = (t&0x00000000ffffffffULL)      | ((b                      )<<32);
+      quarterrow[4*(j+32+i)+3]=((t                      )>>32) |  (b&0xffffffff00000000ULL) ;
+#endif
+    }
+  }
+  for(j=0;j<64;j+=32){
+    unsigned long long int t,b;
+    for(i=0;i<16;i++){
+      t=quarterrow[4*(j+i)];
+      b=quarterrow[4*(j+16+i)];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)]   = (t&0xffff0000ffff0000ULL)      | ((b&0xffff0000ffff0000ULL)>>16);
+      quarterrow[4*(j+16+i)]=((t&0x0000ffff0000ffffULL)<<16) |  (b&0x0000ffff0000ffffULL) ;
+#else
+      quarterrow[4*(j+i)]   = (t&0x0000ffff0000ffffULL)      | ((b&0x0000ffff0000ffffULL)<<16);
+      quarterrow[4*(j+16+i)]=((t&0xffff0000ffff0000ULL)>>16) |  (b&0xffff0000ffff0000ULL) ;
+#endif
+      t=quarterrow[4*(j+i)+1];
+      b=quarterrow[4*(j+16+i)+1];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+1]   = (t&0xffff0000ffff0000ULL)      | ((b&0xffff0000ffff0000ULL)>>16);
+      quarterrow[4*(j+16+i)+1]=((t&0x0000ffff0000ffffULL)<<16) |  (b&0x0000ffff0000ffffULL) ;
+#else
+      quarterrow[4*(j+i)+1]   = (t&0x0000ffff0000ffffULL)      | ((b&0x0000ffff0000ffffULL)<<16);
+      quarterrow[4*(j+16+i)+1]=((t&0xffff0000ffff0000ULL)>>16) |  (b&0xffff0000ffff0000ULL) ;
+#endif
+      t=quarterrow[4*(j+i)+2];
+      b=quarterrow[4*(j+16+i)+2];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+2]   = (t&0xffff0000ffff0000ULL)      | ((b&0xffff0000ffff0000ULL)>>16);
+      quarterrow[4*(j+16+i)+2]=((t&0x0000ffff0000ffffULL)<<16) |  (b&0x0000ffff0000ffffULL) ;
+#else
+      quarterrow[4*(j+i)+2]   = (t&0x0000ffff0000ffffULL)      | ((b&0x0000ffff0000ffffULL)<<16);
+      quarterrow[4*(j+16+i)+2]=((t&0xffff0000ffff0000ULL)>>16) |  (b&0xffff0000ffff0000ULL) ;
+#endif
+      t=quarterrow[4*(j+i)+3];
+      b=quarterrow[4*(j+16+i)+3];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+3]   = (t&0xffff0000ffff0000ULL)      | ((b&0xffff0000ffff0000ULL)>>16);
+      quarterrow[4*(j+16+i)+3]=((t&0x0000ffff0000ffffULL)<<16) |  (b&0x0000ffff0000ffffULL) ;
+#else
+      quarterrow[4*(j+i)+3]   = (t&0x0000ffff0000ffffULL)      | ((b&0x0000ffff0000ffffULL)<<16);
+      quarterrow[4*(j+16+i)+3]=((t&0xffff0000ffff0000ULL)>>16) |  (b&0xffff0000ffff0000ULL) ;
+#endif
+    }
+  }
+  for(j=0;j<64;j+=16){
+    unsigned long long int t,b;
+    for(i=0;i<8;i++){
+      t=quarterrow[4*(j+i)];
+      b=quarterrow[4*(j+8+i)];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)]   = (t&0xff00ff00ff00ff00ULL)     | ((b&0xff00ff00ff00ff00ULL)>>8);
+      quarterrow[4*(j+8+i)] =((t&0x00ff00ff00ff00ffULL)<<8) |  (b&0x00ff00ff00ff00ffULL);
+#else
+      quarterrow[4*(j+i)]   = (t&0x00ff00ff00ff00ffULL)     | ((b&0x00ff00ff00ff00ffULL)<<8);
+      quarterrow[4*(j+8+i)] =((t&0xff00ff00ff00ff00ULL)>>8) |  (b&0xff00ff00ff00ff00ULL);
+#endif
+      t=quarterrow[4*(j+i)+1];
+      b=quarterrow[4*(j+8+i)+1];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+1]   = (t&0xff00ff00ff00ff00ULL)     | ((b&0xff00ff00ff00ff00ULL)>>8);
+      quarterrow[4*(j+8+i)+1] =((t&0x00ff00ff00ff00ffULL)<<8) |  (b&0x00ff00ff00ff00ffULL);
+#else
+      quarterrow[4*(j+i)+1]   = (t&0x00ff00ff00ff00ffULL)     | ((b&0x00ff00ff00ff00ffULL)<<8);
+      quarterrow[4*(j+8+i)+1] =((t&0xff00ff00ff00ff00ULL)>>8) |  (b&0xff00ff00ff00ff00ULL);
+#endif
+      t=quarterrow[4*(j+i)+2];
+      b=quarterrow[4*(j+8+i)+2];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+2]   = (t&0xff00ff00ff00ff00ULL)     | ((b&0xff00ff00ff00ff00ULL)>>8);
+      quarterrow[4*(j+8+i)+2] =((t&0x00ff00ff00ff00ffULL)<<8) |  (b&0x00ff00ff00ff00ffULL);
+#else
+      quarterrow[4*(j+i)+2]   = (t&0x00ff00ff00ff00ffULL)     | ((b&0x00ff00ff00ff00ffULL)<<8);
+      quarterrow[4*(j+8+i)+2] =((t&0xff00ff00ff00ff00ULL)>>8) |  (b&0xff00ff00ff00ff00ULL);
+#endif
+      t=quarterrow[4*(j+i)+3];
+      b=quarterrow[4*(j+8+i)+3];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+      quarterrow[4*(j+i)+3]   = (t&0xff00ff00ff00ff00ULL)     | ((b&0xff00ff00ff00ff00ULL)>>8);
+      quarterrow[4*(j+8+i)+3] =((t&0x00ff00ff00ff00ffULL)<<8) |  (b&0x00ff00ff00ff00ffULL);
+#else
+      quarterrow[4*(j+i)+3]   = (t&0x00ff00ff00ff00ffULL)     | ((b&0x00ff00ff00ff00ffULL)<<8);
+      quarterrow[4*(j+8+i)+3] =((t&0xff00ff00ff00ff00ULL)>>8) |  (b&0xff00ff00ff00ff00ULL);
+#endif
+    }
+  }
+  for(j=0;j<64;j+=8){
+    unsigned long long int t,b;
+    for(i=0;i<4;i++){
+      t=quarterrow[4*(j+i)];
+      b=quarterrow[4*(j+4+i)];
+      quarterrow[4*(j+i)]   =((t&0xf0f0f0f0f0f0f0f0ULL)>>4) |   (b&0xf0f0f0f0f0f0f0f0ULL);
+      quarterrow[4*(j+4+i)] = (t&0x0f0f0f0f0f0f0f0fULL)     |  ((b&0x0f0f0f0f0f0f0f0fULL)<<4);
+      t=quarterrow[4*(j+i)+1];
+      b=quarterrow[4*(j+4+i)+1];
+      quarterrow[4*(j+i)+1]   =((t&0xf0f0f0f0f0f0f0f0ULL)>>4) |   (b&0xf0f0f0f0f0f0f0f0ULL);
+      quarterrow[4*(j+4+i)+1] = (t&0x0f0f0f0f0f0f0f0fULL)     |  ((b&0x0f0f0f0f0f0f0f0fULL)<<4);
+      t=quarterrow[4*(j+i)+2];
+      b=quarterrow[4*(j+4+i)+2];
+      quarterrow[4*(j+i)+2]   =((t&0xf0f0f0f0f0f0f0f0ULL)>>4) |   (b&0xf0f0f0f0f0f0f0f0ULL);
+      quarterrow[4*(j+4+i)+2] = (t&0x0f0f0f0f0f0f0f0fULL)     |  ((b&0x0f0f0f0f0f0f0f0fULL)<<4);
+      t=quarterrow[4*(j+i)+3];
+      b=quarterrow[4*(j+4+i)+3];
+      quarterrow[4*(j+i)+3]   =((t&0xf0f0f0f0f0f0f0f0ULL)>>4) |   (b&0xf0f0f0f0f0f0f0f0ULL);
+      quarterrow[4*(j+4+i)+3] = (t&0x0f0f0f0f0f0f0f0fULL)     |  ((b&0x0f0f0f0f0f0f0f0fULL)<<4);
+    }
+  }
+  for(j=0;j<64;j+=4){
+    unsigned long long int t,b;
+    for(i=0;i<2;i++){
+      t=quarterrow[4*(j+i)];
+      b=quarterrow[4*(j+2+i)];
+      quarterrow[4*(j+i)]   =((t&0xccccccccccccccccULL)>>2) |  (b&0xccccccccccccccccULL);
+      quarterrow[4*(j+2+i)] = (t&0x3333333333333333ULL)     | ((b&0x3333333333333333ULL)<<2);
+      t=quarterrow[4*(j+i)+1];
+      b=quarterrow[4*(j+2+i)+1];
+      quarterrow[4*(j+i)+1]   =((t&0xccccccccccccccccULL)>>2) |  (b&0xccccccccccccccccULL);
+      quarterrow[4*(j+2+i)+1] = (t&0x3333333333333333ULL)     | ((b&0x3333333333333333ULL)<<2);
+      t=quarterrow[4*(j+i)+2];
+      b=quarterrow[4*(j+2+i)+2];
+      quarterrow[4*(j+i)+2]   =((t&0xccccccccccccccccULL)>>2) |  (b&0xccccccccccccccccULL);
+      quarterrow[4*(j+2+i)+2] = (t&0x3333333333333333ULL)     | ((b&0x3333333333333333ULL)<<2);
+      t=quarterrow[4*(j+i)+3];
+      b=quarterrow[4*(j+2+i)+3];
+      quarterrow[4*(j+i)+3]   =((t&0xccccccccccccccccULL)>>2) |  (b&0xccccccccccccccccULL);
+      quarterrow[4*(j+2+i)+3] = (t&0x3333333333333333ULL)     | ((b&0x3333333333333333ULL)<<2);
+    }
+  }
+  for(j=0;j<64;j+=2){
+    unsigned long long int t,b;
+    for(i=0;i<1;i++){
+      t=quarterrow[4*(j+i)];
+      b=quarterrow[4*(j+1+i)];
+      quarterrow[4*(j+i)]   =((t&0xaaaaaaaaaaaaaaaaULL)>>1) |  (b&0xaaaaaaaaaaaaaaaaULL);
+      quarterrow[4*(j+1+i)] = (t&0x5555555555555555ULL)     | ((b&0x5555555555555555ULL)<<1);
+      t=quarterrow[4*(j+i)+1];
+      b=quarterrow[4*(j+1+i)+1];
+      quarterrow[4*(j+i)+1]   =((t&0xaaaaaaaaaaaaaaaaULL)>>1) |  (b&0xaaaaaaaaaaaaaaaaULL);
+      quarterrow[4*(j+1+i)+1] = (t&0x5555555555555555ULL)     | ((b&0x5555555555555555ULL)<<1);
+      t=quarterrow[4*(j+i)+2];
+      b=quarterrow[4*(j+1+i)+2];
+      quarterrow[4*(j+i)+2]   =((t&0xaaaaaaaaaaaaaaaaULL)>>1) |  (b&0xaaaaaaaaaaaaaaaaULL);
+      quarterrow[4*(j+1+i)+2] = (t&0x5555555555555555ULL)     | ((b&0x5555555555555555ULL)<<1);
+      t=quarterrow[4*(j+i)+3];
+      b=quarterrow[4*(j+1+i)+3];
+      quarterrow[4*(j+i)+3]   =((t&0xaaaaaaaaaaaaaaaaULL)>>1) |  (b&0xaaaaaaaaaaaaaaaaULL);
+      quarterrow[4*(j+1+i)+3] = (t&0x5555555555555555ULL)     | ((b&0x5555555555555555ULL)<<1);
+    }
+  }
+#undef quarterrow
 }
 #endif
 
@@ -488,6 +984,9 @@ trasp64_64_88ccw(sb);
 #endif
 #if GROUP_PARALLELISM==128
 trasp64_128_88ccw(sb);
+#endif
+#if GROUP_PARALLELISM==256
+trasp64_256_88ccw(sb);
 #endif
 DBG(dump_mem("stream_postrot",sb,GROUP_PARALLELISM*8,BYPG));
 
@@ -659,7 +1158,7 @@ for(dbg=0;dbg<4;dbg++){
 
 /*
       we have just done this:
-      
+
       int sbox1[0x20] = {2,0,1,1,2,3,3,0, 3,2,2,0,1,1,0,3, 0,3,3,0,2,2,1,1, 2,2,0,3,1,1,3,0};
       int sbox2[0x20] = {3,1,0,2,2,3,3,0, 1,3,2,1,0,0,1,2, 3,1,0,3,3,2,0,2, 0,0,1,2,2,1,3,1};
       int sbox3[0x20] = {2,0,1,2,2,3,3,1, 1,1,0,3,3,0,2,0, 1,3,0,1,3,0,2,2, 2,0,1,2,0,3,3,1};
@@ -776,7 +1275,7 @@ for(dbg=0;dbg<4;dbg++){
 
 /*
       we have just done this: (believe it or not)
-      
+
       if (q) {
         F = Z + E + r;
         r = (F >> 4) & 1;
@@ -887,6 +1386,9 @@ trasp64_64_88cw(cb);
 #endif
 #if GROUP_PARALLELISM==128
 trasp64_128_88cw(cb);
+#endif
+#if GROUP_PARALLELISM==256
+trasp64_256_88cw(cb);
 #endif
 
 for(j=0;j<64;j++){

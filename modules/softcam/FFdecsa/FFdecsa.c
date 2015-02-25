@@ -1,6 +1,7 @@
 /* FFdecsa -- fast decsa algorithm
  *
  * Copyright (C) 2003-2004  fatih89r
+ *                    2013  NoSFeRaTU
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -54,6 +55,7 @@
 #define PARALLEL_128_2MMX    1284
 #define PARALLEL_128_SSE     1285
 #define PARALLEL_128_SSE2    1286
+#define PARALLEL_256_8INT    2560
 
 //////// our choice //////////////// our choice //////////////// our choice //////////////// our choice ////////
 #ifndef PARALLEL_MODE
@@ -93,6 +95,8 @@
 #include "parallel_128_sse.h"
 #elif PARALLEL_MODE==PARALLEL_128_SSE2
 #include "parallel_128_sse2.h"
+#elif PARALLEL_MODE==PARALLEL_256_8INT
+#include "parallel_256_8int.h"
 #else
 #error "unknown/undefined parallel mode"
 #endif
@@ -270,8 +274,13 @@ static inline __attribute__((always_inline)) void trasp_N_8 (unsigned char *in,u
         unsigned int t,b;
         t=ri[INTS_PER_ROW*(j+i)+k];
         b=ri[INTS_PER_ROW*(j+i+2)+k];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        ri[INTS_PER_ROW*(j+i)+k]=     (t&0xffff0000)      | ((b           )>>16);
+        ri[INTS_PER_ROW*(j+i+2)+k]=  ((t           )<<16) |  (b&0x0000ffff);
+#else
         ri[INTS_PER_ROW*(j+i)+k]=     (t&0x0000ffff)      | ((b           )<<16);
         ri[INTS_PER_ROW*(j+i+2)+k]=  ((t           )>>16) |  (b&0xffff0000) ;
+#endif
       }
     }
   }
@@ -283,8 +292,13 @@ static inline __attribute__((always_inline)) void trasp_N_8 (unsigned char *in,u
         unsigned int t,b;
         t=ri[INTS_PER_ROW*(j+i)+k];
         b=ri[INTS_PER_ROW*(j+i+1)+k];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        ri[INTS_PER_ROW*(j+i)+k]=     (t&0xff00ff00)     | ((b&0xff00ff00)>>8);
+        ri[INTS_PER_ROW*(j+i+1)+k]=  ((t&0x00ff00ff)<<8) |  (b&0x00ff00ff);
+#else
         ri[INTS_PER_ROW*(j+i)+k]=     (t&0x00ff00ff)     | ((b&0x00ff00ff)<<8);
         ri[INTS_PER_ROW*(j+i+1)+k]=  ((t&0xff00ff00)>>8) |  (b&0xff00ff00);
+#endif
       }
     }
   }
@@ -305,8 +319,13 @@ static inline __attribute__((always_inline)) void trasp_8_N (unsigned char *in,u
         unsigned int t,b;
         t=ri[INTS_PER_ROW*(j+i)+k];
         b=ri[INTS_PER_ROW*(j+i+1)+k];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        ri[INTS_PER_ROW*(j+i)+k]=     (t&0xff00ff00)     | ((b&0xff00ff00)>>8);
+        ri[INTS_PER_ROW*(j+i+1)+k]=  ((t&0x00ff00ff)<<8) |  (b&0x00ff00ff);
+#else
         ri[INTS_PER_ROW*(j+i)+k]=     (t&0x00ff00ff)     | ((b&0x00ff00ff)<<8);
         ri[INTS_PER_ROW*(j+i+1)+k]=  ((t&0xff00ff00)>>8) |  (b&0xff00ff00);
+#endif
       }
     }
   }
@@ -318,8 +337,13 @@ static inline __attribute__((always_inline)) void trasp_8_N (unsigned char *in,u
         unsigned int t,b;
         t=ri[INTS_PER_ROW*(j+i)+k];
         b=ri[INTS_PER_ROW*(j+i+2)+k];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        ri[INTS_PER_ROW*(j+i)+k]=     (t&0xffff0000)      | ((b           )>>16);
+        ri[INTS_PER_ROW*(j+i+2)+k]=  ((t           )<<16) |  (b&0x0000ffff) ;
+#else
         ri[INTS_PER_ROW*(j+i)+k]=     (t&0x0000ffff)      | ((b           )<<16);
         ri[INTS_PER_ROW*(j+i+2)+k]=  ((t           )>>16) |  (b&0xffff0000) ;
+#endif
       }
     }
   }
