@@ -205,6 +205,7 @@ function channel_init_input(channel_data, input_id)
             upstream = input_data.input.tail:stream(),
             name = input_data.config.name,
             cc_limit = input_data.config.cc_limit,
+            bitrate_limit = input_data.config.bitrate_limit,
             callback = function(data)
                 on_analyze(channel_data, input_id, data)
             end,

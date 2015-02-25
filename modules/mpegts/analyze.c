@@ -63,7 +63,10 @@ struct module_data_t
     const char *name;
     int rate_stat;
     int cc_limit;
+    int bitrate_limit;
+
     bool cc_check; // to skip initial cc errors
+    bool video_check; // increase bitrate_limit for channel with video stream
 
     int idx_callback;
 
@@ -319,6 +322,8 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         }
     }
 
+    mod->video_check = false;
+
     lua_newtable(lua);
 
     lua_pushnumber(lua, psi->pid);
@@ -404,6 +409,9 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
         lua_setfield(lua, -2, "type_id");
 
         lua_settable(lua, -3); // append to the "streams" table
+
+        if(mod->stream[pid]->type == MPEGTS_PACKET_VIDEO)
+            mod->video_check = true;
     }
     lua_setfield(lua, -2, "streams");
 
@@ -660,6 +668,10 @@ static void on_check_stat(void *arg)
     uint32_t pes_errors = 0;
     bool scrambled = false;
 
+    const uint32_t bitrate_limit = (mod->bitrate_limit > 0)
+                                 ? ((uint32_t)mod->bitrate_limit)
+                                 : ((mod->video_check) ? 256 : 32);
+
     lua_newtable(lua);
     for(int i = 0; i < MAX_PID; ++i)
     {
@@ -729,7 +741,7 @@ static void on_check_stat(void *arg)
     if(!mod->cc_check)
         mod->cc_check = true;
 
-    if(bitrate < 32)
+    if(bitrate < bitrate_limit)
         on_air = false;
     if(mod->cc_limit > 0 && cc_errors >= (uint32_t)mod->cc_limit)
         on_air = false;
@@ -762,6 +774,7 @@ static void module_init(module_data_t *mod)
 
     module_option_number("rate_stat", &mod->rate_stat);
     module_option_number("cc_limit", &mod->cc_limit);
+    module_option_number("bitrate_limit", &mod->bitrate_limit);
 
     module_stream_init(mod, on_ts);
 
