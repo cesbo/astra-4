@@ -2,7 +2,7 @@
  * Astra Core
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -121,7 +121,7 @@ void asc_event_core_destroy(void)
         ; !asc_list_eol(event_observer.event_list)
         ; asc_list_first(event_observer.event_list))
     {
-        asc_event_t *event = asc_list_data(event_observer.event_list);
+        asc_event_t *event = (asc_event_t *)asc_list_data(event_observer.event_list);
         asc_assert(event != prev_event
                    , MSG("loop on asc_event_core_destroy() event:%p")
                    , event);
@@ -158,12 +158,12 @@ void asc_event_core_loop(void)
     {
         EV_OTYPE *ed = &event_observer.ed_list[i];
 #if defined(EV_TYPE_KQUEUE)
-        asc_event_t *event = ed->udata;
+        asc_event_t *event = (asc_event_t *)ed->udata;
         const bool is_rd = (ed->data > 0) && (ed->filter == EVFILT_READ);
         const bool is_wr = (ed->data > 0) && (ed->filter == EVFILT_WRITE);
         const bool is_er = (ed->flags & ~EV_ADD) && (!is_rd || is_wr);
 #else
-        asc_event_t *event = ed->data.ptr;
+        asc_event_t *event = (asc_event_t *)ed->data.ptr;
         const bool is_rd = ed->events & EPOLLIN;
         const bool is_wr = ed->events & EPOLLOUT;
         const bool is_er = ed->events & EPOLLCLOSE;
@@ -245,7 +245,7 @@ static void asc_event_subscribe(asc_event_t *event)
 
 asc_event_t * asc_event_init(int fd, void *arg)
 {
-    asc_event_t *event = calloc(1, sizeof(asc_event_t));
+    asc_event_t *event = (asc_event_t *)calloc(1, sizeof(asc_event_t));
     event->fd = fd;
     event->arg = arg;
 
@@ -406,7 +406,7 @@ asc_event_t * asc_event_init(int fd, void *arg)
     memset(&event_observer.fd_list[i], 0, sizeof(struct pollfd));
     event_observer.fd_list[i].fd = fd;
 
-    asc_event_t *event = calloc(1, sizeof(asc_event_t));
+    asc_event_t *event = (asc_event_t *)calloc(1, sizeof(asc_event_t));
     event_observer.event_list[i] = event;
     event->fd = fd;
     event->arg = arg;
@@ -482,7 +482,7 @@ void asc_event_core_destroy(void)
         ; !asc_list_eol(event_observer.event_list)
         ; asc_list_first(event_observer.event_list))
     {
-        asc_event_t *event = asc_list_data(event_observer.event_list);
+        asc_event_t *event = (asc_event_t *)asc_list_data(event_observer.event_list);
         asc_assert(event != prev_event
                    , MSG("loop on asc_event_core_destroy() event:%p")
                    , event);
@@ -524,7 +524,7 @@ void asc_event_core_loop(void)
         event_observer.is_changed = false;
         asc_list_for(event_observer.event_list)
         {
-            asc_event_t *event = asc_list_data(event_observer.event_list);
+            asc_event_t *event = (asc_event_t *)asc_list_data(event_observer.event_list);
             if(event->on_read && FD_ISSET(event->fd, &rset))
             {
                 is_main_loop_idle = false;
@@ -570,7 +570,7 @@ static void asc_event_subscribe(asc_event_t *event)
 
 asc_event_t * asc_event_init(int fd, void *arg)
 {
-    asc_event_t *event = calloc(1, sizeof(asc_event_t));
+    asc_event_t *event = (asc_event_t *)calloc(1, sizeof(asc_event_t));
     event->fd = fd;
     event->arg = arg;
 
@@ -607,7 +607,7 @@ void asc_event_close(asc_event_t *event)
         ; !asc_list_eol(event_observer.event_list)
         ; )
     {
-        asc_event_t *i_event = asc_list_data(event_observer.event_list);
+        asc_event_t *i_event = (asc_event_t *)asc_list_data(event_observer.event_list);
         if(i_event == event)
         {
             asc_list_remove_current(event_observer.event_list);

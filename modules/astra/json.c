@@ -2,7 +2,7 @@
  * Astra Module: JSON
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -480,7 +480,7 @@ static int json_load(lua_State *L)
 {
     luaL_checktype(L, -1, LUA_TSTRING);
     const char *filename = lua_tostring(L, -1);
-    int fd = open(filename, O_RDONLY);
+    int fd = open(filename, O_RDONLY | O_BINARY);
     if(fd <= 0)
     {
         asc_log_error("[json] json.load(%s) failed to open [%s]", filename, strerror(errno));
@@ -489,7 +489,7 @@ static int json_load(lua_State *L)
     }
     struct stat sb;
     fstat(fd, &sb);
-    char *json = malloc(sb.st_size);
+    char *json = (char *)malloc(sb.st_size);
     off_t skip = 0;
     while(skip != sb.st_size)
     {
@@ -523,7 +523,7 @@ static int json_save(lua_State *L)
     luaL_checktype(L, -1, LUA_TTABLE);
 
     const char *filename = lua_tostring(L, -2);
-    int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC
+    int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY
 #ifndef _WIN32
                   , S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 #else

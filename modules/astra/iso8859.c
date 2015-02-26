@@ -2,7 +2,7 @@
  * Astra Module: ISO-8859
  * http://cesbo.com/astra
  *
- * Copyright (C) 2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2013-2015, Andrey Dyldin <and@cesbo.com>
  *               2014, Vitaliy Batin <fyrerx@gmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
@@ -23,7 +23,7 @@
 
 static uint8_t * iso8859_1_decode(const uint8_t *data, size_t size)
 {
-    uint8_t *text = malloc(size * 2 + 1);
+    uint8_t *text = (uint8_t *)malloc(size * 2 + 1);
     uint8_t c;
     size_t i = 0, j = 0;
 
@@ -48,7 +48,7 @@ static uint8_t * iso8859_1_decode(const uint8_t *data, size_t size)
 
 static uint8_t * iso8859_1_encode(const uint8_t *data, size_t size)
 {
-    uint8_t *text = malloc(size + 1);
+    uint8_t *text = (uint8_t *)malloc(size + 1);
     uint8_t c;
     size_t i = 0, j = 0;
 
@@ -72,7 +72,7 @@ static uint8_t * iso8859_1_encode(const uint8_t *data, size_t size)
 
 static uint8_t * iso8859_2_decode(const uint8_t *data, size_t size)
 {
-    uint8_t *text = malloc(size * 2 + 1);
+    uint8_t *text = (uint8_t *)malloc(size * 2 + 1);
     uint8_t c;
     size_t i = 0, j = 0;
 
@@ -128,7 +128,7 @@ static uint8_t * iso8859_2_decode(const uint8_t *data, size_t size)
 
 static uint8_t * iso8859_4_decode(const uint8_t *data, size_t size)
 {
-    uint8_t *text = malloc(size * 2 + 1);
+    uint8_t *text = (uint8_t *)malloc(size * 2 + 1);
     uint8_t c;
     size_t i = 0, j = 0;
 
@@ -184,7 +184,7 @@ static uint8_t * iso8859_4_decode(const uint8_t *data, size_t size)
 
 static uint8_t * iso8859_5_decode(const uint8_t *data, size_t size)
 {
-    uint8_t *text = malloc(size * 2 + 1);
+    uint8_t *text = (uint8_t *)malloc(size * 2 + 1);
     uint8_t c, u1, u2;
     size_t i = 0, j = 0;
 
@@ -217,7 +217,7 @@ static uint8_t * iso8859_5_decode(const uint8_t *data, size_t size)
 
 static uint8_t * iso8859_5_encode(const uint8_t *data, size_t size)
 {
-    uint8_t *text = malloc(size + 1);
+    uint8_t *text = (uint8_t *)malloc(size + 1);
     uint8_t c;
     size_t i = 0, j = 0;
 
@@ -250,7 +250,7 @@ static uint8_t * iso8859_5_encode(const uint8_t *data, size_t size)
 
 static uint8_t * iso8859_7_decode(const uint8_t *data, size_t size)
 {
-    uint8_t *text = malloc(size * 2 + 1);
+    uint8_t *text = (uint8_t *)malloc(size * 2 + 1);
     uint8_t c, u1, u2;
     size_t i = 0, j = 0;
 
@@ -285,7 +285,7 @@ static uint8_t * iso8859_7_decode(const uint8_t *data, size_t size)
 
 static uint8_t * iso8859_9_decode(const uint8_t *data, size_t size)
 {
-    uint8_t *text = malloc(size * 2 + 1);
+    uint8_t *text = (uint8_t *)malloc(size * 2 + 1);
     uint8_t c;
     size_t i = 0, j = 0;
 
@@ -389,7 +389,7 @@ char * iso8859_decode(const uint8_t *data, size_t size)
 
     static const char unknown_charset[] = "unknown charset: 0x";
     size_t skip = sizeof(unknown_charset) - 1;
-    char *text = malloc(skip + (size * 2) + 1);
+    char *text = (char *)malloc(skip + (size * 2) + 1);
     memcpy(text, unknown_charset, sizeof(unknown_charset));
     for(uint8_t i = 0; i < size; ++i)
         skip += sprintf(&text[skip], "%02X", data[i]);

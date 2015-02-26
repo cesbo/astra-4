@@ -2,7 +2,7 @@
  * Astra Core
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -124,7 +124,7 @@ static asc_socket_t * __socket_open(int family, int type, int protocol, void * a
 {
     const int fd = socket(family, type, protocol);
     asc_assert(fd != -1, "[core/socket] failed to open socket [%s]", asc_socket_error());
-    asc_socket_t *sock = calloc(1, sizeof(asc_socket_t));
+    asc_socket_t *sock = (asc_socket_t *)calloc(1, sizeof(asc_socket_t));
     sock->fd = fd;
     sock->mreq.imr_multiaddr.s_addr = INADDR_NONE;
     sock->family = family;
@@ -212,14 +212,14 @@ void asc_socket_close(asc_socket_t *sock)
 
 static void __asc_socket_on_close(void *arg)
 {
-    asc_socket_t *sock = arg;
+    asc_socket_t *sock = (asc_socket_t *)arg;
     if(sock->on_close)
         sock->on_close(sock->arg);
 }
 
 static void __asc_socket_on_connect(void *arg)
 {
-    asc_socket_t *sock = arg;
+    asc_socket_t *sock = (asc_socket_t *)arg;
     asc_event_set_on_write(sock->event, NULL);
     event_callback_t __on_ready = sock->on_ready;
     sock->on_ready(sock->arg);
@@ -229,20 +229,20 @@ static void __asc_socket_on_connect(void *arg)
 
 static void __asc_socket_on_accept(void *arg)
 {
-    asc_socket_t *sock = arg;
+    asc_socket_t *sock = (asc_socket_t *)arg;
     sock->on_read(sock->arg);
 }
 
 static void __asc_socket_on_read(void *arg)
 {
-    asc_socket_t *sock = arg;
+    asc_socket_t *sock = (asc_socket_t *)arg;
     if(sock->on_read)
         sock->on_read(sock->arg);
 }
 
 static void __asc_socket_on_ready(void *arg)
 {
-    asc_socket_t *sock = arg;
+    asc_socket_t *sock = (asc_socket_t *)arg;
     if(sock->on_ready)
         sock->on_ready(sock->arg);
 }
@@ -395,7 +395,7 @@ void asc_socket_listen(  asc_socket_t *sock
 
 bool asc_socket_accept(asc_socket_t *sock, asc_socket_t **client_ptr, void * arg)
 {
-    asc_socket_t *client = calloc(1, sizeof(asc_socket_t));
+    asc_socket_t *client = (asc_socket_t *)calloc(1, sizeof(asc_socket_t));
     socklen_t sin_size = sizeof(client->addr);
     client->fd = accept(sock->fd, (struct sockaddr *)&client->addr, &sin_size);
     if(client->fd <= 0)

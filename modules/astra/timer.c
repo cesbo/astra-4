@@ -2,7 +2,7 @@
  * Astra Module: Timer
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,7 +39,7 @@ struct module_data_t
 
 static void timer_callback(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_self);
     lua_call(lua, 1, 0);

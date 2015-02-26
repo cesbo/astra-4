@@ -2,7 +2,7 @@
  * Astra Core
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -59,7 +59,7 @@ void asc_timer_core_loop(void)
 
     asc_list_for(timer_list)
     {
-        asc_timer_t *timer = asc_list_data(timer_list);
+        asc_timer_t *timer = (asc_timer_t *)asc_list_data(timer_list);
         if(!timer->callback)
         {
             ++is_detached;
@@ -92,7 +92,7 @@ void asc_timer_core_loop(void)
     asc_list_first(timer_list);
     while(!asc_list_eol(timer_list))
     {
-        asc_timer_t *timer = asc_list_data(timer_list);
+        asc_timer_t *timer = (asc_timer_t *)asc_list_data(timer_list);
         if(timer->callback)
             asc_list_next(timer_list);
         else
@@ -105,7 +105,7 @@ void asc_timer_core_loop(void)
 
 asc_timer_t * asc_timer_init(unsigned int ms, void (*callback)(void *), void *arg)
 {
-    asc_timer_t *timer = calloc(1, sizeof(asc_timer_t));
+    asc_timer_t *timer = (asc_timer_t *)calloc(1, sizeof(asc_timer_t));
     timer->interval = ms * 1000;
     timer->callback = callback;
     timer->arg = arg;

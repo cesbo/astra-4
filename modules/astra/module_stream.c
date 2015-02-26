@@ -2,7 +2,7 @@
  * Astra Module: Stream API
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,7 +45,7 @@ void __module_stream_send(module_stream_t *stream, const uint8_t *ts)
 {
     asc_list_for(stream->childs)
     {
-        module_stream_t *i = asc_list_data(stream->childs);
+        module_stream_t *i = (module_stream_t *)asc_list_data(stream->childs);
         if(i->on_ts)
             i->on_ts(i->self, ts);
     }
@@ -64,7 +64,7 @@ void __module_stream_destroy(module_stream_t *stream)
     asc_list_first(stream->childs);
     while(!asc_list_eol(stream->childs))
     {
-        module_stream_t *i = asc_list_data(stream->childs);
+        module_stream_t *i = (module_stream_t *)asc_list_data(stream->childs);
         i->parent = NULL;
         asc_list_remove_current(stream->childs);
     }

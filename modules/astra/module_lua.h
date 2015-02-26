@@ -2,7 +2,7 @@
  * Astra Module: Lua API
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -56,13 +56,13 @@ typedef struct
     }                                                                                           \
     static int __module_thunk(lua_State *L)                                                     \
     {                                                                                           \
-        module_data_t *mod = lua_touserdata(L, lua_upvalueindex(1));                            \
-        module_method_t *m = lua_touserdata(L, lua_upvalueindex(2));                            \
+        module_data_t *mod = (module_data_t *)lua_touserdata(L, lua_upvalueindex(1));           \
+        module_method_t *m = (module_method_t *)lua_touserdata(L, lua_upvalueindex(2));         \
         return m->method(mod);                                                                  \
     }                                                                                           \
     static int __module_delete(lua_State *L)                                                    \
     {                                                                                           \
-        module_data_t *mod = lua_touserdata(L, lua_upvalueindex(1));                            \
+        module_data_t *mod = (module_data_t *)lua_touserdata(L, lua_upvalueindex(1));           \
         module_destroy(mod);                                                                    \
         free(mod);                                                                              \
         return 0;                                                                               \
@@ -75,7 +75,7 @@ typedef struct
             { "__gc", __module_delete },                                                        \
             { "__tostring", __module_tostring },                                                \
         };                                                                                      \
-        module_data_t *mod = calloc(1, sizeof(module_data_t));                                  \
+        module_data_t *mod = (module_data_t *)calloc(1, sizeof(module_data_t));                 \
         lua_newtable(L);                                                                        \
         lua_newtable(L);                                                                        \
         for(i = 0; i < ASC_ARRAY_SIZE(__meta_methods); ++i)                                     \

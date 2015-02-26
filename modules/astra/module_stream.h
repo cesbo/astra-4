@@ -59,13 +59,16 @@ void __module_stream_send(module_stream_t *stream, const uint8_t *ts);
         __module_stream_init(&_mod->__stream);                                                  \
         lua_getfield(lua, MODULE_OPTIONS_IDX, "upstream");                                      \
         if(lua_type(lua, -1) == LUA_TLIGHTUSERDATA)                                             \
-            __module_stream_attach(lua_touserdata(lua, -1), &_mod->__stream);                   \
+        {                                                                                       \
+            module_stream_t *_stream = (module_stream_t *)lua_touserdata(lua, -1);              \
+            __module_stream_attach(_stream, &_mod->__stream);                                   \
+        }                                                                                       \
         lua_pop(lua, 1);                                                                        \
     }
 
 #define module_stream_demux_set(_mod, _join_pid, _leave_pid)                                    \
     {                                                                                           \
-        _mod->__stream.pid_list = calloc(MAX_PID, sizeof(uint8_t));                             \
+        _mod->__stream.pid_list = (uint8_t *)calloc(MAX_PID, sizeof(uint8_t));                  \
         _mod->__stream.join_pid = _join_pid;                                                    \
         _mod->__stream.leave_pid = _leave_pid;                                                  \
     }
