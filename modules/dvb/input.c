@@ -2,7 +2,7 @@
  * Astra Module: DVB
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,6 +42,7 @@ struct module_data_t
     int idx_callback;
 
     /* DVR Config */
+    bool no_dvr;
     int dvr_buffer_size;
 
     /* DVR Base */
@@ -67,6 +68,11 @@ struct module_data_t
     dvb_ca_t *ca;
 };
 
+#define THREAD_DELAY_FE (1 * 1000 * 1000)
+#define THREAD_DELAY_DMX (200 * 1000)
+#define THREAD_DELAY_CA (1 * 1000 * 1000)
+#define THREAD_DELAY_DVR (2 * 1000 * 1000)
+
 /*
  * ooooooooo  ooooo  oooo oooooooooo
  *  888    88o 888    88   888    888
@@ -81,7 +87,7 @@ static void dvr_close(module_data_t *mod);
 
 static void on_pat(void *arg, mpegts_psi_t *psi)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
@@ -97,7 +103,8 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         if(mod->pat_error >= 3)
         {
             asc_log_error(MSG("dvr checksum error, try to reopen"));
-            mod->fe->do_retune = 1;
+            if(mod->fe->type != DVB_TYPE_UNKNOWN)
+                mod->fe->do_retune = 1;
             mod->do_bounce = 1;
             mod->pat_error = 0;
             dvr_close(mod);
@@ -115,7 +122,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 
 static void dvr_on_error(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
     asc_log_error(MSG("dvr read error, try to reopen [%s]"), strerror(errno));
     dvr_close(mod);
     dvr_open(mod);
@@ -123,7 +130,7 @@ static void dvr_on_error(void *arg)
 
 static void dvr_on_read(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     const ssize_t len = read(mod->dvr_fd, mod->dvr_buffer, sizeof(mod->dvr_buffer));
     if(len <= 0)
@@ -178,13 +185,13 @@ static void dvr_close(module_data_t *mod)
 {
     mod->dvr_read = 0;
 
-    if(mod->dvr_fd > 0)
-    {
-        asc_event_close(mod->dvr_event);
-        mod->dvr_event = NULL;
-        close(mod->dvr_fd);
-        mod->dvr_fd = 0;
-    }
+    if(mod->dvr_fd == 0)
+        return;
+
+    ASC_FREE(mod->dvr_event, asc_event_close);
+
+    close(mod->dvr_fd);
+    mod->dvr_fd = 0;
 }
 
 /*
@@ -235,6 +242,12 @@ void dmx_set_pid(module_data_t *mod, uint16_t pid, int is_set)
         astra_abort();
     }
 
+    if(!mod->dmx_fd_list)
+    {
+        asc_log_error(MSG("demux: not initialized"));
+        return;
+    }
+
     if(is_set)
     {
         if(!mod->dmx_fd_list[pid])
@@ -255,6 +268,9 @@ void dmx_set_pid(module_data_t *mod, uint16_t pid, int is_set)
 
 void dmx_bounce(module_data_t *mod)
 {
+    if(!mod->dmx_fd_list)
+        return;
+
     const int fd_max = (mod->dmx_budget) ? 1 : MAX_PID;
     for(int i = 0; i < fd_max; ++i)
     {
@@ -271,21 +287,30 @@ void dmx_open(module_data_t *mod)
     sprintf(mod->dmx_dev_name, "/dev/dvb/adapter%d/demux%d", mod->adapter, mod->device);
 
     const int fd = __dmx_open(mod);
+    if(fd <= 0)
+    {
+        asc_log_error(MSG("failed to open demux [%s]"), strerror(errno));
+        return;
+    }
+
     if(mod->dmx_budget)
     {
-        mod->dmx_fd_list = calloc(1, sizeof(int));
+        mod->dmx_fd_list = (int *)calloc(1, sizeof(int));
         mod->dmx_fd_list[0] = fd;
         __dmx_join_pid(mod, fd, MAX_PID);
     }
     else
     {
         close(fd);
-        mod->dmx_fd_list = calloc(MAX_PID, sizeof(int));
+        mod->dmx_fd_list = (int *)calloc(MAX_PID, sizeof(int));
     }
 }
 
 void dmx_close(module_data_t *mod)
 {
+    if(!mod->dmx_fd_list)
+        return;
+
     const int fd_max = (mod->dmx_budget) ? 1 : MAX_PID;
     for(int i = 0; i < fd_max; ++i)
     {
@@ -293,6 +318,7 @@ void dmx_close(module_data_t *mod)
             close(mod->dmx_fd_list[i]);
     }
     free(mod->dmx_fd_list);
+    mod->dmx_fd_list = NULL;
 }
 
 /*
@@ -583,25 +609,16 @@ static void module_options(module_data_t *mod)
     mod->fe->device = mod->device;
     mod->ca->device = mod->device;
 
-    mod->fe->timeout = 5;
-    module_option_number("timeout", &mod->fe->timeout);
-
-    int ca_pmt_delay = 3;
-    module_option_number("ca_pmt_delay", &ca_pmt_delay);
-    if(ca_pmt_delay > 120)
-    {
-        asc_log_error(MSG("ca_pmt_delay value is too large"));
-        astra_abort();
-    }
-    mod->ca->pmt_delay = ca_pmt_delay * 1000 * 1000;
-
     const char *string_val = NULL;
 
     static const char __type[] = "type";
-    if(!module_option_string(__type, &string_val, NULL))
-        option_required(mod, __type);
+    module_option_string(__type, &string_val, NULL);
 
-    if(!strcasecmp(string_val, "S"))
+    if(string_val == NULL)
+    {
+        ;
+    }
+    else if(!strcasecmp(string_val, "S"))
     {
         mod->fe->type = DVB_TYPE_S;
         mod->fe->delivery_system = SYS_DVBS;
@@ -672,12 +689,16 @@ static void module_options(module_data_t *mod)
         option_unknown_type(mod, __type, string_val);
 
     static const char __frequency[] = "frequency";
-    if(!module_option_number(__frequency, &mod->fe->frequency))
+    module_option_number(__frequency, &mod->fe->frequency);
+    if(mod->fe->frequency == 0 && mod->fe->type != DVB_TYPE_UNKNOWN)
         option_required(mod, __frequency);
 
     module_option_boolean("raw_signal", &mod->fe->raw_signal);
     module_option_boolean("budget", &mod->dmx_budget);
     module_option_boolean("log_signal", &mod->fe->log_signal);
+
+    if(mod->fe->type == DVB_TYPE_UNKNOWN)
+        module_option_boolean("no_dvr", &mod->no_dvr);
 
     module_option_number("buffer_size", &mod->dvr_buffer_size);
     if(mod->dvr_buffer_size > 200)
@@ -706,8 +727,22 @@ static void module_options(module_data_t *mod)
     else
         mod->fe->modulation = FE_MODULATION_NONE;
 
+    mod->fe->timeout = 5;
+    module_option_number("timeout", &mod->fe->timeout);
+
+    int ca_pmt_delay = 3;
+    module_option_number("ca_pmt_delay", &ca_pmt_delay);
+    if(ca_pmt_delay > 120)
+    {
+        asc_log_error(MSG("ca_pmt_delay value is too large"));
+        astra_abort();
+    }
+    mod->ca->pmt_delay = ca_pmt_delay * 1000 * 1000;
+
     switch(mod->fe->type)
     {
+        case DVB_TYPE_UNKNOWN:
+            break;
         case DVB_TYPE_S:
             module_options_s(mod);
             break;
@@ -733,20 +768,15 @@ static void module_options(module_data_t *mod)
 
 static void on_thread_close(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     mod->is_thread_started = false;
-
-    if(mod->thread)
-    {
-        asc_thread_destroy(mod->thread);
-        mod->thread = NULL;
-    }
+    ASC_FREE(mod->thread, asc_thread_destroy);
 }
 
 static void thread_loop(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     fe_open(mod->fe);
     ca_open(mod->ca);
@@ -776,11 +806,6 @@ static void thread_loop(void *arg)
     uint64_t ca_check_timeout = current_time;
     uint64_t dvr_check_timeout = current_time;
 
-#define FE_TIMEOUT (1 * 1000 * 1000)
-#define DMX_TIMEOUT (200 * 1000)
-#define CA_TIMEOUT (1 * 1000 * 1000)
-#define DVR_TIMEOUT (2 * 1000 * 1000)
-
     while(mod->is_thread_started)
     {
         const int ret = poll(fds, nfds, 100);
@@ -804,7 +829,7 @@ static void thread_loop(void *arg)
 
         current_time = asc_utime();
 
-        if(current_time >= fe_check_timeout + FE_TIMEOUT)
+        if(current_time >= fe_check_timeout + THREAD_DELAY_FE)
         {
             fe_check_timeout = current_time;
             fe_loop(mod->fe, 0);
@@ -816,7 +841,8 @@ static void thread_loop(void *arg)
             mod->do_bounce = 0;
         }
 
-        if(!mod->dmx_budget && current_time >= dmx_check_timeout + DMX_TIMEOUT)
+        if(!mod->dmx_budget && mod->dmx_fd_list &&
+            current_time >= dmx_check_timeout + THREAD_DELAY_DMX)
         {
             dmx_check_timeout = current_time;
 
@@ -829,13 +855,13 @@ static void thread_loop(void *arg)
             }
         }
 
-        if(mod->ca->ca_fd > 0 && current_time >= ca_check_timeout + CA_TIMEOUT)
+        if(mod->ca->ca_fd > 0 && current_time >= ca_check_timeout + THREAD_DELAY_CA)
         {
             ca_check_timeout = current_time;
             ca_loop(mod->ca, 0);
         }
 
-        if(current_time >= dvr_check_timeout + DVR_TIMEOUT)
+        if(current_time >= dvr_check_timeout + THREAD_DELAY_DVR)
         {
             dvr_check_timeout = current_time;
             if(mod->fe->fe_event_status & FE_HAS_LOCK)
@@ -848,13 +874,78 @@ static void thread_loop(void *arg)
         }
     }
 
-#undef FE_TIMEOUT
-#undef DMX_TIMEOUT
-#undef CA_TIMEOUT
-#undef DVR_TIMEOUT
-
     fe_close(mod->fe);
     ca_close(mod->ca);
+    dmx_close(mod);
+}
+
+static void thread_loop_slave(void *arg)
+{
+    module_data_t *mod = (module_data_t *)arg;
+
+    fe_open(mod->fe);
+    if(!mod->no_dvr)
+    {
+        dmx_open(mod);
+    }
+
+    mod->is_thread_started = true;
+
+    uint64_t current_time = asc_utime();
+    uint64_t fe_check_timeout = current_time;
+    uint64_t dmx_check_timeout = current_time;
+    uint64_t dvr_check_timeout = current_time;
+
+    while(mod->is_thread_started)
+    {
+        if(!mod->is_thread_started)
+            break;
+
+        current_time = asc_utime();
+
+        if(current_time >= fe_check_timeout + THREAD_DELAY_FE)
+        {
+            fe_check_timeout = current_time;
+            fe_loop(mod->fe, 0);
+        }
+
+        if(mod->no_dvr)
+            continue;
+
+        if(mod->do_bounce)
+        {
+            dmx_bounce(mod);
+            mod->do_bounce = 0;
+        }
+
+        if(!mod->dmx_budget && mod->dmx_fd_list &&
+            current_time >= dmx_check_timeout + THREAD_DELAY_DMX)
+        {
+            dmx_check_timeout = current_time;
+
+            for(int i = 0; i < MAX_PID; ++i)
+            {
+                if((mod->__stream.pid_list[i] > 0) && (mod->dmx_fd_list[i] == 0))
+                    dmx_set_pid(mod, i, 1);
+                else if((mod->__stream.pid_list[i] == 0) && (mod->dmx_fd_list[i] > 0))
+                    dmx_set_pid(mod, i, 0);
+            }
+        }
+
+        if(current_time >= dvr_check_timeout + THREAD_DELAY_DVR)
+        {
+            dvr_check_timeout = current_time;
+            if(mod->fe->fe_event_status & FE_HAS_LOCK)
+            {
+                if(mod->dvr_read == 0)
+                    dmx_bounce(mod);
+                else
+                    mod->dvr_read = 0;
+            }
+        }
+    }
+
+    fe_close(mod->fe);
     dmx_close(mod);
 }
 
@@ -869,7 +960,7 @@ static void thread_loop(void *arg)
 
 static void on_status_timer(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     lua_rawgeti(lua, LUA_REGISTRYINDEX, mod->idx_callback);
     lua_newtable(lua);
@@ -900,33 +991,12 @@ static int method_ca_set_pnr(module_data_t *mod)
 static int method_close(module_data_t *mod)
 {
     dvr_close(mod);
+    on_thread_close(mod);
 
-    if(mod->pat)
-    {
-        mpegts_psi_destroy(mod->pat);
-        mod->pat = NULL;
-    }
-
-    if(mod->thread)
-        on_thread_close(mod);
-
-    if(mod->fe)
-    {
-        free(mod->fe);
-        mod->fe = NULL;
-    }
-
-    if(mod->ca)
-    {
-        free(mod->ca);
-        mod->ca = NULL;
-    }
-
-    if(mod->status_timer)
-    {
-        asc_timer_destroy(mod->status_timer);
-        mod->status_timer = NULL;
-    }
+    ASC_FREE(mod->pat, mpegts_psi_destroy);
+    ASC_FREE(mod->fe, free);
+    ASC_FREE(mod->ca, free);
+    ASC_FREE(mod->status_timer, asc_timer_destroy);
 
     if(mod->idx_callback)
     {
@@ -954,8 +1024,8 @@ static void module_init(module_data_t *mod)
     module_stream_init(mod, NULL);
     module_stream_demux_set(mod, join_pid, leave_pid);
 
-    mod->fe = calloc(1, sizeof(dvb_fe_t));
-    mod->ca = calloc(1, sizeof(dvb_ca_t));
+    mod->fe = (dvb_fe_t *)calloc(1, sizeof(dvb_fe_t));
+    mod->ca = (dvb_ca_t *)calloc(1, sizeof(dvb_ca_t));
 
     module_options(mod);
 
@@ -970,15 +1040,17 @@ static void module_init(module_data_t *mod)
 
     mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0);
 
-    dvr_open(mod);
-    if(mod->dvr_fd == 0)
-        return;
+    if(!mod->no_dvr)
+    {
+        dvr_open(mod);
+        if(mod->dvr_fd == 0)
+            return;
+    }
 
     mod->thread = asc_thread_init(mod);
-    asc_thread_start(  mod->thread
-                     , thread_loop
-                     , NULL, NULL
-                     , on_thread_close);
+    asc_thread_start(mod->thread,
+        (mod->fe->type != DVB_TYPE_UNKNOWN) ? thread_loop : thread_loop_slave,
+        NULL, NULL, on_thread_close);
 
     while(!mod->is_thread_started)
         asc_usleep(500);

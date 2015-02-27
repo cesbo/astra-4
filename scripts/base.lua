@@ -1,7 +1,7 @@
 -- Astra Base Script
 -- https://cesbo.com/astra/
 --
--- Copyright (C) 2014, Andrey Dyldin <and@cesbo.com>
+-- Copyright (C) 2014-2015, Andrey Dyldin <and@cesbo.com>
 --
 -- This program is free software: you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License as published by
@@ -598,8 +598,9 @@ function dvb_tune(conf)
     local instance = dvb_input_instance_list[instance_id]
     if not instance then
         if not conf.type then
-            log.error("[dvb_tune " .. instance_id .. "] option 'type' is required")
-            astra.abort()
+            instance = dvb_input(conf)
+            dvb_input_instance_list[instance_id] = instance
+            return instance
         end
 
         if conf.tp then

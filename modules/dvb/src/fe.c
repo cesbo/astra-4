@@ -2,7 +2,7 @@
  * Astra Module: DVB (Frontend)
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -101,7 +101,8 @@ static void fe_check_status(dvb_fe_t *fe)
         fe->snr = 0;
         fe->ber = 0;
         fe->unc = 0;
-        fe->do_retune = 1;
+        if(fe->type != DVB_TYPE_UNKNOWN)
+            fe->do_retune = 1;
         return;
     }
 
@@ -532,22 +533,27 @@ void fe_open(dvb_fe_t *fe)
     char dev_name[32];
     sprintf(dev_name, "/dev/dvb/adapter%d/frontend%d", fe->adapter, fe->device);
 
-    fe->fe_fd = open(dev_name, O_RDWR | O_NONBLOCK);
+    fe->fe_fd = open(dev_name,
+        (fe->type != DVB_TYPE_UNKNOWN) ? (O_RDWR | O_NONBLOCK) : (O_RDONLY | O_NONBLOCK));
     if(fe->fe_fd <= 0)
     {
         asc_log_error(MSG("failed to open frontend [%s]"), strerror(errno));
         astra_abort();
     }
 
-    fe_tune(fe);
+    if(fe->type != DVB_TYPE_UNKNOWN)
+        fe_tune(fe);
 }
 
 void fe_close(dvb_fe_t *fe)
 {
     if(fe->fe_fd > 0)
     {
-        fe_clear(fe);
+        if(fe->type != DVB_TYPE_UNKNOWN)
+            fe_clear(fe);
+
         close(fe->fe_fd);
+        fe->fe_fd = 0;
     }
 }
 
