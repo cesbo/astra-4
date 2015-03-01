@@ -40,3 +40,23 @@ check_sctp_h()
 if check_sctp_h ; then
     CFLAGS="-DHAVE_SCTP_H=1"
 fi
+
+endian_h_test_c()
+{
+    cat <<EOF
+#include <endian.h>
+#ifndef __BYTE_ORDER
+#error "__BYTE_ORDER not defined"
+#endif
+int main(void) { return 0; }
+EOF
+}
+
+check_endian_h()
+{
+    endian_h_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+}
+
+if check_endian_h ; then
+    CFLAGS="-DHAVE_ENDIAN_H=1"
+fi

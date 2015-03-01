@@ -62,4 +62,17 @@
 #   endif
 #endif
 
+#ifndef __BYTE_ORDER__
+#   ifdef HAVE_ENDIAN_H
+#       include <endian.h>
+#       define __BYTE_ORDER__ __BYTE_ORDER
+#       define __ORDER_LITTLE_ENDIAN__ __LITTLE_ENDIAN
+#       define __ORDER_BIG_ENDIAN__ __BIG_ENDIAN
+#   else
+#       define __BYTE_ORDER__ 1234
+#       define __ORDER_LITTLE_ENDIAN__ 1234
+#       define __ORDER_BIG_ENDIAN__ 4321
+#   endif
+#endif
+
 #endif /* _BASE_H_ */

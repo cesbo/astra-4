@@ -20,10 +20,7 @@
 
 #undef DEBUG
 
-#include <sys/types.h>
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <core/base.h>
 
 #include "FFdecsa.h"
 

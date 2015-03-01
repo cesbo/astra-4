@@ -18,7 +18,7 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
-
+#include <core/base.h>
 
 // define statics only once, when STREAM_INIT
 #ifdef STREAM_INIT
