@@ -18,7 +18,7 @@ check_clock_gettime()
 }
 
 if check_clock_gettime ; then
-    CFLAGS="-DHAVE_CLOCK_GETTIME=1"
+    CFLAGS="$CFLAGS -DHAVE_CLOCK_GETTIME=1"
     LDFLAGS="-lrt"
 fi
 
@@ -38,7 +38,7 @@ check_sctp_h()
 }
 
 if check_sctp_h ; then
-    CFLAGS="-DHAVE_SCTP_H=1"
+    CFLAGS="$CFLAGS -DHAVE_SCTP_H=1"
 fi
 
 endian_h_test_c()
@@ -58,5 +58,5 @@ check_endian_h()
 }
 
 if check_endian_h ; then
-    CFLAGS="-DHAVE_ENDIAN_H=1"
+    CFLAGS="$CFLAGS -DHAVE_ENDIAN_H=1"
 fi
