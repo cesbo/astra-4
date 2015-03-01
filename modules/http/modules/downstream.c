@@ -2,7 +2,7 @@
  * Astra Module: HTTP Module: MPEG-TS Streaming
  * http://cesbo.com/astra
  *
- * Copyright (C) 2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2014-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,7 +43,7 @@ struct http_response_t
 
 static void on_downstream_read(void *arg)
 {
-    http_client_t *client = arg;
+    http_client_t *client = (http_client_t *)arg;
 
     ssize_t size = asc_socket_recv(client->sock, client->buffer, HTTP_BUFFER_SIZE);
     if(size <= 0)
@@ -92,7 +92,7 @@ static void on_downstream_read(void *arg)
 
 static void on_downstream_send(void *arg)
 {
-    http_client_t *client = arg;
+    http_client_t *client = (http_client_t *)arg;
 
     if(!lua_islightuserdata(lua, 2))
     {
@@ -132,7 +132,7 @@ static void on_downstream_send(void *arg)
 
 static int module_call(module_data_t *mod)
 {
-    http_client_t *client = lua_touserdata(lua, 3);
+    http_client_t *client = (http_client_t *)lua_touserdata(lua, 3);
 
     if(lua_isnil(lua, 4))
     {
@@ -152,7 +152,7 @@ static int module_call(module_data_t *mod)
         return 0;
     }
 
-    client->response = calloc(1, sizeof(http_response_t));
+    client->response = (http_response_t *)calloc(1, sizeof(http_response_t));
     client->response->mod = mod;
 
     client->on_send = on_downstream_send;
@@ -178,7 +178,7 @@ static int module_call(module_data_t *mod)
 
 static int __module_call(lua_State *L)
 {
-    module_data_t *mod = lua_touserdata(L, lua_upvalueindex(1));
+    module_data_t *mod = (module_data_t *)lua_touserdata(L, lua_upvalueindex(1));
     return module_call(mod);
 }
 

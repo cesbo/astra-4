@@ -2,7 +2,7 @@
  * Astra Module: HTTP Module: Static files
  * http://cesbo.com/astra
  *
- * Copyright (C) 2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2014-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -63,7 +63,7 @@ static const char __path[] = "path";
 
 static void on_ready_send_file(void *arg)
 {
-    http_client_t *client = arg;
+    http_client_t *client = (http_client_t *)arg;
     http_response_t *response = client->response;
 
     ssize_t send_size;
@@ -167,7 +167,7 @@ static const char * lua_get_mime(http_client_t *client, const char *path)
 /* Stack: 1 - instance, 2 - server, 3 - client, 4 - request */
 static int module_call(module_data_t *mod)
 {
-    http_client_t *client = lua_touserdata(lua, 3);
+    http_client_t *client = (http_client_t *)lua_touserdata(lua, 3);
 
     if(lua_isnil(lua, 4))
     {
@@ -180,7 +180,7 @@ static int module_call(module_data_t *mod)
         return 0;
     }
 
-    client->response = calloc(1, sizeof(http_response_t));
+    client->response = (http_response_t *)calloc(1, sizeof(http_response_t));
     client->response->mod = mod;
     client->on_send = NULL;
     client->on_read = NULL;
@@ -192,7 +192,7 @@ static int module_call(module_data_t *mod)
     const char *path = lua_tostring(lua, -1);
     lua_pop(lua, 2); // request + path
 
-    char *filename = malloc(PATH_MAX);
+    char *filename = (char *)malloc(PATH_MAX);
     sprintf(filename, "%s%s", mod->path, &path[mod->path_skip]);
     client->response->file_fd = open(filename, O_RDONLY);
     free(filename);
@@ -234,7 +234,7 @@ static int module_call(module_data_t *mod)
 
 static int __module_call(lua_State *L)
 {
-    module_data_t *mod = lua_touserdata(L, lua_upvalueindex(1));
+    module_data_t *mod = (module_data_t *)lua_touserdata(L, lua_upvalueindex(1));
     return module_call(mod);
 }
 

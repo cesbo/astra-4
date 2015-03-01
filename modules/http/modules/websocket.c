@@ -62,11 +62,11 @@ static const char __websocket_magic[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 static void on_websocket_ready(void *arg)
 {
-    http_client_t *client = arg;
+    http_client_t *client = (http_client_t *)arg;
     http_response_t *response = client->response;
 
     asc_list_first(response->frame_queue);
-    frame_t *frame = asc_list_data(response->frame_queue);
+    frame_t *frame = (frame_t *)asc_list_data(response->frame_queue);
 
     ssize_t size = asc_socket_send(  client->sock
                                    , &frame->buffer[frame->skip]
@@ -93,7 +93,7 @@ static void on_websocket_ready(void *arg)
 /* Stack: 1 - server, 2 - client, 3 - response */
 static void on_websocket_send(void *arg)
 {
-    http_client_t *client = arg;
+    http_client_t *client = (http_client_t *)arg;
     http_response_t *response = client->response;
 
     const char *str = lua_tostring(lua, 3);
@@ -145,7 +145,7 @@ static void on_websocket_send(void *arg)
 
 static void on_websocket_read(void *arg)
 {
-    http_client_t *client = arg;
+    http_client_t *client = (http_client_t *)arg;
     http_response_t *response = client->response;
 
     ssize_t size;
@@ -302,7 +302,7 @@ static void on_websocket_read(void *arg)
 
 static int module_call(module_data_t *mod)
 {
-    http_client_t *client = lua_touserdata(lua, 3);
+    http_client_t *client = (http_client_t *)lua_touserdata(lua, 3);
 
     if(lua_isnil(lua, 4))
     {
@@ -325,7 +325,7 @@ static int module_call(module_data_t *mod)
                     ; !asc_list_eol(client->response->frame_queue)
                     ; asc_list_remove_current(client->response->frame_queue))
                 {
-                    frame_t *frame = asc_list_data(client->response->frame_queue);
+                    frame_t *frame = (frame_t *)asc_list_data(client->response->frame_queue);
                     free(frame->buffer);
                     free(frame);
                 }
@@ -399,7 +399,7 @@ static int module_call(module_data_t *mod)
 
 static int __module_call(lua_State *L)
 {
-    module_data_t *mod = lua_touserdata(L, lua_upvalueindex(1));
+    module_data_t *mod = (module_data_t *)lua_touserdata(L, lua_upvalueindex(1));
     return module_call(mod);
 }
 

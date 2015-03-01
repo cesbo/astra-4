@@ -2,7 +2,7 @@
  * Astra Module: HTTP Request
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -173,7 +173,7 @@ static void call_error(module_data_t *mod, const char *msg)
 
 void timeout_callback(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     asc_timer_destroy(mod->timeout);
     mod->timeout = NULL;
@@ -198,7 +198,7 @@ static void on_thread_close(void *arg);
 
 static void on_close(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     if(mod->thread)
         on_thread_close(mod);
@@ -377,7 +377,7 @@ static bool seek_pcr(  module_data_t *mod
 
 static void on_thread_close(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     mod->is_thread_started = false;
 
@@ -398,7 +398,7 @@ static void on_thread_close(void *arg)
 
 static void on_thread_read(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     uint8_t ts[TS_PACKET_SIZE];
     const ssize_t r = asc_thread_buffer_read(mod->thread_output, ts, sizeof(ts));
@@ -408,7 +408,7 @@ static void on_thread_read(void *arg)
 
 static void thread_loop(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     uint8_t *ptr, ts[TS_PACKET_SIZE];
 
@@ -597,7 +597,7 @@ static void thread_loop(void *arg)
 
 static void check_is_active(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     if(mod->is_active)
     {
@@ -611,7 +611,7 @@ static void check_is_active(void *arg)
 
 static void on_ts_read(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     ssize_t size = asc_socket_recv(  mod->sock
                                    , &mod->sync.buffer[mod->sync.buffer_write]
@@ -664,7 +664,7 @@ static void on_ts_read(void *arg)
 
 static void on_read(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     if(mod->timeout)
     {
@@ -702,13 +702,15 @@ static void on_read(void *arg)
         // check empty line
         while(skip < mod->buffer_skip)
         {
-            if(mod->buffer[skip + 0] == '\n' && mod->buffer[skip + 1] == '\n')
+            if(   skip + 1 < mod->buffer_skip
+               && mod->buffer[skip + 0] == '\n' && mod->buffer[skip + 1] == '\n')
             {
                 eoh = skip + 2;
                 mod->status = 1;
                 break;
             }
-            else if(   mod->buffer[skip + 0] == '\r' && mod->buffer[skip + 1] == '\n'
+            else if(   skip + 3 < mod->buffer_skip
+                    && mod->buffer[skip + 0] == '\r' && mod->buffer[skip + 1] == '\n'
                     && mod->buffer[skip + 2] == '\r' && mod->buffer[skip + 3] == '\n')
             {
                 eoh = skip + 4;
@@ -737,8 +739,7 @@ static void on_read(void *arg)
  *
  */
 
-        m[0].eo = eoh; // end of buffer
-        if(!http_parse_response(mod->buffer, m))
+        if(!http_parse_response(mod->buffer, eoh, m))
         {
             call_error(mod, "failed to parse response line");
             on_close(mod);
@@ -781,8 +782,7 @@ static void on_read(void *arg)
 
         while(skip < eoh)
         {
-            m[0].eo = eoh - skip; // end of buffer
-            if(!http_parse_header(&mod->buffer[skip], m))
+            if(!http_parse_header(&mod->buffer[skip], eoh - skip, m))
             {
                 call_error(mod, "failed to parse response headers");
                 on_close(mod);
@@ -862,7 +862,7 @@ static void on_read(void *arg)
             lua_setfield(lua, -2, __stream);
             callback(mod);
 
-            mod->sync.buffer = malloc(mod->sync.buffer_size);
+            mod->sync.buffer = (uint8_t *)malloc(mod->sync.buffer_size);
 
             if(!mod->config.sync)
             {
@@ -922,8 +922,7 @@ static void on_read(void *arg)
         {
             if(!mod->chunk_left)
             {
-                m[0].eo = mod->buffer_skip - skip;
-                if(!http_parse_chunk(&mod->buffer[skip], m))
+                if(!http_parse_chunk(&mod->buffer[skip], mod->buffer_skip - skip, m))
                 {
                     call_error(mod, "invalid chunk");
                     on_close(mod);
@@ -1029,7 +1028,7 @@ static void on_read(void *arg)
 
 static void on_ready_send_content(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     asc_assert(mod->request.size > 0, MSG("invalid content size"));
 
@@ -1062,7 +1061,7 @@ static void on_ready_send_content(void *arg)
 
 static void on_ready_send_request(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     asc_assert(mod->request.size > 0, MSG("invalid request size"));
 
@@ -1169,7 +1168,7 @@ static void lua_make_request(module_data_t *mod)
 
 static void on_connect(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     mod->request.status = 1;
 
@@ -1187,7 +1186,7 @@ static void on_connect(void *arg)
 
 static void on_upstream_ready(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     if(mod->sync.buffer_count > 0)
     {
@@ -1368,7 +1367,7 @@ static void module_init(module_data_t *mod)
         int value = 1024;
         module_option_number("buffer_size", &value);
         mod->sync.buffer_size = value * 1024;
-        mod->sync.buffer = malloc(mod->sync.buffer_size);
+        mod->sync.buffer = (uint8_t *)malloc(mod->sync.buffer_size);
 
         value = 128;
         module_option_number("buffer_fill", &value);

@@ -2,7 +2,7 @@
  * Astra Module: HTTP
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,24 +20,72 @@
 
 #include "parser.h"
 
-/* RFC: 2616 (HTTP/1.1), 3986 (URI) */
+bool parse_skip_word(const char *str, size_t size, size_t *skip)
+{
+    size_t _skip = *skip;
 
-#define IS_UPPER_ALPHA(_c) (_c >= 'A' && _c <= 'Z')
-#define IS_LOWER_ALPHA(_c) (_c >= 'a' && _c <= 'z')
-#define IS_ALPHA(_c) (IS_UPPER_ALPHA(_c) || IS_LOWER_ALPHA(_c))
+    while(_skip < size)
+    {
+        switch(str[_skip])
+        {
+            case ' ':
+            case '\t':
+                *skip = _skip;
+                return true;
+            default:
+                ++_skip;
+                break;
+        }
+    }
 
-#define IS_DIGIT(_c) (_c >= '0' && _c <= '9')
+    return false;
+}
 
-#define IS_UNRESERVED(_c) (   IS_ALPHA(_c)                                  \
-                           || IS_DIGIT(_c)                                  \
-                           || (_c == '-')                                   \
-                           || (_c == '.')                                   \
-                           || (_c == '_')                                   \
-                           || (_c == '~'))
+bool parse_skip_space(const char *str, size_t size, size_t *skip)
+{
+    size_t _skip = *skip;
 
-#define IS_HEXDIGIT(_c) (   IS_DIGIT(_c)                                    \
-                         || (_c >= 'A' && _c <= 'F')                        \
-                         || (_c >= 'a' && _c <= 'f'))
+    while(_skip < size)
+    {
+        switch(str[_skip])
+        {
+            case ' ':
+            case '\t':
+                ++_skip;
+                break;
+            default:
+                *skip = _skip;
+                return true;
+        }
+    }
+
+    return false;
+}
+
+bool parse_skip_line(const char *str, size_t size, size_t *skip)
+{
+    size_t _skip = *skip;
+
+    while(_skip < size)
+    {
+        switch(str[_skip])
+        {
+            case '\n':
+                *skip = _skip + 1;
+                return true;
+            case '\r':
+                if(_skip + 1 >= size || str[_skip + 1] != '\n')
+                    return false;
+                *skip = _skip + 2;
+                return true;
+            default:
+                ++_skip;
+                break;
+        }
+    }
+
+    return false;
+}
 
 /*
  * oooooooooo  ooooooooooo  oooooooo8 oooooooooo
@@ -48,83 +96,38 @@
  *
  */
 
-bool http_parse_response(const char *str, parse_match_t *match)
+bool http_parse_response(const char *str, size_t size, parse_match_t *match)
 {
-    char c;
     size_t skip = 0;
     match[0].so = 0;
 
     // parse version
     match[1].so = skip;
-    while(1)
-    {
-        if(skip >= match[0].eo)
-            return false;
-
-        c = str[skip];
-        if(c == ' ' || c == '\t')
-            break;
-        else
-            ++skip;
-    }
+    if(!parse_skip_word(str, size, &skip))
+        return false;
     match[1].eo = skip;
 
     // skip space
-    while(1)
-    {
-        if(skip >= match[0].eo)
-            return false;
-
-        c = str[skip];
-        if(c == ' ' || c == '\t')
-            ++skip;
-        else
-            break;
-    }
+    if(!parse_skip_space(str, size, &skip))
+        return false;
 
     // parse code
     match[2].so = skip;
-    while(1)
-    {
-        if(skip >= match[0].eo)
-            return false;
-
-        c = str[skip];
-        if(c == ' ' || c == '\t')
-            break;
-        else
-            ++skip;
-    }
+    if(!parse_skip_word(str, size, &skip))
+        return false;
     match[2].eo = skip;
 
     // skip space
-    while(1)
-    {
-        if(skip >= match[0].eo)
-            return false;
-
-        c = str[skip];
-        if(c == ' ' || c == '\t')
-            ++skip;
-        else
-            break;
-    }
+    if(!parse_skip_space(str, size, &skip))
+        return false;
 
     // parse message
     match[3].so = skip;
-    while(1)
-    {
-        if(skip + 1 >= match[0].eo)
-            return false;
+    if(!parse_skip_line(str, size, &skip))
+        return false;
+    match[3].eo = parse_get_line_size(str, skip);
 
-        if(str[skip] == '\r' && str[skip + 1] == '\n')
-            break;
-        else
-            ++skip;
-    }
-    match[3].eo = skip;
-
-    match[0].eo = skip + 2;
+    match[0].eo = skip;
     return true;
 }
 
@@ -137,83 +140,38 @@ bool http_parse_response(const char *str, parse_match_t *match)
  *                               88o8
  */
 
-bool http_parse_request(const char *str, parse_match_t *match)
+bool http_parse_request(const char *str, size_t size, parse_match_t *match)
 {
-    char c;
     size_t skip = 0;
     match[0].so = 0;
 
     // parse method
     match[1].so = 0;
-    while(1)
-    {
-        if(skip >= match[0].eo)
-            return false;
-
-        c = str[skip];
-        if(c == ' ' || c == '\t')
-            break;
-        else
-            ++skip;
-    }
+    if(!parse_skip_word(str, size, &skip))
+        return false;
     match[1].eo = skip;
 
     // skip space
-    while(1)
-    {
-        if(skip >= match[0].eo)
-            return false;
-
-        c = str[skip];
-        if(c == ' ' || c == '\t')
-            ++skip;
-        else
-            break;
-    }
+    if(!parse_skip_space(str, size, &skip))
+        return false;
 
     // parse path
     match[2].so = skip;
-    while(1)
-    {
-        if(skip >= match[0].eo)
-            return false;
-
-        c = str[skip];
-        if(c == ' ' || c == '\t')
-            break;
-        else
-            ++skip;
-    }
+    if(!parse_skip_word(str, size, &skip))
+        return false;
     match[2].eo = skip;
 
     // skip space
-    while(1)
-    {
-        if(skip >= match[0].eo)
-            return false;
-
-        c = str[skip];
-        if(c == ' ' || c == '\t')
-            ++skip;
-        else
-            break;
-    }
+    if(!parse_skip_space(str, size, &skip))
+        return false;
 
     // parse version
     match[3].so = skip;
-    while(1)
-    {
-        if(skip + 1 >= match[0].eo)
-            return false;
+    if(!parse_skip_line(str, size, &skip))
+        return false;
+    match[3].eo = parse_get_line_size(str, skip);
 
-        if(str[skip] == '\r' && str[skip + 1] == '\n')
-            break;
-        else
-            ++skip;
-    }
-    match[3].eo = skip;
-
-    match[0].eo = skip + 2;
+    match[0].eo = skip;
     return true;
 }
 
@@ -226,175 +184,154 @@ bool http_parse_request(const char *str, parse_match_t *match)
  *
  */
 
-bool http_parse_header(const char *str, parse_match_t *match)
+bool http_parse_header(const char *str, size_t size, parse_match_t *match)
+{
+    size_t skip = 0;
+    match[0].so = 0;
+    match[1].so = 0;
+    match[1].eo = 0;
+
+    if(size == 0)
+        return false;
+
+    while(1)
+    {
+        if(skip >= size)
+            return false;
+
+        const char c = str[skip];
+        if(c == ':')
+            break;
+        else if(c == '\n')
+        {
+            if(skip > 0)
+                return false;
+
+            // eol
+            match[1].eo = 0;
+            match[0].eo = skip + 1;
+            return true;
+        }
+        else if(c == '\r')
+        {
+            if(skip > 0)
+                return false;
+            if(skip + 1 >= size || str[skip + 1] != '\n')
+                return false;
+
+            // eol
+            match[1].eo = 0;
+            match[0].eo = skip + 2;
+            return true;
+        }
+
+        ++skip;
+    }
+    match[1].eo = skip;
+
+    // parse value
+    match[2].so = match[1].eo + 1; // skip ':'
+    if(!parse_skip_space(str, size, &match[2].so))
+        return false;
+
+    skip = match[2].so;
+    if(!parse_skip_line(str, size, &skip))
+        return false;
+    match[2].eo = parse_get_line_size(str, skip);
+
+    match[0].eo = skip;
+    return true;
+}
+
+/*
+ *      o    ooooo  oooo ooooooooooo ooooo ooooo
+ *     888    888    88  88  888  88  888   888
+ *    8  88   888    88      888      888ooo888
+ *   8oooo88  888    88      888      888   888
+ * o88o  o888o 888oo88      o888o    o888o o888o
+ *
+ */
+
+static bool http_parse_auth_challenge(const char *str, size_t size, parse_match_t *match)
 {
     char c;
     size_t skip = 0;
     match[0].so = 0;
 
-    if(match[0].eo < 2)
-        return false;
-
-    // empty line
-    if(str[0] == '\r' && str[1] == '\n')
-    {
-        match[1].so = 0;
-        match[1].eo = 0;
-        match[0].eo = 2;
-        return true;
-    }
-
     // parse key
     match[1].so = 0;
     while(1)
     {
-        if(skip >= match[0].eo)
+        if(skip >= size)
             return false;
 
-        if(str[skip] == ':')
+        if(str[skip] == '=')
             break;
         else
             ++skip;
     }
     match[1].eo = skip;
 
-    // skip ':'
-    ++skip;
-
-    // skip space
-    while(1)
-    {
-        if(skip >= match[0].eo)
-            return false;
-
-        c = str[skip];
-        if(c == ' ' || c == '\t')
-            ++skip;
-        else
-            break;
-    }
-
-    // check eol
-    if(skip + 2 >= match[0].eo)
-        return false;
-
-    if(str[skip] == '\r' && str[skip + 1] == '\n')
-    {
-        match[2].so = skip;
-        match[2].eo = skip;
-        match[0].eo = skip + 2;
-        return true;
-    }
-
-    // parse value
-    match[2].so = skip;
-    while(1)
-    {
-        if(skip + 1 >= match[0].eo)
-            return false;
-
-        if(str[skip] == '\r' && str[skip + 1] == '\n')
-            break;
-        else
-            ++skip;
-    }
-    match[2].eo = skip;
-
-    match[0].eo = skip + 2;
-    return true;
-}
-
-/* WWW-Authenticate */
-
-bool http_parse_auth_challenge(const char *str, parse_match_t *match)
-{
-    char c;
-    size_t skip = 0;
-    match[0].so = 0;
-
-    // parse key
-    match[1].so = 0;
-    while(1)
-    {
-        c = str[skip];
-
-        if(IS_UNRESERVED(c))
-        {
-            skip += 1;
-        }
-        else
-        {
-            match[1].eo = skip;
-
-            if(skip == 0)
-            {
-                // end of line
-                match[2].so = skip;
-                match[2].eo = skip;
-                match[0].eo = skip;
-                return true;
-            }
-
-            break;
-        }
-    }
-
-    if(str[skip] != '=')
-        return false;
-
     ++skip; // skip '='
 
-    char quote = str[skip];
-    if(quote == '"')
+    if(skip >= size)
+        return false;
+
+    bool quoted = false;
+    if(str[skip] == '"')
+    {
+        quoted = true;
         ++skip;
-    else
-        quote = 0;
+    }
 
     match[2].so = skip;
     while(1)
     {
-        c = str[skip];
-
-        if(!c)
-        {
-            return false;
-        }
-        else if(c == '\\' && quote && str[skip + 1] == quote)
-        {
-            skip += 2;
-        }
-        else if(c == quote)
+        if(skip >= size)
         {
             match[2].eo = skip;
-            skip += 1;
-            break;
+            match[0].eo = skip;
+            return true;
         }
-        else if(c == '\r' && str[skip + 1] == '\n' && !quote)
+
+        c = str[skip];
+        if(c == '"' && quoted)
         {
-            skip += 2;
+            match[2].eo = skip;
+            ++skip; // skip '"'
             break;
         }
-        else if(c == ',' && !quote)
+        else if(c == '\\' && quoted)
+        {
+            ++skip;
+            if(skip < size && str[skip] == '"')
+                ++skip;
+        }
+        else if((c == ',' || c == ' ') && !quoted)
         {
             match[2].eo = skip;
             break;
         }
         else
-        {
-            skip += 1;
-        }
+            ++skip;
     }
 
-    if(str[skip] == ',' && str[skip + 1] == ' ')
-        skip += 2;
-
+    while(skip < size)
+    {
+        c = str[skip];
+        if(c == ',' || c == ' ')
+            ++skip;
+        else
+            break;
+    }
     match[0].eo = skip;
+
     return true;
 }
 
-char * http_authorization(  const char *auth_header
-                          , const char *method, const char *path
-                          , const char *login, const char *password)
+char * http_authorization(const char *auth_header, size_t size,
+    const char *method, const char *path,
+    const char *login, const char *password)
 {
     if(!login)
         return NULL;
@@ -404,11 +341,11 @@ char * http_authorization(  const char *auth_header
     if(!strncasecmp(auth_header, "basic", 5))
     {
         size_t sl = strlen(login) + 1 + strlen(password);
-        char *s = malloc(sl + 1);
+        char *s = (char *)malloc(sl + 1);
         sprintf(s, "%s:%s", login, password);
         size_t tl = 0;
         char *t = base64_encode(s, sl, &tl);
-        char *r = malloc(6 + tl + 1);
+        char *r = (char *)malloc(6 + tl + 1);
         sprintf(r, "Basic %s", t);
         free(s);
         free(t);
@@ -431,24 +368,25 @@ char * http_authorization(  const char *auth_header
         char *nonce = "";
         size_t nonce_len = 0;
 
-        auth_header += 7; // "Digest "
-        while(http_parse_auth_challenge(auth_header, m) && m[1].eo != 0)
+        size_t skip = 7;
+        while(skip < size &&
+            http_parse_auth_challenge(&auth_header[skip], size - skip, m))
         {
-            if(!strncmp(auth_header, "realm", m[1].eo))
+            if(!strncmp(&auth_header[skip], "realm", m[1].eo))
             {
                 realm_len = m[2].eo - m[2].so;
-                realm = malloc(realm_len + 1);
-                memcpy(realm, &auth_header[m[2].so], realm_len);
+                realm = (char *)malloc(realm_len + 1);
+                memcpy(realm, &auth_header[skip + m[2].so], realm_len);
                 realm[realm_len] = 0;
             }
-            else if(!strncmp(auth_header, "nonce", m[1].eo))
+            else if(!strncmp(&auth_header[skip], "nonce", m[1].eo))
             {
                 nonce_len = m[2].eo - m[2].so;
-                nonce = malloc(nonce_len + 1);
-                memcpy(nonce, &auth_header[m[2].so], nonce_len);
+                nonce = (char *)malloc(nonce_len + 1);
+                memcpy(nonce, &auth_header[skip + m[2].so], nonce_len);
                 nonce[nonce_len] = 0;
             }
-            auth_header += m[0].eo;
+            skip += m[0].eo;
         }
 
         memset(&ctx, 0, sizeof(md5_ctx_t));
@@ -500,23 +438,18 @@ char * http_authorization(  const char *auth_header
                 ha3[i] = c3 - 'A' + 'a';
         }
 
-        const char template[] = "Digest "
-                                "username=\"%s\", "
-                                "realm=\"%s\", "
-                                "nonce=\"%s\", "
-                                "uri=\"%s\", "
-                                "response=\"%s\"";
-        const size_t template_len = sizeof(template) - (2 * 5) - 1;
+        const char auth_template[] = "Digest "
+                                     "username=\"%s\", "
+                                     "realm=\"%s\", "
+                                     "nonce=\"%s\", "
+                                     "uri=\"%s\", "
+                                     "response=\"%s\"";
+        const size_t auth_template_len = sizeof(auth_template) - (2 * 5) - 1;
 
-        char *r = malloc(  template_len
-                         + login_len
-                         + realm_len
-                         + nonce_len
-                         + path_len
-                         + MD5_DIGEST_SIZE * 2
-                         + 1);
+        char *r = (char *)malloc(auth_template_len +
+            login_len + realm_len + nonce_len + path_len + MD5_DIGEST_SIZE * 2 + 1);
 
-        sprintf(r, template, login, realm, nonce, path, ha3);
+        sprintf(r, auth_template, login, realm, nonce, path, ha3);
         return r;
     }
 
@@ -532,7 +465,7 @@ char * http_authorization(  const char *auth_header
  *
  */
 
-bool http_parse_chunk(const char *str, parse_match_t *match)
+bool http_parse_chunk(const char *str, size_t size, parse_match_t *match)
 {
     char c;
     size_t skip = 0;
@@ -542,15 +475,23 @@ bool http_parse_chunk(const char *str, parse_match_t *match)
     match[1].so = 0;
     while(1)
     {
-        if(skip + 1 >= match[0].eo)
+        if(skip >= size)
             return false;
 
         c = str[skip];
 
         if((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
             ++skip;
-        else if(c == '\r' && str[skip + 1] == '\n')
+        else if(c == '\n')
         {
+            match[1].eo = skip;
+            match[0].eo = skip + 1;
+            return true;
+        }
+        else if(c == '\r')
+        {
+            if(skip + 1 >= size || str[skip + 1] != '\n')
+                return false;
             match[1].eo = skip;
             match[0].eo = skip + 2;
             return true;
@@ -563,19 +504,25 @@ bool http_parse_chunk(const char *str, parse_match_t *match)
 
     // chunk extension
     ++skip; // skip ';'
-    while(1)
+    while(skip < size)
     {
-        if(skip + 1 >= match[0].eo)
-            return false;
-
-        if(str[skip] == '\r' && str[skip + 1] == '\n')
-            break;
-        else
-            ++skip;
+        switch(str[skip])
+        {
+            case '\n':
+                match[0].eo = skip + 1;
+                return true;
+            case '\r':
+                if(skip + 1 >= size || str[skip + 1] != '\n')
+                    return false;
+                match[0].eo = skip + 2;
+                return true;
+            default:
+                ++skip;
+                break;
+        }
     }
-    match[0].eo = skip + 2;
 
-    return true;
+    return false;
 }
 
 /*
@@ -587,88 +534,50 @@ bool http_parse_chunk(const char *str, parse_match_t *match)
  *        88o8
  */
 
-bool http_parse_query(const char *str, parse_match_t *match)
+bool http_parse_query(const char *str, size_t size, parse_match_t *match)
 {
-    char c;
     size_t skip = 0;
     match[0].so = 0;
 
     // parse key
     match[1].so = 0;
-    while(1)
+    while(skip < size)
     {
-        c = str[skip];
-
-        if(IS_UNRESERVED(c) || c == '+')
-        {
-            skip += 1;
-        }
-        else if(c == '%')
-        {
-            const char d1 = str[skip + 1];
-            if(!IS_HEXDIGIT(d1))
-                return false;
-
-            const char d2 = str[skip + 2];
-            if(!IS_HEXDIGIT(d2))
-                return false;
-
-            skip += 3;
-        }
-        else
+        const char c = str[skip];
+        if(c == '=')
         {
             match[1].eo = skip;
-
-            if(skip == 0)
-            {
-                match[2].so = skip;
-                match[2].eo = skip;
-                match[0].eo = skip;
-                return true;
-            }
-
             break;
         }
+        else if(c == '&')
+        {
+            match[1].eo = skip;
+            match[2].so = skip;
+            match[2].eo = skip;
+            match[0].eo = skip + 1;
+            return true;
+        }
+        else
+            ++skip;
     }
 
-    if(str[skip] != '=')
+    if(skip == 0 || skip >= size)
     {
+        match[1].eo = skip;
         match[2].so = skip;
         match[2].eo = skip;
         match[0].eo = skip;
         return true;
     }
+
     skip += 1; // skip '='
 
     // parse value
     match[2].so = skip;
-    while(1)
-    {
-        c = str[skip];
+    while(skip < size && str[skip] != '&')
+        ++skip;
+    match[2].eo = skip;
+    match[0].eo = (skip < size && str[skip] == '&') ? skip + 1 : skip;
 
-        if(IS_UNRESERVED(c) || c == '+' || c == '=')
-        {
-            skip += 1;
-        }
-        else if(c == '%')
-        {
-            const char d1 = str[skip + 1];
-            if(!IS_HEXDIGIT(d1))
-                return false;
-
-            const char d2 = str[skip + 2];
-            if(!IS_HEXDIGIT(d2))
-                return false;
-
-            skip += 3;
-        }
-        else
-        {
-            match[2].eo = skip;
-            break;
-        }
-    }
-
-    match[0].eo = skip;
     return true;
 }

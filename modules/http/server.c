@@ -2,7 +2,7 @@
  * Astra Module: HTTP Server
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -105,7 +105,7 @@ static void callback(http_client_t *client)
 
 static void on_client_close(void *arg)
 {
-    http_client_t *client = arg;
+    http_client_t *client = (http_client_t *)arg;
     module_data_t *mod = client->mod;
 
     if(!client->sock)
@@ -189,7 +189,7 @@ static bool routecmp(const char *path, const char *route)
 
 static void on_client_read(void *arg)
 {
-    http_client_t *client = arg;
+    http_client_t *client = (http_client_t *)arg;
     module_data_t *mod = client->mod;
 
     ssize_t size = asc_socket_recv(  client->sock
@@ -250,8 +250,7 @@ static void on_client_read(void *arg)
  *                                   88o8
  */
 
-        m[0].eo = eoh;
-        if(!http_parse_request(client->buffer, m))
+        if(!http_parse_request(client->buffer, eoh, m))
         {
             asc_log_error(MSG("failed to parse request line"));
             on_client_close(client);
@@ -351,8 +350,7 @@ static void on_client_read(void *arg)
 
         while(skip < eoh)
         {
-            m[0].eo = eoh - skip; // end of buffer
-            if(!http_parse_header(&client->buffer[skip], m))
+            if(!http_parse_header(&client->buffer[skip], eoh - skip, m))
             {
                 asc_log_error(MSG("failed to parse request headers"));
                 on_client_close(client);
@@ -398,7 +396,7 @@ static void on_client_read(void *arg)
         client->idx_callback = 0;
         asc_list_for(mod->routes)
         {
-            route_t *route = asc_list_data(mod->routes);
+            route_t *route = (route_t *)asc_list_data(mod->routes);
             if(routecmp(path, route->path))
             {
                 client->idx_callback = route->idx_callback;
@@ -481,7 +479,7 @@ static void on_client_read(void *arg)
 
 static void on_ready_send_content(void *arg)
 {
-    http_client_t *client = arg;
+    http_client_t *client = (http_client_t *)arg;
     module_data_t *mod = client->mod;
 
     lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_content);
@@ -517,7 +515,7 @@ static void on_ready_send_content(void *arg)
 static int method_send(module_data_t *mod)
 {
     asc_assert(lua_islightuserdata(lua, 2), MSG(":send() client instance required"));
-    http_client_t *client = lua_touserdata(lua, 2);
+    http_client_t *client = (http_client_t *)lua_touserdata(lua, 2);
 
     if(client->on_send)
     {
@@ -587,7 +585,7 @@ static int method_send(module_data_t *mod)
 
 static void on_ready_send_response(void *arg)
 {
-    http_client_t *client = arg;
+    http_client_t *client = (http_client_t *)arg;
     module_data_t *mod = client->mod;
 
     const size_t content_send = (client->chunk_left > HTTP_BUFFER_SIZE)
@@ -729,7 +727,7 @@ void http_client_abort(http_client_t *client, int code, const char *text)
 
     const char *message = http_code(code);
 
-    static const char template[] =
+    static const char abort_template[] =
         "<html><head>"
             "<title>%d %s</title>"
         "</head><body>"
@@ -740,7 +738,7 @@ void http_client_abort(http_client_t *client, int code, const char *text)
         "</body></html>\r\n";
 
     lua_pushfstring(  lua
-                    , template
+                    , abort_template
                     , code, message
                     , message, (text) ? text : "&nbsp;"
                     , mod->server_name);
@@ -794,7 +792,7 @@ void http_client_redirect(http_client_t *client, int code, const char *location)
 
 static void on_server_close(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     if(!mod->sock)
         return;
@@ -809,7 +807,7 @@ static void on_server_close(void *arg)
             ; !asc_list_eol(mod->clients)
             ; asc_list_first(mod->clients))
         {
-            http_client_t *client = asc_list_data(mod->clients);
+            http_client_t *client = (http_client_t *)asc_list_data(mod->clients);
             asc_assert(client != prev_client
                        , MSG("loop on on_server_close() client:%p")
                        , client);
@@ -827,7 +825,7 @@ static void on_server_close(void *arg)
             ; !asc_list_eol(mod->routes)
             ; asc_list_first(mod->routes))
         {
-            route_t *route = asc_list_data(mod->routes);
+            route_t *route = (route_t *)asc_list_data(mod->routes);
             luaL_unref(lua, LUA_REGISTRYINDEX, route->idx_callback);
             free(route);
             asc_list_remove_current(mod->routes);
@@ -846,9 +844,9 @@ static void on_server_close(void *arg)
 
 static void on_server_accept(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
-    http_client_t *client = calloc(1, sizeof(http_client_t));
+    http_client_t *client = (http_client_t *)calloc(1, sizeof(http_client_t));
     client->mod = mod;
     client->idx_server = mod->idx_self;
 
@@ -882,7 +880,7 @@ static void on_server_accept(void *arg)
 static int method_data(module_data_t *mod)
 {
     asc_assert(lua_islightuserdata(lua, 2), MSG(":data() client instance required"));
-    http_client_t *client = lua_touserdata(lua, 2);
+    http_client_t *client = (http_client_t *)lua_touserdata(lua, 2);
 
     if(!client->idx_data)
     {
@@ -902,7 +900,7 @@ static int method_close(module_data_t *mod)
     else
     {
         asc_assert(lua_islightuserdata(lua, 2), MSG(":close() client instance required"));
-        http_client_t *client = lua_touserdata(lua, 2);
+        http_client_t *client = (http_client_t *)lua_touserdata(lua, 2);
         on_client_close(client);
     }
 
@@ -913,7 +911,7 @@ static int method_redirect(module_data_t *mod)
 {
     asc_assert(lua_islightuserdata(lua, 2), MSG(":redirect() client instance required"));
     asc_assert(lua_isstring(lua, 3), MSG(":redirect() location required"));
-    http_client_t *client = lua_touserdata(lua, 2);
+    http_client_t *client = (http_client_t *)lua_touserdata(lua, 2);
     const char *location = lua_tostring(lua, 3);
     http_client_redirect(client, 302, location);
     return 0;
@@ -923,7 +921,7 @@ static int method_abort(module_data_t *mod)
 {
     asc_assert(lua_islightuserdata(lua, 2), MSG(":abort() client instance required"));
     asc_assert(lua_isnumber(lua, 3), MSG(":abort() code required"));
-    http_client_t *client = lua_touserdata(lua, 2);
+    http_client_t *client = (http_client_t *)lua_touserdata(lua, 2);
     const int code = lua_tonumber(lua, 3);
     const char *text = lua_isstring(lua, 4) ? lua_tostring(lua, 4) : NULL;
     http_client_abort(client, code, text);
@@ -987,7 +985,7 @@ static void module_init(module_data_t *mod)
         } while(0);
         asc_assert(is_ok, MSG("route format: { { \"/path\", callback }, ... }"));
 
-        route_t *route = malloc(sizeof(route_t));
+        route_t *route = (route_t *)malloc(sizeof(route_t));
         route->idx_callback = luaL_ref(lua, LUA_REGISTRYINDEX);
         route->path = lua_tostring(lua, -1);
         lua_pop(lua, 1); // path

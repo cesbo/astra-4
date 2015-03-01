@@ -2,7 +2,7 @@
  * Astra Module: HTTP Module: Redirect
  * http://cesbo.com/astra
  *
- * Copyright (C) 2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2014-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@ struct module_data_t
 /* Stack: 1 - instance, 2 - server, 3 - client, 4 - request */
 static int module_call(module_data_t *mod)
 {
-    http_client_t *client = lua_touserdata(lua, 3);
+    http_client_t *client = (http_client_t *)lua_touserdata(lua, 3);
 
     if(lua_isnil(lua, 4))
         return 0;
@@ -42,7 +42,7 @@ static int module_call(module_data_t *mod)
 
 static int __module_call(lua_State *L)
 {
-    module_data_t *mod = lua_touserdata(L, lua_upvalueindex(1));
+    module_data_t *mod = (module_data_t *)lua_touserdata(L, lua_upvalueindex(1));
     return module_call(mod);
 }
 

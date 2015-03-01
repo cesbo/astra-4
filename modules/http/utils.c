@@ -2,7 +2,7 @@
  * Astra Module: HTTP
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -83,7 +83,7 @@ bool lua_parse_query(const char *str, size_t size)
     parse_match_t m[3];
 
     lua_newtable(lua);
-    while(skip < size && http_parse_query(&str[skip], m))
+    while(skip < size && http_parse_query(&str[skip], size - skip, m))
     {
         if(m[1].eo > m[1].so)
         {
@@ -94,9 +94,6 @@ bool lua_parse_query(const char *str, size_t size)
         }
 
         skip += m[0].eo;
-
-        if(skip < size)
-            ++skip; // skip &
     }
 
     return (skip == size);
@@ -107,7 +104,7 @@ bool lua_safe_path(const char *str, size_t size)
     size_t skip = 0;
 
     size_t sskip = 0;
-    char *safe = malloc(size + 1);
+    char *safe = (char *)malloc(size + 1);
 
     while(skip < size)
     {

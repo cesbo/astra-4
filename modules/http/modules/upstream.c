@@ -2,7 +2,7 @@
  * Astra Module: HTTP Module: MPEG-TS Streaming
  * http://cesbo.com/astra
  *
- * Copyright (C) 2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2014-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -53,7 +53,7 @@ struct http_response_t
 
 static void on_upstream_ready(void *arg)
 {
-    http_client_t *client = arg;
+    http_client_t *client = (http_client_t *)arg;
     http_response_t *response = client->response;
 
     if(response->buffer_count > 0)
@@ -94,7 +94,7 @@ static void on_upstream_ready(void *arg)
 
 static void on_ts(void *arg, const uint8_t *ts)
 {
-    http_client_t *client = arg;
+    http_client_t *client = (http_client_t *)arg;
     http_response_t *response = client->response;
 
     if(response->buffer_count + TS_PACKET_SIZE >= response->mod->buffer_size)
@@ -141,7 +141,7 @@ static void on_ts(void *arg, const uint8_t *ts)
 
 static void on_upstream_read(void *arg)
 {
-    http_client_t *client = arg;
+    http_client_t *client = (http_client_t *)arg;
 
     ssize_t size = asc_socket_recv(client->sock, client->buffer, HTTP_BUFFER_SIZE);
     if(size <= 0)
@@ -150,7 +150,7 @@ static void on_upstream_read(void *arg)
 
 static void on_upstream_send(void *arg)
 {
-    http_client_t *client = arg;
+    http_client_t *client = (http_client_t *)arg;
 
     if(!lua_islightuserdata(lua, 3))
     {
@@ -159,7 +159,7 @@ static void on_upstream_send(void *arg)
     }
 
     // like module_stream_init()
-    void *upstream = lua_touserdata(lua, 3);
+    module_stream_t *upstream = (module_stream_t *)lua_touserdata(lua, 3);
     client->response->__stream.self = (void *)client;
     client->response->__stream.on_ts = (void (*)(module_data_t *, const uint8_t *))on_ts;
     __module_stream_init(&client->response->__stream);
@@ -182,7 +182,7 @@ static void on_upstream_send(void *arg)
 
 static int module_call(module_data_t *mod)
 {
-    http_client_t *client = lua_touserdata(lua, 3);
+    http_client_t *client = (http_client_t *)lua_touserdata(lua, 3);
 
     if(lua_isnil(lua, 4))
     {
@@ -203,10 +203,10 @@ static int module_call(module_data_t *mod)
         return 0;
     }
 
-    client->response = calloc(1, sizeof(http_response_t));
+    client->response = (http_response_t *)calloc(1, sizeof(http_response_t));
     client->response->mod = mod;
 
-    client->response->buffer = malloc(mod->buffer_size);
+    client->response->buffer = (uint8_t *)malloc(mod->buffer_size);
 
     client->on_send = on_upstream_send;
 
@@ -221,7 +221,7 @@ static int module_call(module_data_t *mod)
 
 static int __module_call(lua_State *L)
 {
-    module_data_t *mod = lua_touserdata(L, lua_upvalueindex(1));
+    module_data_t *mod = (module_data_t *)lua_touserdata(L, lua_upvalueindex(1));
     return module_call(mod);
 }
 
