@@ -81,10 +81,137 @@ if utils.ifaddrs then ifaddr_list = utils.ifaddrs() end
 --  888    88   888  88o    888      o
 --   888oo88   o888o  88o8 o888ooooo88
 
+parse_url_format = {}
+
+parse_url_format.udp = function(url, data)
+    local b = url:find("/")
+    if b then
+        url = url:sub(1, b - 1)
+    end
+    local b = url:find("@")
+    if b then
+        if b > 1 then
+            data.localaddr = url:sub(1, b - 1)
+            if ifaddr_list then
+                local ifaddr = ifaddr_list[data.localaddr]
+                if ifaddr and ifaddr.ipv4 then data.localaddr = ifaddr.ipv4[1] end
+            end
+        end
+        url = url:sub(b + 1)
+    end
+    local b = url:find(":")
+    if b then
+        data.port = tonumber(url:sub(b + 1))
+        data.addr = url:sub(1, b - 1)
+    else
+        data.port = 1234
+        data.addr = url
+    end
+
+    -- check address
+    if not data.port or data.port < 0 or data.port > 65535 then
+        return false
+    end
+
+    local o = data.addr:split("%.")
+    for _,i in ipairs(o) do
+        local n = tonumber(i)
+        if n == nil or n < 0 or n > 255 then
+            return false
+        end
+    end
+
+    return true
+end
+
+parse_url_format.rtp = parse_url_format.udp
+
+parse_url_format._http = function(url, data)
+    local b = url:find("/")
+    if b then
+        data.path = url:sub(b)
+        url = url:sub(1, b - 1)
+    else
+        data.path = "/"
+    end
+    local b = url:find("@")
+    if b then
+        if b > 1 then
+            local a = url:sub(1, b - 1)
+            local bb = a:find(":")
+            if bb then
+                data.login = a:sub(1, bb - 1)
+                data.password = a:sub(bb + 1)
+            end
+        end
+        url = url:sub(b + 1)
+    end
+    local b = url:find(":")
+    if b then
+        data.host = url:sub(1, b - 1)
+        data.port = tonumber(url:sub(b + 1))
+    else
+        data.host = url
+        data.port = nil
+    end
+
+    return true
+end
+
+parse_url_format.http = function(url, data)
+    local r = parse_url_format._http(url, data)
+    if data.port == nil then data.port = 80 end
+    return r
+end
+
+parse_url_format.https = function(url, data)
+    local r = parse_url_format._http(url, data)
+    if data.port == nil then data.port = 443 end
+    return r
+end
+
+parse_url_format.np = function(url, data)
+    local r = parse_url_format._http(url, data)
+    if data.port == nil then data.port = 80 end
+    return r
+end
+
+parse_url_format.dvb = function(url, data)
+    data.addr = url
+    return true
+end
+
+parse_url_format.file = function(url, data)
+    data.filename = url
+    return true
+end
+
 function parse_url(url)
     if not url then return nil end
 
-    local function parse_opts(r, opts)
+    local data={}
+    local b = url:find("://")
+    if not b then return nil end
+    data.format = url:sub(1, b - 1)
+    url = url:sub(b + 3)
+
+    local b = url:find("#")
+    local opts = nil
+    if b then
+        opts = url:sub(b + 1)
+        url = url:sub(1, b - 1)
+    end
+
+    local _parse_url_format = parse_url_format[data.format]
+    if _parse_url_format then
+        if _parse_url_format(url, data) ~= true then
+            return nil
+        end
+    else
+        data.addr = url
+    end
+
+    if opts then
         local function parse_key_val(o)
             local k, v
             local x = o:find("=")
@@ -99,10 +226,10 @@ function parse_url(url)
             if x then
                 local _k = k:sub(x + 1)
                 k = k:sub(1, x - 1)
-                if not r[k] then r[k] = {} end
-                table.insert(r[k], { _k, v })
+                if type(data[k]) ~= "table" then data[k] = {} end
+                table.insert(data[k], { _k, v })
             else
-                r[k] = v
+                data[k] = v
             end
         end
         local p = 1
@@ -113,120 +240,9 @@ function parse_url(url)
                 p = x + 1
             else
                 parse_key_val(opts:sub(p))
-                return nil
+                break
             end
         end
-    end
-
-    local data={}
-    local b = url:find("://")
-    if not b then return nil end
-
-    data.format = url:sub(1, b - 1)
-    url = url:sub(b + 3)
-    b = url:find("#")
-    if b then
-        parse_opts(data, url:sub(b + 1))
-        url = url:sub(1, b - 1)
-    end
-
-    local function parse_udp_address()
-        local b = url:find("/")
-        if b then
-            url = url:sub(1, b - 1)
-        end
-        local b = url:find("@")
-        if b then
-            if b > 1 then
-                data.localaddr = url:sub(1, b - 1)
-                if ifaddr_list then
-                    local ifaddr = ifaddr_list[data.localaddr]
-                    if ifaddr and ifaddr.ipv4 then data.localaddr = ifaddr.ipv4[1] end
-                end
-            end
-            url = url:sub(b + 1)
-        end
-        local b = url:find(":")
-        if b then
-            data.port = tonumber(url:sub(b + 1))
-            data.addr = url:sub(1, b - 1)
-        else
-            data.port = 1234
-            data.addr = url
-        end
-
-        -- check address
-        if not data.port or data.port < 0 or data.port > 65535 then
-            return false
-        end
-
-        local o = data.addr:split("%.")
-        for _,i in ipairs(o) do
-            local n = tonumber(i)
-            if n == nil or n < 0 or n > 255 then
-                return false
-            end
-        end
-
-        return true
-    end
-
-    local function parse_http_address()
-        local b = url:find("/")
-        if b then
-            data.path = url:sub(b)
-            url = url:sub(1, b - 1)
-        else
-            data.path = "/"
-        end
-        local b = url:find("@")
-        if b then
-            if b > 1 then
-                local a = url:sub(1, b - 1)
-                local bb = a:find(":")
-                if bb then
-                    data.login = a:sub(1, bb - 1)
-                    data.password = a:sub(bb + 1)
-                end
-            end
-            url = url:sub(b + 1)
-        end
-        local b = url:find(":")
-        if b then
-            data.host = url:sub(1, b - 1)
-            data.port = tonumber(url:sub(b + 1))
-        else
-            data.host = url
-            data.port = nil
-        end
-    end
-
-    if data.format == "udp" then
-        if not parse_udp_address() then
-            return nil
-        end
-    elseif data.format == "rtp" then
-        if not parse_udp_address() then
-            return nil
-        end
-    elseif data.format == "file" then
-        data.filename = url
-    elseif data.format == "dvb" then
-        data.addr = url
-    elseif data.format == "http" then
-        parse_http_address()
-        if data.port == nil then data.port = 80 end
-    elseif data.format == "https" then
-        parse_http_address()
-        if data.port == nil then data.port = 443 end
-    elseif data.format == "rtsp" then
-        parse_http_address()
-        if data.port == nil then data.port = 554 end
-    elseif data.format == "np" then
-        parse_http_address()
-        if data.port == nil then data.port = 80 end
-    else
-        data.addr = url
     end
 
     return data
