@@ -1,5 +1,5 @@
 /*
- * Astra Module: Base
+ * Astra Module: PostgreSQL
  * http://cesbo.com/astra
  *
  * Copyright (C) 2015, NoSFeRaTU <master.nosferatu@gmail.com>
