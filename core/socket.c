@@ -39,6 +39,11 @@
 #   include <netdb.h>
 #endif
 
+#ifdef IGMP_EMULATION
+#   define IP_HEADER_SIZE 24
+#   define IGMP_HEADER_SIZE 8
+#endif
+
 #define MSG(_msg) "[core/socket %d]" _msg, sock->fd
 
 struct asc_socket_t
@@ -737,6 +742,54 @@ static uint16_t in_chksum(uint8_t *buffer, int size)
     answer = ~sum;
     return answer;
 }
+
+static void create_igmp_packet(uint8_t *buffer, uint8_t igmp_type, uint64_t s_addr)
+{
+    // IP Header
+    buffer[0] = (4 << 4) | (6); // Version | IHL
+    buffer[1] = 0xC0; // TOS
+    // Total length
+    const uint16_t total_length = IP_HEADER_SIZE + IGMP_HEADER_SIZE;
+    buffer[2] = (total_length >> 8) & 0xFF;
+    buffer[3] = (total_length) & 0xFF;
+    // ID: buffer[4], buffer[5]
+    // Fragmen offset: buffer[6], buffer[7]
+    buffer[8] = 1; // TTL
+    buffer[9] = IPPROTO_IGMP; // Protocol
+    const uint16_t ip_checksum = in_chksum(buffer, IP_HEADER_SIZE);
+    buffer[10] = (ip_checksum) & 0xFF;
+    buffer[11] = (ip_checksum >> 8) & 0xFF;
+    // Source address
+    const uint32_t src_addr = INADDR_ANY;
+    buffer[12] = (src_addr) & 0xFF;
+    buffer[13] = (src_addr >> 8) & 0xFF;
+    buffer[14] = (src_addr >> 16) & 0xFF;
+    buffer[15] = (src_addr >> 24) & 0xFF;
+    // Destination address
+    const uint32_t dst_addr = s_addr;
+    buffer[16] = (dst_addr) & 0xFF;
+    buffer[17] = (dst_addr >> 8) & 0xFF;
+    buffer[18] = (dst_addr >> 16) & 0xFF;
+    buffer[19] = (dst_addr >> 24) & 0xFF;
+    // Options
+    buffer[20] = 0x94;
+    buffer[21] = 0x04;
+    buffer[22] = 0x00;
+    buffer[23] = 0x00;
+
+    // IGMP
+    buffer[24] = igmp_type; // Type
+    buffer[25] = 0; // Max resp time
+
+    buffer[28] = (dst_addr) & 0xFF;
+    buffer[29] = (dst_addr >> 8) & 0xFF;
+    buffer[30] = (dst_addr >> 16) & 0xFF;
+    buffer[31] = (dst_addr >> 24) & 0xFF;
+
+    const uint16_t igmp_checksum = in_chksum(&buffer[IP_HEADER_SIZE], IGMP_HEADER_SIZE);
+    buffer[26] = (igmp_checksum) & 0xFF;
+    buffer[27] = (igmp_checksum >> 8) & 0xFF;
+}
 #endif
 
 void asc_socket_set_multicast_if(asc_socket_t *sock, const char *addr)
@@ -800,12 +853,38 @@ void asc_socket_multicast_leave(asc_socket_t *sock)
 {
     if(sock->mreq.imr_multiaddr.s_addr == INADDR_NONE)
         return;
+
+#ifndef IGMP_EMULATION
     if(setsockopt(sock->fd, IPPROTO_IP, IP_DROP_MEMBERSHIP
                   , (void *)&sock->mreq, sizeof(sock->mreq)) == -1)
     {
         asc_log_error(MSG("failed to leave multicast \"%s\" (%s)")
                       , inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
     }
+#else
+    uint8_t buffer[IP_HEADER_SIZE + IGMP_HEADER_SIZE];
+    memset(buffer, 0, IP_HEADER_SIZE + IGMP_HEADER_SIZE);
+
+    struct sockaddr_in dst;
+    dst.sin_addr.s_addr = sock->mreq.imr_multiaddr.s_addr;
+    dst.sin_family = AF_INET;
+
+    create_igmp_packet(buffer, 0x17, sock->mreq.imr_multiaddr.s_addr);
+
+    int raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+    if(raw_sock == -1)
+        return;
+
+    int r = sendto(raw_sock, &buffer, IP_HEADER_SIZE + IGMP_HEADER_SIZE, 0,
+        (struct sockaddr *)&dst, sizeof(struct sockaddr_in));
+    if(r == -1)
+    {
+        asc_log_error(MSG("failed to leave multicast \"%s\" (%s)")
+                      , inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
+    }
+
+    close(raw_sock);
+#endif
 }
 
 void asc_socket_multicast_renew(asc_socket_t *sock)
@@ -823,57 +902,14 @@ void asc_socket_multicast_renew(asc_socket_t *sock)
                       , inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
     }
 #else
-
-#define IP_HEADER_SIZE 22
-#define IGMP_HEADER_SIZE 8
-
-    uint8_t buffer[1500];
+    uint8_t buffer[IP_HEADER_SIZE + IGMP_HEADER_SIZE];
     memset(buffer, 0, IP_HEADER_SIZE + IGMP_HEADER_SIZE);
 
     struct sockaddr_in dst;
     dst.sin_addr.s_addr = sock->mreq.imr_multiaddr.s_addr;
     dst.sin_family = AF_INET;
 
-    // IP Header
-    buffer[0] = (4 << 4) | (6); // Version | IHL
-    buffer[1] = 0xC0; // TOS
-    // Total length
-    const uint16_t total_length = IP_HEADER_SIZE + IGMP_HEADER_SIZE;
-    buffer[2] = (total_length >> 8) & 0xFF;
-    buffer[3] = (total_length) & 0xFF;
-    // ID: buffer[4], buffer[5]
-    // Fragmen offset: buffer[6], buffer[7]
-    buffer[8] = 1; // TTL
-    buffer[9] = IPPROTO_IGMP; // Protocol
-    const uint16_t ip_checksum = in_chksum(buffer, IP_HEADER_SIZE);
-    buffer[10] = (ip_checksum >> 8) & 0xFF;
-    buffer[11] = (ip_checksum) & 0xFF;
-    // Source address
-    const uint32_t src_addr = INADDR_ANY;
-    buffer[12] = (src_addr >> 24) & 0xFF;
-    buffer[13] = (src_addr >> 16) & 0xFF;
-    buffer[14] = (src_addr >> 8) & 0xFF;
-    buffer[15] = (src_addr) & 0xFF;
-    // Destination address
-    const uint32_t dst_addr = sock->mreq.imr_multiaddr.s_addr;
-    buffer[16] = (dst_addr >> 24) & 0xFF;
-    buffer[17] = (dst_addr >> 16) & 0xFF;
-    buffer[18] = (dst_addr >> 8) & 0xFF;
-    buffer[19] = (dst_addr) & 0xFF;
-    // Options
-    buffer[20] = 0x04;
-    buffer[21] = 0x94;
-
-    // IGMP
-    buffer[22] = 0x16; // Type
-    buffer[23] = 0; // Max resp time
-    const uint16_t igmp_checksum = in_chksum(&buffer[IP_HEADER_SIZE], IGMP_HEADER_SIZE);
-    buffer[24] = (igmp_checksum >> 8) & 0xFF;
-    buffer[25] = (igmp_checksum) & 0xFF;
-    buffer[26] = (dst_addr >> 24) & 0xFF;
-    buffer[27] = (dst_addr >> 16) & 0xFF;
-    buffer[28] = (dst_addr >> 8) & 0xFF;
-    buffer[29] = (dst_addr) & 0xFF;
+    create_igmp_packet(buffer, 0x16, sock->mreq.imr_multiaddr.s_addr);
 
     int raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
     if(raw_sock == -1)
