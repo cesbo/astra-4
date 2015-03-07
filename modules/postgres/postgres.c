@@ -25,9 +25,9 @@
 
 typedef struct
 {
-    int             callback;
-    char           *query;
-    bool            queued;
+    int callback;
+    char *query;
+    bool queued;
 } query_item_t;
 
 struct module_data_t
