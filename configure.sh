@@ -15,6 +15,7 @@ Usage: $0 [OPTIONS]
                                   --with-modules=*:path/to/custom/module
 
     --with-libdvbcsa            - build with libdvbcsa
+    --with-igmp-emulation       - build with igmp emulated multicast renew
 
     --cc=GCC                    - custom C compiler (cross-compile)
     --static                    - build static binary
@@ -45,6 +46,7 @@ ARG_ARCH="native"
 ARG_CFLAGS=""
 ARG_LDFLAGS=""
 ARG_LIBDVBCSA=0
+ARG_IGMP_EMULATION=0
 ARG_DEBUG=0
 
 set_cc()
@@ -70,6 +72,9 @@ while [ $# -ne 0 ] ; do
             ;;
         "--with-libdvbcsa")
             ARG_LIBDVBCSA=1
+            ;;
+        "--with-igmp-emulation")
+            ARG_IGMP_EMULATION=1
             ;;
         "--cc="*)
             set_cc `echo $OPT | sed 's/^--cc=//'`
@@ -329,6 +334,12 @@ check_libdvbcsa_all()
 
 if [ $ARG_LIBDVBCSA -eq 1 ] ; then
     check_libdvbcsa_all
+fi
+
+# IGMP Emulation
+
+if [ $ARG_IGMP_EMULATION -eq 1 ]; then
+    CFLAGS+=" -DIGMP_EMULATION"
 fi
 
 # APP flags

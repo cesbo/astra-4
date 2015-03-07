@@ -39,6 +39,25 @@
 #   include <netdb.h>
 #endif
 
+#ifdef IGMP_EMULATION
+struct iphdr
+{
+    unsigned char ihl:4, version:4, tos;
+    unsigned short tot_len, id, frag_off;
+    unsigned char ttl, protocol;
+    unsigned short check;
+    unsigned int saddr, daddr;
+    uint16_t options;
+};
+
+struct igmp_query {
+    unsigned char type;
+    unsigned char maxresponse;
+    unsigned short csum;
+    unsigned int mcast;
+};
+#endif
+
 #define MSG(_msg) "[core/socket %d]" _msg, sock->fd
 
 struct asc_socket_t
@@ -711,6 +730,32 @@ void asc_socket_set_buffer(asc_socket_t *sock, int rcvbuf, int sndbuf)
  *
  */
 
+#ifdef IGMP_EMULATION
+static unsigned short in_chksum(unsigned short *addr, int len)
+{
+    register int nleft = len;
+    register int sum = 0;
+    u_short answer = 0;
+
+    while(nleft > 1)
+    {
+        sum += *addr++;
+        nleft -= 2;
+    }
+
+    if(nleft == 1)
+    {
+        *(u_char *)(&answer) = *(u_char *)addr;
+        sum += answer;
+    }
+
+    sum = (sum >> 16) + (sum & 0xffff);
+    sum += (sum >> 16);
+    answer = ~sum;
+    return(answer);
+}
+#endif
+
 void asc_socket_set_multicast_if(asc_socket_t *sock, const char *addr)
 {
     if(!addr)
@@ -785,6 +830,7 @@ void asc_socket_multicast_renew(asc_socket_t *sock)
     if(sock->mreq.imr_multiaddr.s_addr == INADDR_NONE)
         return;
 
+#ifndef IGMP_EMULATION
     if(   setsockopt(sock->fd, IPPROTO_IP, IP_DROP_MEMBERSHIP
                      , (void *)&sock->mreq, sizeof(sock->mreq)) == -1
        || setsockopt(sock->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP
@@ -793,4 +839,53 @@ void asc_socket_multicast_renew(asc_socket_t *sock)
         asc_log_error(MSG("failed to renew multicast \"%s\" (%s)")
                       , inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
     }
+#else
+    struct sockaddr_in dst;
+    struct iphdr *ip;
+    struct igmp_query *igmp;
+    long daddr, saddr;
+    int s;
+    char buf[1500];
+
+    memset(buf, 0, 1500);
+    ip = (struct iphdr *)&buf;
+    igmp = (struct igmp_query*)&buf[sizeof(struct iphdr)];
+
+    daddr = sock->mreq.imr_multiaddr.s_addr;
+    saddr = INADDR_ANY;
+
+    dst.sin_addr.s_addr = daddr;
+    dst.sin_family = AF_INET;
+
+    ip->ihl = 6;
+    ip->version = 4;
+    ip->tos = 0xc0;
+    ip->tot_len = htons(sizeof(struct iphdr)+8);
+    ip->id = 0;
+    ip->frag_off=0;
+    ip->ttl = 1;
+    ip->protocol = IPPROTO_IGMP;
+    ip->check = in_chksum((unsigned short *)ip, sizeof(struct iphdr));
+    ip->saddr = saddr;
+    ip->daddr = daddr;
+    ip->options = 0x0494;
+    igmp->type = 0x16;
+    igmp->maxresponse = 0x00;
+    igmp->mcast= daddr;
+
+    igmp->csum = 0; //For computing the checksum, the Checksum field is set to zero.
+    igmp->csum = in_chksum((unsigned short *)igmp, 8);
+
+    s = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+    if(s == -1)
+        return;
+
+    if(sendto(s, &buf, sizeof(struct iphdr)+8, 0, (struct sockaddr *)&dst, sizeof(struct sockaddr_in)) == -1)
+    {
+        asc_log_error(MSG("failed to renew multicast \"%s\" (%s)")
+            , inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
+    }
+
+    close(s);
+#endif
 }
