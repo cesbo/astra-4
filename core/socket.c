@@ -743,7 +743,7 @@ static uint16_t in_chksum(uint8_t *buffer, int size)
     return answer;
 }
 
-static void create_igmp_packet(uint8_t *buffer, uint8_t igmp_type, uint64_t s_addr)
+static void create_igmp_packet(uint8_t *buffer, uint8_t igmp_type, uint32_t dst_addr)
 {
     // IP Header
     buffer[0] = (4 << 4) | (6); // Version | IHL
@@ -766,7 +766,6 @@ static void create_igmp_packet(uint8_t *buffer, uint8_t igmp_type, uint64_t s_ad
     buffer[14] = (src_addr >> 16) & 0xFF;
     buffer[15] = (src_addr >> 24) & 0xFF;
     // Destination address
-    const uint32_t dst_addr = s_addr;
     buffer[16] = (dst_addr) & 0xFF;
     buffer[17] = (dst_addr >> 8) & 0xFF;
     buffer[18] = (dst_addr >> 16) & 0xFF;
