@@ -39,25 +39,6 @@
 #   include <netdb.h>
 #endif
 
-#ifdef IGMP_EMULATION
-struct iphdr
-{
-    unsigned char ihl:4, version:4, tos;
-    unsigned short tot_len, id, frag_off;
-    unsigned char ttl, protocol;
-    unsigned short check;
-    unsigned int saddr, daddr;
-    uint16_t options;
-};
-
-struct igmp_query {
-    unsigned char type;
-    unsigned char maxresponse;
-    unsigned short csum;
-    unsigned int mcast;
-};
-#endif
-
 #define MSG(_msg) "[core/socket %d]" _msg, sock->fd
 
 struct asc_socket_t
@@ -731,28 +712,30 @@ void asc_socket_set_buffer(asc_socket_t *sock, int rcvbuf, int sndbuf)
  */
 
 #ifdef IGMP_EMULATION
-static unsigned short in_chksum(unsigned short *addr, int len)
+static uint16_t in_chksum(uint8_t *buffer, int size)
 {
-    register int nleft = len;
+    uint16_t *_buffer = (uint16_t *)buffer;
+    register int nleft = size;
     register int sum = 0;
-    u_short answer = 0;
+    uint16_t answer = 0;
 
     while(nleft > 1)
     {
-        sum += *addr++;
+        sum += *_buffer;
+        ++_buffer;
         nleft -= 2;
     }
 
     if(nleft == 1)
     {
-        *(u_char *)(&answer) = *(u_char *)addr;
+        *(uint8_t *)(&answer) = *(uint8_t *)_buffer;
         sum += answer;
     }
 
     sum = (sum >> 16) + (sum & 0xffff);
     sum += (sum >> 16);
     answer = ~sum;
-    return(answer);
+    return answer;
 }
 #endif
 
@@ -840,52 +823,70 @@ void asc_socket_multicast_renew(asc_socket_t *sock)
                       , inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
     }
 #else
+
+#define IP_HEADER_SIZE 22
+#define IGMP_HEADER_SIZE 8
+
+    uint8_t buffer[1500];
+    memset(buffer, 0, IP_HEADER_SIZE + IGMP_HEADER_SIZE);
+
     struct sockaddr_in dst;
-    struct iphdr *ip;
-    struct igmp_query *igmp;
-    long daddr, saddr;
-    int s;
-    char buf[1500];
-
-    memset(buf, 0, 1500);
-    ip = (struct iphdr *)&buf;
-    igmp = (struct igmp_query*)&buf[sizeof(struct iphdr)];
-
-    daddr = sock->mreq.imr_multiaddr.s_addr;
-    saddr = INADDR_ANY;
-
-    dst.sin_addr.s_addr = daddr;
+    dst.sin_addr.s_addr = sock->mreq.imr_multiaddr.s_addr;
     dst.sin_family = AF_INET;
 
-    ip->ihl = 6;
-    ip->version = 4;
-    ip->tos = 0xc0;
-    ip->tot_len = htons(sizeof(struct iphdr)+8);
-    ip->id = 0;
-    ip->frag_off=0;
-    ip->ttl = 1;
-    ip->protocol = IPPROTO_IGMP;
-    ip->check = in_chksum((unsigned short *)ip, sizeof(struct iphdr));
-    ip->saddr = saddr;
-    ip->daddr = daddr;
-    ip->options = 0x0494;
-    igmp->type = 0x16;
-    igmp->maxresponse = 0x00;
-    igmp->mcast= daddr;
+    // IP Header
+    buffer[0] = (4 << 4) | (6); // Version | IHL
+    buffer[1] = 0xC0; // TOS
+    // Total length
+    const uint16_t total_length = IP_HEADER_SIZE + IGMP_HEADER_SIZE;
+    buffer[2] = (total_length >> 8) & 0xFF;
+    buffer[3] = (total_length) & 0xFF;
+    // ID: buffer[4], buffer[5]
+    // Fragmen offset: buffer[6], buffer[7]
+    buffer[8] = 1; // TTL
+    buffer[9] = IPPROTO_IGMP; // Protocol
+    const uint16_t ip_checksum = in_chksum(buffer, IP_HEADER_SIZE);
+    buffer[10] = (ip_checksum >> 8) & 0xFF;
+    buffer[11] = (ip_checksum) & 0xFF;
+    // Source address
+    const uint32_t src_addr = INADDR_ANY;
+    buffer[12] = (src_addr >> 24) & 0xFF;
+    buffer[13] = (src_addr >> 16) & 0xFF;
+    buffer[14] = (src_addr >> 8) & 0xFF;
+    buffer[15] = (src_addr) & 0xFF;
+    // Destination address
+    const uint32_t dst_addr = sock->mreq.imr_multiaddr.s_addr;
+    buffer[16] = (dst_addr >> 24) & 0xFF;
+    buffer[17] = (dst_addr >> 16) & 0xFF;
+    buffer[18] = (dst_addr >> 8) & 0xFF;
+    buffer[19] = (dst_addr) & 0xFF;
+    // Options
+    buffer[20] = 0x04;
+    buffer[21] = 0x94;
 
-    igmp->csum = 0; //For computing the checksum, the Checksum field is set to zero.
-    igmp->csum = in_chksum((unsigned short *)igmp, 8);
+    // IGMP
+    buffer[22] = 0x16; // Type
+    buffer[23] = 0; // Max resp time
+    const uint16_t igmp_checksum = in_chksum(&buffer[IP_HEADER_SIZE], IGMP_HEADER_SIZE);
+    buffer[24] = (igmp_checksum >> 8) & 0xFF;
+    buffer[25] = (igmp_checksum) & 0xFF;
+    buffer[26] = (dst_addr >> 24) & 0xFF;
+    buffer[27] = (dst_addr >> 16) & 0xFF;
+    buffer[28] = (dst_addr >> 8) & 0xFF;
+    buffer[29] = (dst_addr) & 0xFF;
 
-    s = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
-    if(s == -1)
+    int raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+    if(raw_sock == -1)
         return;
 
-    if(sendto(s, &buf, sizeof(struct iphdr)+8, 0, (struct sockaddr *)&dst, sizeof(struct sockaddr_in)) == -1)
+    int r = sendto(raw_sock, &buffer, IP_HEADER_SIZE + IGMP_HEADER_SIZE, 0,
+        (struct sockaddr *)&dst, sizeof(struct sockaddr_in));
+    if(r == -1)
     {
-        asc_log_error(MSG("failed to renew multicast \"%s\" (%s)")
-            , inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
+        asc_log_error(MSG("failed to renew multicast \"%s\" (%s)"),
+            inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
     }
 
-    close(s);
+    close(raw_sock);
 #endif
 }
