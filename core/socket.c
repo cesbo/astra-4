@@ -757,10 +757,26 @@ static void create_igmp_packet(uint8_t *buffer, uint8_t igmp_type, uint32_t dst_
     buffer[8] = 1; // TTL
     buffer[9] = IPPROTO_IGMP; // Protocol
     const uint16_t ip_checksum = in_chksum(buffer, IP_HEADER_SIZE);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    buffer[10] = (ip_checksum >> 8) & 0xFF;
+    buffer[11] = (ip_checksum) & 0xFF;
+#else
     buffer[10] = (ip_checksum) & 0xFF;
     buffer[11] = (ip_checksum >> 8) & 0xFF;
+#endif
     // Source address
     const uint32_t src_addr = INADDR_ANY;
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    buffer[12] = (src_addr >> 24) & 0xFF;
+    buffer[13] = (src_addr >> 16) & 0xFF;
+    buffer[14] = (src_addr >> 8) & 0xFF;
+    buffer[15] = (src_addr) & 0xFF;
+    // Destination address
+    buffer[16] = (dst_addr >> 24) & 0xFF;
+    buffer[17] = (dst_addr >> 16) & 0xFF;
+    buffer[18] = (dst_addr >> 8) & 0xFF;
+    buffer[19] = (dst_addr) & 0xFF;
+#else
     buffer[12] = (src_addr) & 0xFF;
     buffer[13] = (src_addr >> 8) & 0xFF;
     buffer[14] = (src_addr >> 16) & 0xFF;
@@ -770,6 +786,7 @@ static void create_igmp_packet(uint8_t *buffer, uint8_t igmp_type, uint32_t dst_
     buffer[17] = (dst_addr >> 8) & 0xFF;
     buffer[18] = (dst_addr >> 16) & 0xFF;
     buffer[19] = (dst_addr >> 24) & 0xFF;
+#endif
     // Options
     buffer[20] = 0x94;
     buffer[21] = 0x04;
@@ -780,14 +797,26 @@ static void create_igmp_packet(uint8_t *buffer, uint8_t igmp_type, uint32_t dst_
     buffer[24] = igmp_type; // Type
     buffer[25] = 0; // Max resp time
 
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    buffer[28] = (dst_addr >> 24) & 0xFF;
+    buffer[29] = (dst_addr >> 16) & 0xFF;
+    buffer[30] = (dst_addr >> 8) & 0xFF;
+    buffer[31] = (dst_addr) & 0xFF;
+#else
     buffer[28] = (dst_addr) & 0xFF;
     buffer[29] = (dst_addr >> 8) & 0xFF;
     buffer[30] = (dst_addr >> 16) & 0xFF;
     buffer[31] = (dst_addr >> 24) & 0xFF;
+#endif
 
     const uint16_t igmp_checksum = in_chksum(&buffer[IP_HEADER_SIZE], IGMP_HEADER_SIZE);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    buffer[26] = (igmp_checksum >> 8) & 0xFF;
+    buffer[27] = (igmp_checksum) & 0xFF;
+#else
     buffer[26] = (igmp_checksum) & 0xFF;
     buffer[27] = (igmp_checksum >> 8) & 0xFF;
+#endif
 }
 #endif
 
