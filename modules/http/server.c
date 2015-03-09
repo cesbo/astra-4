@@ -441,16 +441,14 @@ static void on_client_read(void *arg)
 
         if(client->chunk_left > tail)
         {
-            string_buffer_addlstring(  client->content
-                                     , &client->buffer[skip]
-                                     , client->buffer_skip);
+            string_buffer_addlstring(client->content,
+                &client->buffer[skip], client->buffer_skip - skip);
             client->chunk_left -= tail;
         }
         else
         {
-            string_buffer_addlstring(  client->content
-                                     , &client->buffer[skip]
-                                     , client->chunk_left);
+            string_buffer_addlstring(client->content,
+                &client->buffer[skip], client->chunk_left);
             client->chunk_left = 0;
 
             lua_rawgeti(lua, LUA_REGISTRYINDEX, client->idx_request);
