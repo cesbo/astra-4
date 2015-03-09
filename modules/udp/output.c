@@ -123,9 +123,8 @@ static void thread_input_push(module_data_t *mod, const uint8_t *ts)
     }
 }
 
-static bool seek_pcr(  module_data_t *mod
-                     , size_t *block_size, size_t *next_block
-                     , uint64_t *pcr)
+static bool seek_pcr(module_data_t *mod,
+    size_t *block_size, size_t *next_block, uint64_t *pcr)
 {
     size_t count;
     uint8_t *ptr;
@@ -160,7 +159,7 @@ static bool seek_pcr(  module_data_t *mod
 
 static void on_thread_close(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     mod->is_thread_started = false;
 
@@ -179,16 +178,16 @@ static void on_thread_close(void *arg)
 
 static void thread_loop(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     mod->is_thread_started = true;
 
     while(mod->is_thread_started)
     {
         // block sync
-        uint64_t   pcr
-                 , system_time, system_time_check
-                 , block_time, block_time_total = 0;
+        uint64_t pcr;
+        uint64_t system_time, system_time_check;
+        uint64_t block_time, block_time_total = 0;
         size_t block_size = 0, next_block;
 
         bool reset = true;
@@ -201,13 +200,13 @@ static void thread_loop(void *arg)
         mod->sync.buffer_write = 0;
         mod->sync.buffer_read = 0;
 
-        while(   mod->is_thread_started
-              && mod->sync.buffer_write < mod->sync.buffer_size)
+        while(mod->is_thread_started &&
+            mod->sync.buffer_write < mod->sync.buffer_size)
         {
-            const ssize_t r = asc_thread_buffer_read(  mod->thread_input
-                                                     , &mod->sync.buffer[mod->sync.buffer_write]
-                                                     ,   mod->sync.buffer_size
-                                                       - mod->sync.buffer_write);
+            const ssize_t r = asc_thread_buffer_read(mod->thread_input,
+                &mod->sync.buffer[mod->sync.buffer_write],
+                mod->sync.buffer_size - mod->sync.buffer_write);
+
             if(r > 0)
                 mod->sync.buffer_write += r;
             else
@@ -236,17 +235,15 @@ static void thread_loop(void *arg)
                 block_time_total = asc_utime();
             }
 
-            if(   mod->is_thread_started
-               && mod->sync.buffer_count < mod->sync.buffer_size)
+            if(mod->is_thread_started &&
+                mod->sync.buffer_count < mod->sync.buffer_size)
             {
                 const size_t tail = (mod->sync.buffer_read > mod->sync.buffer_write)
                                   ? (mod->sync.buffer_read - mod->sync.buffer_write)
                                   : (mod->sync.buffer_size - mod->sync.buffer_write);
 
-                uint8_t *const pointer = &mod->sync.buffer[mod->sync.buffer_write];
-                const ssize_t r = asc_thread_buffer_read(  mod->thread_input
-                                                         , pointer
-                                                         , tail);
+                const ssize_t r = asc_thread_buffer_read(mod->thread_input,
+                    &mod->sync.buffer[mod->sync.buffer_write], tail);
                 if(r > 0)
                 {
                     mod->sync.buffer_write += r;
@@ -265,8 +262,8 @@ static void thread_loop(void *arg)
             block_time = mpegts_pcr_block_us(&mod->pcr, &pcr);
             if(block_time == 0 || block_time > 500000)
             {
-                asc_log_debug(  MSG("block time out of range: %llums block_size:%u")
-                              , (uint64_t)(block_time / 1000), block_size);
+                asc_log_debug(MSG("block time out of range: %llums block_size:%u"),
+                    (uint64_t)(block_time / 1000), block_size);
 
                 mod->sync.buffer_count -= block_size;
                 mod->sync.buffer_read = next_block;
@@ -334,8 +331,8 @@ static void thread_loop(void *arg)
             system_time = asc_utime();
             if(system_time > block_time_total + 100000)
             {
-                asc_log_warning(  MSG("wrong syncing time. -%llums")
-                                , (system_time - block_time_total) / 1000);
+                asc_log_warning(MSG("wrong syncing time. -%llums"),
+                    (system_time - block_time_total) / 1000);
                 reset = true;
             }
 
@@ -397,7 +394,7 @@ static void module_init(module_data_t *mod)
 
         mod->sync.buffer_size = value * 1024 * 1024;
         mod->sync.buffer_size -= mod->sync.buffer_size % TS_PACKET_SIZE;
-        mod->sync.buffer = malloc(mod->sync.buffer_size);
+        mod->sync.buffer = (uint8_t *)malloc(mod->sync.buffer_size);
 
         value = 0;
         module_option_number("cbr", &value);
@@ -406,10 +403,7 @@ static void module_init(module_data_t *mod)
 
         mod->thread = asc_thread_init(mod);
         mod->thread_input = asc_thread_buffer_init(mod->sync.buffer_size * 2);
-        asc_thread_start(  mod->thread
-                         , thread_loop
-                         , NULL, NULL
-                         , on_thread_close);
+        asc_thread_start(mod->thread, thread_loop, NULL, NULL, on_thread_close);
     }
     else
     {

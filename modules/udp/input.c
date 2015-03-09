@@ -103,7 +103,7 @@ static void on_read(void *arg)
 
 static void timer_renew_callback(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
     asc_socket_multicast_renew(mod->sock);
 }
 
@@ -152,12 +152,7 @@ static void module_init(module_data_t *mod)
     asc_socket_multicast_join(mod->sock, mod->addr, mod->localaddr);
 
     if(module_option_number("renew", &value))
-    {
-#ifdef IGMP_EMULATION
-        asc_socket_multicast_renew(mod->sock);
-#endif
         mod->timer_renew = asc_timer_init(value * 1000, timer_renew_callback, mod);
-    }
 }
 
 static void module_destroy(module_data_t *mod)
