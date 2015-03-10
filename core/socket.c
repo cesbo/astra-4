@@ -39,6 +39,8 @@
 #   include <netdb.h>
 #endif
 
+#define IGMP_EMULATION 1
+
 #ifdef IGMP_EMULATION
 #   define IP_HEADER_SIZE 24
 #   define IGMP_HEADER_SIZE 8
@@ -842,35 +844,42 @@ void asc_socket_multicast_join(asc_socket_t *sock, const char *addr, const char 
         if(sock->mreq.imr_interface.s_addr == INADDR_NONE)
             sock->mreq.imr_interface.s_addr = INADDR_ANY;
     }
-#ifndef IGMP_EMULATION
-    int r = setsockopt(sock->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
-        (void *)&sock->mreq, sizeof(sock->mreq));
-#else
-    uint8_t buffer[IP_HEADER_SIZE + IGMP_HEADER_SIZE];
-    memset(buffer, 0, IP_HEADER_SIZE + IGMP_HEADER_SIZE);
 
-    struct sockaddr_in dst;
-    dst.sin_addr.s_addr = sock->mreq.imr_multiaddr.s_addr;
-    dst.sin_family = AF_INET;
+    while(1)
+    {
+        int r;
 
-    create_igmp_packet(buffer, 0x16, sock->mreq.imr_multiaddr.s_addr);
+        r = setsockopt(sock->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+            (void *)&sock->mreq, sizeof(sock->mreq));
+        if(r == -1)
+            break;
 
-    int raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
-    if(raw_sock == -1)
-        return;
+#ifdef IGMP_EMULATION
+        uint8_t buffer[IP_HEADER_SIZE + IGMP_HEADER_SIZE];
+        memset(buffer, 0, IP_HEADER_SIZE + IGMP_HEADER_SIZE);
 
-    int r = sendto(raw_sock, &buffer, IP_HEADER_SIZE + IGMP_HEADER_SIZE, 0,
-        (struct sockaddr *)&dst, sizeof(struct sockaddr_in));
+        struct sockaddr_in dst;
+        dst.sin_addr.s_addr = sock->mreq.imr_multiaddr.s_addr;
+        dst.sin_family = AF_INET;
 
-    close(raw_sock);
+        create_igmp_packet(buffer, 0x16, sock->mreq.imr_multiaddr.s_addr);
+
+        int raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+        if(raw_sock == -1)
+            return;
+        r = sendto(raw_sock, &buffer, IP_HEADER_SIZE + IGMP_HEADER_SIZE, 0,
+            (struct sockaddr *)&dst, sizeof(struct sockaddr_in));
+        close(raw_sock);
+        if(r == -1)
+            break;
 #endif
 
-    if(r == -1)
-    {
-        asc_log_error(MSG("failed to join multicast \"%s\" (%s)"),
-            inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
-        sock->mreq.imr_multiaddr.s_addr = INADDR_NONE;
+        return;
     }
+
+    asc_log_error(MSG("failed to join multicast \"%s\" (%s)"),
+        inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
+    sock->mreq.imr_multiaddr.s_addr = INADDR_NONE;
 }
 
 void asc_socket_multicast_leave(asc_socket_t *sock)
@@ -878,34 +887,40 @@ void asc_socket_multicast_leave(asc_socket_t *sock)
     if(sock->mreq.imr_multiaddr.s_addr == INADDR_NONE)
         return;
 
-#ifndef IGMP_EMULATION
-    int r = setsockopt(sock->fd, IPPROTO_IP, IP_DROP_MEMBERSHIP,
-        (void *)&sock->mreq, sizeof(sock->mreq));
-#else
-    uint8_t buffer[IP_HEADER_SIZE + IGMP_HEADER_SIZE];
-    memset(buffer, 0, IP_HEADER_SIZE + IGMP_HEADER_SIZE);
+    while(1)
+    {
+        int r;
 
-    struct sockaddr_in dst;
-    dst.sin_addr.s_addr = sock->mreq.imr_multiaddr.s_addr;
-    dst.sin_family = AF_INET;
+        r = setsockopt(sock->fd, IPPROTO_IP, IP_DROP_MEMBERSHIP,
+            (void *)&sock->mreq, sizeof(sock->mreq));
+        if(r == -1)
+            break;
 
-    create_igmp_packet(buffer, 0x17, sock->mreq.imr_multiaddr.s_addr);
+#ifdef IGMP_EMULATION
+        uint8_t buffer[IP_HEADER_SIZE + IGMP_HEADER_SIZE];
+        memset(buffer, 0, IP_HEADER_SIZE + IGMP_HEADER_SIZE);
 
-    int raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
-    if(raw_sock == -1)
-        return;
+        struct sockaddr_in dst;
+        dst.sin_addr.s_addr = sock->mreq.imr_multiaddr.s_addr;
+        dst.sin_family = AF_INET;
 
-    int r = sendto(raw_sock, &buffer, IP_HEADER_SIZE + IGMP_HEADER_SIZE, 0,
-        (struct sockaddr *)&dst, sizeof(struct sockaddr_in));
+        create_igmp_packet(buffer, 0x17, sock->mreq.imr_multiaddr.s_addr);
 
-    close(raw_sock);
+        int raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+        if(raw_sock == -1)
+            return;
+        r = sendto(raw_sock, &buffer, IP_HEADER_SIZE + IGMP_HEADER_SIZE, 0,
+            (struct sockaddr *)&dst, sizeof(struct sockaddr_in));
+        close(raw_sock);
+        if(r == -1)
+            break;
 #endif
 
-    if(r == -1)
-    {
-        asc_log_error(MSG("failed to leave multicast \"%s\" (%s)"),
-            inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
+        return;
     }
+
+    asc_log_error(MSG("failed to leave multicast \"%s\" (%s)"),
+        inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
 }
 
 void asc_socket_multicast_renew(asc_socket_t *sock)
@@ -913,32 +928,37 @@ void asc_socket_multicast_renew(asc_socket_t *sock)
     if(sock->mreq.imr_multiaddr.s_addr == INADDR_NONE)
         return;
 
-#ifndef IGMP_EMULATION
-    int r = setsockopt(sock->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
-        (void *)&sock->mreq, sizeof(sock->mreq));
-#else
-    uint8_t buffer[IP_HEADER_SIZE + IGMP_HEADER_SIZE];
-    memset(buffer, 0, IP_HEADER_SIZE + IGMP_HEADER_SIZE);
+    while(1)
+    {
+        int r;
+        r = setsockopt(sock->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+            (void *)&sock->mreq, sizeof(sock->mreq));
+        if(r == -1)
+            break;
 
-    struct sockaddr_in dst;
-    dst.sin_addr.s_addr = sock->mreq.imr_multiaddr.s_addr;
-    dst.sin_family = AF_INET;
+#ifdef IGMP_EMULATION
+        uint8_t buffer[IP_HEADER_SIZE + IGMP_HEADER_SIZE];
+        memset(buffer, 0, IP_HEADER_SIZE + IGMP_HEADER_SIZE);
 
-    create_igmp_packet(buffer, 0x16, sock->mreq.imr_multiaddr.s_addr);
+        struct sockaddr_in dst;
+        dst.sin_addr.s_addr = sock->mreq.imr_multiaddr.s_addr;
+        dst.sin_family = AF_INET;
 
-    int raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
-    if(raw_sock == -1)
-        return;
+        create_igmp_packet(buffer, 0x16, sock->mreq.imr_multiaddr.s_addr);
 
-    int r = sendto(raw_sock, &buffer, IP_HEADER_SIZE + IGMP_HEADER_SIZE, 0,
-        (struct sockaddr *)&dst, sizeof(struct sockaddr_in));
-
-    close(raw_sock);
+        int raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+        if(raw_sock == -1)
+            return;
+        r = sendto(raw_sock, &buffer, IP_HEADER_SIZE + IGMP_HEADER_SIZE, 0,
+            (struct sockaddr *)&dst, sizeof(struct sockaddr_in));
+        close(raw_sock);
+        if(r == -1)
+            break;
 #endif
 
-    if(r == 1)
-    {
-        asc_log_error(MSG("failed to renew multicast \"%s\" (%s)"),
-            inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
+        return;
     }
+
+    asc_log_error(MSG("failed to renew multicast \"%s\" (%s)"),
+        inet_ntoa(sock->mreq.imr_multiaddr), asc_socket_error());
 }

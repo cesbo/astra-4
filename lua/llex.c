@@ -202,9 +202,12 @@ static void buffreplace (LexState *ls, char from, char to) {
 
 
 #if !defined(getlocaledecpoint)
+#ifdef __ANDROID__
+#define getlocaledecpoint()	('.')
+#else
 #define getlocaledecpoint()	(localeconv()->decimal_point[0])
 #endif
-
+#endif
 
 #define buff2d(b,e)	luaO_str2d(luaZ_buffer(b), luaZ_bufflen(b) - 1, e)
 

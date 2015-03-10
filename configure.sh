@@ -207,6 +207,10 @@ else
 fi
 
 case "$MACHINE" in
+*"android"*)
+    OS="android"
+    LDFLAGS="-ldl -lm"
+    ;;
 *"linux"*)
     OS="linux"
     CFLAGS="$CFLAGS -pthread"

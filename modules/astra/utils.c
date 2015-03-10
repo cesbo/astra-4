@@ -39,7 +39,9 @@
 #ifndef _WIN32
 #   include <sys/socket.h>
 #   include <netinet/in.h>
-#   include <ifaddrs.h>
+#   ifndef __ANDROID__
+#       include <ifaddrs.h>
+#   endif
 #   include <netdb.h>
 #endif
 
