@@ -39,8 +39,6 @@
 #   include <netdb.h>
 #endif
 
-#define IGMP_EMULATION 1
-
 #ifdef IGMP_EMULATION
 #   define IP_HEADER_SIZE 24
 #   define IGMP_HEADER_SIZE 8
