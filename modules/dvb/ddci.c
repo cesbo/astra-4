@@ -2,7 +2,7 @@
  * Astra Module: DigitalDevices standalone CI
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -54,6 +54,8 @@ struct module_data_t
     bool is_ca_thread_started;
     asc_thread_t *ca_thread;
 };
+
+#define THREAD_DELAY_CA (1 * 1000 * 1000)
 
 /*
  *  oooooooo8 ooooooooooo  oooooooo8
@@ -132,10 +134,8 @@ static void sec_open(module_data_t *mod)
 
     mod->sec_thread = asc_thread_init(mod);
     mod->sec_thread_output = asc_thread_buffer_init(BUFFER_SIZE);
-    asc_thread_start(  mod->sec_thread
-                     , thread_loop
-                     , on_thread_read, mod->sec_thread_output
-                     , on_thread_close);
+    asc_thread_start(mod->sec_thread,
+        thread_loop, on_thread_read, mod->sec_thread_output, on_thread_close);
 }
 
 static void sec_close(module_data_t *mod)
@@ -192,32 +192,30 @@ static void ca_thread_loop(void *arg)
     uint64_t current_time = asc_utime();
     uint64_t ca_check_timeout = current_time;
 
-#define CA_TIMEOUT (1 * 1000 * 1000)
-
     while(mod->is_ca_thread_started)
     {
         const int ret = poll(fds, nfds, 100);
+
+        if(ret < 0)
+        {
+            asc_log_error(MSG("poll() failed [%s]"), strerror(errno));
+            astra_abort();
+        }
+
         if(ret > 0)
         {
             if(fds[0].revents)
                 ca_loop(mod->ca, fds[0].revents & (POLLPRI | POLLIN));
         }
-        else if(ret == 0)
+
+        current_time = asc_utime();
+
+        if(current_time >= ca_check_timeout + THREAD_DELAY_CA)
         {
-            if((current_time - ca_check_timeout) >= CA_TIMEOUT)
-            {
-                ca_check_timeout = current_time;
-                ca_loop(mod->ca, 0);
-            }
-        }
-        else
-        {
-            asc_log_error(MSG("poll() failed [%s]"), strerror(errno));
-            astra_abort();
+            ca_check_timeout = current_time;
+            ca_loop(mod->ca, 0);
         }
     }
-
-#undef CA_TIMEOUT
 
     ca_close(mod->ca);
 }
@@ -277,13 +275,26 @@ static void module_init(module_data_t *mod)
     module_option_number("device", &mod->device);
     mod->ca->adapter = mod->adapter;
     mod->ca->device = mod->device;
-    sprintf(mod->dev_name, "/dev/dvb/adapter%d/sec%d", mod->adapter, mod->device);
+    const size_t path_size = sprintf(mod->dev_name, "/dev/dvb/adapter%d/", mod->adapter);
+
+    while(1)
+    {
+        // check ci%d
+        sprintf(&mod->dev_name[path_size], "ci%d", mod->device);
+        if(!access(mod->dev_name, W_OK))
+            break;
+
+        // check sec%d
+        sprintf(&mod->dev_name[path_size], "sec%d", mod->device);
+        if(!access(mod->dev_name, W_OK))
+            break;
+
+        asc_log_error(MSG("ci-device is not found"));
+        astra_abort();
+    }
 
     mod->ca_thread = asc_thread_init(mod);
-    asc_thread_start(  mod->ca_thread
-                     , ca_thread_loop
-                     , NULL, NULL
-                     , on_ca_thread_close);
+    asc_thread_start(mod->ca_thread, ca_thread_loop, NULL, NULL, on_ca_thread_close);
 
     sec_open(mod);
 
