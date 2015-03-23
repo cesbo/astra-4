@@ -59,23 +59,86 @@ static void fe_clear(dvb_fe_t *fe)
  *
  */
 
-static void fe_read_status(dvb_fe_t *fe)
+static void fe_read_status(dvb_fe_t *fe, fe_status_t fe_status)
 {
-    if(ioctl(fe->fe_fd, FE_READ_SIGNAL_STRENGTH, &fe->signal) != 0)
-        fe->signal = -2;
+    const char ss = (fe_status & FE_HAS_SIGNAL) ? 'S' : '_';
+    const char sc = (fe_status & FE_HAS_CARRIER) ? 'C' : '_';
+    const char sv = (fe_status & FE_HAS_VITERBI) ? 'V' : '_';
+    const char sy = (fe_status & FE_HAS_SYNC) ? 'Y' : '_';
+    const char sl = (fe_status & FE_HAS_LOCK) ? 'L' : '_';
 
-    if(ioctl(fe->fe_fd, FE_READ_SNR, &fe->snr) != 0)
-        fe->snr = -2;
+    fe_status_t fe_status_diff = fe_status ^ fe->status;
+    fe->status = fe_status;
+    fe->lock = (fe_status & FE_HAS_LOCK) != 0;
 
-    if(ioctl(fe->fe_fd, FE_READ_BER, &fe->ber) != 0)
-        fe->ber = -2;
+    const bool _log_signal = fe->log_signal;
+    if(fe_status_diff & FE_HAS_LOCK)
+        fe->log_signal = true;
 
-    if(ioctl(fe->fe_fd, FE_READ_UNCORRECTED_BLOCKS, &fe->unc) != 0)
-        fe->unc = -2;
+    if(fe->is_started == false && fe->do_retune == 1)
+    {
+        fe->is_started = true;
+        fe->log_signal = true;
+    }
+
+    if(fe->lock)
+    {
+        if(ioctl(fe->fe_fd, FE_READ_SIGNAL_STRENGTH, &fe->signal) != 0)
+            fe->signal = -2;
+
+        if(ioctl(fe->fe_fd, FE_READ_SNR, &fe->snr) != 0)
+            fe->snr = -2;
+
+        if(ioctl(fe->fe_fd, FE_READ_BER, &fe->ber) != 0)
+            fe->ber = -2;
+
+        if(ioctl(fe->fe_fd, FE_READ_UNCORRECTED_BLOCKS, &fe->unc) != 0)
+            fe->unc = -2;
+
+        if(fe->log_signal)
+        {
+            if(!fe->raw_signal)
+            {
+                asc_log_info(MSG("fe has lock. status:%c%c%c%c%c "
+                                 "signal:%d%% snr:%d%% ber:%d unc:%d"),
+                    ss, sc, sv, sy, sl,
+                    (fe->signal * 100) / 0xFFFF, (fe->snr * 100) / 0xFFFF,
+                    fe->ber, fe->unc);
+            }
+            else
+            {
+                asc_log_info(MSG("fe has no lock. status:%c%c%c%c%c "
+                                 "signal:-%ddBm snr:%d.%ddB ber:%d unc:%d"),
+                    ss, sc, sv, sy, sl,
+                    fe->signal, fe->snr / 10, fe->snr % 10,
+                    fe->ber, fe->unc);
+            }
+        }
+
+        fe->do_retune = 0;
+    }
+    else
+    {
+        fe->signal = 0;
+        fe->snr = 0;
+        fe->ber = 0;
+        fe->unc = 0;
+
+        if(fe->do_retune == 0)
+            fe->do_retune = 1;
+
+        if(fe->log_signal)
+            asc_log_warning(MSG("fe has no lock. status:%c%c%c%c%c"),ss, sc, sv, sy, sl);
+    }
+
+    fe->log_signal = _log_signal;
 }
 
 static void fe_check_status(dvb_fe_t *fe)
 {
+    if(!fe->fe_fd)
+        return;
+
     fe_status_t fe_status;
     if(ioctl(fe->fe_fd, FE_READ_STATUS, &fe_status) != 0)
     {
@@ -83,53 +146,7 @@ static void fe_check_status(dvb_fe_t *fe)
         astra_abort();
     }
 
-    fe->status = fe_status;
-    fe->lock = (fe_status & FE_HAS_LOCK) != 0;
-    if(!fe->lock)
-    {
-        if(!fe->is_started)
-        {
-            const char ss = (fe_status & FE_HAS_SIGNAL) ? 'S' : '_';
-            const char sc = (fe_status & FE_HAS_CARRIER) ? 'C' : '_';
-            const char sv = (fe_status & FE_HAS_VITERBI) ? 'V' : '_';
-            const char sy = (fe_status & FE_HAS_SYNC) ? 'Y' : '_';
-            const char sl = (fe_status & FE_HAS_LOCK) ? 'L' : '_';
-            asc_log_warning(  MSG("fe has no lock. status:%c%c%c%c%c")
-                            , ss, sc, sv, sy, sl);
-        }
-        fe->signal = 0;
-        fe->snr = 0;
-        fe->ber = 0;
-        fe->unc = 0;
-        if(fe->type != DVB_TYPE_UNKNOWN)
-            fe->do_retune = 1;
-        return;
-    }
-
-    fe_read_status(fe);
-
-    if(fe->log_signal)
-    {
-        const char ss = (fe_status & FE_HAS_SIGNAL) ? 'S' : '_';
-        const char sc = (fe_status & FE_HAS_CARRIER) ? 'C' : '_';
-        const char sv = (fe_status & FE_HAS_VITERBI) ? 'V' : '_';
-        const char sy = (fe_status & FE_HAS_SYNC) ? 'Y' : '_';
-        const char sl = (fe_status & FE_HAS_LOCK) ? 'L' : '_';
-
-        if(!fe->raw_signal)
-        {
-            asc_log_info(  MSG("fe has lock. status:%c%c%c%c%c signal:%d%% snr:%d%%")
-                         , ss, sc, sv, sy, sl
-                         , (fe->signal * 100) / 0xFFFF
-                         , (fe->snr * 100) / 0xFFFF);
-        }
-        else
-        {
-            asc_log_info(  MSG("fe has lock. status:%c%c%c%c%c signal:-%ddBm snr:%d.%ddB")
-                         , ss, sc, sv, sy, sl
-                         , fe->signal, fe->snr / 10, fe->snr % 10);
-        }
-    }
+    fe_read_status(fe, fe_status);
 }
 
 /*
@@ -143,12 +160,11 @@ static void fe_check_status(dvb_fe_t *fe)
 
 static void fe_event(dvb_fe_t *fe)
 {
-    struct dvb_frontend_event dvb_fe_event;
-    fe_status_t fe_status, fe_status_diff;
+    struct dvb_frontend_event fe_event;
 
     while(1) /* read all events */
     {
-        if(ioctl(fe->fe_fd, FE_GET_EVENT, &dvb_fe_event) != 0)
+        if(ioctl(fe->fe_fd, FE_GET_EVENT, &fe_event) != 0)
         {
             if(errno == EWOULDBLOCK)
                 return;
@@ -156,61 +172,8 @@ static void fe_event(dvb_fe_t *fe)
             return;
         }
 
-        fe_status = dvb_fe_event.status;
-        fe_status_diff = fe_status ^ fe->fe_event_status;
-        fe->fe_event_status = fe_status;
-
-        if(fe_status_diff & FE_REINIT)
-        {
-            if(fe_status & FE_REINIT)
-            {
-                asc_log_warning(MSG("fe was reinitialized"));
-                fe_clear(fe);
-                fe->do_retune = 1;
-                return;
-            }
-        }
-
-        const char ss = (fe_status & FE_HAS_SIGNAL) ? 'S' : '_';
-        const char sc = (fe_status & FE_HAS_CARRIER) ? 'C' : '_';
-        const char sv = (fe_status & FE_HAS_VITERBI) ? 'V' : '_';
-        const char sy = (fe_status & FE_HAS_SYNC) ? 'Y' : '_';
-        const char sl = (fe_status & FE_HAS_LOCK) ? 'L' : '_';
-
-        if(fe_status_diff & FE_HAS_LOCK)
-        {
-            fe->lock = (fe_status & FE_HAS_LOCK) != 0;
-            if(fe->lock)
-            {
-                fe_read_status(fe);
-
-                if(!fe->raw_signal)
-                {
-                    asc_log_info(  MSG("fe has lock. status:%c%c%c%c%c signal:%d%% snr:%d%%")
-                                 , ss, sc, sv, sy, sl
-                                 , (fe->signal * 100) / 0xFFFF
-                                 , (fe->snr * 100) / 0xFFFF);
-                }
-                else
-                {
-                    asc_log_info(  MSG("fe has lock. status:%c%c%c%c%c signal:-%ddBm snr:%d.%ddB")
-                                 , ss, sc, sv, sy, sl
-                                 , fe->signal, fe->snr / 10, fe->snr % 10);
-                }
-
-                fe->is_started = true;
-                fe->do_retune = 0;
-            }
-            else
-            {
-                asc_log_warning(  MSG("fe has lost lock. status:%c%c%c%c%c")
-                                , ss, sc, sv, sy, sl);
-                fe_clear(fe);
-                fe->is_started = false;
-                fe->do_retune = 1;
-                return;
-            }
-        }
+        if(fe_event.status & FE_HAS_LOCK)
+            fe->do_retune = 0;
     }
 }
 
@@ -334,8 +297,11 @@ static void fe_tune_s(dvb_fe_t *fe)
 {
     int frequency = fe->frequency;
 
-    if(fe->voltage != SEC_VOLTAGE_OFF && fe->diseqc > 0)
-        diseqc_setup(fe);
+    if(fe->voltage != SEC_VOLTAGE_OFF)
+    {
+        if(fe->diseqc >= 1 && fe->diseqc <= 4)
+            diseqc_setup(fe);
+    }
 
     if(fe->uni_scr > 0)
     {
@@ -562,12 +528,10 @@ void fe_loop(dvb_fe_t *fe, int is_data)
     if(is_data)
     {
         fe_event(fe);
+        return;
     }
-    else
-    {
-        if(fe->do_retune == 0)
-            fe_check_status(fe);
-    }
+
+    fe_check_status(fe);
 
     switch(fe->do_retune)
     {
