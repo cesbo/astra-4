@@ -698,7 +698,7 @@ void asc_socket_set_buffer(asc_socket_t *sock, int rcvbuf, int sndbuf)
         asc_log_error(MSG("failed to set rcvbuf %d (%s)"), rcvbuf, asc_socket_error());
     }
 
-    if(sndbuf > 0 && !_socket_set_buffer(sock->fd, SO_SNDBUF, rcvbuf))
+    if(sndbuf > 0 && !_socket_set_buffer(sock->fd, SO_SNDBUF, sndbuf))
     {
         asc_log_error(MSG("failed to set sndbuf %d (%s)"), sndbuf, asc_socket_error());
     }
