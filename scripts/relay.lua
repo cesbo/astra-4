@@ -1,7 +1,7 @@
 -- Astra Relay
 -- https://cesbo.com/astra/
 --
--- Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+-- Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
 --
 -- This program is free software: you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License as published by
@@ -25,12 +25,20 @@ function xproxy_init_client(server, client, request, path)
     local client_id = client_data.client_id
     if client_id then
         client_list[client_id].path = path
-        return
+        return nil
+    end
+
+    local function get_unique_client_id()
+        local _id = math.random(10000000, 99000000)
+        if client_list[_id] ~= nil then
+            return nil
+        end
+        return _id
     end
 
     repeat
-        client_id = math.random(10000000, 99000000)
-    until not client_list[client_id]
+        client_id = get_unique_client_id()
+    until client_id ~= nil
 
     if request.query then
         local query_path = ""
@@ -138,8 +146,8 @@ function on_request_stat(server, client, request)
         end
     end
 
-    if xproxy_pass then
-        if request.headers['authorization'] ~= xproxy_pass then
+    if relay_stat_pass then
+        if request.headers['authorization'] ~= relay_stat_pass then
             server:send(client, {
                 code = 401,
                 headers = {
@@ -225,7 +233,11 @@ function on_request_udp(server, client, request)
         conf.socket_size = 0x80000
         if localaddr then conf.localaddr = localaddr end
         client_data.input = init_input(conf)
-        server:send(client, client_data.input.tail:stream())
+        server:send(client, {
+            upstream = client_data.input.tail:stream(),
+            buffer_size = relay_buffer_size,
+            buffer_fill = relay_buffer_fill,
+        })
     end
 
     allow_channel()
@@ -259,7 +271,11 @@ function on_request_http(server, client, request)
     local allow_channel = function()
         conf.name = "Relay " .. client_data.client_id
         client_data.input = init_input(conf)
-        server:send(client, client_data.input.tail:stream())
+        server:send(client, {
+            upstream = client_data.input.tail:stream(),
+            buffer_size = relay_buffer_size,
+            buffer_fill = relay_buffer_fill,
+        })
     end
 
     allow_channel()
@@ -309,7 +325,11 @@ function on_request_channel(server, client, request)
     local allow_channel = function()
         conf.name = "Relay " .. client_data.client_id
         client_data.input = init_input(conf)
-        server:send(client, client_data.input.tail:stream())
+        server:send(client, {
+            upstream = client_data.input.tail:stream(),
+            buffer_size = relay_buffer_size,
+            buffer_fill = relay_buffer_fill,
+        })
     end
 
     allow_channel()
@@ -321,21 +341,21 @@ end
 --  88  888  88    8oooo88    888   88   8888
 -- o88o  8  o88o o88o  o888o o888o o88o    88
 
-xproxy_addr = "0.0.0.0"
-xproxy_port = 8000
+relay_addr = "0.0.0.0"
+relay_port = 8000
 
-xproxy_buffer_size = nil
-xproxy_buffer_fill = nil
+relay_buffer_size = nil
+relay_buffer_fill = nil
 
-xproxy_allow_udp = true
-xproxy_allow_http = true
+relay_allow_udp = true
+relay_allow_http = true
 
-xproxy_pass = nil
+relay_stat_pass = nil
 
-xproxy_script = nil
+relay_script = nil
 
 function on_sighup()
-    if xproxy_script then dofile(xproxy_script) end
+    if relay_script then dofile(relay_script) end
 end
 
 options_usage = [[
@@ -352,12 +372,12 @@ options_usage = [[
 
 options = {
     ["-a"] = function(idx)
-        xproxy_addr = argv[idx + 1]
+        relay_addr = argv[idx + 1]
         return 1
     end,
     ["-p"] = function(idx)
-        xproxy_port = tonumber(argv[idx + 1])
-        if not xproxy_port then
+        relay_port = tonumber(argv[idx + 1])
+        if not relay_port then
             log.error("[Relay] wrong port value")
             astra.abort()
         end
@@ -368,20 +388,20 @@ options = {
         return 1
     end,
     ["--buffer-size"] =  function(idx)
-        xproxy_buffer_size = tonumber(argv[idx + 1])
+        relay_buffer_size = tonumber(argv[idx + 1])
         return 1
     end,
     ["--buffer-fill"] =  function(idx)
-        xproxy_buffer_fill = tonumber(argv[idx + 1])
+        relay_buffer_fill = tonumber(argv[idx + 1])
         return 1
     end,
     ["--channels"] = function(idx)
-        xproxy_script = argv[idx + 1]
+        relay_script = argv[idx + 1]
         on_sighup()
         return 1
     end,
     ["--no-udp"] = function(idx)
-        xproxy_allow_udp = false
+        relay_allow_udp = false
         return 0
     end,
     ["--no-rtp"] = function(idx)
@@ -389,16 +409,16 @@ options = {
         return 0
     end,
     ["--no-http"] = function(idx)
-        xproxy_allow_http = false
+        relay_allow_http = false
         return 0
     end,
     ["--pass"] = function(idx)
-        xproxy_pass = "Basic " .. base64.encode(argv[idx + 1])
+        relay_stat_pass = "Basic " .. base64.encode(argv[idx + 1])
         return 1
     end,
     ["*"] = function(idx)
-        xproxy_script = argv[idx]
-        if utils.stat(xproxy_script).type ~= 'file' then
+        relay_script = argv[idx]
+        if utils.stat(relay_script).type ~= 'file' then
             return -1
         end
         on_sighup()
@@ -412,28 +432,20 @@ function main()
     end
 
     log.info("Starting Astra " .. astra.version)
-    log.info("Astra Relay started on " .. xproxy_addr .. ":" .. xproxy_port)
+    log.info("Astra Relay started on " .. relay_addr .. ":" .. relay_port)
 
     local route = {
         { "/stat/", on_request_stat },
         { "/stat", http_redirect({ location = "/stat/" }) },
     }
 
-    local function init_http_upstream(callback)
-        return http_upstream({
-            callback = callback,
-            buffer_size = xproxy_buffer_size,
-            buffer_fill = xproxy_buffer_fill,
-        })
+    if relay_allow_udp then
+        table.insert(route, { "/udp/*", http_upstream({ callback = on_request_udp }) })
+        table.insert(route, { "/rtp/*", http_upstream({ callback = on_request_udp }) })
     end
 
-    if xproxy_allow_udp then
-        table.insert(route, { "/udp/*", init_http_upstream(on_request_udp) })
-        table.insert(route, { "/rtp/*", init_http_upstream(on_request_udp) })
-    end
-
-    if xproxy_allow_http then
-        table.insert(route, { "/http/*", init_http_upstream(on_request_http) })
+    if relay_allow_http then
+        table.insert(route, { "/http/*", http_upstream({ callback = on_request_http }) })
     end
 
     if playlist_request then
@@ -444,11 +456,11 @@ function main()
         for _,r in ipairs(xproxy_route) do table.insert(route, r) end
     end
 
-    table.insert(route, { "/*", init_http_upstream(on_request_channel) })
+    table.insert(route, { "/*", http_upstream({ callback = on_request_channel }) })
 
     http_server({
-        addr = xproxy_addr,
-        port = xproxy_port,
+        addr = relay_addr,
+        port = relay_port,
         server_name = "Astra Relay",
         route = route
     })

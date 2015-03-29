@@ -1,7 +1,7 @@
 -- Astra Stream
 -- https://cesbo.com/astra/
 --
--- Copyright (C) 2013-2014, Andrey Dyldin <and@cesbo.com>
+-- Copyright (C) 2013-2015, Andrey Dyldin <and@cesbo.com>
 --
 -- This program is free software: you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License as published by
@@ -409,7 +409,11 @@ function http_output_on_request(server, client, request)
         end
         channel_data.clients = channel_data.clients + 1
 
-        server:send(client, channel_data.tail:stream())
+        server:send(client, {
+            upstream = channel_data.tail:stream(),
+            buffer_size = client_data.output_data.config.buffer_size,
+            buffer_fill = client_data.output_data.config.buffer_fill,
+        })
     end
 
     allow_channel()
@@ -427,11 +431,7 @@ init_output_module.http = function(channel_data, output_id)
             port = output_data.config.port,
             sctp = output_data.config.sctp,
             route = {
-                { "/*", http_upstream({
-                    callback = http_output_on_request,
-                    buffer_size = output_data.config.buffer_size,
-                    buffer_fill = output_data.config.buffer_fill,
-                    }) },
+                { "/*", http_upstream({ callback = http_output_on_request }) },
             },
             channel_list = {},
         })
