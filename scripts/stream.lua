@@ -93,7 +93,7 @@ dump_psi_info["sdt"] = function(name, info)
     log.info(name .. ("SDT: crc32: 0x%X"):format(info.crc32))
 end
 
-function on_analyze(channel_data, input_id, data)
+function on_analyze_spts(channel_data, input_id, data)
     local input_data = channel_data.input[input_id]
 
     if data.error then
@@ -207,7 +207,7 @@ function channel_init_input(channel_data, input_id)
             cc_limit = input_data.config.cc_limit,
             bitrate_limit = input_data.config.bitrate_limit,
             callback = function(data)
-                on_analyze(channel_data, input_id, data)
+                on_analyze_spts(channel_data, input_id, data)
             end,
         })
     end
@@ -223,6 +223,7 @@ function channel_kill_input(channel_data, input_id)
     -- TODO: kill additional modules
 
     input_data.analyze = nil
+    input_data.on_air = nil
 
     kill_input(input_data.input)
     input_data.input = nil
@@ -357,28 +358,55 @@ end
 -- 888o   o888           888   888      888         888      888
 --   88ooo88            o888o o888o    o888o       o888o    o888o
 
+http_output_client_list = {}
 http_output_instance_list = {}
+
+function http_output_client(server, client, request)
+    local client_data = server:data(client)
+
+    if not request then
+        http_output_client_list[client_data.client_id] = nil
+        client_data.client_id = nil
+        return nil
+    end
+
+    local function get_unique_client_id()
+        local _id = math.random(10000000, 99000000)
+        if http_output_client_list[_id] ~= nil then
+            return nil
+        end
+        return _id
+    end
+
+    repeat
+        client_data.client_id = get_unique_client_id()
+    until client_data.client_id ~= nil
+
+    http_output_client_list[client_data.client_id] = {
+        server = server,
+        client = client,
+        request = request,
+        st   = os.time(),
+    }
+end
 
 function http_output_on_request(server, client, request)
     local client_data = server:data(client)
 
     if not request then
         if client_data.client_id then
-            client_data.output_data.client_list[client_data.client_id] = nil
-
             local channel_data = client_data.output_data.channel_data
             channel_data.clients = channel_data.clients - 1
-            if channel_data.clients == 0 and channel_data.input ~= nil then
+            if channel_data.clients == 0 and channel_data.input[1].input ~= nil then
                 for input_id, input_data in ipairs(channel_data.input) do
                     if input_data.input then
                         channel_kill_input(channel_data, input_id)
                     end
                 end
+                channel_data.active_input_id = 0
             end
 
-            client_data.client_id = nil
-            client_data.output_data = nil
-
+            http_output_client(server, client, nil)
             collectgarbage()
         end
         return nil
@@ -390,24 +418,15 @@ function http_output_on_request(server, client, request)
         return nil
     end
 
-    repeat
-        client_data.client_id = math.random(10000000, 99000000)
-    until not client_data.output_data.client_list[client_data.client_id]
+    http_output_client(server, client, request)
 
-    client_data.output_data.client_list[client_data.client_id] = {
-        server = server,
-        client = client,
-        addr   = request.addr,
-        path   = request.path,
-        st     = os.time(),
-    }
+    local channel_data = client_data.output_data.channel_data
+    channel_data.clients = channel_data.clients + 1
 
     local allow_channel = function()
-        local channel_data = client_data.output_data.channel_data
-        if channel_data.clients == 0 then
+        if not channel_data.input[1].input then
             channel_init_input(channel_data, 1)
         end
-        channel_data.clients = channel_data.clients + 1
 
         server:send(client, {
             upstream = channel_data.tail:stream(),
@@ -439,7 +458,7 @@ init_output_module.http = function(channel_data, output_id)
     end
 
     output_data.instance = instance
-    output_data.client_list = {}
+    output_data.instance_id = instance_id
     output_data.channel_data = channel_data
 
     instance.__options.channel_list[output_data.config.path] = output_data
@@ -448,20 +467,31 @@ end
 kill_output_module.http = function(channel_data, output_id)
     local output_data = channel_data.output[output_id]
 
-    local instance_id = output_data.config.host .. ":" .. output_data.config.port
-    local instance = http_output_instance_list[instance_id]
+    local instance = output_data.instance
+    local instance_id = output_data.instance_id
+
+    for _, client in pairs(http_output_client_list) do
+        if client.server == instance then
+            instance:close(client.client)
+        end
+    end
 
     instance.__options.channel_list[output_data.config.path] = nil
 
-    for _, client in pairs(output_data.client_list) do client.server:close(client.client) end
-    output_data.client_list = nil
-    output_data.channel_data = nil
+    local is_instance_empty = true
+    for _ in pairs(instance.__options.channel_list) do
+        is_instance_empty = false
+        break
+    end
+
+    if is_instance_empty then
+        instance:close()
+        http_output_instance_list[instance_id] = nil
+    end
+
     output_data.instance = nil
-
-    for _ in pairs(instance.__options.channel_list) do return nil end
-
-    instance:close()
-    http_output_instance_list[instance_id] = nil
+    output_data.instance_id = nil
+    output_data.channel_data = nil
 end
 
 --   ooooooo            oooo   oooo oooooooooo
@@ -696,6 +726,7 @@ function find_channel(key, value)
             return channel_data
         end
     end
+    return nil
 end
 
 --  oooooooo8 ooooooooooo oooooooooo  ooooooooooo      o      oooo     oooo
