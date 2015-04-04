@@ -251,15 +251,14 @@ init_output_option.biss = function(channel_data, output_id)
 
     output_data.biss = biss_encrypt({
         upstream = channel_data.tail:stream(),
-        key = output_data.config.biss
+        key = output_data.config.biss,
     })
     channel_data.tail = output_data.biss
 end
 
 kill_output_option.biss = function(channel_data, output_id)
     local output_data = channel_data.output[output_id]
-
-    output_data.tail = nil
+    output_data.biss = nil
 end
 
 init_output_module = {}
