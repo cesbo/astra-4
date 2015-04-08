@@ -752,6 +752,10 @@ static void module_options(module_data_t *mod)
         case DVB_TYPE_C:
             module_options_c(mod);
             break;
+        case DVB_TYPE_ATSC:
+            if(mod->fe->frequency < 1000)
+                mod->fe->frequency *= 1000000;
+            break;
         default:
             break;
     }

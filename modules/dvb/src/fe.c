@@ -489,6 +489,7 @@ static void fe_tune(dvb_fe_t *fe)
             break;
         case DVB_TYPE_ATSC:
             fe_tune_atsc(fe);
+            break;
         default:
             astra_abort();
     }
