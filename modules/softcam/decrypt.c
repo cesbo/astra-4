@@ -976,7 +976,7 @@ void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data)
             hex_to_str(key_1, &data[3], 8);
             hex_to_str(key_2, &data[11], 8);
             const uint64_t responsetime = (asc_utime() - ca_stream->sendtime) / 1000;
-            asc_log_debug(  MSG("ECM Found id:0x%02X time:%llums key:%s:%s")
+            asc_log_debug(  MSG("ECM Found id:0x%02X time:%"PRIu64"ms key:%s:%s")
                           , data[0], responsetime, key_1, key_2);
         }
 
@@ -984,7 +984,7 @@ void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data)
     else
     {
         const uint64_t responsetime = (asc_utime() - ca_stream->sendtime) / 1000;
-        asc_log_error(  MSG("ECM Not Found id:0x%02X time:%llums size:%d")
+        asc_log_error(  MSG("ECM Not Found id:0x%02X time:%"PRIu64"ms size:%d")
                       , data[0], responsetime, data[2]);
     }
 }

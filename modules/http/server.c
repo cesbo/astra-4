@@ -808,7 +808,7 @@ static void on_server_close(void *arg)
             http_client_t *client = (http_client_t *)asc_list_data(mod->clients);
             asc_assert(client != prev_client
                        , MSG("loop on on_server_close() client:%p")
-                       , client);
+                       , (void *)client);
             on_client_close(client);
             prev_client = client;
         }

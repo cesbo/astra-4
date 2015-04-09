@@ -209,11 +209,12 @@ fi
 case "$MACHINE" in
 *"android"*)
     OS="android"
+    CFLAGS="$CFLAGS -DWITH_EPOLL=1"
     LDFLAGS="-ldl -lm"
     ;;
 *"linux"*)
     OS="linux"
-    CFLAGS="$CFLAGS -pthread"
+    CFLAGS="$CFLAGS -pthread -DWITH_EPOLL=1"
     if $APP_C $CFLAGS -dM -E -xc /dev/null | grep -q "__i386__" ; then
         CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
     fi
@@ -221,16 +222,17 @@ case "$MACHINE" in
     ;;
 *"freebsd"*)
     OS="freebsd"
-    CFLAGS="$CFLAGS -pthread"
+    CFLAGS="$CFLAGS -pthread -DWITH_KQUEUE=1"
     LDFLAGS="-lm -lpthread"
     ;;
 *"darwin"*)
     OS="darwin"
-    CFLAGS="$CFLAGS -pthread -Wno-deprecated-declarations"
+    CFLAGS="$CFLAGS -pthread -Wno-deprecated-declarations -DWITH_KQUEUE=1"
     LDFLAGS=""
     ;;
 *"mingw"*)
     OS="mingw"
+    CFLAGS="$CFLAGS -DWITH_SELECT=1"
     APP="$APP.exe"
     WS32=`$APP_C -print-file-name=libws2_32.a`
     LDFLAGS="$WS32"
@@ -340,10 +342,123 @@ if [ $ARG_LIBDVBCSA -eq 1 ] ; then
     check_libdvbcsa_all
 fi
 
+#
+
+clock_gettime_test_c()
+{
+    cat <<EOF
+#include <time.h>
+int main(void) {
+    struct timespec ts;
+    return clock_gettime(CLOCK_REALTIME, &ts);
+}
+EOF
+}
+
+check_clock_gettime()
+{
+    clock_gettime_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -lrt -x c - >/dev/null 2>&1
+}
+
+if check_clock_gettime ; then
+    CFLAGS="$CFLAGS -DHAVE_CLOCK_GETTIME=1"
+    LDFLAGS="$LDFLAGS -lrt"
+fi
+
+sctp_h_test_c()
+{
+    cat <<EOF
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/sctp.h>
+int main(void) { return 0; }
+EOF
+}
+
+check_sctp_h()
+{
+    sctp_h_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+}
+
+if check_sctp_h ; then
+    CFLAGS="$CFLAGS -DHAVE_NETINET_SCTP_H=1"
+fi
+
+endian_h_test_c()
+{
+    cat <<EOF
+#include <endian.h>
+#ifndef __BYTE_ORDER
+#error "__BYTE_ORDER not defined"
+#endif
+int main(void) { return 0; }
+EOF
+}
+
+check_endian_h()
+{
+    endian_h_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+}
+
+if check_endian_h ; then
+    CFLAGS="$CFLAGS -DHAVE_ENDIAN_H=1"
+fi
+
+pread_test_c()
+{
+    cat <<EOF
+#include <unistd.h>
+int main(void) { char b[256]; return pread(0, b, sizeof(b), 0); }
+EOF
+}
+
+check_pread()
+{
+    pread_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+}
+
+if check_pread ; then
+    CFLAGS="$CFLAGS -DHAVE_PREAD=1"
+fi
+
+strndup_test_c()
+{
+    cat <<EOF
+#include <string.h>
+int main(void) { return (strndup("test", 2) != NULL) ? 0 : 1; }
+EOF
+}
+
+check_strndup()
+{
+    strndup_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+}
+
+if check_strndup ; then
+    CFLAGS="$CFLAGS -DHAVE_STRNDUP=1"
+fi
+
+strnlen_test_c()
+{
+    cat <<EOF
+#include <string.h>
+int main(void) { return (strnlen("test", 2) == 4) ? 0 : 1; }
+EOF
+}
+
+check_strnlen()
+{
+    strnlen_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+}
+
+if check_strnlen ; then
+    CFLAGS="$CFLAGS -DHAVE_STRNLEN=1"
+fi
+
 # IGMP Emulation
 
 if [ $ARG_IGMP_EMULATION -eq 1 ]; then
-    CFLAGS+=" -DIGMP_EMULATION"
+    CFLAGS="$CFLAGS -DIGMP_EMULATION"
 fi
 
 # APP flags

@@ -25,20 +25,20 @@
 #include "base.h"
 
 #ifndef __PRI64_PREFIX
-#   if __WORDSIZE == 64
+#   if __WORDSIZE == 64 && !defined(__llvm__)
 #       define __PRI64_PREFIX "l"
 #   else
 #       define __PRI64_PREFIX "ll"
 #   endif
-#endif /* __PRI64_PREFIX */
+#endif
 
 #ifndef PRId64
 #   define PRId64 __PRI64_PREFIX "d"
-#endif /* PRId64 */
+#endif
 
 #ifndef PRIu64
 #   define PRIu64 __PRI64_PREFIX "u"
-#endif /* PRIu64 */
+#endif
 
 #ifndef O_BINARY
 #   ifdef _O_BINARY
@@ -46,7 +46,7 @@
 #   else
 #       define O_BINARY 0
 #   endif
-#endif /* O_BINARY */
+#endif
 
 #ifndef __BYTE_ORDER__
 #   ifdef HAVE_ENDIAN_H
@@ -59,18 +59,18 @@
 #       define __ORDER_LITTLE_ENDIAN__ 1234
 #       define __ORDER_BIG_ENDIAN__ 4321
 #   endif
-#endif /* __BYTE_ORDER__ */
+#endif
 
 #ifndef EWOULDBLOCK
 #   define EWOULDBLOCK EAGAIN
-#endif /* EWOULDBLOCK */
+#endif
 
 #ifndef HAVE_PREAD
 ssize_t pread(int fd, void *buffer, size_t size, off_t off);
 #endif
 
 #ifndef HAVE_STRNDUP
-char *strndup(const char *str, size_t max);
+char * strndup(const char *str, size_t max);
 #endif
 
 #ifndef HAVE_STRNLEN
