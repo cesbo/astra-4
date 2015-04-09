@@ -20,7 +20,8 @@
 			"-I${folder:${project_path:main.c}}",
 			"-I${folder:${project_path:main.c}}/contrib/build/ffmpeg",
 			"-Wno-deprecated-declarations",
-			"-std=iso9899:1999"
+			"-std=iso9899:1999",
+			"-DWITH_KQUEUE=1"
 		],
 		"rulers": [ 101 ],
 		"wrap_width": 100

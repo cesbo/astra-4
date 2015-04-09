@@ -30,7 +30,7 @@ check_getifaddrs()
 }
 
 if check_getifaddrs ; then
-    CFLAGS="-DWITH_IFADDRS=1"
+    CFLAGS="-DHAVE_GETIFADDRS=1"
 else
     echo "$MODULE/module.mk: warning: utils.ifaddrs() is not available" >&2
 fi

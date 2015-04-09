@@ -1,8 +1,9 @@
 /*
- * Astra Core
+ * Astra Core (String buffer)
  * http://cesbo.com/astra
  *
  * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
+ *                    2015, Artem Kharitonov <artem@sysert.ru>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,61 +19,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "utils.h"
-
-uint64_t asc_utime(void)
-{
-#ifdef HAVE_CLOCK_GETTIME
-    struct timespec ts;
-
-    if(clock_gettime(CLOCK_MONOTONIC, &ts) == EINVAL)
-        (void)clock_gettime(CLOCK_REALTIME, &ts);
-
-    return ((uint64_t)ts.tv_sec * 1000000) + (uint64_t)(ts.tv_nsec / 1000);
-#else
-    struct timeval tv;
-
-    gettimeofday(&tv, NULL);
-    return ((uint64_t)tv.tv_sec * 1000000) + (uint64_t)tv.tv_usec;
-#endif
-}
-
-void asc_usleep(uint64_t usec)
-{
-#ifndef _WIN32
-    struct timespec ts;
-    ts.tv_sec = usec / 1000000;
-    ts.tv_nsec = (usec % 1000000) * 1000;
-    while(nanosleep(&ts, &ts) == -1 && errno == EINTR)
-         continue;
-#else
-    HANDLE timer;
-    LARGE_INTEGER ft;
-    ft.QuadPart = -(usec * 10);
-    timer = CreateWaitableTimer(NULL, TRUE, NULL);
-    SetWaitableTimer(timer, &ft, 0, NULL, NULL, 0);
-    WaitForSingleObject(timer, INFINITE);
-    CloseHandle(timer);
-#endif
-}
-
-#ifdef _WIN32
-ssize_t pread(int fd, void *buffer, size_t size, off_t off)
-{
-    if(lseek(fd, off, SEEK_SET) != off)
-        return -1;
-    return read(fd, buffer, size);
-}
-#endif
-
-/*
- *  oooooooo8 ooooooooooo oooooooooo  ooooo oooo   oooo  ooooooo8
- * 888        88  888  88  888    888  888   8888o  88 o888    88
- *  888oooooo     888      888oooo88   888   88 888o88 888    oooo
- *         888    888      888  88o    888   88   8888 888o    88
- * o88oooo888    o888o    o888o  88o8 o888o o88o    88  888ooo888
- *
- */
+#include "strbuffer.h"
 
 #define MAX_BUFFER_SIZE 4096
 
@@ -251,9 +198,9 @@ void strung_buffer_addvastring(string_buffer_t *buffer, const char *str, va_list
             if(c == 's')
             {
                 ++skip;
-                const char *str = va_arg(ap, const char *);
+                const char *arg = va_arg(ap, const char *);
                 // TODO: is_space
-                string_buffer_addlstring(buffer, str, length);
+                string_buffer_addlstring(buffer, arg, length);
             }
             else if(c == 'd' || c == 'i')
             {

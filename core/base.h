@@ -2,7 +2,8 @@
  * Astra Core
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
+ *                    2015, Artem Kharitonov <artem@sysert.ru>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,8 +19,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _BASE_H_
-#define _BASE_H_ 1
+#ifndef _ASC_BASE_H_
+#define _ASC_BASE_H_ 1
 
 #ifdef _WIN32
 #   ifndef _WIN32_WINNT
@@ -44,35 +45,29 @@
 #include <fcntl.h>
 #include <errno.h>
 
+#include <lua/lauxlib.h>
+
 #define ASC_ARRAY_SIZE(_a) (sizeof(_a)/sizeof(_a[0]))
 
 #define ASC_FREE(_o, _m) if(_o != NULL) { _m(_o); _o = NULL; }
 
 #define __uarg(_x) {(void)_x;}
 
+#if defined(__GNUC_GNU_INLINE__) \
+    || (defined(__GNUC__) && !defined(__GNUC_STDC_INLINE__))
+    /* workaround for older GCC versions */
+#   define __asc_inline inline
+#else
+#   define __asc_inline extern inline
+#endif
+
 #ifndef __wur
-#   define __wur __attribute__(( __warn_unused_result__ ))
+#   define __wur __attribute__((__warn_unused_result__))
 #endif
 
-#ifndef O_BINARY
-#   ifdef _O_BINARY
-#       define O_BINARY _O_BINARY
-#   else
-#       define O_BINARY 0
-#   endif
-#endif
+#define __fmt_printf(__index, __first) __attribute__((__format__(__printf__, __index, __first)))
+#define __func_pure __attribute__((__pure__))
+#define __func_const __attribute__((__const__))
+#define __noreturn __attribute__((__noreturn__))
 
-#ifndef __BYTE_ORDER__
-#   ifdef HAVE_ENDIAN_H
-#       include <endian.h>
-#       define __BYTE_ORDER__ __BYTE_ORDER
-#       define __ORDER_LITTLE_ENDIAN__ __LITTLE_ENDIAN
-#       define __ORDER_BIG_ENDIAN__ __BIG_ENDIAN
-#   else
-#       define __BYTE_ORDER__ 1234
-#       define __ORDER_LITTLE_ENDIAN__ 1234
-#       define __ORDER_BIG_ENDIAN__ 4321
-#   endif
-#endif
-
-#endif /* _BASE_H_ */
+#endif /* _ASC_BASE_H_ */

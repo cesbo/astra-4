@@ -56,14 +56,14 @@ static int utils_hostname(lua_State *L)
     return 1;
 }
 
-#ifdef WITH_IFADDRS
+#ifdef HAVE_GETIFADDRS
 static int utils_ifaddrs(lua_State *L)
 {
     struct ifaddrs *ifaddr;
     char host[NI_MAXHOST];
 
-    const int s = getifaddrs(&ifaddr);
-    asc_assert(s != -1, "getifaddrs() failed");
+    const int ret = getifaddrs(&ifaddr);
+    asc_assert(ret != -1, "getifaddrs() failed");
 
     static const char __ipv4[] = "ipv4";
     static const char __ipv6[] = "ipv6";
@@ -240,7 +240,7 @@ LUA_API int luaopen_utils(lua_State *L)
     static const luaL_Reg api[] =
     {
         { "hostname", utils_hostname },
-#ifdef WITH_IFADDRS
+#ifdef HAVE_GETIFADDRS
         { "ifaddrs", utils_ifaddrs },
 #endif
         { "stat", utils_stat },

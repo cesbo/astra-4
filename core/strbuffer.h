@@ -1,8 +1,9 @@
 /*
- * Astra Core
+ * Astra Core (String buffer)
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
+ *                    2015, Artem Kharitonov <artem@sysert.ru>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,30 +19,22 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _UTILS_H_
-#define _UTILS_H_ 1
+#ifndef _ASC_STRBUFFER_H_
+#define _ASC_STRBUFFER_H_ 1
 
 #include "base.h"
-#include <lua/lauxlib.h>
-
-uint64_t asc_utime(void);
-void asc_usleep(uint64_t usec);
-
-#ifdef _WIN32
-ssize_t pread(int fd, void *buffer, size_t size, off_t off);
-#endif
-
-// string_buffer
 
 typedef struct string_buffer_t string_buffer_t;
 
 string_buffer_t * string_buffer_alloc(void);
+void string_buffer_free(string_buffer_t *buffer);
+
 void string_buffer_addchar(string_buffer_t *buffer, char c);
 void string_buffer_addlstring(string_buffer_t *buffer, const char *str, size_t size);
 void strung_buffer_addvastring(string_buffer_t *buffer, const char *str, va_list ap);
 void string_buffer_addfstring(string_buffer_t *buffer, const char *str, ...);
+
 char * string_buffer_release(string_buffer_t *buffer, size_t *size);
 void string_buffer_push(lua_State *L, string_buffer_t *buffer);
-void string_buffer_free(string_buffer_t *buffer);
 
-#endif /* _UTILS_H_ */
+#endif /* _ASC_STRBUFFER_H_ */

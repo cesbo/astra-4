@@ -2,7 +2,7 @@
  * Astra Core
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,14 +22,13 @@
 #include "thread.h"
 #include "list.h"
 #include "log.h"
+#include "loopctl.h"
 
 #ifdef _WIN32
 #   include <windows.h>
 #else
 #   include <pthread.h>
 #endif
-
-extern bool is_main_loop_idle;
 
 #define MSG(_msg) "[core/thread] " _msg
 
@@ -100,10 +99,10 @@ void asc_thread_core_destroy(void)
         ; !asc_list_eol(thread_observer.thread_list)
         ; asc_list_first(thread_observer.thread_list))
     {
-        asc_thread_t *thread = asc_list_data(thread_observer.thread_list);
+        asc_thread_t *thread = (asc_thread_t *)asc_list_data(thread_observer.thread_list);
         asc_assert(thread != prev_thread
                    , MSG("loop on asc_thread_core_destroy() thread:%p")
-                   , thread);
+                   , (void *)thread);
         if(thread->on_close)
             thread->on_close(thread->arg);
         prev_thread = thread;
@@ -156,7 +155,7 @@ asc_thread_t * asc_thread_init(void *arg)
 }
 
 #ifdef _WIN32
-DWORD WINAPI asc_thread_loop(void *arg)
+static DWORD WINAPI asc_thread_loop(void *arg)
 #else
 static void * asc_thread_loop(void *arg)
 #endif

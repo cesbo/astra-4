@@ -10,7 +10,7 @@ function main()
 
     local dvb_list = dvbls()
 
-    for _,dvb_info in pairs(dvb_list) do
+    for _,dvb_info in ipairs(dvb_list) do
         if dvb_info.error then
             log.error("adapter = " .. dvb_info.adapter .. ", device = " .. dvb_info.device)
             log.error("    " .. dvb_info.error)

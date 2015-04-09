@@ -262,7 +262,7 @@ static void thread_loop(void *arg)
             block_time = mpegts_pcr_block_us(&mod->pcr, &pcr);
             if(block_time == 0 || block_time > 500000)
             {
-                asc_log_debug(MSG("block time out of range: %llums block_size:%u"),
+                asc_log_debug(MSG("block time out of range: %llums block_size:%lu"),
                     (uint64_t)(block_time / 1000), block_size);
 
                 mod->sync.buffer_count -= block_size;

@@ -857,7 +857,7 @@ static void on_server_accept(void *arg)
 
     asc_list_insert_tail(mod->clients, client);
 
-    asc_log_debug(MSG("client connected %s:%d (%d clients)")
+    asc_log_debug(MSG("client connected %s:%d (%lu clients)")
                       , asc_socket_addr(client->sock)
                       , asc_socket_port(client->sock)
                       , asc_list_size(mod->clients));

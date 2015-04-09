@@ -27,8 +27,6 @@
 #include <lua/lualib.h>
 #include <lua/lauxlib.h>
 
-extern lua_State *lua; // in module_lua.c
-
 #define lua_stack_debug(_lua) printf("%s:%d %s(): stack:%d\n"                                   \
                         , __FILE__, __LINE__, __FUNCTION__, lua_gettop(_lua))
 

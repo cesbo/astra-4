@@ -2,7 +2,7 @@
  * Astra Core
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,8 +18,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _THREAD_H_
-#define _THREAD_H_ 1
+#ifndef _ASC_THREAD_H_
+#define _ASC_THREAD_H_ 1
 
 #include "base.h"
 
@@ -46,4 +46,4 @@ void asc_thread_buffer_flush(asc_thread_buffer_t *buffer);
 ssize_t asc_thread_buffer_read(asc_thread_buffer_t *buffer, void *data, size_t size) __wur;
 ssize_t asc_thread_buffer_write(asc_thread_buffer_t *buffer, const void *data, size_t size) __wur;
 
-#endif /* _THREAD_H_ */
+#endif /* _ASC_THREAD_H_ */

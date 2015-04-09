@@ -33,7 +33,7 @@
 #   include <arpa/inet.h>
 #   include <netinet/in.h>
 #   include <netinet/tcp.h>
-#   ifdef HAVE_SCTP_H
+#   ifdef HAVE_NETINET_SCTP_H
 #       include <netinet/sctp.h>
 #   endif
 #   include <netdb.h>
@@ -44,7 +44,7 @@
 #   define IGMP_HEADER_SIZE 8
 #endif
 
-#define MSG(_msg) "[core/socket %d]" _msg, sock->fd
+#define MSG(_msg) "[core/socket %d] " _msg, sock->fd
 
 struct asc_socket_t
 {
@@ -154,6 +154,7 @@ asc_socket_t * asc_socket_open_udp4(void * arg)
 asc_socket_t * asc_socket_open_sctp4(void * arg)
 {
 #ifndef IPPROTO_SCTP
+    __uarg(arg);
     asc_log_error("[core/socket] SCTP protocol is not available");
     astra_abort();
     return NULL;
@@ -440,8 +441,8 @@ void asc_socket_connect(  asc_socket_t *sock, const char *addr, int port
     memset(&hints, 0, sizeof(hints));
     hints.ai_socktype = sock->type;
     hints.ai_family = sock->family;
-    int err = getaddrinfo(addr, NULL, &hints, &res);
-    if(err == 0)
+    const int gai_err = getaddrinfo(addr, NULL, &hints, &res);
+    if(gai_err == 0)
     {
         memcpy(&sock->addr.sin_addr
                , &((struct sockaddr_in *)res->ai_addr)->sin_addr
@@ -450,7 +451,7 @@ void asc_socket_connect(  asc_socket_t *sock, const char *addr, int port
     }
     else
     {
-        asc_log_error(MSG("getaddrinfo() failed '%s' [%s])"), addr, gai_strerror(err));
+        asc_log_error(MSG("getaddrinfo() failed '%s' [%s])"), addr, gai_strerror(gai_err));
 
         close(sock->fd);
         sock->fd = 0;
@@ -460,18 +461,33 @@ void asc_socket_connect(  asc_socket_t *sock, const char *addr, int port
     if(connect(sock->fd, (struct sockaddr *)&sock->addr, sizeof(sock->addr)) == -1)
     {
 #ifdef _WIN32
-        const int err = WSAGetLastError();
-        const bool is_error = (err == WSAEWOULDBLOCK) || (err == WSAEINPROGRESS);
+        const int sock_err = WSAGetLastError();
 #else
-        const bool is_error = (errno == EISCONN) || (errno == EINPROGRESS) || (errno == EAGAIN);
+        const int sock_err = errno;
 #endif
-        if(!is_error)
-        {
-            asc_log_error(MSG("connect() to %s:%d failed [%s]"), addr, port, asc_socket_error());
 
-            close(sock->fd);
-            sock->fd = 0;
-            return;
+        switch(sock_err)
+        {
+#ifdef _WIN32
+            case WSAEWOULDBLOCK:
+            case WSAEINPROGRESS:
+                break;
+#else
+            case EISCONN:
+            case EINPROGRESS:
+            case EAGAIN:
+#if EWOULDBLOCK != EAGAIN
+            case EWOULDBLOCK:
+#endif
+                break;
+#endif /* _WIN32 */
+
+            default:
+                asc_log_error(MSG("connect(): %s:%d: %s"), addr, port, asc_socket_error());
+
+                close(sock->fd);
+                sock->fd = 0;
+                return;
         }
     }
 
@@ -525,7 +541,7 @@ ssize_t asc_socket_send(asc_socket_t *sock, const void *buffer, size_t size)
         if(err == WSAEWOULDBLOCK)
             return 0;
 #else
-        if(errno == EAGAIN)
+        if(errno == EAGAIN || errno == EWOULDBLOCK)
             return 0;
 #endif
     }
@@ -534,7 +550,7 @@ ssize_t asc_socket_send(asc_socket_t *sock, const void *buffer, size_t size)
 
 ssize_t asc_socket_sendto(asc_socket_t *sock, const void *buffer, size_t size)
 {
-    socklen_t slen = sizeof(struct sockaddr_in);
+    const socklen_t slen = sizeof(struct sockaddr_in);
     return sendto(sock->fd, buffer, size, 0, (struct sockaddr *)&sock->sockaddr, slen);
 }
 
@@ -547,7 +563,8 @@ ssize_t asc_socket_sendto(asc_socket_t *sock, const void *buffer, size_t size)
  *
  */
 
-inline int asc_socket_fd(asc_socket_t *sock)
+__asc_inline
+int asc_socket_fd(asc_socket_t *sock)
 {
     return sock->fd;
 }
@@ -561,8 +578,11 @@ int asc_socket_port(asc_socket_t *sock)
 {
     struct sockaddr_in s;
     socklen_t slen = sizeof(s);
+    memset(&s, 0, slen);
+
     if(getsockname(sock->fd, (struct sockaddr *)&s, &slen) != -1)
         return htons(s.sin_port);
+
     return -1;
 }
 

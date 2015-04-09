@@ -2,7 +2,7 @@
  * Astra Module: MPEG-TS (PCR)
  * http://cesbo.com/astra
  *
- * Copyright (C) 2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2014-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,7 +20,8 @@
 
 #include "../mpegts.h"
 
-inline uint64_t mpegts_pcr_block_us(uint64_t *pcr_last, const uint64_t *pcr_current)
+__asc_inline
+uint64_t mpegts_pcr_block_us(uint64_t *pcr_last, const uint64_t *pcr_current)
 {
     if(*pcr_current <= *pcr_last)
     {

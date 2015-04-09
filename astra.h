@@ -2,7 +2,7 @@
  * Astra
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,11 +45,5 @@
 #endif
 
 #define ASTRA_VERSION_STR _VERSION _VDEBUG
-
-/* main app */
-
-void astra_exit(void) __attribute__ ((__noreturn__));
-void astra_abort(void) __attribute__ ((__noreturn__));
-void astra_reload(void) __attribute__ ((__noreturn__));
 
 #endif /* _ASTRA_H_ */

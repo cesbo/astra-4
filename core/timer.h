@@ -2,7 +2,7 @@
  * Astra Core
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,20 +18,20 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _TIMER_H_
-#define _TIMER_H_ 1
+#ifndef _ASC_TIMER_H_
+#define _ASC_TIMER_H_ 1
 
 #include "base.h"
 
 typedef struct asc_timer_t asc_timer_t;
+typedef void (*timer_callback_t)(void *);
 
 void asc_timer_core_init(void);
 void asc_timer_core_loop(void);
 void asc_timer_core_destroy(void);
 
-void asc_timer_one_shot(unsigned int ms, void (*callback)(void *), void *arg);
-
-asc_timer_t * asc_timer_init(unsigned int ms, void (*callback)(void *), void *arg) __wur;
+asc_timer_t * asc_timer_init(unsigned int ms, timer_callback_t callback, void *arg) __wur;
+asc_timer_t * asc_timer_one_shot(unsigned int ms, timer_callback_t callback, void *arg);
 void asc_timer_destroy(asc_timer_t *timer);
 
-#endif /* _TIMER_H_ */
+#endif /* _ASC_TIMER_H_ */

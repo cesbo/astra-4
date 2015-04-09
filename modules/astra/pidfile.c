@@ -33,7 +33,6 @@
 #else
 
 #include <astra.h>
-#include <sys/stat.h>
 
 struct module_data_t
 {

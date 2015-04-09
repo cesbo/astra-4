@@ -1,8 +1,9 @@
 /*
- * Astra Core
+ * Astra Core (Compatibility library)
  * http://cesbo.com/astra
  *
  * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
+ *                    2015, Artem Kharitonov <artem@sysert.ru>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,27 +19,36 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _ASC_LOG_H_
-#define _ASC_LOG_H_ 1
+#include "compat.h"
 
-#include "base.h"
+#ifndef HAVE_PREAD
+ssize_t pread(int fd, void *buffer, size_t size, off_t off)
+{
+    if(lseek(fd, off, SEEK_SET) != off)
+        return -1;
 
-void asc_log_set_stdout(bool);
-void asc_log_set_debug(bool);
-void asc_log_set_color(bool);
-void asc_log_set_file(const char *);
-#ifndef _WIN32
-void asc_log_set_syslog(const char *);
+    return read(fd, buffer, size);
+}
 #endif
 
-void asc_log_hup(void);
-void asc_log_core_destroy(void);
+#ifndef HAVE_STRNDUP
+char *strndup(const char *str, size_t max)
+{
+    size_t len = strnlen(str, max);
+    char *res = malloc(len + 1);
+    if (res)
+    {
+        memcpy(res, str, len);
+        res[len] = '\0';
+    }
+    return res;
+}
+#endif
 
-void asc_log_info(const char *, ...) __fmt_printf(1, 2);
-void asc_log_error(const char *, ...) __fmt_printf(1, 2);
-void asc_log_warning(const char *, ...) __fmt_printf(1, 2);
-void asc_log_debug(const char *, ...) __fmt_printf(1, 2);
-
-bool asc_log_is_debug(void) __func_pure;
-
-#endif /* _ASC_LOG_H_ */
+#ifndef HAVE_STRNLEN
+size_t strnlen(const char *str, size_t max)
+{
+    const char *end = memchr(str, 0, max);
+    return (end != NULL) ? (size_t)(end - str) : max;
+}
+#endif

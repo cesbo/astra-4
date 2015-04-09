@@ -140,7 +140,7 @@ static int lua_base64_decode(lua_State *L)
     int data_size = luaL_len(lua, 1);
 
     size_t data_dec_size = 0;
-    const char *data_dec = base64_decode(data, data_size, &data_dec_size);
+    const char *data_dec = (char *)base64_decode(data, data_size, &data_dec_size);
     lua_pushlstring(lua, data_dec, data_dec_size);
 
     free((void *)data_dec);

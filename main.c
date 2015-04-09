@@ -28,42 +28,7 @@
 
 #include "config.h"
 
-jmp_buf main_loop;
-bool is_main_loop_idle = true;
 bool is_sighup = false;
-
-void astra_exit(void)
-{
-#ifndef _WIN32
-    longjmp(main_loop, 1);
-#else
-    exit(0);
-#endif
-}
-
-void astra_abort(void)
-{
-    asc_log_error("[main] abort execution. Lua backtrace:");
-
-    lua_Debug ar;
-    int level = 1;
-    while(lua_getstack(lua, level, &ar))
-    {
-        lua_getinfo(lua, "nSl", &ar);
-        asc_log_error("[main] %d: %s:%d -- %s [%s]"
-                      , level, ar.short_src, ar.currentline
-                      , (ar.name) ? ar.name : "<unknown>"
-                      , ar.what);
-        ++level;
-    }
-
-    abort();
-}
-
-void astra_reload(void)
-{
-    longjmp(main_loop, 2);
-}
 
 #ifndef _WIN32
 static void signal_handler(int signum)

@@ -18,15 +18,14 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "clock.h"
 #include "timer.h"
 #include "list.h"
-#include "utils.h"
-
-extern bool is_main_loop_idle;
+#include "loopctl.h"
 
 struct asc_timer_t
 {
-    void (*callback)(void *arg);
+    timer_callback_t callback;
     void *arg;
 
     uint64_t interval;
@@ -55,7 +54,6 @@ void asc_timer_core_destroy(void)
 void asc_timer_core_loop(void)
 {
     int is_detached = 0;
-    uint64_t cur;
 
     asc_list_for(timer_list)
     {
@@ -66,7 +64,7 @@ void asc_timer_core_loop(void)
             continue;
         }
 
-        cur = asc_utime();
+        const uint64_t cur = asc_utime();
         if(cur >= timer->next_shot)
         {
             if(timer->interval == 0)
@@ -80,7 +78,7 @@ void asc_timer_core_loop(void)
             else
             {
                 is_main_loop_idle = false;
-                timer->next_shot += timer->interval;
+                timer->next_shot = cur + timer->interval;
                 timer->callback(timer->arg);
             }
         }
@@ -105,7 +103,7 @@ void asc_timer_core_loop(void)
 
 asc_timer_t * asc_timer_init(unsigned int ms, void (*callback)(void *), void *arg)
 {
-    asc_timer_t *timer = (asc_timer_t *)calloc(1, sizeof(asc_timer_t));
+    asc_timer_t *const timer = (asc_timer_t *)calloc(1, sizeof(asc_timer_t));
     timer->interval = ms * 1000;
     timer->callback = callback;
     timer->arg = arg;
@@ -117,12 +115,12 @@ asc_timer_t * asc_timer_init(unsigned int ms, void (*callback)(void *), void *ar
     return timer;
 }
 
-void asc_timer_one_shot(unsigned int ms, void (*callback)(void *), void *arg)
+asc_timer_t * asc_timer_one_shot(unsigned int ms, void (*callback)(void *), void *arg)
 {
-    asc_timer_t *timer = asc_timer_init(ms, callback, arg);
+    asc_timer_t *const timer = asc_timer_init(ms, callback, arg);
     timer->interval = 0;
-    timer->callback = callback;
-    timer->arg = arg;
+
+    return timer;
 }
 
 void asc_timer_destroy(asc_timer_t *timer)

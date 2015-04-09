@@ -258,25 +258,25 @@ void md5_init(md5_ctx_t *context)
  */
 void md5_update(md5_ctx_t *context, const uint8_t *data, size_t len)
 {
-    uint32_t i, index, partLen;
+    uint32_t i, idx, partLen;
 
     /* Compute number of bytes mod 64 */
-    index = (context->count[0] >> 3) & 0x3F;
+    idx = (context->count[0] >> 3) & 0x3F;
 
     /* Update number of bits */
     if ((context->count[0] += (len << 3)) < (len << 3))
         context->count[1]++;
     context->count[1] += (len >> 29);
 
-    partLen = 64 - index;
+    partLen = 64 - idx;
 
     /* Transform as many times as possible. */
     i = 0;
     if (len >= partLen)
     {
-        if (index != 0)
+        if (idx != 0)
         {
-            memcpy(&context->buffer[index], data, partLen);
+            memcpy(&context->buffer[idx], data, partLen);
             md5_transform(context->state[0], context->state[1]
                           , context->state[2], context->state[3]
                           , context->buffer, context);
@@ -293,11 +293,11 @@ void md5_update(md5_ctx_t *context, const uint8_t *data, size_t len)
         if (len == i)
             return;
 
-        index = 0;
+        idx = 0;
     }
 
     /* Buffer remaining input */
-    memcpy(&context->buffer[index], &data[i], len - i);
+    memcpy(&context->buffer[idx], &data[i], len - i);
 }
 
 /*
@@ -307,13 +307,13 @@ void md5_update(md5_ctx_t *context, const uint8_t *data, size_t len)
 void md5_final(md5_ctx_t *context, uint8_t digest[MD5_DIGEST_SIZE])
 {
     uint8_t bits[8];
-    uint32_t index = (context->count[0] >> 3) & 0x3f;
+    uint32_t idx = (context->count[0] >> 3) & 0x3f;
 
     /* Save number of bits */
     md5_encode(bits, context->count, 8);
 
     /* Pad out to 56 mod 64. */
-    md5_update(context, PADDING, ((index < 56) ? 56 : 120) - index);
+    md5_update(context, PADDING, ((idx < 56) ? 56 : 120) - idx);
 
     /* Append length (before padding) */
     md5_update(context, bits, 8);

@@ -22,8 +22,7 @@
 #include "event.h"
 #include "list.h"
 #include "log.h"
-
-extern bool is_main_loop_idle;
+#include "loopctl.h"
 
 #ifndef EV_LIST_SIZE
 #   define EV_LIST_SIZE 1024
@@ -33,15 +32,15 @@ extern bool is_main_loop_idle;
 #   define EV_TYPE_POLL
 #   define MSG(_msg) "[core/event poll] " _msg
 #   include <poll.h>
-#elif defined(WITH_SELECT) || defined(_WIN32)
+#elif defined(WITH_SELECT)
 #   define EV_TYPE_SELECT
 #   define MSG(_msg) "[core/event select] " _msg
-#elif !defined(WITH_CUSTOM) && (defined(__APPLE__) || defined(__FreeBSD__))
+#elif defined(WITH_KQUEUE)
 #   define EV_TYPE_KQUEUE
 #   include <sys/event.h>
 #   define EV_OTYPE struct kevent
 #   define MSG(_msg) "[core/event kqueue] " _msg
-#elif !defined(WITH_CUSTOM) && defined(__linux)
+#elif defined(WITH_EPOLL)
 #   define EV_TYPE_EPOLL
 #   include <sys/epoll.h>
 #   define EV_OTYPE struct epoll_event
@@ -51,6 +50,8 @@ extern bool is_main_loop_idle;
 #       define EPOLLCLOSE (EPOLLERR | EPOLLHUP)
 #   endif
 #   define MSG(_msg) "[core/event epoll] " _msg
+#else
+#   error "Event notification interface not set"
 #endif
 
 struct asc_event_t
@@ -124,7 +125,7 @@ void asc_event_core_destroy(void)
         asc_event_t *event = (asc_event_t *)asc_list_data(event_observer.event_list);
         asc_assert(event != prev_event
                    , MSG("loop on asc_event_core_destroy() event:%p")
-                   , event);
+                   , (void *)event);
         if(event->on_error)
             event->on_error(event->arg);
         prev_event = event;
@@ -334,7 +335,7 @@ void asc_event_core_destroy(void)
 
         asc_assert(event_observer.fd_count == next_fd_count
                    , MSG("loop on asc_event_core_destroy() event:%p")
-                   , event);
+                   , (void *)event);
     }
 }
 
@@ -485,7 +486,7 @@ void asc_event_core_destroy(void)
         asc_event_t *event = (asc_event_t *)asc_list_data(event_observer.event_list);
         asc_assert(event != prev_event
                    , MSG("loop on asc_event_core_destroy() event:%p")
-                   , event);
+                   , (void *)event);
         if(event->on_error)
             event->on_error(event->arg);
         prev_event = event;

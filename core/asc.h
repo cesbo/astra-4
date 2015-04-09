@@ -2,7 +2,7 @@
  * Astra Core
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,12 +23,15 @@
 
 #include "assert.h"
 #include "base.h"
+#include "clock.h"
+#include "compat.h"
 #include "event.h"
 #include "list.h"
 #include "log.h"
+#include "loopctl.h"
 #include "socket.h"
+#include "strbuffer.h"
 #include "thread.h"
 #include "timer.h"
-#include "utils.h"
 
 #endif /* _ASC_H_ */

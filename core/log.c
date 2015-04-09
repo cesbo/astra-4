@@ -2,7 +2,7 @@
  * Astra Core
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +18,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define ASC
 #include "log.h"
 
 #ifndef _WIN32
@@ -26,7 +25,7 @@
 #endif
 #include <stdarg.h>
 
-typedef struct
+struct
 {
     int fd;
     bool color;
@@ -36,9 +35,7 @@ typedef struct
 #ifndef _WIN32
     char *syslog;
 #endif
-} log_t;
-
-static log_t __log =
+} __log =
 {
     0,
     false,
@@ -84,6 +81,7 @@ static const char * _get_type_str(int type)
     }
 }
 
+__fmt_printf(2, 0)
 static void _log(int type, const char *msg, va_list ap)
 {
     char buffer[4096];
@@ -170,6 +168,7 @@ void asc_log_debug(const char *msg, ...)
     va_end(ap);
 }
 
+__asc_inline
 bool asc_log_is_debug(void)
 {
     return __log.debug;
@@ -228,16 +227,19 @@ void asc_log_core_destroy(void)
     }
 }
 
+__asc_inline
 void asc_log_set_stdout(bool val)
 {
     __log.sout = val;
 }
 
+__asc_inline
 void asc_log_set_debug(bool val)
 {
     __log.debug = val;
 }
 
+__asc_inline
 void asc_log_set_color(bool val)
 {
     __log.color = val;

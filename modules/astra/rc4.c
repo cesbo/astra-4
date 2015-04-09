@@ -17,7 +17,8 @@ typedef struct
     uint8_t index2;
 } rc4_ctx_t;
 
-static __inline void rc4_swap_bytes(uint8_t *a, uint8_t *b)
+__asc_inline
+void rc4_swap_bytes(uint8_t *a, uint8_t *b)
 {
     uint8_t temp;
     temp = *a;

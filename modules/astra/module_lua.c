@@ -20,8 +20,6 @@
 
 #include <astra.h>
 
-lua_State *lua = NULL;
-
 bool module_option_number(const char *name, int *number)
 {
     if(lua_type(lua, MODULE_OPTIONS_IDX) != LUA_TTABLE)

@@ -2,7 +2,7 @@
  * Astra Core
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,8 +18,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _EVENT_H_
-#define _EVENT_H_ 1
+#ifndef _ASC_EVENT_H_
+#define _ASC_EVENT_H_ 1
 
 #include "base.h"
 
@@ -37,4 +37,4 @@ void asc_event_set_on_error(asc_event_t *event, event_callback_t on_error);
 
 void asc_event_close(asc_event_t *event);
 
-#endif /* _EVENT_H_ */
+#endif /* _ASC_EVENT_H_ */

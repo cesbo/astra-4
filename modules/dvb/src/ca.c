@@ -870,7 +870,7 @@ static void mmi_menu_event(dvb_ca_t *ca, uint8_t slot_id, uint16_t session_id)
     {
         char *text = NULL;
         size_t choice_size = mmi_get_text(ca, &buffer[skip], size - skip, &text);
-        asc_log_debug(MSG("CA: MMI: Choice #%d: %s"),
+        asc_log_debug(MSG("CA: MMI: Choice #%lu: %s"),
                       asc_list_size(mmi->object.menu.choices) + 1,
                       text);
         asc_list_insert_tail(mmi->object.menu.choices, text);
@@ -1423,7 +1423,7 @@ static void ca_slot_reset(dvb_ca_t *ca, uint8_t slot_id)
 
     if(ioctl(ca->ca_fd, CA_RESET, 1 << slot_id) != 0)
     {
-        asc_log_error(MSG("CA: Slot %d CA_RESET failed"));
+        asc_log_error(MSG("CA: Slot %d CA_RESET failed"), slot_id);
         return;
     }
 
