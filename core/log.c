@@ -25,7 +25,7 @@
 #endif
 #include <stdarg.h>
 
-struct
+static struct
 {
     int fd;
     bool color;
@@ -168,7 +168,6 @@ void asc_log_debug(const char *msg, ...)
     va_end(ap);
 }
 
-__asc_inline
 bool asc_log_is_debug(void)
 {
     return __log.debug;
@@ -227,19 +226,16 @@ void asc_log_core_destroy(void)
     }
 }
 
-__asc_inline
 void asc_log_set_stdout(bool val)
 {
     __log.sout = val;
 }
 
-__asc_inline
 void asc_log_set_debug(bool val)
 {
     __log.debug = val;
 }
 
-__asc_inline
 void asc_log_set_color(bool val)
 {
     __log.color = val;
