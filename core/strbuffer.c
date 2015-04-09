@@ -43,7 +43,7 @@ string_buffer_t * string_buffer_alloc(void)
 }
 
 /* only for single char operations */
-static string_buffer_t * __string_buffer_last(string_buffer_t *buffer)
+static __wur string_buffer_t * __string_buffer_last(string_buffer_t *buffer)
 {
     string_buffer_t *last = buffer->last;
     if(last->size >= MAX_BUFFER_SIZE)
@@ -346,18 +346,11 @@ char * string_buffer_release(string_buffer_t *buffer, size_t *size)
     size_t skip;
     string_buffer_t *next, *next_next;
 
-    for(  skip = 0, next = buffer
-        ; next
-        ; next = next->next)
-    {
+    for(skip = 0, next = buffer; next; next = next->next)
         skip += next->size;
-    }
-
 
     char *str = (char *)malloc(skip + 1);
-    for(  skip = 0, next = buffer
-        ; next && (next_next = next->next, 1)
-        ; next = next_next)
+    for(skip = 0, next = buffer; next && (next_next = next->next, 1); next = next_next)
     {
         memcpy(&str[skip], next->buffer, next->size);
         skip += next->size;
@@ -378,9 +371,7 @@ void string_buffer_push(lua_State *L, string_buffer_t *buffer)
     luaL_buffinit(L, &b);
 
     string_buffer_t *next_next;
-    for(string_buffer_t *next = buffer
-        ; next && (next_next = next->next, 1)
-        ; next = next_next)
+    for(string_buffer_t *next = buffer; next && (next_next = next->next, 1); next = next_next)
     {
         luaL_addlstring(&b, next->buffer, next->size);
         free(next);
@@ -393,9 +384,7 @@ void string_buffer_push(lua_State *L, string_buffer_t *buffer)
 void string_buffer_free(string_buffer_t *buffer)
 {
     string_buffer_t *next_next;
-    for(string_buffer_t *next = buffer
-        ; next && (next_next = next->next, 1)
-        ; next = next_next)
+    for(string_buffer_t *next = buffer; next && (next_next = next->next, 1); next = next_next)
     {
         free(next);
     }

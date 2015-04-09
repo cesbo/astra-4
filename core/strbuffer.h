@@ -26,15 +26,17 @@
 
 typedef struct string_buffer_t string_buffer_t;
 
-string_buffer_t * string_buffer_alloc(void);
+string_buffer_t * string_buffer_alloc(void) __wur;
 void string_buffer_free(string_buffer_t *buffer);
 
 void string_buffer_addchar(string_buffer_t *buffer, char c);
 void string_buffer_addlstring(string_buffer_t *buffer, const char *str, size_t size);
-void strung_buffer_addvastring(string_buffer_t *buffer, const char *str, va_list ap);
-void string_buffer_addfstring(string_buffer_t *buffer, const char *str, ...);
+void strung_buffer_addvastring(string_buffer_t *buffer, const char *str, va_list ap)
+    __fmt_printf(2, 0);
+void string_buffer_addfstring(string_buffer_t *buffer, const char *str, ...)
+    __fmt_printf(2, 3);
 
-char * string_buffer_release(string_buffer_t *buffer, size_t *size);
+char * string_buffer_release(string_buffer_t *buffer, size_t *size) __wur;
 
 #ifdef WITH_LUA
 void string_buffer_push(lua_State *L, string_buffer_t *buffer);
