@@ -20,6 +20,7 @@
  */
 
 #include "strbuffer.h"
+#include <stdarg.h>
 
 #define MAX_BUFFER_SIZE 4096
 
@@ -370,6 +371,7 @@ char * string_buffer_release(string_buffer_t *buffer, size_t *size)
     return str;
 }
 
+#ifdef WITH_LUA
 void string_buffer_push(lua_State *L, string_buffer_t *buffer)
 {
     luaL_Buffer b;
@@ -386,6 +388,7 @@ void string_buffer_push(lua_State *L, string_buffer_t *buffer)
 
     luaL_pushresult(&b);
 }
+#endif /* WITH_LUA */
 
 void string_buffer_free(string_buffer_t *buffer)
 {

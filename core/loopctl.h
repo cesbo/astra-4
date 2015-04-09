@@ -26,7 +26,10 @@
 
 extern jmp_buf main_loop;
 extern bool is_main_loop_idle;
+
+#ifdef WITH_LUA
 extern lua_State *lua;
+#endif /* WITH_LUA */
 
 void astra_exit(void) __noreturn;
 void astra_abort(void) __noreturn;

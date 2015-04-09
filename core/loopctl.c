@@ -24,7 +24,10 @@
 
 jmp_buf main_loop;
 bool is_main_loop_idle = true;
+
+#ifdef WITH_LUA
 lua_State *lua = NULL;
+#endif /* WITH_LUA */
 
 void astra_exit(void)
 {
@@ -37,9 +40,12 @@ void astra_exit(void)
 
 void astra_abort(void)
 {
+    asc_log_error("[main] abort execution");
+
+#ifdef WITH_LUA
     if(lua != NULL)
     {
-        asc_log_error("[main] abort execution. Lua backtrace:");
+        asc_log_error("[main] Lua backtrace:");
 
         lua_Debug ar;
         int level = 1;
@@ -53,8 +59,7 @@ void astra_abort(void)
             ++level;
         }
     }
-    else
-        asc_log_error("[main] abort execution");
+#endif /* WITH_LUA */
 
     abort();
 }

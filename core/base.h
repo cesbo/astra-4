@@ -22,6 +22,9 @@
 #ifndef _ASC_BASE_H_
 #define _ASC_BASE_H_ 1
 
+// TODO:
+#define WITH_LUA 1
+
 #ifdef _WIN32
 #   ifndef _WIN32_WINNT
 #       define _WIN32_WINNT 0x0501
@@ -45,7 +48,16 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#include <lua/lauxlib.h>
+#ifdef WITH_LUA
+#   include <lua/lua.h>
+#   include <lua/lualib.h>
+#   include <lua/lauxlib.h>
+
+#   define lua_stack_debug(_lua) \
+    printf("%s:%d %s(): stack:%d\n", __FILE__, __LINE__, __FUNCTION__, lua_gettop(_lua))
+
+#   define lua_foreach(_lua, _idx) for(lua_pushnil(_lua); lua_next(_lua, _idx); lua_pop(_lua, 1))
+#endif
 
 #define ASC_ARRAY_SIZE(_a) (sizeof(_a)/sizeof(_a[0]))
 

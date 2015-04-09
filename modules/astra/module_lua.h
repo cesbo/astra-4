@@ -23,15 +23,6 @@
 
 #include "base.h"
 
-#include <lua/lua.h>
-#include <lua/lualib.h>
-#include <lua/lauxlib.h>
-
-#define lua_stack_debug(_lua) printf("%s:%d %s(): stack:%d\n"                                   \
-                        , __FILE__, __LINE__, __FUNCTION__, lua_gettop(_lua))
-
-#define lua_foreach(_lua, _idx) for(lua_pushnil(_lua); lua_next(_lua, _idx); lua_pop(_lua, 1))
-
 typedef int (*module_callback_t)(module_data_t *);
 
 typedef struct

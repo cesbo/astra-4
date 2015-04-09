@@ -35,6 +35,9 @@ void strung_buffer_addvastring(string_buffer_t *buffer, const char *str, va_list
 void string_buffer_addfstring(string_buffer_t *buffer, const char *str, ...);
 
 char * string_buffer_release(string_buffer_t *buffer, size_t *size);
+
+#ifdef WITH_LUA
 void string_buffer_push(lua_State *L, string_buffer_t *buffer);
+#endif /* WITH_LUA */
 
 #endif /* _ASC_STRBUFFER_H_ */
