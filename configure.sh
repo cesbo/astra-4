@@ -128,7 +128,7 @@ if [ $ARG_DEBUG -ne 0 ] ; then
     APP_STRIP=":"
 fi
 
-CFLAGS="$CFLAGS_DEBUG -I$SRCDIR -Wall -Wextra -pedantic -fno-builtin"
+CFLAGS="$CFLAGS_DEBUG -I$SRCDIR -Wall -Wextra -Wstrict-prototypes -pedantic -fno-builtin -std=iso9899:1999 -D_GNU_SOURCE"
 
 if [ -n "$ARG_CFLAGS" ] ; then
     CFLAGS="$CFLAGS $ARG_CFLAGS"
@@ -357,7 +357,7 @@ EOF
 
 check_clock_gettime()
 {
-    clock_gettime_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -lrt -x c - >/dev/null 2>&1
+    clock_gettime_test_c | $APP_C -Werror $CFLAGS -c -o /dev/null -lrt -x c - >/dev/null 2>&1
 }
 
 if check_clock_gettime ; then
@@ -377,7 +377,7 @@ EOF
 
 check_sctp_h()
 {
-    sctp_h_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+    sctp_h_test_c | $APP_C -Werror $CFLAGS -o /dev/null -x c - >/dev/null 2>&1
 }
 
 if check_sctp_h ; then
@@ -397,7 +397,7 @@ EOF
 
 check_endian_h()
 {
-    endian_h_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+    endian_h_test_c | $APP_C -Werror $CFLAGS -c -o /dev/null -x c - >/dev/null 2>&1
 }
 
 if check_endian_h ; then
@@ -414,7 +414,7 @@ EOF
 
 check_pread()
 {
-    pread_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+    pread_test_c | $APP_C -Werror $CFLAGS -c -o /dev/null -x c - >/dev/null 2>&1
 }
 
 if check_pread ; then
@@ -431,7 +431,7 @@ EOF
 
 check_strndup()
 {
-    strndup_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+    strndup_test_c | $APP_C -Werror $CFLAGS -c -o /dev/null -x c - >/dev/null 2>&1
 }
 
 if check_strndup ; then
@@ -448,7 +448,7 @@ EOF
 
 check_strnlen()
 {
-    strnlen_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+    strnlen_test_c | $APP_C -Werror $CFLAGS -c -o /dev/null -x c - >/dev/null 2>&1
 }
 
 if check_strnlen ; then
@@ -463,7 +463,7 @@ fi
 
 # APP flags
 
-APP_CFLAGS="$CFLAGS -Wstrict-prototypes -std=iso9899:1999 -D_GNU_SOURCE"
+APP_CFLAGS="$CFLAGS"
 APP_LDFLAGS="$LDFLAGS"
 
 # temporary file
