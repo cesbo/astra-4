@@ -19,7 +19,7 @@ elif [ $LIBDVBCSA -eq 1 ]; then
 fi
 
 SOURCES_CAM="cam/cam.c"
-SOURCES_CAS="cas/irdeto.c cas/viaccess.c cas/dre.c cas/conax.c cas/nagra.c cas/videoguard.c cas/mediaguard.c cas/cryptoworks.c cas/bulcrypt.c cas/exset.c cas/griffin.c"
+SOURCES_CAS="cas/bulcrypt.c cas/conax.c cas/cryptoworks.c cas/dgcrypt.c cas/dre.c cas/exset.c cas/griffin.c cas/irdeto.c cas/mediaguard.c cas/nagra.c cas/viaccess.c cas/videoguard.c"
 
 MODULES="decrypt"
 
