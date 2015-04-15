@@ -332,23 +332,25 @@ function init_input(conf)
                 if type(i) == "table" and i.cam then return i end
             end
             log.error("[" .. conf.name .. "] cam is not found")
-            astra.exit()
+            return nil
         end
         local cam = get_softcam()
-        local cas_pnr = nil
-        if conf.pnr and conf.set_pnr then cas_pnr = conf.pnr end
+        if cam then
+            local cas_pnr = nil
+            if conf.pnr and conf.set_pnr then cas_pnr = conf.pnr end
 
-        instance.decrypt = decrypt({
-            upstream = instance.tail:stream(),
-            name = conf.name,
-            cam = cam:cam(),
-            cas_data = conf.cas_data,
-            cas_pnr = cas_pnr,
-            disable_emm = conf.no_emm,
-            ecm_pid = conf.ecm_pid,
-            shift = conf.shift,
-        })
-        instance.tail = instance.decrypt
+            instance.decrypt = decrypt({
+                upstream = instance.tail:stream(),
+                name = conf.name,
+                cam = cam:cam(),
+                cas_data = conf.cas_data,
+                cas_pnr = cas_pnr,
+                disable_emm = conf.no_emm,
+                ecm_pid = conf.ecm_pid,
+                shift = conf.shift,
+            })
+            instance.tail = instance.decrypt
+        end
     end
 
     return instance

@@ -154,10 +154,12 @@ static void check_device_fe(void)
         fd = open(dev_name, O_RDONLY | O_NONBLOCK);
     }
 
+    static const char _error[] = "error";
+
     if(fd <= 0)
     {
         lua_pushfstring(lua, "failed to open [%s]", strerror(errno));
-        lua_setfield(lua, -2, "error");
+        lua_setfield(lua, -2, _error);
         return;
     }
 
@@ -166,11 +168,13 @@ static void check_device_fe(void)
 
     struct dvb_frontend_info feinfo;
     if(ioctl(fd, FE_GET_INFO, &feinfo) != 0)
-        lua_pushstring(lua, "unknown");
-    else
-        lua_pushstring(lua, feinfo.name);
+    {
+        lua_pushstring(lua, "failed to get frontend type");
+        lua_setfield(lua, -2, _error);
+        close(fd);
+        return;
+    }
     close(fd);
-    lua_setfield(lua, -2, "frontend");
 
     switch(feinfo.type)
     {
@@ -183,10 +187,18 @@ static void check_device_fe(void)
         case FE_QAM:
             lua_pushstring(lua, "C");
             break;
-        default:
+        case FE_ATSC:
+            lua_pushstring(lua, "ATSC");
             break;
+        default:
+            lua_pushfstring(lua, "unknown frontend type [%d]", feinfo.type);
+            lua_setfield(lua, -2, _error);
+            return;
     }
     lua_setfield(lua, -2, "type");
+
+    lua_pushstring(lua, feinfo.name);
+    lua_setfield(lua, -2, "frontend");
 
     check_device_net();
 }

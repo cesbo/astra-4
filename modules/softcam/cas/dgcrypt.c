@@ -27,6 +27,8 @@ struct module_data_t
 
 static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
 {
+    __uarg(mod);
+
     const uint8_t em_type = em->buffer[0];
     switch(em_type)
     {

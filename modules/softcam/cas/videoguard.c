@@ -45,8 +45,11 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
             }
             else if(emm_type == 1 || emm_type == 2)
             {
+                if(em->buffer[1] == 0x00)
+                    return true;
+
                 const uint8_t serial_count = ((em->buffer[3] >> 4) & 3) + 1;
-                const uint8_t serial_len = (em->buffer[3] & 0x80) ? 3: 4;
+                const uint8_t serial_len = 5 - em_type;
                 for(uint8_t i = 0; i < serial_count; ++i)
                 {
                     const uint8_t *serial = &em->buffer[i * 4 + 4];

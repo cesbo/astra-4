@@ -599,12 +599,12 @@ channel_list = {}
 function make_channel(channel_config)
     if not channel_config.name then
         log.error("[make_channel] option 'name' is required")
-        astra.abort()
+        return nil
     end
 
     if not channel_config.input or #channel_config.input == 0 then
         log.error("[" .. channel_config.name .. "] option 'input' is required")
-        astra.abort()
+        return nil
     end
 
     if channel_config.output == nil then channel_config.output = {} end
@@ -647,15 +647,16 @@ function make_channel(channel_config)
             end
             if not check_module(item.config) then
                 log.error("[" .. channel_config.name .. "] wrong " .. obj .. " #" .. n .. " format")
-                astra.abort()
+                return false
             end
             item.config.name = channel_config.name .. " #" .. n
             table.insert(config_list, item)
         end
+        return true
     end
 
-    check_url_format("input")
-    check_url_format("output")
+    if not check_url_format("input") then return nil end
+    if not check_url_format("output") then return nil end
 
     if #channel_data.output == 0 then
         channel_data.clients = 1

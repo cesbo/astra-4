@@ -57,7 +57,7 @@ static bool cas_check_em(module_data_t *mod, mpegts_psi_t *em)
             break;
     }
 
-    return NULL;
+    return false;
 }
 
 static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
