@@ -20,9 +20,13 @@
 
 #undef DEBUG
 
-#include <core/base.h>
+#include <core/compat.h>
 
 #include "FFdecsa.h"
+
+#ifndef __BYTE_ORDER__
+#   error "__BYTE_ORDER__ not defined"
+#endif
 
 #ifndef NULL
 #define NULL 0
