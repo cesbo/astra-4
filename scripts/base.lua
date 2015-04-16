@@ -665,14 +665,13 @@ end
 init_input_module.dvb = function(conf)
     local instance = nil
 
-    local adapter_addr = tostring(conf.addr)
-
-    if #adapter_addr == 0 then
+    if conf.addr == nil or #conf.addr == 0 then
         conf.channels = 0
         instance = dvb_tune(conf)
         instance.__options.channels = instance.__options.channels + 1
     else
         local function get_dvb_tune()
+            local adapter_addr = tostring(conf.addr)
             for _, i in pairs(dvb_input_instance_list) do
                 if tostring(i.__options.id) == adapter_addr then
                     return i
