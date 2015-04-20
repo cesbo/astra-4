@@ -785,31 +785,29 @@ static void module_init(module_data_t *mod)
 
     module_stream_init(mod, on_ts);
     if(mod->join_pid)
+    {
         module_stream_demux_set(mod, NULL, NULL);
+        module_stream_demux_join_pid(mod, 0x00);
+        module_stream_demux_join_pid(mod, 0x01);
+        module_stream_demux_join_pid(mod, 0x11);
+        module_stream_demux_join_pid(mod, 0x12);
+    }
 
     // PAT
     mod->stream[0x00] = calloc(1, sizeof(analyze_item_t));
     mod->stream[0x00]->type = MPEGTS_PACKET_PAT;
     mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0x00);
-    if(mod->join_pid)
-        module_stream_demux_join_pid(mod, 0x00);
     // CAT
     mod->stream[0x01] = calloc(1, sizeof(analyze_item_t));
     mod->stream[0x01]->type = MPEGTS_PACKET_CAT;
     mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 0x01);
-    if(mod->join_pid)
-        module_stream_demux_join_pid(mod, 0x01);
     // SDT
     mod->stream[0x11] = calloc(1, sizeof(analyze_item_t));
     mod->stream[0x11]->type = MPEGTS_PACKET_SDT;
     mod->sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
-    if(mod->join_pid)
-        module_stream_demux_join_pid(mod, 0x11);
     // EIT
     mod->stream[0x12] = calloc(1, sizeof(analyze_item_t));
     mod->stream[0x12]->type = MPEGTS_PACKET_EIT;
-    if(mod->join_pid)
-        module_stream_demux_join_pid(mod, 0x12);
     // PMT
     mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
     // NULL
