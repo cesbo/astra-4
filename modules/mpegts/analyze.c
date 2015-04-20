@@ -26,6 +26,7 @@
  *      upstream    - object, stream instance returned by module_instance:stream()
  *      name        - string, analyzer name
  *      rate_stat   - boolean, dump bitrate with 10ms interval
+ *      join_pid    - boolean, request all SI tables on the upstream module
  *      callback    - function(data), events callback:
  *                    data.error    - string,
  *                    data.psi      - table, psi information (PAT, PMT, CAT, SDT)
@@ -61,9 +62,10 @@ struct module_data_t
     MODULE_STREAM_DATA();
 
     const char *name;
-    int rate_stat;
+    bool rate_stat;
     int cc_limit;
     int bitrate_limit;
+    bool join_pid;
 
     bool cc_check; // to skip initial cc errors
     bool video_check; // increase bitrate_limit for channel with video stream
@@ -188,11 +190,15 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
         if(pnr != 0)
         {
             mod->stream[pid]->type = MPEGTS_PACKET_PMT;
+            if(mod->join_pid)
+                module_stream_demux_join_pid(mod, pid);
             ++ mod->pmt_count;
         }
         else
         {
             mod->stream[pid]->type = MPEGTS_PACKET_NIT;
+            if(mod->join_pid)
+                module_stream_demux_join_pid(mod, pid);
         }
     }
     lua_setfield(lua, -2, "programs");
@@ -772,27 +778,38 @@ static void module_init(module_data_t *mod)
     asc_assert(lua_isfunction(lua, -1), MSG("option 'callback' is required"));
     mod->idx_callback = luaL_ref(lua, LUA_REGISTRYINDEX);
 
-    module_option_number("rate_stat", &mod->rate_stat);
+    module_option_boolean("rate_stat", &mod->rate_stat);
     module_option_number("cc_limit", &mod->cc_limit);
     module_option_number("bitrate_limit", &mod->bitrate_limit);
+    module_option_boolean("join_pid", &mod->join_pid);
 
     module_stream_init(mod, on_ts);
+    if(mod->join_pid)
+        module_stream_demux_set(mod, NULL, NULL);
 
     // PAT
     mod->stream[0x00] = calloc(1, sizeof(analyze_item_t));
     mod->stream[0x00]->type = MPEGTS_PACKET_PAT;
     mod->pat = mpegts_psi_init(MPEGTS_PACKET_PAT, 0x00);
+    if(mod->join_pid)
+        module_stream_demux_join_pid(mod, 0x00);
     // CAT
     mod->stream[0x01] = calloc(1, sizeof(analyze_item_t));
     mod->stream[0x01]->type = MPEGTS_PACKET_CAT;
     mod->cat = mpegts_psi_init(MPEGTS_PACKET_CAT, 0x01);
+    if(mod->join_pid)
+        module_stream_demux_join_pid(mod, 0x01);
     // SDT
     mod->stream[0x11] = calloc(1, sizeof(analyze_item_t));
     mod->stream[0x11]->type = MPEGTS_PACKET_SDT;
     mod->sdt = mpegts_psi_init(MPEGTS_PACKET_SDT, 0x11);
+    if(mod->join_pid)
+        module_stream_demux_join_pid(mod, 0x11);
     // EIT
     mod->stream[0x12] = calloc(1, sizeof(analyze_item_t));
     mod->stream[0x12]->type = MPEGTS_PACKET_EIT;
+    if(mod->join_pid)
+        module_stream_demux_join_pid(mod, 0x12);
     // PMT
     mod->pmt = mpegts_psi_init(MPEGTS_PACKET_PMT, MAX_PID);
     // NULL
