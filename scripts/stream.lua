@@ -658,6 +658,31 @@ function make_channel(channel_config)
     if not check_url_format("input") then return nil end
     if not check_url_format("output") then return nil end
 
+    if channel_config.map then
+        local o = channel_config.map
+        if type(o) == "string" then o = o:gsub("%s+", ""):split(",") end
+        if type(o) ~= "table" then
+            log.error("[" .. channel_config.name .. "] option 'map' has wrong format")
+            astra.exit()
+        end
+
+        local map = {}
+        for _,v in ipairs(o) do table.insert(map, v:split("=")) end
+        for _,v in ipairs(channel_data.input) do
+            if v.config.map then
+                for _,vv in ipairs(map) do table.insert(v.config.map, vv) end
+            else
+                v.config.map = map
+            end
+        end
+    end
+
+    if channel_config.set_pnr then
+        for _,v in ipairs(channel_data.input) do
+            if v.config.set_pnr == nil then v.config.set_pnr = channel_config.set_pnr end
+        end
+    end
+
     if #channel_data.output == 0 then
         channel_data.clients = 1
     else

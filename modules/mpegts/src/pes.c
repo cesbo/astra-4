@@ -22,7 +22,7 @@
 
 mpegts_pes_t * mpegts_pes_init(mpegts_packet_type_t type, uint16_t pid, uint32_t pcr_interval)
 {
-    mpegts_pes_t *pes = malloc(sizeof(mpegts_pes_t));
+    mpegts_pes_t *pes = (mpegts_pes_t *)malloc(sizeof(mpegts_pes_t));
     pes->type = type;
     pes->pid = pid;
     pes->cc = 0;

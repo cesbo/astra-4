@@ -36,7 +36,7 @@ struct module_data_t
 static int method_set_upstream(module_data_t *mod)
 {
     if(lua_type(lua, 2) == LUA_TLIGHTUSERDATA)
-        __module_stream_attach(lua_touserdata(lua, 2), &mod->__stream);
+        __module_stream_attach((module_stream_t *)lua_touserdata(lua, 2), &mod->__stream);
     return 0;
 }
 

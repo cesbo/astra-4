@@ -145,7 +145,7 @@ static void stream_reload(module_data_t *mod)
     {
         asc_list_for(mod->map)
         {
-            map_item_t *map_item = asc_list_data(mod->map);
+            map_item_t *map_item = (map_item_t *)asc_list_data(mod->map);
             map_item->is_set = false;
         }
     }
@@ -153,7 +153,7 @@ static void stream_reload(module_data_t *mod)
 
 static void on_si_timer(void *arg)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     if(mod->custom_pat)
         mpegts_psi_demux(mod->custom_pat, (ts_callback_t)__module_stream_send, &mod->__stream);
@@ -179,7 +179,7 @@ static void on_si_timer(void *arg)
 
 static void on_pat(void *arg, mpegts_psi_t *psi)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
@@ -252,7 +252,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
     {
         asc_list_for(mod->map)
         {
-            map_item_t *map_item = asc_list_data(mod->map);
+            map_item_t *map_item = (map_item_t *)asc_list_data(mod->map);
             if(map_item->is_set)
                 continue;
 
@@ -295,7 +295,7 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 
 static void on_cat(void *arg, mpegts_psi_t *psi)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
@@ -362,7 +362,7 @@ static uint16_t map_custom_pid(module_data_t *mod, uint16_t pid, const char *typ
 {
     asc_list_for(mod->map)
     {
-        map_item_t *map_item = asc_list_data(mod->map);
+        map_item_t *map_item = (map_item_t *)asc_list_data(mod->map);
         if(map_item->is_set)
             continue;
 
@@ -380,7 +380,7 @@ static uint16_t map_custom_pid(module_data_t *mod, uint16_t pid, const char *typ
 
 static void on_pmt(void *arg, mpegts_psi_t *psi)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     if(psi->buffer[0] != 0x02)
         return;
@@ -603,7 +603,7 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 
 static void on_sdt(void *arg, mpegts_psi_t *psi)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     if(psi->buffer[0] != 0x42)
         return;
@@ -625,7 +625,7 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
     {
         const uint8_t max_section_id = SDT_GET_LAST_SECTION_NUMBER(psi);
         mod->sdt_max_section_id = max_section_id;
-        mod->sdt_checksum_list = calloc(max_section_id + 1, sizeof(uint32_t));
+        mod->sdt_checksum_list = (uint32_t *)calloc(max_section_id + 1, sizeof(uint32_t));
     }
     const uint8_t section_id = SDT_GET_SECTION_NUMBER(psi);
     if(section_id > mod->sdt_max_section_id)
@@ -697,7 +697,7 @@ static void on_sdt(void *arg, mpegts_psi_t *psi)
 
 static void on_eit(void *arg, mpegts_psi_t *psi)
 {
-    module_data_t *mod = arg;
+    module_data_t *mod = (module_data_t *)arg;
 
     const uint8_t table_id = psi->buffer[0];
     const bool is_actual_eit = (table_id == 0x4E || (table_id >= 0x50 && table_id <= 0x5F));
@@ -884,7 +884,7 @@ static void module_init(module_data_t *mod)
             asc_assert((val > 0 && val < NULL_TS_PID), "option 'map': value is out of range");
             lua_pop(lua, 1);
 
-            map_item_t *map_item = calloc(1, sizeof(map_item_t));
+            map_item_t *map_item = (map_item_t *)calloc(1, sizeof(map_item_t));
             strcpy(map_item->type, key);
 
             if(key[0] >= '1' && key[0] <= '9')
