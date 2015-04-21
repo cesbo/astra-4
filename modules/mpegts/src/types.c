@@ -120,6 +120,12 @@ static const char __data[] = "data";
 static const char __type_name[] = "type_name";
 static const char __strip[] = "... (strip)";
 
+__asc_inline
+char asc_safe_char(char c)
+{
+    return (c > 0x1f && c < 0x7f) ? c : '.';
+}
+
 void mpegts_desc_to_lua(const uint8_t *desc)
 {
     char data[128];
@@ -174,7 +180,12 @@ void mpegts_desc_to_lua(const uint8_t *desc)
             lua_pushstring(lua, __lang);
             lua_setfield(lua, -2, __type_name);
 
-            const char lang[] = { desc[2], desc[3], desc[4], 0x00 };
+            char lang[4];
+            lang[0] = asc_safe_char((char)desc[2]);
+            lang[1] = asc_safe_char((char)desc[3]);
+            lang[2] = asc_safe_char((char)desc[4]);
+            lang[3] = 0x00;
+
             lua_pushstring(lua, lang);
             lua_setfield(lua, -2, __lang);
             break;
