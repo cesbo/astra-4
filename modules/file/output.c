@@ -2,7 +2,7 @@
  * Astra Module: File Output
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,49 +37,57 @@
 #include <astra.h>
 
 #ifdef HAVE_AIO
-#include <aio.h>
-#ifdef HAVE_LIBAIO
-#include <libaio.h>
-#endif /* HAVE_LIBAIO */
-#endif /* HAVE_AIO */
+#   include <aio.h>
+#   ifdef HAVE_LIBAIO
+#       include <libaio.h>
+#   endif
+#endif
 
 #define FILE_BUFFER_SIZE 32
 
 #define ALIGN 4096
 #define align(_size) ((_size / ALIGN) * ALIGN)
 
-#define MSG(_msg) "[file_output %s] " _msg, mod->filename
+#define MSG(_msg) "[file_output %s] " _msg, mod->config.filename
 
 struct module_data_t
 {
     MODULE_STREAM_DATA();
 
-    const char *filename;
-
+    struct
+    {
+        const char *filename;
 #ifdef O_DIRECT
-    int directio;
+        bool directio;
 #endif
+
+#ifdef HAVE_AIO
+        bool aio;
+#endif
+
+#ifdef HAVE_LIBAIO
+        bool aio_kernel;
+#endif
+    } config;
 
     int fd;
     bool error;
 
 #ifdef HAVE_AIO
-    int aio;
-
     struct aiocb aiocb;
     void *buffer_aio;
+#endif
+
 #ifdef HAVE_LIBAIO
-    int aio_kernel;
     io_context_t ctx;
     struct iocb *io[1];
-#endif /* HAVE_LIBAIO */
-#endif /* HAVE_AIO */
+#endif
 
     size_t file_size;
 
     uint8_t packet_size;
-    ssize_t buffer_size;
-    ssize_t buffer_skip;
+    size_t buffer_size;
+    size_t buffer_skip;
     uint8_t *buffer; // write buffer
 };
 
@@ -89,19 +97,19 @@ static void module_destroy(module_data_t *mod);
 
 static void on_ts(module_data_t *mod, const uint8_t *ts)
 {
-    if(mod->buffer_skip > mod->buffer_size - mod->packet_size || !ts)
+    if(mod->buffer_skip + mod->packet_size > mod->buffer_size || !ts)
     {
         ssize_t size;
 #ifdef HAVE_AIO
-        if(mod->aio)
+        if(mod->config.aio)
         {
             size = align(mod->buffer_skip);
 
 #ifdef HAVE_LIBAIO
-            if(mod->aio_kernel)
+            if(mod->config.aio_kernel)
             {
                 if(!mod->io[0])
-                    mod->io[0] = malloc(sizeof(struct iocb));
+                    mod->io[0] = (struct iocb *)malloc(sizeof(struct iocb));
                 else
                 {
                     struct io_event events[1];
@@ -159,10 +167,11 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 #endif /* HAVE_AIO */
         { /* !mod->aio */
 #ifdef O_DIRECT
-            size = mod->directio ? align(mod->buffer_skip) : mod->buffer_skip;
+            size = mod->config.directio ? align(mod->buffer_skip) : mod->buffer_skip;
 #else
             size = mod->buffer_skip;
-#endif /* O_DIRECT */
+#endif
+
             if(write(mod->fd, mod->buffer, size) != size)
             {
                 if(errno == EAGAIN)
@@ -225,8 +234,8 @@ static int method_status(module_data_t *mod)
 
 static void module_init(module_data_t *mod)
 {
-    module_option_string("filename", &mod->filename, NULL);
-    if(!mod->filename)
+    module_option_string("filename", &mod->config.filename, NULL);
+    if(!mod->config.filename)
     {
         asc_log_error("[file_output] option 'filename' is required");
         astra_abort();
@@ -237,29 +246,27 @@ static void module_init(module_data_t *mod)
     mod->packet_size = (m2ts) ? M2TS_PACKET_SIZE : TS_PACKET_SIZE;
 
 #ifdef O_DIRECT
-    module_option_number("directio", &mod->directio);
+    module_option_boolean("directio", &mod->config.directio);
 #endif
 
 #ifdef HAVE_AIO
-    module_option_number("aio", &mod->aio);
+    module_option_boolean("aio", &mod->config.aio);
+#endif
+
 #ifdef HAVE_LIBAIO
-    mod->aio_kernel = mod->aio && mod->directio;
-#endif /* HAVE_LIBAIO */
-#endif /* HAVE_AIO */
+    mod->config.aio_kernel = mod->config.aio && mod->config.directio;
+#endif
 
-    int buffer_size = 0;
-    if(!module_option_number("buffer_size", &buffer_size))
-        mod->buffer_size = FILE_BUFFER_SIZE * 1024;
-    else
-        mod->buffer_size = buffer_size * 1024;
-
+    int buffer_size = FILE_BUFFER_SIZE;
+    module_option_number("buffer_size", &buffer_size);
+    mod->buffer_size = buffer_size * 1024;
 
 #if defined(HAVE_POSIX_MEMALIGN) && defined(O_DIRECT)
-    if(mod->directio
 #ifdef HAVE_AIO
-       && !mod->aio
+    if(mod->config.directio && !mod->config.aio)
+#else
+    if(mod->config.directio)
 #endif
-       )
     {
         if(posix_memalign((void **)&mod->buffer, ALIGN, mod->buffer_size))
         {
@@ -273,21 +280,20 @@ static void module_init(module_data_t *mod)
         mod->buffer = malloc(mod->buffer_size);
     }
 
-    int flags = O_CREAT | O_APPEND | O_RDWR;
+    int flags = O_CREAT | O_APPEND | O_WRONLY | O_BINARY;
     int mode = S_IRUSR | S_IWUSR;
 
 #ifdef HAVE_AIO
-    flags |= O_BINARY | O_NONBLOCK;
+    flags |= O_NONBLOCK;
     mode |= S_IRGRP | S_IROTH;
 #endif
 
 #ifdef O_DIRECT
-    if(mod->directio)
+    if(mod->config.directio)
         flags |= O_DIRECT;
 #endif
 
-    mod->fd = open(mod->filename, flags, mode);
-
+    mod->fd = open(mod->config.filename, flags, mode);
 
     struct stat st;
     fstat(mod->fd, &st);
@@ -300,10 +306,10 @@ static void module_init(module_data_t *mod)
     }
 
 #ifdef HAVE_AIO
-    if(mod->aio)
+    if(mod->config.aio)
     {
 #ifdef HAVE_LIBAIO
-        if(mod->aio_kernel)
+        if(mod->config.aio_kernel)
         {
 #ifdef HAVE_POSIX_MEMALIGN
             if(posix_memalign(&mod->buffer_aio, ALIGN, mod->buffer_size))
@@ -340,16 +346,15 @@ static void module_destroy(module_data_t *mod)
     module_stream_destroy(mod);
 
 #ifdef HAVE_AIO
-    if(mod->aio)
+    if(mod->config.aio)
     {
 #ifdef HAVE_LIBAIO
-        if(mod->aio_kernel)
+        if(mod->config.aio_kernel)
         {
             struct io_event events[1];
             io_cancel(mod->ctx, mod->io[0], events);
             io_destroy(mod->ctx);
-            if(mod->io[0])
-                free(mod->io[0]);
+            ASC_FREE(mod->io[0], free);
         }
         else
 #endif
@@ -364,20 +369,15 @@ static void module_destroy(module_data_t *mod)
 #endif
 
     if(mod->fd > 0)
-        close(mod->fd);
-
-    if(mod->buffer)
     {
-        free(mod->buffer);
-        mod->buffer = NULL;
+        close(mod->fd);
+        mod->fd = 0;
     }
+
+    ASC_FREE(mod->buffer, free);
 
 #ifdef HAVE_AIO
-    if(mod->buffer_aio)
-    {
-        free(mod->buffer_aio);
-        mod->buffer_aio = NULL;
-    }
+    ASC_FREE(mod->buffer_aio, free);
 #endif
 }
 

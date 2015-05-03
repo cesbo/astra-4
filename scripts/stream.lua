@@ -112,19 +112,13 @@ function on_analyze_spts(channel_data, input_id, data)
             local analyze_message = "[" .. input_data.config.name .. "] Bitrate:" .. data.total.bitrate .. "Kbit/s"
 
             if data.on_air == false then
-                if data.total.cc_errors > 0 then
-                    analyze_message = analyze_message .. " CC-Error:" .. data.total.cc_errors
-                end
-
-                if data.total.pes_errors > 0 then
-                    analyze_message = analyze_message .. " PES-Error"
-                end
-
+                local m = nil
                 if data.total.scrambled then
-                    analyze_message = analyze_message .. " Scrambled"
+                    m = " Scrambled"
+                else
+                    m = " PES:" .. data.total.pes_errors .. " CC:" .. data.total.cc_errors
                 end
-
-                log.error(analyze_message)
+                log.error(analyze_message .. m)
             else
                 log.info(analyze_message)
             end
