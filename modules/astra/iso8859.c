@@ -283,6 +283,38 @@ static uint8_t * iso8859_7_decode(const uint8_t *data, size_t size)
     return text;
 }
 
+static uint8_t * iso8859_8_decode(const uint8_t *data, size_t size)
+{
+    uint8_t *text = (uint8_t *)malloc(size * 2 + 1);
+    uint8_t c;
+    size_t i = 0, j = 0;
+
+    while(i < size)
+    {
+        c = data[i++];
+
+        if(c < 0x80)
+        {
+            if(!c) break;
+            text[j++] = c;
+        }
+        else if(c < 0xA0) {}
+        else if(c < 0xBF)
+        {
+            text[j++] = c;
+        }
+        else if(c < 0xE0) {}
+        else if(c < 0xFB)
+        {
+            text[j++] = 0xD7;
+            text[j++] = c - 0x50;
+        }
+    }
+
+    text[j] = '\0';
+    return text;
+}
+
 static uint8_t * iso8859_9_decode(const uint8_t *data, size_t size)
 {
     uint8_t *text = (uint8_t *)malloc(size * 2 + 1);
@@ -368,6 +400,7 @@ char * iso8859_decode(const uint8_t *data, size_t size)
             case 0x04: return (char *)iso8859_4_decode(&data[3], size - 3); // North European
             case 0x05: return (char *)iso8859_5_decode(&data[3], size - 3); // Cyrillic
             case 0x07: return (char *)iso8859_7_decode(&data[3], size - 3); // Greek
+            case 0x08: return (char *)iso8859_8_decode(&data[3], size - 3); // Hebrew
             case 0x09: return (char *)iso8859_9_decode(&data[3], size - 3); // Turkish
             default: break;
         }
@@ -378,6 +411,7 @@ char * iso8859_decode(const uint8_t *data, size_t size)
         {
             case 0x01: return (char *)iso8859_5_decode(&data[1], size - 1); // Cyrillic
             case 0x03: return (char *)iso8859_7_decode(&data[1], size - 1); // Greek
+            case 0x04: return (char *)iso8859_8_decode(&data[1], size - 1); // Hebrew
             case 0x05: return (char *)iso8859_9_decode(&data[1], size - 1); // Turkish
             default: break;
         }

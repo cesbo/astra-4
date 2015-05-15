@@ -28,7 +28,7 @@
  *      localaddr   - string, IP address of the local interface
  *      socket_size - number, socket buffer size
  *      renew       - number, renewing multicast subscription interval in seconds
- *      rtp         - boolean, use RTP instad RAW UDP
+ *      rtp         - boolean, use RTP instead RAW UDP
  *
  * Module Methods:
  *      port()      - return number, random port number
@@ -39,18 +39,25 @@
 #define UDP_BUFFER_SIZE 1460
 #define RTP_HEADER_SIZE 12
 
-#define MSG(_msg) "[udp_input %s:%d] " _msg, mod->addr, mod->port
+#define RTP_IS_EXT(_data) ((_data[0] & 0x10))
+#define RTP_EXT_SIZE(_data) \
+    (((_data[RTP_HEADER_SIZE + 2] << 8) | _data[RTP_HEADER_SIZE + 3]) * 4 + 4)
+
+#define MSG(_msg) "[udp_input %s:%d] " _msg, mod->config.addr, mod->config.port
 
 struct module_data_t
 {
     MODULE_STREAM_DATA();
 
-    const char *addr;
-    int port;
-    const char *localaddr;
+    struct
+    {
+        const char *addr;
+        int port;
+        const char *localaddr;
+        bool rtp;
+    } config;
 
     bool is_error_message;
-    int rtp_skip;
 
     asc_socket_t *sock;
     asc_timer_t *timer_renew;
@@ -83,14 +90,26 @@ static void on_read(void *arg)
     int len = asc_socket_recv(mod->sock, mod->buffer, UDP_BUFFER_SIZE);
     if(len <= 0)
     {
-        if(len == 0 || errno == EAGAIN)
+        if(len == 0 || errno == EAGAIN || errno == EWOULDBLOCK)
             return;
 
         on_close(mod);
         return;
     }
 
-    int i = mod->rtp_skip;
+    int i = 0;
+
+    if(mod->config.rtp)
+    {
+        i = RTP_HEADER_SIZE;
+        if(RTP_IS_EXT(mod->buffer))
+        {
+            if(len < RTP_HEADER_SIZE + 4)
+                return;
+            i += RTP_EXT_SIZE(mod->buffer);
+        }
+    }
+
     for(; i <= len - TS_PACKET_SIZE; i += TS_PACKET_SIZE)
         module_stream_send(mod, &mod->buffer[i]);
 
@@ -118,21 +137,17 @@ static void module_init(module_data_t *mod)
 {
     module_stream_init(mod, NULL);
 
-    module_option_string("addr", &mod->addr, NULL);
-    if(!mod->addr)
-    {
-        asc_log_error("[udp_input] option 'addr' is required");
-        astra_abort();
-    }
+    module_option_string("addr", &mod->config.addr, NULL);
+    asc_assert(mod->config.addr != NULL, "[udp_input] option 'addr' is required");
 
-    module_option_number("port", &mod->port);
+    module_option_number("port", &mod->config.port);
 
     mod->sock = asc_socket_open_udp4(mod);
     asc_socket_set_reuseaddr(mod->sock, 1);
 #ifdef _WIN32
-    if(!asc_socket_bind(mod->sock, NULL, mod->port))
+    if(!asc_socket_bind(mod->sock, NULL, mod->config.port))
 #else
-    if(!asc_socket_bind(mod->sock, mod->addr, mod->port))
+    if(!asc_socket_bind(mod->sock, mod->config.addr, mod->config.port))
 #endif
         return;
 
@@ -140,16 +155,13 @@ static void module_init(module_data_t *mod)
     if(module_option_number("socket_size", &value))
         asc_socket_set_buffer(mod->sock, value, 0);
 
-    bool rtp = false;
-    module_option_boolean("rtp", &rtp);
-    if(rtp)
-        mod->rtp_skip = RTP_HEADER_SIZE;
+    module_option_boolean("rtp", &mod->config.rtp);
 
     asc_socket_set_on_read(mod->sock, on_read);
     asc_socket_set_on_close(mod->sock, on_close);
 
-    module_option_string("localaddr", &mod->localaddr, NULL);
-    asc_socket_multicast_join(mod->sock, mod->addr, mod->localaddr);
+    module_option_string("localaddr", &mod->config.localaddr, NULL);
+    asc_socket_multicast_join(mod->sock, mod->config.addr, mod->config.localaddr);
 
     if(module_option_number("renew", &value))
         mod->timer_renew = asc_timer_init(value * 1000, timer_renew_callback, mod);
