@@ -902,6 +902,8 @@ static void thread_loop_slave(void *arg)
 
     while(mod->is_thread_started)
     {
+        asc_usleep(100 * 1000);
+
         if(!mod->is_thread_started)
             break;
 
