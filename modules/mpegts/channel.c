@@ -713,7 +713,10 @@ static void on_eit(void *arg, mpegts_psi_t *psi)
     psi->cc = mod->eit_cc;
 
     if(mod->config.set_pnr)
+    {
         EIT_SET_PNR(psi, mod->config.set_pnr);
+        PSI_SET_CRC32(psi);
+    }
 
     mpegts_psi_demux(psi, (ts_callback_t)__module_stream_send, &mod->__stream);
 
