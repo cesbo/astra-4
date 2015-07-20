@@ -1,10 +1,11 @@
-**This repository has been freezed. Latest versions is available on https://cesbo.com**
+**The repository freezed till 01 Oct 2015. Latest versions is available on https://cesbo.com**
 
 ---
 
 # Description
 
-Astra is a professional software for digital television.
+Astra (Advanced Streamer) is a professional software to organize Digital TV Service for
+TV operators and broadcasters, internet service providers, hotels, etc.
 
 * Learn more: https://cesbo.com/astra/
-* Community: https://cesbo.com/forum/
+* Community: http://forum.cesbo.com/
