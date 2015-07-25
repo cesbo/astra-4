@@ -181,6 +181,9 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 {
     module_data_t *mod = (module_data_t *)arg;
 
+    if(psi->buffer[0] != 0x00)
+        return;
+
     // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
     if(crc32 == psi->crc32)
@@ -296,6 +299,9 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 static void on_cat(void *arg, mpegts_psi_t *psi)
 {
     module_data_t *mod = (module_data_t *)arg;
+
+    if(psi->buffer[0] != 0x01)
+        return;
 
     // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);

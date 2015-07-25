@@ -1518,6 +1518,9 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 {
     dvb_ca_t *ca = (dvb_ca_t *)arg;
 
+    if(psi->buffer[0] != 0x00)
+        return;
+
     // check changes
     const uint32_t crc32 = PSI_GET_CRC32(psi);
     if(crc32 == psi->crc32)
