@@ -1,7 +1,3 @@
-**The repository freezed till 01 Oct 2015. Latest versions is available on https://cesbo.com**
-
----
-
 # Description
 
 Astra (Advanced Streamer) is a professional software to organize Digital TV Service for
